@@ -1,0 +1,148 @@
+// Virtual controller: lets tools (and later, the network layer) press buttons on an Xbox pad.
+//
+// The game polls XInputGetState (xinput1_3 ordinal 2). We merge queued virtual button presses into
+// the result, and report the pad as connected while virtual input is in use.
+//
+// Test tools talk to us over a named pipe, \\.\pipe\FGUYMod_<pid>, one command per line:
+//   press <pad 0-3> <button> [<button> ...]    buttons: a b x y start back up down left right lb rb
+// Each button is held for kHoldMs, then released for kGapMs before the next one.
+// Off unless FGUYMod.ini [Debug] TestInput=1 (or env FGUYMOD_TESTINPUT=1).
+
+#include "common.h"
+
+#include <xinput.h>
+
+#include <cstdio>
+#include <cwchar>
+#include <deque>
+#include <mutex>
+
+namespace {
+
+const ULONGLONG kHoldMs = 40, kGapMs = 260;  // short taps: the menus auto-repeat held buttons
+
+struct Press {
+    DWORD pad;
+    WORD buttons;
+};
+
+std::mutex g_lock;
+std::deque<Press> g_queue;
+ULONGLONG g_pressStart = 0;      // when the front press started
+bool g_padActive[4] = {};        // pads we report as connected
+DWORD g_packet = 1;
+
+using XInputGetState_t = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
+XInputGetState_t Real_XInputGetState;
+
+// Buttons currently held on `pad` by the queue (advances the queue as time passes).
+WORD CurrentButtons(DWORD pad) {
+    std::lock_guard<std::mutex> lock(g_lock);
+    ULONGLONG now = GetTickCount64();
+    while (!g_queue.empty()) {
+        if (g_pressStart == 0) g_pressStart = now;
+        ULONGLONG t = now - g_pressStart;
+        if (t < kHoldMs) return g_queue.front().pad == pad ? g_queue.front().buttons : 0;
+        if (t < kHoldMs + kGapMs) return 0;
+        g_queue.pop_front();
+        g_pressStart = 0;
+    }
+    return 0;
+}
+
+DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
+    DWORD r = Real_XInputGetState(pad, state);
+    static LONG calls[4];
+    if (pad < 4 && InterlockedIncrement(&calls[pad]) == 1)
+        Log(L"VPad: game polls pad %lu (real pad %s)", pad, r == ERROR_SUCCESS ? L"connected" : L"absent");
+    if (pad >= 4 || !g_padActive[pad] || !state) return r;
+    if (r != ERROR_SUCCESS) ZeroMemory(state, sizeof(*state));  // no real pad: pretend one is there
+    WORD buttons = CurrentButtons(pad);
+    static WORD last[4];
+    if (buttons != last[pad]) {
+        last[pad] = buttons;
+        ++g_packet;
+        Log(L"VPad: pad %lu buttons -> %04x (poll #%ld)", pad, buttons, calls[pad]);
+    }
+    state->Gamepad.wButtons |= buttons;
+    state->dwPacketNumber += g_packet;
+    return ERROR_SUCCESS;
+}
+
+WORD ButtonFromName(const char* n) {
+    static const struct { const char* name; WORD bit; } table[] = {
+        {"a", XINPUT_GAMEPAD_A}, {"b", XINPUT_GAMEPAD_B}, {"x", XINPUT_GAMEPAD_X},
+        {"y", XINPUT_GAMEPAD_Y}, {"start", XINPUT_GAMEPAD_START}, {"back", XINPUT_GAMEPAD_BACK},
+        {"up", XINPUT_GAMEPAD_DPAD_UP}, {"down", XINPUT_GAMEPAD_DPAD_DOWN},
+        {"left", XINPUT_GAMEPAD_DPAD_LEFT}, {"right", XINPUT_GAMEPAD_DPAD_RIGHT},
+        {"lb", XINPUT_GAMEPAD_LEFT_SHOULDER}, {"rb", XINPUT_GAMEPAD_RIGHT_SHOULDER},
+    };
+    for (auto& e : table)
+        if (_stricmp(n, e.name) == 0) return e.bit;
+    return 0;
+}
+
+void HandleCommand(char* line) {
+    char* ctx = nullptr;
+    char* cmd = strtok_s(line, " \t\r\n", &ctx);
+    if (!cmd || _stricmp(cmd, "press") != 0) return;
+    char* padStr = strtok_s(nullptr, " \t\r\n", &ctx);
+    if (!padStr) return;
+    DWORD pad = (DWORD)atoi(padStr) & 3;
+    std::lock_guard<std::mutex> lock(g_lock);
+    g_padActive[pad] = true;
+    while (char* b = strtok_s(nullptr, " \t\r\n", &ctx)) {
+        if (WORD bit = ButtonFromName(b)) g_queue.push_back({pad, bit});
+        else Log(L"VPad: unknown button \"%S\"", b);
+    }
+}
+
+DWORD WINAPI PipeThread(LPVOID) {
+    wchar_t name[64];
+    swprintf_s(name, L"\\\\.\\pipe\\FGUYMod_%lu", GetCurrentProcessId());
+    for (;;) {
+        HANDLE pipe = CreateNamedPipeW(name, PIPE_ACCESS_INBOUND, PIPE_TYPE_BYTE | PIPE_WAIT, 1, 0,
+                                       4096, 0, nullptr);
+        if (pipe == INVALID_HANDLE_VALUE) {
+            Log(L"VPad: could not create pipe %s", name);
+            return 1;
+        }
+        if (ConnectNamedPipe(pipe, nullptr) || GetLastError() == ERROR_PIPE_CONNECTED) {
+            char buf[4096];
+            size_t used = 0;
+            DWORD got;
+            while (ReadFile(pipe, buf + used, (DWORD)(sizeof(buf) - 1 - used), &got, nullptr) && got) {
+                used += got;
+                buf[used] = 0;
+                char* start = buf;
+                while (char* nl = strchr(start, '\n')) {
+                    *nl = 0;
+                    Log(L"VPad: %S", start);
+                    HandleCommand(start);
+                    start = nl + 1;
+                }
+                used = strlen(start);
+                memmove(buf, start, used + 1);
+            }
+            if (used) {
+                Log(L"VPad: %S", buf);
+                HandleCommand(buf);
+            }
+        }
+        DisconnectNamedPipe(pipe);
+        CloseHandle(pipe);
+    }
+}
+
+}  // namespace
+
+void InitVirtualPad(HMODULE exe) {
+    if (!SettingInt(L"Debug", L"TestInput", L"FGUYMOD_TESTINPUT", 0)) return;
+    HookSpec hooks[] = {
+        {"xinput1_3.dll", MAKEINTRESOURCEA(2), (void*)Hook_XInputGetState, (void**)&Real_XInputGetState},
+    };
+    InstallHooks(exe, hooks);
+    g_padActive[0] = true;  // plugged in from the start, so the game has noticed it before any press
+    CloseHandle(CreateThread(nullptr, 0, PipeThread, nullptr, 0, nullptr));
+    Log(L"VPad: test input pipe \\\\.\\pipe\\FGUYMod_%lu ready", GetCurrentProcessId());
+}
