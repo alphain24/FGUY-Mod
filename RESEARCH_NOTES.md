@@ -85,8 +85,22 @@ The install also has `automenu.ini` / `autotweaks.ini`, the save state of an in-
 - Controllers: XInput (`xinput1_3` ordinal 2 = `XInputGetState`) is polled for all 4 pads from a tight
   loop (~6000 polls/s). Menus auto-repeat held d-pad buttons, so injected taps must be short (~40 ms).
   Virtual pad injection works in menus.
+- Registry `IsKeyboardMouseInput` (1-byte REG_BINARY) picks keyboard/mouse vs controller mode. In
+  KB/M mode the title screen ignores controller buttons. Loader `[Debug] PadMode=1` reports 0.
+- **Local multiplayer join screen accepts virtual pads:** with virtual pad 1 plugged in, pressing A on it
+  joined as player 2. This is the basis for "host + remote input" online play.
 - **Crash:** skipping the intro logo movie (A press during it) crashed in `XAudio2_7.dll`
   (offset `0x3da72`). Skipping the attract-mode trailer was fine. To investigate (Bink → XAudio2 teardown).
+
+## Menu flow (controller mode, 2026-10-09)
+Intro movies → attract trailer (if idle) → title "press start" → **Select Save** (3 slots; X = delete!,
+B = "quit to title?") → **Main Menu**: Story Mode, Multiplayer, Challenge Mode, Options, Store,
+Bonus Materials, Exit Game.
+- **Multiplayer**: Deathmatch, Multiverse Madness, Capture the Greased-Up Deaf Guy, Infiltration!
+  (level suffixes DM / HD / CF / IN). No network/online entry in the vanilla menu.
+- **Match setup** (Deathmatch): Map, Time Limit, Winning Score, Teams/FFA, Friendly Fire → Next.
+- **Join screen**: 4 panels, "Press A to join" per controller, then Select Team (Good/Evil).
+- The game autosaves the selected slot on menu transitions ("Saving..." icon).
 
 ## Display settings
 Registry `HKCU\Software\Heavy Iron Studios Inc.\Family Guy\Settings`: `ScreenWidth`, `ScreenHeight`,

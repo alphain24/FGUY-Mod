@@ -6,10 +6,10 @@ param(
     [string]$Res = "1280x720"
 )
 $env:FGUYMOD_TESTINPUT = "1"; $env:FGUYMOD_MODE = "windowed"; $env:FGUYMOD_RES = $Res
-$env:FGUYMOD_BACKGROUND = "1"
+$env:FGUYMOD_BACKGROUND = "1"; $env:FGUYMOD_PADMODE = "1"
 if ($Ini) { $env:FGUYMOD_INI = $Ini }
 $p = Start-Process -FilePath "$GameDir\FGUY.exe" -WorkingDirectory $GameDir -PassThru
-foreach ($v in "FGUYMOD_TESTINPUT", "FGUYMOD_MODE", "FGUYMOD_RES", "FGUYMOD_BACKGROUND", "FGUYMOD_INI") {
+foreach ($v in "FGUYMOD_TESTINPUT", "FGUYMOD_MODE", "FGUYMOD_RES", "FGUYMOD_BACKGROUND", "FGUYMOD_PADMODE", "FGUYMOD_INI") {
     Remove-Item "Env:$v" -ErrorAction SilentlyContinue
 }
 $p.Id

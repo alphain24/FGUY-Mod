@@ -27,6 +27,7 @@ int g_width = 0, g_height = 0;  // render resolution override (0 = none / native
 RECT g_monitor;                 // physical pixels
 HWND g_mainWnd = nullptr;
 bool g_background = false;      // keep running when not the active window
+bool g_padMode = false;         // report controller mode instead of keyboard/mouse (test runs)
 WNDPROC g_gameWndProc = nullptr;
 
 const LONG kBorderStyles = WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX |
@@ -54,7 +55,13 @@ decltype(&RegQueryValueExW) Real_RegQueryValueExW;
 LSTATUS WINAPI Hook_RegQueryValueExW(HKEY key, LPCWSTR name, LPDWORD reserved, LPDWORD type,
                                      LPBYTE data, LPDWORD size) {
     LSTATUS r = Real_RegQueryValueExW(key, name, reserved, type, data, size);
-    if (r != ERROR_SUCCESS || !name || !data || !size || *size < 4) return r;
+    if (r != ERROR_SUCCESS || !name || !data || !size) return r;
+    if (g_padMode && *size >= 1 && _wcsicmp(name, L"IsKeyboardMouseInput") == 0) {
+        data[0] = 0;  // 1-byte flag
+        Log(L"Input: game setting IsKeyboardMouseInput -> 0 (controller mode)");
+        return r;
+    }
+    if (*size < 4) return r;
     int value = -1;
     if (g_mode != Mode::Default && _wcsicmp(name, L"ScreenWindowed") == 0)
         value = g_mode == Mode::Fullscreen ? 0 : 1;
@@ -185,6 +192,7 @@ void InitDisplay(HMODULE exe) {
     SettingString(L"Display", L"_", L"FGUYMOD_RES", L"", res, 32);
     if (res[0]) swscanf_s(res, L"%dx%d", &g_width, &g_height);
     g_background = SettingInt(L"Display", L"RunInBackground", L"FGUYMOD_BACKGROUND", 0) != 0;
+    g_padMode = SettingInt(L"Debug", L"PadMode", L"FGUYMOD_PADMODE", 0) != 0;
 
     if (g_mode == Mode::Windowed || g_mode == Mode::Borderless) MakeDpiAware();
 

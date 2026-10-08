@@ -36,6 +36,7 @@ To uninstall, delete `dinput8.dll` and the `FGUYMod` folder from the game folder
 | `[Display] Width`, `Height` | render resolution; `0` = native (borderless) or the game's setting |
 | `[Display] RunInBackground` | `1` = keep running when the window isn't active |
 | `[Debug] TestInput` | `1` = enable the virtual controller pipe for test scripts |
+| `[Debug] PadMode` | `1` = start in controller mode (ignores the saved keyboard/mouse setting) |
 
 Environment variables override these for one run (used by test scripts): `FGUYMOD_MODE`,
 `FGUYMOD_RES=1280x720`, `FGUYMOD_BACKGROUND=1`, `FGUYMOD_TESTINPUT=1`, `FGUYMOD_INI=server.ini`.
