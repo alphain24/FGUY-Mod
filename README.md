@@ -4,8 +4,10 @@ A community mod project. Goals: online multiplayer first, then cosmetics/skins, 
 This project never ships game files; players need their own copy of the game.
 
 ## Features so far
-- **Borderless windowed fullscreen** (sharp on high-DPI / 4K screens), plus forced windowed or
-  fullscreen and a custom render resolution.
+- **Borderless windowed fullscreen** (sharp on high-DPI / 4K screens), selectable in the game's own
+  Options > Screen > Display Mode, plus a custom render resolution.
+- **Windows key works** in windowed and borderless modes.
+- Fix for the occasional crash at startup (Direct3D device creation is retried).
 - **Keep running in the background** when alt-tabbed.
 - Override the game's hidden developer settings with your own `fguy.ini`.
 - Research tooling: logs of files opened, network traffic, and a virtual controller for test scripts.
@@ -20,9 +22,13 @@ This project never ships game files; players need their own copy of the game.
 ## Building
 Run `build.bat` (needs Visual Studio 2022 with C++). Output: `build\dinput8.dll`.
 
+Menu patches (`dist\FGUYMod\ui\*.fgpatch`) are built from your own game files with
+`python tools\ui\make_menu_patch.py "<game folder>"`. They contain only our changes, never game data.
+
 ## Installing
 1. Copy `build\dinput8.dll` into the game folder (next to `FGUY.exe`).
-2. Copy the `dist\FGUYMod` folder into the game folder and edit `FGUYMod\FGUYMod.ini`.
+2. Copy the `dist\FGUYMod` folder (settings + `ui` patches) into the game folder, and edit
+   `FGUYMod\FGUYMod.ini` if you like.
 3. Optional: put a game config at `<game>\FGUYMod\fguy.ini` to override the game's built-in settings.
    Start from a copy of the built-in one (`python tools\extract_ini.py <FGUY.exe> fguy.ini`).
 4. Logs go to `<game>\FGUYMod\FGUYMod_<process id>.log`.
@@ -35,6 +41,7 @@ To uninstall, delete `dinput8.dll` and the `FGUYMod` folder from the game folder
 | `[Display] Mode` | `default`, `fullscreen`, `windowed`, `borderless` |
 | `[Display] Width`, `Height` | render resolution; `0` = native (borderless) or the game's setting |
 | `[Display] RunInBackground` | `1` = keep running when the window isn't active |
+| `[Input] AllowWindowsKey` | `1` (default) = Windows key works in windowed / borderless |
 | `[Debug] TestInput` | `1` = enable the virtual controller pipe for test scripts |
 | `[Debug] PadMode` | `1` = start in controller mode (ignores the saved keyboard/mouse setting) |
 
