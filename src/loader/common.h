@@ -32,3 +32,16 @@ void InitConfigOverride(HMODULE exe);  // fguy.ini override + file-open log   (c
 void InitNetSpy(HMODULE exe);          // winsock + debug-print logging        (netspy.cpp)
 void InitDisplay(HMODULE exe);         // windowed / borderless / resolution   (display.cpp)
 void InitVirtualPad(HMODULE exe);      // injected controller input for tests  (vpad.cpp)
+void InitDirectInput();                // Windows key in windowed modes        (dinput.cpp)
+void OnDirectInputCreated(void* directInput);
+
+void InitD3D9(HMODULE exe);            // Direct3D device creation retries      (d3d9.cpp)
+void InitUi();                         // menu movie patches + menu calls      (ui.cpp)
+
+// display.cpp
+bool DisplayIsWindowed();              // windowed or borderless right now
+int DisplayMenuIndex();                // Options > Screen > Display Mode support
+bool DisplayMenuSelect(int index);     //   returns the game's own "windowed" flag for that choice
+void DisplayMenuApply();
+void DisplayMenuReset();
+void DisplayOnChangeResolution(int width, int height, bool windowed);

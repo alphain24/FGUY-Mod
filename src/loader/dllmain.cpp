@@ -8,6 +8,9 @@
 //   config.cpp   game config override (FGUYMod\fguy.ini) + file-open log
 //   display.cpp  fullscreen / windowed / borderless, render resolution
 //   netspy.cpp   logs the game's network traffic and debug prints (research)
+//   d3d9.cpp     retries Direct3D device creation (the game crashes if it fails)
+//   dinput.cpp   lets the Windows key work in windowed / borderless modes
+//   ui.cpp       menu movie patches (e.g. Borderless in Options) + menu-to-loader calls
 //   vpad.cpp     virtual controller for test scripts (and later, remote players)
 // Loader settings: FGUYMod\FGUYMod.ini. Log: FGUYMod\FGUYMod_<pid>.log.
 
@@ -45,8 +48,11 @@ void Init() {
     HMODULE exe = GetModuleHandleW(nullptr);
     InitConfigOverride(exe);
     InitDisplay(exe);
+    InitD3D9(exe);
+    InitDirectInput();
     InitNetSpy(exe);
     InitVirtualPad(exe);
+    InitUi();
 }
 
 }  // namespace
@@ -54,7 +60,9 @@ void Init() {
 extern "C" HRESULT WINAPI Proxy_DirectInput8Create(HINSTANCE inst, DWORD version, REFIID riid,
                                                    LPVOID* out, LPUNKNOWN outer) {
     if (!Real_DirectInput8Create) return E_FAIL;
-    return Real_DirectInput8Create(inst, version, riid, out, outer);
+    HRESULT hr = Real_DirectInput8Create(inst, version, riid, out, outer);
+    if (SUCCEEDED(hr) && out) OnDirectInputCreated(*out);
+    return hr;
 }
 
 BOOL WINAPI DllMain(HMODULE self, DWORD reason, LPVOID) {

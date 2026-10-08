@@ -1,0 +1,251 @@
+// Menu (Scaleform) integration.
+//
+// 1. Movie patches: the game's menus are Scaleform GFX movies stored inside its .ho packages. When
+//    the game opens one, its Scaleform::FileOpener returns a GSFMemoryFile pointing into the package.
+//    If a patch in FGUYMod\ui\*.fgpatch matches that movie (by length + CRC32), we point the memory
+//    file at a patched copy instead. Patches hold only our own bytes (see tools/ui/gfxpatch.py).
+//
+// 2. Menu calls: menu scripts call into C++ with ExternalInterface.call("CATEGORY_Name", ...). We
+//    see every call first; names starting with FGUYMOD_ are ours and never reach the game.
+//
+// Both are virtual methods on classes with static vtables in FGUY.exe, so we patch the vtable slots.
+// Addresses are for the retail PC exe (SHA-256 E4BCD19E...); each slot is checked before patching.
+
+#include "common.h"
+
+#include <cstdio>
+#include <cstring>
+#include <cwchar>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
+
+namespace {
+
+// ---- addresses in FGUY.exe ------------------------------------------------------------------------
+const uintptr_t kFileOpenerVtable = 0x9fe670;          // Scaleform::FileOpener
+const uintptr_t kFileOpenerOpenFile = 0x4421d0;        //   [1] OpenFile(url, flags, mode)
+const uintptr_t kExtHandlerVtable = 0x9fe56c;          // Scaleform::ExternalInterfaceHandler
+const uintptr_t kExtHandlerCallback = 0x454190;        //   [1] Callback(movie, name, args, argc)
+const uintptr_t kMemoryFileVtable = 0x9fe61c;          // Scaleform::GSFMemoryFile
+// GSFMemoryFile fields: +0x08 path, +0x0C data, +0x10 position, +0x14 length.
+const int kMemFileData = 0x0C, kMemFilePos = 0x10, kMemFileLen = 0x14;
+// GFxMovieView vtable slot used by the game to return a value to the menu script.
+const int kSetExternalInterfaceRetVal = 50;
+
+// ---- Scaleform GFxValue (3.x, 32-bit) -------------------------------------------------------------
+struct GFxValue {
+    void* objectInterface;
+    unsigned type;  // low 4 bits: 0 undefined, 1 null, 2 bool, 3 number, 4 string; 0x40 = managed
+    union {
+        double number;
+        bool boolean;
+        const char* string;
+    };
+};
+const unsigned kUndefined = 0, kBool = 2, kNumber = 3, kString = 4;
+
+double ArgNumber(const GFxValue* args, unsigned argc, unsigned i) {
+    if (i >= argc) return 0;
+    switch (args[i].type & 0x0F) {
+        case kNumber: return args[i].number;
+        case kBool: return args[i].boolean ? 1 : 0;
+        case kString: return atof(args[i].string);
+        default: return 0;
+    }
+}
+
+// ---- CRC32 (same as zlib) -------------------------------------------------------------------------
+unsigned Crc32(const unsigned char* p, size_t n) {
+    static unsigned table[256];
+    if (!table[1])
+        for (unsigned i = 0; i < 256; ++i) {
+            unsigned c = i;
+            for (int k = 0; k < 8; ++k) c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+            table[i] = c;
+        }
+    unsigned c = 0xFFFFFFFFu;
+    for (size_t i = 0; i < n; ++i) c = table[(c ^ p[i]) & 0xFF] ^ (c >> 8);
+    return c ^ 0xFFFFFFFFu;
+}
+
+// ---- .fgpatch files -------------------------------------------------------------------------------
+struct Edit {
+    unsigned offset, remove;
+    std::vector<unsigned char> insert;
+};
+struct MoviePatch {
+    std::wstring name;
+    unsigned origLength = 0, origCrc = 0;
+    std::vector<Edit> edits;
+    std::vector<unsigned char> patched;  // built on first use, then kept for the game's lifetime
+};
+std::vector<MoviePatch> g_patches;
+
+bool ReadFileBytes(const wchar_t* path, std::vector<unsigned char>& out) {
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path, L"rb") || !f) return false;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    out.resize(n > 0 ? n : 0);
+    bool ok = n <= 0 || fread(out.data(), 1, n, f) == (size_t)n;
+    fclose(f);
+    return ok;
+}
+
+bool ParsePatch(const std::vector<unsigned char>& b, MoviePatch& p) {
+    auto u32 = [&](size_t o) { unsigned v; memcpy(&v, &b[o], 4); return v; };
+    if (b.size() < 16 || memcmp(b.data(), "FGP1", 4) != 0) return false;
+    p.origLength = u32(4);
+    p.origCrc = u32(8);
+    unsigned count = u32(12);
+    size_t o = 16;
+    for (unsigned i = 0; i < count; ++i) {
+        if (o + 12 > b.size()) return false;
+        Edit e{u32(o), u32(o + 4), {}};
+        unsigned n = u32(o + 8);
+        o += 12;
+        if (o + n > b.size()) return false;
+        e.insert.assign(b.begin() + o, b.begin() + o + n);
+        o += n;
+        p.edits.push_back(std::move(e));
+    }
+    return true;
+}
+
+void LoadPatches() {
+    wchar_t pattern[MAX_PATH];
+    swprintf_s(pattern, L"%s\\ui\\*.fgpatch", g_modDir);
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        wchar_t path[MAX_PATH];
+        swprintf_s(path, L"%s\\ui\\%s", g_modDir, fd.cFileName);
+        std::vector<unsigned char> bytes;
+        MoviePatch p;
+        p.name = fd.cFileName;
+        if (ReadFileBytes(path, bytes) && ParsePatch(bytes, p)) {
+            Log(L"UI: loaded patch %s (%zu edits, for a %u-byte movie)", fd.cFileName, p.edits.size(), p.origLength);
+            g_patches.push_back(std::move(p));
+        } else {
+            Log(L"UI: could not read patch %s", fd.cFileName);
+        }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
+bool BuildPatched(MoviePatch& p, const unsigned char* orig) {
+    std::vector<unsigned char> out;
+    unsigned pos = 0;
+    for (const Edit& e : p.edits) {  // edits are sorted and don't overlap
+        if (e.offset < pos || e.offset + e.remove > p.origLength) return false;
+        out.insert(out.end(), orig + pos, orig + e.offset);
+        out.insert(out.end(), e.insert.begin(), e.insert.end());
+        pos = e.offset + e.remove;
+    }
+    out.insert(out.end(), orig + pos, orig + p.origLength);
+    p.patched = std::move(out);
+    return true;
+}
+
+// ---- FileOpener::OpenFile hook ----------------------------------------------------------------------
+using OpenFile_t = void*(__thiscall*)(void* self, const char* url, int flags, int mode);
+OpenFile_t Real_OpenFile;
+std::set<std::string> g_seenFiles;
+
+void* __fastcall Hook_OpenFile(void* self, void*, const char* url, int flags, int mode) {
+    void* file = Real_OpenFile(self, url, flags, mode);
+    if (!file || !url) return file;
+    auto bytes = reinterpret_cast<unsigned char*>(file);
+    if (g_seenFiles.insert(url).second)
+        Log(L"UI: game opens \"%S\" (file type %#x, %d bytes)", url, *reinterpret_cast<unsigned*>(file),
+            *reinterpret_cast<int*>(bytes + kMemFileLen));
+    if (*reinterpret_cast<uintptr_t*>(file) != kMemoryFileVtable) return file;
+    unsigned char*& data = *reinterpret_cast<unsigned char**>(bytes + kMemFileData);
+    int& length = *reinterpret_cast<int*>(bytes + kMemFileLen);
+    if (!data || length < 8 || memcmp(data + 1, "FX", 2) != 0) return file;
+    // Match on the movie's own size field: packaged files can carry a padding byte after it.
+    unsigned movieLength;
+    memcpy(&movieLength, data + 4, 4);
+    if (movieLength > (unsigned)length) return file;
+    for (MoviePatch& p : g_patches) {
+        if (movieLength != p.origLength) continue;
+        if (p.patched.empty()) {
+            if (Crc32(data, movieLength) != p.origCrc || !BuildPatched(p, data)) continue;
+        }
+        data = p.patched.data();
+        length = (int)p.patched.size();
+        *reinterpret_cast<int*>(bytes + kMemFilePos) = 0;
+        Log(L"UI: \"%S\" patched with %s", url, p.name.c_str());
+        break;
+    }
+    return file;
+}
+
+// ---- ExternalInterfaceHandler::Callback hook -------------------------------------------------------
+using Callback_t = void(__thiscall*)(void* self, void* movie, const char* name, const GFxValue* args,
+                                     unsigned argc);
+Callback_t Real_Callback;
+std::set<std::string> g_seenCalls;
+
+void ReturnToMenu(void* movie, const GFxValue& v) {
+    using SetRet_t = void(__thiscall*)(void* movie, const GFxValue* value);
+    auto vtable = *reinterpret_cast<void***>(movie);
+    reinterpret_cast<SetRet_t>(vtable[kSetExternalInterfaceRetVal])(movie, &v);
+}
+void ReturnNumber(void* movie, double n) { GFxValue v{}; v.type = kNumber; v.number = n; ReturnToMenu(movie, v); }
+void ReturnBool(void* movie, bool b) { GFxValue v{}; v.type = kBool; v.boolean = b; ReturnToMenu(movie, v); }
+
+void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, const GFxValue* args,
+                              unsigned argc) {
+    if (name && strncmp(name, "FGUYMOD_", 8) == 0) {
+        const char* fn = name + 8;
+        if (strcmp(fn, "GetDisplayMode") == 0) {
+            ReturnNumber(movie, DisplayMenuIndex());
+        } else if (strcmp(fn, "SetDisplayMode") == 0) {
+            ReturnBool(movie, DisplayMenuSelect((int)ArgNumber(args, argc, 0)));
+        } else if (strcmp(fn, "ApplyDisplayMode") == 0) {
+            DisplayMenuApply();
+        } else {
+            Log(L"UI: unknown mod call %S", name);
+        }
+        return;
+    }
+    if (name && g_seenCalls.insert(name).second) Log(L"UI: menu calls %S (%u args)", name, argc);
+    // The Screen page reads the real settings when it opens (and again after OK, once our apply has
+    // already run), so a choice left over from backing out without OK is dropped here.
+    if (name && strcmp(name, "GRFX_IsWindowed") == 0) DisplayMenuReset();
+    if (name && strcmp(name, "GRFX_ChangeResolution") == 0)
+        DisplayOnChangeResolution((int)ArgNumber(args, argc, 0), (int)ArgNumber(args, argc, 1),
+                                  ArgNumber(args, argc, 2) != 0);
+    Real_Callback(self, movie, name, args, argc);
+}
+
+// ---- vtable patching -------------------------------------------------------------------------------
+bool PatchSlot(uintptr_t vtable, int slot, uintptr_t expected, void* hook, void** real, const wchar_t* what) {
+    auto entry = reinterpret_cast<uintptr_t*>(vtable + 4 * slot);
+    if (IsBadReadPtr(entry, 4) || *entry != expected) {
+        Log(L"UI: %s not found at the expected address (different game version?) - skipped", what);
+        return false;
+    }
+    DWORD old;
+    VirtualProtect(entry, 4, PAGE_READWRITE, &old);
+    *real = reinterpret_cast<void*>(*entry);
+    *entry = reinterpret_cast<uintptr_t>(hook);
+    VirtualProtect(entry, 4, old, &old);
+    Log(L"UI: hooked %s", what);
+    return true;
+}
+
+}  // namespace
+
+void InitUi() {
+    LoadPatches();
+    PatchSlot(kFileOpenerVtable, 1, kFileOpenerOpenFile, (void*)Hook_OpenFile, (void**)&Real_OpenFile,
+              L"Scaleform::FileOpener::OpenFile");
+    PatchSlot(kExtHandlerVtable, 1, kExtHandlerCallback, (void*)Hook_Callback, (void**)&Real_Callback,
+              L"Scaleform::ExternalInterfaceHandler::Callback");
+}

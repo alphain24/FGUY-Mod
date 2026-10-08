@@ -102,6 +102,33 @@ Bonus Materials, Exit Game.
 - **Join screen**: 4 panels, "Press A to join" per controller, then Select Team (Good/Evil).
 - The game autosaves the selected slot on menu transitions ("Saving..." icon).
 
+## Menus: Scaleform GFx 3.x (2026-10-09)
+- Menus are Scaleform GFX movies (Flash 10 / **ActionScript 2**), uncompressed inside the `.ho` packages.
+  `main_menu.gfx` (290,635 bytes + 1 pad byte) is in `Global_Scenes/MNUS.ho`. Other movies seen:
+  pause_menu, stats_screen, objective_screen, Dialog, trcMessageBox, start_screen, credits, icons, cursors…
+- `Scaleform::FileOpener::OpenFile(url, flags, mode)` = vtable `0x9fe670` slot 1 (`0x4421d0`); returns a
+  `Scaleform::GSFMemoryFile` (vtable `0x9fe61c`; +0x08 path, +0x0C data, +0x10 pos, +0x14 length).
+- Menu → C++ calls: `ExternalInterface.call("CATEGORY_Name", ...)` →
+  `Scaleform::ExternalInterfaceHandler::Callback(movie, name, args, argc)` = vtable `0x9fe56c` slot 1
+  (`0x454190`). Return values go through the movie's vtable slot 50 (`SetExternalInterfaceRetVal`).
+  `GFxValue` = { objectInterface*, type (2 bool, 3 number, 4 string; 0x40 managed), 8-byte value }.
+- Categories seen: GRFX (graphics), OPTN, MENU, SCEN, SAVE, CTRL, PROF, SYST, LOKR, STOR, MULT, PLYR,
+  FGUY, and **NETW** (`NETW_IsServer`, `NETW_SetActiveMenu`, `NETW_OnScreenEntered` are called by the
+  main menu — the network layer is wired into the menus).
+- Tools: `tools/re/swf.py` (tags), `tools/re/as2.py` (AS2 disassembler), `tools/ui/gfxpatch.py`
+  (assembler + patch writer), `tools/ui/make_menu_patch.py` (the Borderless menu patch).
+- Options > Screen script: `OnOptionsScreenEnter`, `GetDisplayModeValue`, `OnDisplayModeValueChanged`,
+  `OnOptionsScreenNextButtonPressed` → `GRFX_ChangeResolution(width, height, windowed)`.
+
+## Window procedure and screen size
+- Game window proc `0x483920` handles only WM_DESTROY, WM_ACTIVATE, WM_CLOSE, **WM_WINDOWPOSCHANGED**.
+  On WINDOWPOSCHANGED in windowed mode it sets the screen size globals (`0xb06360` width,
+  `0xb0635c` height, `0xb06354` windowed flag) from the window's client size — even for SWP_NOSIZE.
+- `0x419680(windowed, x, y, w, h)` applies a resolution (called from `0x4cac63`); the Options page has a
+  "keep this resolution?" timer that reverts after ~16 s.
+- DirectInput keyboard cooperative level is `0x16` (includes DISCL_NOWINKEY → Windows key blocked).
+- Intermittent startup crash at `+0x876e9` (NULL D3D device). Loader now retries `CreateDevice`.
+
 ## Display settings
 Registry `HKCU\Software\Heavy Iron Studios Inc.\Family Guy\Settings`: `ScreenWidth`, `ScreenHeight`,
 `ScreenWindowed`, `ScreenMonitor` (4-byte REG_BINARY), `Language`, `IsKeyboardMouseInput`, `KeyConfig`,
