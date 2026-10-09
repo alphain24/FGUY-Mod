@@ -45,12 +45,33 @@ HRSRC WINAPI Hook_FindResourceW(HMODULE module, LPCWSTR name, LPCWSTR type) {
     return Real_FindResourceW(module, name, type);
 }
 
+// Test runs (env FGUYMOD_SAVEDIR=<folder name inside FGUYMod>) keep their saves away from the real
+// ones: ".\Save\<file>" goes to FGUYMod\<folder>\<file>, starting from a copy of the real file.
+wchar_t g_saveDir[MAX_PATH] = L"";
+
+bool RedirectSave(LPCWSTR path, wchar_t* out) {
+    if (!g_saveDir[0] || !path) return false;
+    const wchar_t* rel = path;
+    if (rel[0] == L'.' && (rel[1] == L'\\' || rel[1] == L'/')) rel += 2;
+    if (_wcsnicmp(rel, L"Save\\", 5) != 0 && _wcsnicmp(rel, L"Save/", 5) != 0) return false;
+    swprintf_s(out, MAX_PATH, L"%s\\%s", g_saveDir, rel + 5);
+    if (!FileExists(out)) {
+        wchar_t real[MAX_PATH];
+        swprintf_s(real, L"%s\\Save\\%s", g_gameDir, rel + 5);
+        CopyFileW(real, out, TRUE);
+    }
+    return true;
+}
+
 HANDLE WINAPI Hook_CreateFileW(LPCWSTR path, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa,
                                DWORD disposition, DWORD flags, HANDLE templ) {
     LPCWSTR actual = path;
+    wchar_t saveRedirect[MAX_PATH];
     if (g_iniOverride && path && EndsWithFguyIni(path)) {
         Log(L"Config: game asked for \"%s\" -> redirected to \"%s\"", path, g_iniPath);
         actual = g_iniPath;
+    } else if (RedirectSave(path, saveRedirect)) {
+        actual = saveRedirect;
     }
     HANDLE h = Real_CreateFileW(actual, access, share, sa, disposition, flags, templ);
     if (path && g_fileLogBudget > 0) {
@@ -84,6 +105,13 @@ void InitConfigOverride(HMODULE exe) {
     if (envLen > 0 && envLen < MAX_PATH) wcscpy_s(iniName, env);
     swprintf_s(g_iniPath, L"%s\\%s", g_modDir, iniName);
     g_iniOverride = FileExists(g_iniPath);
+    wchar_t saveDir[64];
+    DWORD saveLen = GetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", saveDir, 64);
+    if (saveLen > 0 && saveLen < 64) {
+        swprintf_s(g_saveDir, L"%s\\%s", g_modDir, saveDir);
+        CreateDirectoryW(g_saveDir, nullptr);
+        Log(L"Config: test run - saves go to %s", g_saveDir);
+    }
     Log(g_iniOverride ? L"Config override ON: %s" : L"Config override off (no %s)", g_iniPath);
 
     HookSpec hooks[] = {

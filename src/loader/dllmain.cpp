@@ -11,12 +11,14 @@
 //   d3d9.cpp     retries Direct3D device creation (the game crashes if it fails)
 //   dinput.cpp   lets the Windows key work in windowed / borderless modes
 //   ui.cpp       menu movie patches (e.g. Borderless in Options) + menu-to-loader calls
+//   netplay.cpp  online play core: lockstep input sync, fixed clock, desync checks
 //   vpad.cpp     virtual controller for test scripts (and later, remote players)
 // Loader settings: FGUYMod\FGUYMod.ini. Log: FGUYMod\FGUYMod_<pid>.log.
 
 #include "common.h"
 
 #include <cwchar>
+#include <unknwn.h>
 
 namespace {
 
@@ -46,6 +48,7 @@ void Init() {
     if (!LoadRealDinput()) Log(L"ERROR: could not load the system dinput8.dll");
 
     HMODULE exe = GetModuleHandleW(nullptr);
+    InitNetplay(exe);
     InitConfigOverride(exe);
     InitDisplay(exe);
     InitD3D9(exe);
@@ -53,6 +56,7 @@ void Init() {
     InitNetSpy(exe);
     InitVirtualPad(exe);
     InitUi();
+    InitResearch();
 }
 
 }  // namespace

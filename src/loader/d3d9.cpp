@@ -14,6 +14,7 @@
 #include "common.h"
 
 #include <d3d9.h>
+#include <mmsystem.h>
 
 #include <algorithm>
 #include <vector>
@@ -145,11 +146,19 @@ Reset_t Real_Reset;
 Present_t Real_Present;
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* self, D3DPRESENT_PARAMETERS* pp) {
-    D3DPRESENT_PARAMETERS mine = *pp;
+    D3DPRESENT_PARAMETERS original = *pp, mine = *pp;
     FixPresentParameters(&mine);
     HRESULT hr = Real_Reset(self, &mine);
-    Log(L"D3D: Reset %ux%u %s -> %#lx", mine.BackBufferWidth, mine.BackBufferHeight,
-        mine.Windowed ? L"windowed" : L"fullscreen", hr);
+    Log(L"D3D: Reset %ux%u %s interval %#x refresh %u -> %#lx", mine.BackBufferWidth, mine.BackBufferHeight,
+        mine.Windowed ? L"windowed" : L"fullscreen", mine.PresentationInterval, mine.FullScreen_RefreshRateInHz, hr);
+    if (FAILED(hr)) {
+        *pp = original;  // try exactly what the game asked for
+        hr = Real_Reset(self, pp);
+        Log(L"D3D: Reset with the game's own parameters (interval %#x refresh %u) -> %#lx",
+            original.PresentationInterval, original.FullScreen_RefreshRateInHz, hr);
+    } else {
+        *pp = mine;
+    }
     return hr;
 }
 
@@ -159,7 +168,8 @@ using DwmFlush_t = HRESULT(WINAPI*)();
 DwmFlush_t g_dwmFlush = nullptr;
 
 void PaceFrame() {
-    int fps = kFrameRates[g_frameRate].fps;
+    // Netplay runs the game on a fixed 1/60 s clock, so real time must match: always 60 fps.
+    int fps = NetplayEnabled() ? 60 : kFrameRates[g_frameRate].fps;
     if (fps == 0 && !g_fullscreen && g_dwmFlush) {
         g_dwmFlush();  // vsync in windowed modes: wait for the compositor's next frame
     } else if (fps > 0) {
@@ -184,6 +194,9 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, 
                                        const RGNDATA* dirty) {
     HRESULT hr = Real_Present(self, src, dst, wnd, dirty);
     PaceFrame();
+    NetplayOnFrame();
+    static unsigned frame = 0;
+    ResearchOnFrame(++frame);
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
     ++g_statFrames;

@@ -50,7 +50,13 @@ WORD CurrentButtons(DWORD pad) {
     return 0;
 }
 
+}  // namespace
+bool NetplayPad(DWORD pad, XINPUT_STATE* state, DWORD(WINAPI* real)(DWORD, XINPUT_STATE*));
+namespace {
+
 DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
+    if (state && NetplayPad(pad, state, Real_XInputGetState))
+        return NetplayPadConnected(pad) ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
     DWORD r = Real_XInputGetState(pad, state);
     static LONG calls[4];
     if (pad < 4 && InterlockedIncrement(&calls[pad]) == 1)
@@ -137,11 +143,13 @@ DWORD WINAPI PipeThread(LPVOID) {
 }  // namespace
 
 void InitVirtualPad(HMODULE exe) {
-    if (!SettingInt(L"Debug", L"TestInput", L"FGUYMOD_TESTINPUT", 0)) return;
+    bool testInput = SettingInt(L"Debug", L"TestInput", L"FGUYMOD_TESTINPUT", 0) != 0;
+    if (!testInput && !NetplayEnabled()) return;
     HookSpec hooks[] = {
         {"xinput1_3.dll", MAKEINTRESOURCEA(2), (void*)Hook_XInputGetState, (void**)&Real_XInputGetState},
     };
     InstallHooks(exe, hooks);
+    if (!testInput) return;
     g_padActive[0] = true;  // plugged in from the start, so the game has noticed it before any press
     CloseHandle(CreateThread(nullptr, 0, PipeThread, nullptr, 0, nullptr));
     Log(L"VPad: test input pipe \\\\.\\pipe\\FGUYMod_%lu ready", GetCurrentProcessId());

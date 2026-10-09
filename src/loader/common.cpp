@@ -3,6 +3,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <share.h>
+#include <cstdlib>
 
 #include "iat_hook.h"
 

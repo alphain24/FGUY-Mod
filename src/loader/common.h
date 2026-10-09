@@ -1,5 +1,6 @@
 #pragma once
 // Shared bits for the loader's modules.
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 extern wchar_t g_gameDir[MAX_PATH];  // folder containing FGUY.exe
@@ -39,6 +40,14 @@ void InitD3D9(HMODULE exe);            // resolutions, frame rate, crash fix   (
 int VideoFrameRateIndex();             //   Options > Screen > Frame Rate support
 void VideoSetFrameRate(int index);
 void InitUi();                         // menu movie patches + menu calls      (ui.cpp)
+void InitResearch();                   // optional research hooks              (research.cpp)
+void ResearchOnFrame(unsigned frame);
+int ResearchPlayers(void** out, int max);  // live player objects (needs the player spy)
+
+void InitNetplay(HMODULE exe);         // lockstep online play core            (netplay.cpp)
+bool NetplayEnabled();
+void NetplayOnFrame();                 //   end of every rendered frame
+bool NetplayPadConnected(DWORD pad);
 
 // display.cpp
 bool DisplayIsWindowed();              // windowed or borderless right now

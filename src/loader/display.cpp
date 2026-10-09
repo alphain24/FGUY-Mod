@@ -20,6 +20,7 @@
 #include "common.h"
 
 #include <cwchar>
+#include <initializer_list>
 
 namespace {
 
@@ -100,6 +101,18 @@ LSTATUS WINAPI Hook_RegQueryValueExW(HKEY key, LPCWSTR name, LPDWORD reserved, L
         Log(L"Display: game setting %s -> %d", name, value);
     }
     return r;
+}
+
+// Test runs must not touch the player's saved settings (the game writes back what it was told).
+decltype(&RegSetValueExW) Real_RegSetValueExW;
+
+LSTATUS WINAPI Hook_RegSetValueExW(HKEY key, LPCWSTR name, DWORD reserved, DWORD type, const BYTE* data,
+                                   DWORD size) {
+    if (g_testRun) {
+        Log(L"Display: test run - not saving game setting %s", name ? name : L"(default)");
+        return ERROR_SUCCESS;
+    }
+    return Real_RegSetValueExW(key, name, reserved, type, data, size);
 }
 
 // ---- our window procedure (wraps the game's) -------------------------------------------------
@@ -357,7 +370,8 @@ void InitDisplay(HMODULE exe) {
     else if (_wcsicmp(mode, L"borderless") == 0) g_mode = Mode::Borderless;
     if (SettingInt(L"Display", L"_", L"FGUYMOD_WINDOWED", 0)) g_mode = Mode::Windowed;  // test scripts
     wchar_t env[8];
-    g_testRun = GetEnvironmentVariableW(L"FGUYMOD_MODE", env, 8) || GetEnvironmentVariableW(L"FGUYMOD_WINDOWED", env, 8);
+    for (const wchar_t* v : {L"FGUYMOD_MODE", L"FGUYMOD_WINDOWED", L"FGUYMOD_RES", L"FGUYMOD_PADMODE", L"FGUYMOD_NET"})
+        g_testRun |= GetEnvironmentVariableW(v, env, 8) != 0;
 
     g_width = SettingInt(L"Display", L"Width", nullptr, 0);
     g_height = SettingInt(L"Display", L"Height", nullptr, 0);
@@ -381,6 +395,7 @@ void InitDisplay(HMODULE exe) {
 
     HookSpec hooks[] = {
         {"advapi32.dll", "RegQueryValueExW", (void*)Hook_RegQueryValueExW, (void**)&Real_RegQueryValueExW},
+        {"advapi32.dll", "RegSetValueExW", (void*)Hook_RegSetValueExW, (void**)&Real_RegSetValueExW},
         {"user32.dll", "CreateWindowExW", (void*)Hook_CreateWindowExW, (void**)&Real_CreateWindowExW},
         {"user32.dll", "SetWindowLongW", (void*)Hook_SetWindowLongW, (void**)&Real_SetWindowLongW},
         {"user32.dll", "SetWindowPos", (void*)Hook_SetWindowPos, (void**)&Real_SetWindowPos},
