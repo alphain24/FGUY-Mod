@@ -11,3 +11,5 @@ __pycache__/
 # Game-derived data and personal files: never publish these
 reference/
 backups/
+*.obj
+*.exe

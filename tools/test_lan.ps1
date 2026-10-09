@@ -6,7 +6,7 @@ param(
     [int]$Delay = 30
 )
 
-Get-Process FGUY -ErrorAction SilentlyContinue | Stop-Process -Force
+& (Join-Path $PSScriptRoot "stop_tests.ps1") -GameDir $GameDir   # only copies tests started
 Start-Sleep -Seconds 2
 
 function Start-Copy([string]$ini) {
@@ -14,6 +14,7 @@ function Start-Copy([string]$ini) {
     $env:FGUYMOD_WINDOWED = "1"
     $env:FGUYMOD_RES = $Res
     $p = Start-Process -FilePath "$GameDir\FGUY.exe" -WorkingDirectory $GameDir -PassThru
+    Add-Content -Path (Join-Path $GameDir "FGUYMod\test_pids.txt") -Value $p.Id -Encoding ascii
     $env:FGUYMOD_INI = $null; $env:FGUYMOD_WINDOWED = $null; $env:FGUYMOD_RES = $null
     return $p
 }

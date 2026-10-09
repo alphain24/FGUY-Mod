@@ -1,21 +1,27 @@
 // Netplay core: lockstep input sync.
 //
-// Every peer runs the same local multiplayer match. Each peer owns one player slot (= one virtual
-// XInput pad). Every frame, each peer sends its pad state for (frame + InputDelay) to the others and
-// waits until it has every slot's state for the current frame, so all peers feed identical inputs
-// into identical frames. For that to stay in sync the game must be deterministic, so while netplay
-// runs we also:
-//   * give the game's main thread a fixed clock: exactly 1/60 s per frame (QPC, timeGetTime, GetTickCount)
-//   * seed the C runtime random generator with a fixed value
-// and every SyncCheckFrames frames peers compare a hash of the players' positions (desync detector).
+// Every peer runs the same game. Each peer owns one player slot (= one virtual XInput pad). Every
+// frame, each peer sends its pad state for (frame + InputDelay) to the others and waits until it has
+// every slot's state for the current frame, so all peers feed identical inputs into identical frames.
 //
-// Start barrier: a peer becomes "ready" when its match is loaded (players exist, then ReadyDelay
-// seconds, for now). It then holds at the end of that frame until every peer is ready, and frame 0
-// begins everywhere at once.
+// For that to stay in sync, the game must behave identically on every PC:
+//   * Lockstep runs from the game's very first frame (all peers meet at the first Present), so menus
+//     and loading are lockstepped too and there is no free-running time before the match.
+//   * The game's main thread sees a fixed clock from the moment we load: exactly 1/60 s per frame,
+//     the same absolute values on every PC (QPC, timeGetTime, GetTickCount).
+//   * The C runtime random generator gets a fixed seed.
+//   * Gameplay input is read by the game's pad thread, which the main thread wakes at the start of
+//     each frame (SetEvent) and which then polls the pads concurrently with the frame. We make the
+//     main thread wait right there until that pass is done, so the frame always reads its own inputs.
+//   * Local keyboard / mouse / cursor don't reach the game (dinput.cpp, Hook_GetCursorPos).
+//   * Background work (level streaming etc.) finishes on the same frame everywhere: file reads are
+//     completed before ReadFile returns, and at the end of every frame we wait until all of the game's
+//     other threads are parked in a wait/sleep ("quiescence").
+// Every SyncCheckFrames frames peers compare a hash of the players' positions (desync detector).
 //
 // Settings ([Netplay] in FGUYMod.ini, env overrides for tests):
 //   Enable=1  Slot=0..3  Players=2  Port=7600  Peers=127.0.0.1:7601,...  InputDelay=3
-//   Script=1 (scripted test inputs instead of the real pad)  ReadyDelay=5  SyncCheckFrames=60
+//   Script=1 (scripted test inputs instead of the real pad)  SyncCheckFrames=60
 
 #include "common.h"
 
@@ -33,11 +39,10 @@ namespace {
 
 // ---- settings ---------------------------------------------------------------------------------------
 bool g_enabled = false;
-int g_slot = 0, g_players = 2, g_delay = 3, g_syncEvery = 60, g_readyDelay = 5;
+int g_slot = 0, g_players = 2, g_delay = 3, g_syncEvery = 60;
 bool g_script = false;
-bool g_traceEnabled = false;
-int g_frameWaitMs = 0;
-bool g_idleAfterResume = false;
+int g_frameWaitMs = 0;        // research: extra real time per frame (FGUYMOD_NET_FRAMEWAIT)
+bool g_idleScript = false;    // research: scripted input that only leaves the start pause (FGUYMOD_NET_IDLE)
 std::vector<sockaddr_in> g_peers;
 
 // ---- state ------------------------------------------------------------------------------------------
@@ -51,43 +56,17 @@ Pad g_inputs[kRing][4];
 bool g_have[kRing][4];
 unsigned g_haveFrame[kRing][4];      // which frame each ring entry holds
 Pad g_current[4];                    // what XInputGetState reports this frame
-// The game reads gameplay input on its own pad thread (FGUY.exe 0x47b080 -> 0x4cc4a0), which the game
-// runs once per frame, alongside the frame. Left alone, a pass could run before we switch to the next
-// frame's inputs on one PC and after on another. So each pass waits at its first poll (pad 1) until the
-// render thread has switched to the next frame's inputs (g_frameReady): every pass then reads the same
-// frame's inputs on every PC. The pass must also be finished (stored) before the next frame starts:
-// a pass polls pads 1-4 in order (measured), so once pad 4 has been polled with the new inputs, the
-// render thread allows 1 ms for the last result to be stored and then starts the next frame.
-HANDLE g_frameReady = nullptr;
-volatile LONG g_passesBegun = 0;     // pad thread was let through the gate
-volatile LONG g_lastPadPolls = 0;    // polls of pad 4 by the pad thread
 
-// Research: a timeline of pad-related events for a few frames (env FGUYMOD_NET_TRACE=1).
-struct TraceEvent { LONGLONG t; DWORD thread; int what; int arg; };
-TraceEvent g_trace[4096];
-volatile LONG g_traceCount = 0;
-bool g_traceOn = false;
-void Trace(int what, int arg) {
-    if (!g_traceOn) return;
-    LONG i = InterlockedIncrement(&g_traceCount) - 1;
-    if (i >= 4096) return;
-    LARGE_INTEGER t;
-    QueryPerformanceCounter(&t);  // our own import: real time
-    g_trace[i] = {t.QuadPart, GetCurrentThreadId(), what, arg};
-}
-
-
-enum class Phase { Off, WaitingLocal, Barrier, Running };
+enum class Phase { Off, Boot, Running };
 Phase g_phase = Phase::Off;
-unsigned g_frame = 0;                // lockstep frame number (frame being simulated next)
-ULONGLONG g_localReadyAt = 0;
+unsigned g_frame = 0;                // lockstep frame number (frame being simulated)
 bool g_peerReady[4];
-DWORD g_mainThread = 0;
+DWORD g_mainThread = 0;              // the thread that loaded us = the game's main / render thread
 SOCKET g_sock = INVALID_SOCKET;
 
 // ---- fixed clock --------------------------------------------------------------------------------------
-LARGE_INTEGER g_freq, g_qpcBase;
-DWORD g_msBase = 0;
+LARGE_INTEGER g_freq;
+const LONGLONG kClockBaseSeconds = 1000;  // same absolute time on every PC
 LONGLONG g_callsThisFrame = 0;
 decltype(&QueryPerformanceCounter) Real_QPC;
 decltype(&GetTickCount) Real_GetTickCount;
@@ -96,20 +75,18 @@ timeGetTime_t Real_timeGetTime;
 using srand_t = void(__cdecl*)(unsigned);
 srand_t Real_srand;
 
-bool FixedClock() { return g_phase == Phase::Running && GetCurrentThreadId() == g_mainThread; }
+bool FixedClock() { return g_phase != Phase::Off && GetCurrentThreadId() == g_mainThread; }
 
 BOOL WINAPI Hook_QPC(LARGE_INTEGER* out) {
     if (!FixedClock()) return Real_QPC(out);
     // 1/60 s per frame, plus one tick per call so "wait until time passes" loops still finish.
-    out->QuadPart = g_qpcBase.QuadPart + (LONGLONG)g_frame * g_freq.QuadPart / 60 + (++g_callsThisFrame);
+    out->QuadPart = kClockBaseSeconds * g_freq.QuadPart + (LONGLONG)g_frame * g_freq.QuadPart / 60 +
+                    (++g_callsThisFrame);
     return TRUE;
 }
-DWORD WINAPI Hook_GetTickCount() {
-    return FixedClock() ? g_msBase + (DWORD)((ULONGLONG)g_frame * 1000 / 60) : Real_GetTickCount();
-}
-DWORD WINAPI Hook_timeGetTime() {
-    return FixedClock() ? g_msBase + (DWORD)((ULONGLONG)g_frame * 1000 / 60) : Real_timeGetTime();
-}
+DWORD FixedMs() { return (DWORD)(kClockBaseSeconds * 1000 + (ULONGLONG)g_frame * 1000 / 60); }
+DWORD WINAPI Hook_GetTickCount() { return FixedClock() ? FixedMs() : Real_GetTickCount(); }
+DWORD WINAPI Hook_timeGetTime() { return FixedClock() ? FixedMs() : Real_timeGetTime(); }
 void __cdecl Hook_srand(unsigned) { Real_srand(0x46475559); }  // "FGUY"
 
 // The menus react to mouse movement; during netplay the local mouse must not change anything.
@@ -119,6 +96,135 @@ BOOL WINAPI Hook_GetCursorPos(POINT* pt) {
     pt->x = 0;
     pt->y = 0;
     return TRUE;
+}
+
+// ---- the game's pad thread ----------------------------------------------------------------------------
+// It waits on an event; the main thread sets that event right after Present and the pad thread then
+// polls all input devices (~19 polls, ~0.02 ms) and stores the results, while the main thread carries
+// on with its frame. We learn which thread and which event it is, and when the main thread sets that
+// event, hold the main thread until the pass is done.
+volatile DWORD g_padThread = 0;
+volatile HANDLE g_padEvent = nullptr;
+volatile LONG g_padWakes = 0;        // times the pad thread's wait returned
+volatile LONG g_padWaiting = 0;      // pad thread is inside its wait right now
+LONG g_padSyncs = 0, g_padSyncTimeouts = 0;
+decltype(&WaitForSingleObject) Real_WaitForSingleObject;
+decltype(&SetEvent) Real_SetEvent;
+
+// Quiescence: every game thread that ever waits/sleeps through the exe's imports is tracked here.
+struct ThreadState { volatile DWORD tid; volatile LONG idle; volatile LONG busySince; };
+ThreadState g_threads[64];
+volatile LONG g_threadCount = 0;
+
+ThreadState* Me() {
+    DWORD me = GetCurrentThreadId();
+    LONG n = g_threadCount;
+    for (LONG i = 0; i < n; ++i)
+        if (g_threads[i].tid == me) return &g_threads[i];
+    LONG i = InterlockedIncrement(&g_threadCount) - 1;
+    if (i >= 64) { InterlockedDecrement(&g_threadCount); return nullptr; }
+    g_threads[i].tid = me;
+    return &g_threads[i];
+}
+struct IdleScope {  // marks the calling thread idle while it blocks
+    ThreadState* t;
+    IdleScope() : t(GetCurrentThreadId() == g_mainThread ? nullptr : Me()) { if (t) InterlockedExchange(&t->idle, 1); }
+    ~IdleScope() { if (t) InterlockedExchange(&t->idle, 0); }
+};
+
+void PadDiag(const wchar_t* what, ULONG_PTR a, DWORD ms) {
+    static volatile LONG n = 0;
+    if (g_padThread && GetCurrentThreadId() == g_padThread && InterlockedIncrement(&n) <= 12)
+        Log(L"Netplay diag: pad thread %s(%p, %lu)", what, (void*)a, ms);
+}
+
+DWORD WINAPI Hook_WaitForSingleObject(HANDLE h, DWORD ms) {
+    PadDiag(L"WaitForSingleObject", (ULONG_PTR)h, ms);
+    IdleScope idle;
+    if (GetCurrentThreadId() != g_padThread) return Real_WaitForSingleObject(h, ms);
+    g_padEvent = h;
+    InterlockedExchange(&g_padWaiting, 1);
+    DWORD r = Real_WaitForSingleObject(h, ms);
+    InterlockedExchange(&g_padWaiting, 0);
+    InterlockedIncrement(&g_padWakes);
+    return r;
+}
+decltype(&Sleep) Real_Sleep;
+decltype(&SleepEx) Real_SleepEx;
+void WINAPI Hook_Sleep(DWORD ms) { PadDiag(L"Sleep", 0, ms); IdleScope idle; Real_Sleep(ms); }
+DWORD WINAPI Hook_SleepEx(DWORD ms, BOOL alertable) { PadDiag(L"SleepEx", 0, ms); IdleScope idle; return Real_SleepEx(ms, alertable); }
+
+// Background file reads: finish them before ReadFile returns, so disk timing can't shift a frame.
+decltype(&ReadFile) Real_ReadFile;
+BOOL WINAPI Hook_ReadFile(HANDLE f, LPVOID buf, DWORD n, LPDWORD read, LPOVERLAPPED ov) {
+    BOOL r = Real_ReadFile(f, buf, n, read, ov);
+    if (r || !ov || GetLastError() != ERROR_IO_PENDING) return r;
+    DWORD got = 0;
+    if (!GetOverlappedResult(f, ov, &got, TRUE)) return FALSE;
+    if (ov->hEvent) SetEvent(ov->hEvent);  // stays signalled for the game's own wait
+    if (read) *read = got;
+    return TRUE;
+}
+
+void WaitForQuiescence() {
+    // All tracked threads parked in a wait or sleep = everything started this frame is done.
+    LARGE_INTEGER t0, t;
+    Real_QPC(&t0);
+    for (;;) {
+        bool all = true;
+        LONG n = g_threadCount;
+        int busy = -1;
+        for (LONG i = 0; i < n && all; ++i)
+            if (!g_threads[i].idle) { all = false; busy = i; }
+        if (all) return;
+        Real_QPC(&t);
+        if (t.QuadPart - t0.QuadPart > g_freq.QuadPart / 20) {  // 50 ms: don't stall forever
+            static int warned = 0;
+            if (warned++ < 10) Log(L"Netplay: thread %lu stayed busy at the end of frame %u", g_threads[busy].tid, g_frame);
+            return;
+        }
+        YieldProcessor();
+    }
+}
+
+BOOL WINAPI Hook_SetEvent(HANDLE h);
+decltype(&ReleaseSemaphore) Real_ReleaseSemaphore;
+void SyncPadPass(LONG wakes);
+
+BOOL WINAPI Hook_ReleaseSemaphore(HANDLE h, LONG count, LONG* previous) {
+    {
+        static volatile LONG n = 0;
+        if (g_padEvent && InterlockedIncrement(&n) <= 6)
+            Log(L"Netplay diag: thread %lu ReleaseSemaphore(%p) (pad waits on %p)", GetCurrentThreadId(), h, g_padEvent);
+    }
+    bool sync = g_phase == Phase::Running && h && h == g_padEvent && GetCurrentThreadId() == g_mainThread;
+    LONG wakes = g_padWakes;
+    BOOL r = Real_ReleaseSemaphore(h, count, previous);
+    if (sync) SyncPadPass(wakes);
+    return r;
+}
+
+BOOL WINAPI Hook_SetEvent(HANDLE h) {
+    bool sync = g_phase == Phase::Running && h && h == g_padEvent && GetCurrentThreadId() == g_mainThread;
+    LONG wakes = g_padWakes;
+    BOOL r = Real_SetEvent(h);
+    if (sync) SyncPadPass(wakes);
+    return r;
+}
+
+void SyncPadPass(LONG wakes) {
+    {
+        // Wait until the pad thread has woken up, run its pass and gone back to waiting.
+        LARGE_INTEGER t0, t;
+        Real_QPC(&t0);
+        for (;;) {
+            if (g_padWakes != wakes && g_padWaiting) break;
+            Real_QPC(&t);
+            if (t.QuadPart - t0.QuadPart > g_freq.QuadPart / 50) { ++g_padSyncTimeouts; break; }  // 20 ms
+            YieldProcessor();
+        }
+        ++g_padSyncs;
+    }
 }
 
 // ---- packets ------------------------------------------------------------------------------------------
@@ -135,9 +241,8 @@ void SendAll(const void* data, int len) {
 }
 
 unsigned g_peerHash[4][8];           // recent hashes from peers, by (frame / syncEvery) % 8
-unsigned g_peerHashFrame[4][8] = {{~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u}, {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u},
-                                  {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u}, {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u}};
-unsigned g_myHash[8], g_myHashFrame[8] = {~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u, ~0u};
+unsigned g_peerHashFrame[4][8];
+unsigned g_myHash[8], g_myHashFrame[8];
 int g_desyncs = 0;
 
 void LogPlayers(const wchar_t* tag);
@@ -168,8 +273,8 @@ void Receive() {
             auto p = reinterpret_cast<PktInputs*>(buf);
             for (int i = 0; i < p->count && i < 16; ++i) {
                 unsigned f = p->first + i;
+                if (f + kRing / 2 < g_frame) continue;  // far too old
                 int r = f % kRing;
-                if (f + kRing <= g_frame + kRing / 2) continue;  // far too old
                 g_inputs[r][slot] = p->pads[i];
                 g_have[r][slot] = true;
                 g_haveFrame[r][slot] = f;
@@ -204,29 +309,30 @@ void SendInputs(unsigned upTo) {
 // ---- local input ----------------------------------------------------------------------------------------
 using XInputGetState_t = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
 XInputGetState_t g_realXInput = nullptr;
+unsigned g_playStartFrame = 0;       // test script: first frame with players in the level
 
 Pad ScriptPad(unsigned f) {
-    // A fixed little routine: (slot 0) press A to leave the pause menu the level starts in, (slot 1)
-    // press Start to drop in, then walk around and jump/attack.
+    // A fixed little routine, timed from when the level's players exist: (slot 0) press A to leave the
+    // pause menu the level starts in, (slot 1) press Start to drop in, then walk around and jump/attack.
     Pad p{};
+    if (!g_playStartFrame || f < g_playStartFrame) return p;
+    f -= g_playStartFrame;
+    if (g_slot == 0 && f >= 120 && f < 123) p.buttons |= XINPUT_GAMEPAD_A;
+    if (g_idleScript) return p;
+    if (g_slot == 1 && f >= 160 && f < 163) p.buttons |= XINPUT_GAMEPAD_START;
     unsigned t = f % 1200;
-    if (g_slot == 0 && f >= 20 && f < 23) p.buttons |= XINPUT_GAMEPAD_A;
-    if (g_slot == 1 && f >= 60 && f < 63) p.buttons |= XINPUT_GAMEPAD_START;
-    if (t >= 120 && t < 360) p.ly = 30000;
-    if (t >= 360 && t < 480) p.lx = 30000;
-    if (t >= 480 && t < 720) p.ly = -30000;
-    if (t >= 720 && t < 840) p.lx = -30000;
-    if (t % 97 < 3 && f > 120) p.buttons |= XINPUT_GAMEPAD_A;
-    if (t % 53 < 3 && f > 120) p.buttons |= XINPUT_GAMEPAD_X;
+    if (f > 240) {
+        if (t >= 120 && t < 360) p.ly = 30000;
+        if (t >= 360 && t < 480) p.lx = 30000;
+        if (t >= 480 && t < 720) p.ly = -30000;
+        if (t >= 720 && t < 840) p.lx = -30000;
+        if (t % 97 < 3) p.buttons |= XINPUT_GAMEPAD_A;
+        if (t % 53 < 3) p.buttons |= XINPUT_GAMEPAD_X;
+    }
     return p;
 }
 
 Pad SampleLocal(unsigned f) {
-    if (g_script && g_idleAfterResume) {  // research: resume the pause menu, then do nothing
-        Pad p{};
-        if (g_slot == 0 && f >= 20 && f < 23) p.buttons |= XINPUT_GAMEPAD_A;
-        return p;
-    }
     if (g_script) return ScriptPad(f);
     Pad p{};
     XINPUT_STATE st{};
@@ -273,21 +379,30 @@ void LogPlayers(const wchar_t* tag) {
 }
 
 // ---- frame boundary ---------------------------------------------------------------------------------------
-void StartRunning() {
-    g_phase = Phase::Running;
-    g_frame = 0;
-    Real_QPC(&g_qpcBase);
-    g_msBase = Real_GetTickCount();
-    ZeroMemory(g_have, sizeof(g_have));
+void Barrier() {
+    // Hold the game's first frame until every peer has reached it.
+    Log(L"Netplay: first frame - waiting for the other players");
+    g_peerReady[g_slot] = true;
+    PktHeader r{'R', (BYTE)g_slot};
+    ULONGLONG until = GetTickCount64() + 120000;
+    for (;;) {
+        SendAll(&r, sizeof(r));
+        Receive();
+        bool all = true;
+        for (int s = 0; s < g_players; ++s) all &= g_peerReady[s];
+        if (all || GetTickCount64() > until) break;
+        Sleep(10);
+    }
+    for (int i = 0; i < 10; ++i) { SendAll(&r, sizeof(r)); Sleep(5); }  // let late peers see us
     for (unsigned f = 0; f < (unsigned)g_delay; ++f)          // the first frames: everyone idle
         for (int s = 0; s < g_players; ++s) {
             g_inputs[f % kRing][s] = Pad{};
             g_have[f % kRing][s] = true;
             g_haveFrame[f % kRing][s] = f;
         }
-    Log(L"Netplay: all %d players ready - lockstep started (slot %d, input delay %d frames)", g_players,
-        g_slot, g_delay);
-    LogPlayers(L"start");
+    g_phase = Phase::Running;
+    Log(L"Netplay: all %d players ready - lockstep from the first frame (slot %d, input delay %d frames)",
+        g_players, g_slot, g_delay);
 }
 
 }  // namespace
@@ -296,26 +411,14 @@ void StartRunning() {
 bool NetplayPad(DWORD pad, XINPUT_STATE* state, DWORD(WINAPI* real)(DWORD, XINPUT_STATE*)) {
     if (!g_enabled) return false;
     g_realXInput = real;
-    Trace(1, (int)pad);  // poll
-    if (g_phase == Phase::Running && g_mainThread && GetCurrentThreadId() != g_mainThread) {
-        if (pad == 0) {
-            Trace(2, 0);  // gate wait
-            WaitForSingleObject(g_frameReady, 250);  // run this pass with the next frame's inputs
-            InterlockedIncrement(&g_passesBegun);
-            Trace(3, 0);  // gate passed
-        } else if (pad == 3) {
-            InterlockedIncrement(&g_lastPadPolls);
-        }
-    }
-    if (g_phase != Phase::Running) {
-        // Before the match: no pads at all, so nothing the player does locally changes the game.
-        if (pad < 4 && (int)pad < g_players) { ZeroMemory(state, sizeof(*state)); state->dwPacketNumber = 1; return true; }
-        return pad < 4;
+    if (!g_padThread && GetCurrentThreadId() != g_mainThread) {
+        g_padThread = GetCurrentThreadId();
+        Log(L"Netplay: the game's pad thread is %lu", g_padThread);
     }
     if (pad >= 4 || (int)pad >= g_players) return true;  // unused slots: report "not connected"
     static DWORD packet[4];
     static Pad last[4];
-    Pad p = g_current[pad];
+    Pad p = g_phase == Phase::Running ? g_current[pad] : Pad{};
     if (memcmp(&p, &last[pad], sizeof(p)) != 0) { last[pad] = p; ++packet[pad]; }
     ZeroMemory(state, sizeof(*state));
     state->dwPacketNumber = packet[pad];
@@ -333,41 +436,17 @@ bool NetplayPadConnected(DWORD pad) { return g_enabled && pad < 4 && (int)pad < 
 // Called at the end of every Present (one rendered frame = one game frame).
 void NetplayOnFrame() {
     if (!g_enabled) return;
-    if (!g_mainThread) g_mainThread = GetCurrentThreadId();
-    g_callsThisFrame = 0;
     Receive();
+    if (g_phase == Phase::Boot) Barrier();
 
-    if (g_phase == Phase::WaitingLocal) {
+    // Frame g_frame has just been simulated and shown.
+    if (!g_playStartFrame) {
         void* players[8];
         if (ResearchPlayers(players, 8) > 0) {
-            if (!g_localReadyAt) {
-                g_localReadyAt = GetTickCount64() + g_readyDelay * 1000ULL;
-                Log(L"Netplay: match loaded, ready in %d s", g_readyDelay);
-            } else if (GetTickCount64() >= g_localReadyAt) {
-                g_phase = Phase::Barrier;
-                g_peerReady[g_slot] = true;
-                Log(L"Netplay: ready, waiting for the other players");
-            }
+            g_playStartFrame = g_frame + 1;
+            Log(L"Netplay: players exist from frame %u", g_playStartFrame);
         }
-        return;
     }
-    if (g_phase == Phase::Barrier) {
-        // Hold this frame until everyone is ready (the game is frozen meanwhile).
-        PktHeader r{'R', (BYTE)g_slot};
-        ULONGLONG until = GetTickCount64() + 120000;
-        for (;;) {
-            SendAll(&r, sizeof(r));
-            Receive();
-            bool all = true;
-            for (int s = 0; s < g_players; ++s) all &= g_peerReady[s];
-            if (all || GetTickCount64() > until) break;
-            Sleep(20);
-        }
-        for (int i = 0; i < 10; ++i) { SendAll(&r, sizeof(r)); Sleep(5); }  // let late peers see us
-        StartRunning();
-    }
-
-    // Running: frame g_frame has just been simulated and shown.
     if (g_syncEvery > 0 && g_frame % g_syncEvery == 0) {
         unsigned h = HashPlayers();
         int k = (g_frame / g_syncEvery) % 8;
@@ -377,10 +456,11 @@ void NetplayOnFrame() {
         SendAll(&p, sizeof(p));
         for (int s = 0; s < g_players; ++s)
             if (s != g_slot && g_peerHashFrame[s][k] == g_frame) CompareHash(s, g_frame, g_peerHash[s][k]);
-        if (g_frame % (g_syncEvery * 10) == 0 || g_desyncs == 0) LogPlayers(L"check");
+        if (g_frame % (g_syncEvery * 10) == 0) LogPlayers(L"check");
     }
 
     ++g_frame;
+    g_callsThisFrame = 0;
     unsigned future = g_frame + g_delay - 1;
     int r = future % kRing;
     g_inputs[r][g_slot] = SampleLocal(future);
@@ -395,43 +475,29 @@ void NetplayOnFrame() {
         if (GetTickCount64() >= nextResend) { SendInputs(future); nextResend = GetTickCount64() + 5; }
         if (GetTickCount64() > until) {
             Log(L"Netplay: no input from a peer for 10 s at frame %u - continuing without it", g_frame);
-            for (int s = 0; s < g_players; ++s) {
-                int q = g_frame % kRing;
+            int q = g_frame % kRing;
+            for (int s = 0; s < g_players; ++s)
                 if (!g_have[q][s] || g_haveFrame[q][s] != g_frame) {
                     g_inputs[q][s] = Pad{}; g_have[q][s] = true; g_haveFrame[q][s] = g_frame;
                 }
-            }
             break;
         }
         Sleep(0);
     }
     for (int s = 0; s < g_players; ++s) g_current[s] = g_inputs[g_frame % kRing][s];
-    g_traceOn = g_traceEnabled && g_frame >= 300 && g_frame < 306;
-    Trace(4, (int)g_frame);  // release
-    SetEvent(g_frameReady);
-    // Research knob: extra real time per frame (FGUYMOD_NET_FRAMEWAIT, ms).
+    WaitForQuiescence();
+
     if (g_frameWaitMs > 0) {
         ULONGLONG waitUntil = GetTickCount64() + g_frameWaitMs;
         while (GetTickCount64() < waitUntil) Sleep(1);
     }
-    Trace(5, (int)g_frame);  // next frame starts
-    if (g_traceEnabled && g_frame == 306) {
-        LONGLONG t0 = g_trace[0].t;
-        const wchar_t* names[] = {L"?", L"poll pad", L"gate wait", L"gate passed", L"RELEASE frame", L"FRAME START"};
-        for (LONG i = 0; i < g_traceCount && i < 4096; ++i)
-            Log(L"Trace %8.3f ms  thread %5lu  %s %d", (g_trace[i].t - t0) * 1000.0 / g_freq.QuadPart, g_trace[i].thread,
-                names[g_trace[i].what], g_trace[i].arg);
-    }
-    if (false) {
-        static int warned = 0;
-        if (warned++ < 5) Log(L"Netplay: the game's pad thread was slow to pick up frame %u's input", g_frame);
-    }
-
     if (g_frame % 600 == 0) {
         static ULONGLONG last = GetTickCount64();
         ULONGLONG now = GetTickCount64();
-        Log(L"Netplay: frame %u (%.1f fps over the last 600 frames)", g_frame, 600000.0 / (now - last + 1));
+        Log(L"Netplay: frame %u (%.1f fps over the last 600 frames), pad syncs %ld (timeouts %ld)", g_frame,
+            600000.0 / (now - last + 1), g_padSyncs, g_padSyncTimeouts);
         last = now;
+        g_padSyncs = g_padSyncTimeouts = 0;
     }
 }
 
@@ -440,15 +506,17 @@ bool NetplayEnabled() { return g_enabled; }
 void InitNetplay(HMODULE exe) {
     g_enabled = SettingInt(L"Netplay", L"Enable", L"FGUYMOD_NET", 0) != 0;
     if (!g_enabled) return;
+    g_mainThread = GetCurrentThreadId();  // DllMain runs on the game's main thread
     g_slot = SettingInt(L"Netplay", L"Slot", L"FGUYMOD_NET_SLOT", 0) & 3;
     g_players = SettingInt(L"Netplay", L"Players", L"FGUYMOD_NET_PLAYERS", 2);
     g_delay = SettingInt(L"Netplay", L"InputDelay", L"FGUYMOD_NET_DELAY", 3);
     g_script = SettingInt(L"Netplay", L"Script", L"FGUYMOD_NET_SCRIPT", 0) != 0;
-    g_traceEnabled = SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_TRACE", 0) != 0;
     g_frameWaitMs = SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_FRAMEWAIT", 0);
-    g_idleAfterResume = SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_IDLE", 0) != 0;
-    g_readyDelay = SettingInt(L"Netplay", L"ReadyDelay", L"FGUYMOD_NET_READYDELAY", 5);
+    g_idleScript = SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_IDLE", 0) != 0;
     g_syncEvery = SettingInt(L"Netplay", L"SyncCheckFrames", nullptr, 60);
+    for (int s = 0; s < 4; ++s)
+        for (int k = 0; k < 8; ++k) g_peerHashFrame[s][k] = ~0u;
+    for (int k = 0; k < 8; ++k) g_myHashFrame[k] = ~0u;
     int port = SettingInt(L"Netplay", L"Port", L"FGUYMOD_NET_PORT", 7600);
     wchar_t peers[512];
     SettingString(L"Netplay", L"Peers", L"FGUYMOD_NET_PEERS", L"", peers, 512);
@@ -474,8 +542,7 @@ void InitNetplay(HMODULE exe) {
         g_peers.push_back(a);
     }
     QueryPerformanceFrequency(&g_freq);
-    g_frameReady = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    g_phase = Phase::WaitingLocal;
+    g_phase = Phase::Boot;
     Log(L"Netplay: on - slot %d of %d players, UDP port %d, %zu peers, input delay %d, %s input",
         g_slot, g_players, port, g_peers.size(), g_delay, g_script ? L"scripted" : L"controller");
 
@@ -485,6 +552,12 @@ void InitNetplay(HMODULE exe) {
         {"winmm.dll", "timeGetTime", (void*)Hook_timeGetTime, (void**)&Real_timeGetTime},
         {"msvcr100.dll", "srand", (void*)Hook_srand, (void**)&Real_srand},
         {"user32.dll", "GetCursorPos", (void*)Hook_GetCursorPos, (void**)&Real_GetCursorPos},
+        {"kernel32.dll", "WaitForSingleObject", (void*)Hook_WaitForSingleObject, (void**)&Real_WaitForSingleObject},
+        {"kernel32.dll", "SetEvent", (void*)Hook_SetEvent, (void**)&Real_SetEvent},
+        {"kernel32.dll", "ReleaseSemaphore", (void*)Hook_ReleaseSemaphore, (void**)&Real_ReleaseSemaphore},
+        {"kernel32.dll", "Sleep", (void*)Hook_Sleep, (void**)&Real_Sleep},
+        {"kernel32.dll", "SleepEx", (void*)Hook_SleepEx, (void**)&Real_SleepEx},
+        {"kernel32.dll", "ReadFile", (void*)Hook_ReadFile, (void**)&Real_ReadFile},
     };
     InstallHooks(exe, hooks);
 }

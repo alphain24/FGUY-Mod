@@ -8,7 +8,7 @@ param(
     [int]$Delay = 3,
     [int]$Players = 2
 )
-Get-Process FGUY -ErrorAction SilentlyContinue | Stop-Process -Force
+& (Join-Path $PSScriptRoot "stop_tests.ps1") -GameDir $GameDir   # only copies tests started
 Start-Sleep -Seconds 2
 $start = Join-Path $PSScriptRoot "start_test.ps1"
 $ids = @()

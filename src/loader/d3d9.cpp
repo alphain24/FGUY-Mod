@@ -231,6 +231,41 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DD
         Log(L"D3D: CreateDevice %ux%u %s -> %#lx%s", original.BackBufferWidth, original.BackBufferHeight,
             original.Windowed ? L"windowed" : L"fullscreen", hr, attempt > 1 ? L" (retry)" : L"");
         if (SUCCEEDED(hr)) break;
+        if (attempt == 1) {
+            RECT rc = {};
+            GetClientRect(pp->hDeviceWindow ? pp->hDeviceWindow : focus, &rc);
+            Log(L"D3D:   format %d, %u back buffers, multisample %d/%lu, swap %d, window %p (client %ldx%ld, "
+                L"visible %d, iconic %d), focus %p, flags %#lx, depth %d/%d, ppflags %#lx",
+                pp->BackBufferFormat, pp->BackBufferCount, pp->MultiSampleType, pp->MultiSampleQuality,
+                pp->SwapEffect, pp->hDeviceWindow, rc.right, rc.bottom,
+                IsWindowVisible(pp->hDeviceWindow ? pp->hDeviceWindow : focus),
+                IsIconic(pp->hDeviceWindow ? pp->hDeviceWindow : focus), focus, flags,
+                pp->EnableAutoDepthStencil, pp->AutoDepthStencilFormat, pp->Flags);
+        }
+        if (attempt == 1) {
+            // List the adapters: PCs with virtual displays (Parsec, virtual display drivers, remote
+            // desktop tools) can put an adapter without 3D acceleration first.
+            HMONITOR wantMon = MonitorFromWindow(focus, MONITOR_DEFAULTTOPRIMARY);
+            UINT count = self->GetAdapterCount(), better = adapter;
+            for (UINT a = 0; a < count; ++a) {
+                D3DADAPTER_IDENTIFIER9 id = {};
+                self->GetAdapterIdentifier(a, 0, &id);
+                HMONITOR mon = self->GetAdapterMonitor(a);
+                Log(L"D3D:   adapter %u: %S%s%s", a, id.Description, a == adapter ? L"  <- game asked for this" : L"",
+                    mon == wantMon ? L"  (shows the game window)" : L"");
+                if (mon == wantMon && a != adapter) better = a;
+            }
+            if (better != adapter) {
+                Log(L"D3D:   retrying on adapter %u", better);
+                adapter = better;
+            }
+        }
+        if (attempt == 3 && pp->MultiSampleType != D3DMULTISAMPLE_NONE) {
+            // If anti-aliasing is what fails (e.g. not supported for this size/format), go without it.
+            original.MultiSampleType = D3DMULTISAMPLE_NONE;
+            original.MultiSampleQuality = 0;
+            Log(L"D3D:   retrying without multisampling");
+        }
         Sleep(250);
     }
     if (SUCCEEDED(hr) && out && *out) {
