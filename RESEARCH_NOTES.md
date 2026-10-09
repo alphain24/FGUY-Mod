@@ -129,6 +129,32 @@ Bonus Materials, Exit Game.
 - DirectInput keyboard cooperative level is `0x16` (includes DISCL_NOWINKEY → Windows key blocked).
 - Intermittent startup crash at `+0x876e9` (NULL D3D device). Loader now retries `CreateDevice`.
 
+## Leftover netcode verdict (2026-10-09)
+Not a usable online mode. `IO::NetworkModule`'s vtable is mostly `ret 4` stubs (`0x7af040`); the only
+gameplay message (`FGUYPlayerLocalAuthorityUpdateMessage`, built in dead function `0x647d50`) is never
+sent. The TCP 7534 / UDP 7533 beacon is most likely the developers' editor link (GoodEditor,
+`EnableRealTimeUpdate`). Network ini keys sit with other dev-only options (watermark, soak tests).
+
+## Players
+- Class `zFamilyGuyPlayer`, vtable `0xa1af14` (167 slots); base/sibling `zNetCommonPlayer` (`0xa8e49c`).
+- `+0xdf8` player index, `+0x38` → transform, position at transform `+0x30` (x, y, z floats).
+- Story level FRXX has 3 player objects (index 0 Stewie, 1 Brian AI partner, 2 unknown/inactive).
+
+## Determinism / lockstep findings
+- Random: `srand` seeded from QPC at startup (`0x4ca150`); more RNGs: Mersenne Twister (`0x4f6790`,
+  `0x49ed60`), LCGs (`0x41f260`, `0x4f67e0`, `0x6fab40`, `0x8601b0`, `0x8c3050`).
+- Time: QPC used 108×, GetTickCount 12×, timeGetTime 4×; `LockFramerate = 0` (variable dt).
+- Input: XInput is read on a pad thread in passes of 19 device polls (~0.02 ms), each pass starting
+  ~0.06 ms after the render thread's Present returns. `0x4cc4a0` reads XInput (`0x4b5670`) and
+  keyboard/mouse (`0x450930`, which also reads QPC). DirectInput joystick loop `0x47b080` (Sleep 15).
+  The game also pauses itself at level start (pause menu) in these tests.
+- Lockstep results (two copies, same PC, scripted input, fixed clock, fixed srand, KB/M blocked):
+  * with ~100 ms of real time per frame: 0 desyncs over 1800-3600 frames, with walking and jumping
+  * at full speed: identical for 1000+ frames, then small drift (cm) after a jump/landing
+  * the start barrier ("players exist + 5 s") is not exact: copies can differ at frame 0
+- Next: exact start alignment (freeze both at the same simulation state), make sure the render thread
+  reads input only after the pad pass completes, then find any remaining async sources.
+
 ## Display settings
 Registry `HKCU\Software\Heavy Iron Studios Inc.\Family Guy\Settings`: `ScreenWidth`, `ScreenHeight`,
 `ScreenWindowed`, `ScreenMonitor` (4-byte REG_BINARY), `Language`, `IsKeyboardMouseInput`, `KeyConfig`,
