@@ -35,7 +35,9 @@ void InitVirtualPad(HMODULE exe);      // injected controller input for tests  (
 void InitDirectInput();                // Windows key in windowed modes        (dinput.cpp)
 void OnDirectInputCreated(void* directInput);
 
-void InitD3D9(HMODULE exe);            // Direct3D device creation retries      (d3d9.cpp)
+void InitD3D9(HMODULE exe);            // resolutions, frame rate, crash fix   (d3d9.cpp)
+int VideoFrameRateIndex();             //   Options > Screen > Frame Rate support
+void VideoSetFrameRate(int index);
 void InitUi();                         // menu movie patches + menu calls      (ui.cpp)
 
 // display.cpp

@@ -67,7 +67,61 @@ def define_function(name, params, body):
     return action('DefineFunction', hdr) + body
 
 
+def define_function2(name, params, body, registers=4):
+    """DefineFunction2 with the given params in registers 1..n (no preloaded registers/flags)."""
+    hdr = name.encode() + b'\0' + struct.pack('<HBH', len(params), max(registers, len(params) + 1), 0)
+    for i, p in enumerate(params):
+        hdr += bytes([i + 1]) + p.encode() + b'\0'
+    hdr += struct.pack('<H', len(body))
+    return action('DefineFunction2', hdr) + body
+
+
 # ---- reading the original -------------------------------------------------------------------------
+
+def push_records(data, o):
+    """Records of the Push action at `o`: list of (offset, length, type, value)."""
+    ln = struct.unpack_from('<H', data, o + 1)[0]
+    q, end, out = o + 3, o + 3 + ln, []
+    sizes = {1: 4, 2: 0, 3: 0, 4: 1, 5: 1, 6: 8, 7: 4, 8: 1, 9: 2}
+    while q < end:
+        t = data[q]
+        if t == 0:
+            e = data.index(b'\0', q + 1)
+            out.append((q, e + 1 - q, t, data[q + 1:e].decode('latin1')))
+            q = e + 1
+            continue
+        n = sizes[t]
+        raw = data[q + 1:q + 1 + n]
+        val = {7: lambda: struct.unpack('<i', raw)[0], 8: lambda: raw[0], 9: lambda: struct.unpack('<H', raw)[0],
+               4: lambda: raw[0]}.get(t, lambda: raw)()
+        out.append((q, 1 + n, t, val))
+        q += 1 + n
+    return out
+
+
+def constant_pool(data, start):
+    """The ConstantPool at the start of an action block (list of strings)."""
+    assert data[start] == 0x88
+    n = struct.unpack_from('<H', data, start + 3)[0]
+    q, pool = start + 5, []
+    for _ in range(n):
+        e = data.index(b'\0', q)
+        pool.append(data[q:e].decode('latin1'))
+        q = e + 1
+    return pool
+
+
+def record_text(rec, pool):
+    """String value of a push record (inline or constant-pool reference), else None."""
+    off, ln, t, val = rec
+    if t == 0:
+        return val
+    if t in (8, 9):
+        return pool[val] if val < len(pool) else None
+    return None
+
+
+# ---- reading the original (actions) -----------------------------------------------------------------
 
 def parse_actions(data, start, end):
     """Top-level action stream: list of (offset, code, total_length). Function bodies are skipped
@@ -124,7 +178,8 @@ class Patch:
         return sum(len(i) - d for o, d, i in self.edits if a <= o and o + d <= b)
 
     def fix_top_level_jumps(self, actions):
-        """Re-aim top-level Jump/If whose span crosses an edit. Adds overwrite edits."""
+        """Re-aim Jump/If in this action list whose span crosses an edit. Adds overwrite edits.
+        Works for any one level (top level or a function body)."""
         extra = []
         for o, code, total in actions:
             if code not in (0x99, 0x9D):

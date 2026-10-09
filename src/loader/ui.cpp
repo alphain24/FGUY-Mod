@@ -209,6 +209,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnBool(movie, DisplayMenuSelect((int)ArgNumber(args, argc, 0)));
         } else if (strcmp(fn, "ApplyDisplayMode") == 0) {
             DisplayMenuApply();
+        } else if (strcmp(fn, "GetFrameRate") == 0) {
+            ReturnNumber(movie, VideoFrameRateIndex());
+        } else if (strcmp(fn, "SetFrameRate") == 0) {
+            VideoSetFrameRate((int)ArgNumber(args, argc, 0));
         } else {
             Log(L"UI: unknown mod call %S", name);
         }

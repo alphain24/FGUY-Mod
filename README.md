@@ -6,6 +6,9 @@ This project never ships game files; players need their own copy of the game.
 ## Features so far
 - **Borderless windowed fullscreen** (sharp on high-DPI / 4K screens), selectable in the game's own
   Options > Screen > Display Mode, plus a custom render resolution.
+- **All your monitor's resolutions, including 4K**, in Options > Screen (the game used to drop
+  high-refresh and long mode lists).
+- **Frame rate setting** in Options > Screen: VSync, 30/60/120/144/240 FPS cap, or uncapped.
 - **Windows key works** in windowed and borderless modes.
 - Fix for the occasional crash at startup (Direct3D device creation is retried).
 - **Keep running in the background** when alt-tabbed.
@@ -40,6 +43,7 @@ To uninstall, delete `dinput8.dll` and the `FGUYMod` folder from the game folder
 |---|---|
 | `[Display] Mode` | `default`, `fullscreen`, `windowed`, `borderless` |
 | `[Display] Width`, `Height` | render resolution; `0` = native (borderless) or the game's setting |
+| `[Display] FrameRate` | `vsync`, `30`, `60`, `120`, `144`, `240`, `uncapped` |
 | `[Display] RunInBackground` | `1` = keep running when the window isn't active |
 | `[Input] AllowWindowsKey` | `1` (default) = Windows key works in windowed / borderless |
 | `[Debug] TestInput` | `1` = enable the virtual controller pipe for test scripts |
