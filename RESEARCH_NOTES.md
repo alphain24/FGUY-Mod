@@ -198,3 +198,18 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
 - `getPixel` on `BitmapData.loadBitmap` pictures returns 0 (black), so it can't sample their colours.
 - The level HUD's layout call (our `FGUYMOD_HudSplitMode`, make_hud_patch.py) is the first sign a level
   is running (MP and story); the HUD icon path builder already runs on the MP join screen.
+
+## Player state for sync checks; cameras and lockstep (2026-10-11)
+- The game's live player list: `[0xbad988]` = up to 8 player pointers, count at +0x20 (includes placeholder
+  players). Position: `[player+0x38]+0x30` (3 floats). Camera / aim point: `[player+0xf88]+0xcc`; only
+  meaningful for players with a viewport (`player+0xdfc` = 0..3), placeholders point at leftover memory.
+  Found with tools/re/memwatch.py (snapshot, move with tools/kbm_send.ps1, diff).
+- **Switching a viewport's render cameras off (0x476390) stops that player's camera / aim updating**, so
+  every PC simulated the other players differently (real desync as soon as they turn or strafe). Full screen
+  online now keeps every camera on and draws the others into a 1-pixel rect (no fps cost seen).
+- The earlier "0 desyncs" results hashed a spawn-fixed value and didn't prove sync; with position + aim
+  hashed, MP and story co-op stay in sync with both players moving (2026-10-11).
+- Windows + Python asyncio: an ICMP port-unreachable on the UDP relay socket makes the proactor loop close
+  the socket silently (logged only in debug mode). Fixed with SIO_UDP_CONNRESET off + reopening.
+- In the menus the controller's Y arrives as key 89; DirectInput's mouse takes over raw mouse input when it
+  starts (re-register raw input after it).

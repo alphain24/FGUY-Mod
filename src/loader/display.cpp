@@ -138,6 +138,8 @@ const UINT kHideMsg = WM_APP + 0x4649;     // hide the window (the old game, whi
 void RestyleWindow(Mode to);
 
 LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
+    LRESULT handled;
+    if (KbmOnMessage(wnd, msg, wp, lp, &handled)) return handled;
     switch (msg) {
         case kRestyleMsg:
             RestyleWindow(static_cast<Mode>(wp));
@@ -220,6 +222,7 @@ HWND WINAPI Hook_CreateWindowExW(DWORD ex, LPCWSTR cls, LPCWSTR title, DWORD sty
         g_mainWnd = wnd;
         g_gameWndProc = (WNDPROC)SetWindowLongW(wnd, GWL_WNDPROC, (LONG)(LONG_PTR)ModWndProc);
         if (g_background) Log(L"Window: will keep running in the background");
+        KbmInit(wnd);  // online sessions: keyboard and mouse as this player's controller
     }
     return wnd;
 }

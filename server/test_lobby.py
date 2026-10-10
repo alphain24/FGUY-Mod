@@ -1,6 +1,6 @@
 """Self-test for fguy_lobby.py: starts a server on a spare port and plays a whole lobby through it.
 
-Usage: python test_lobby.py
+Usage: python test_lobby.py [--live]     (--live: test the server already running on port 7650)
 """
 import base64
 import os
@@ -9,7 +9,8 @@ import subprocess
 import sys
 import time
 
-PORT = 7659
+LIVE = '--live' in sys.argv
+PORT = 7650 if LIVE else 7659
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -33,10 +34,41 @@ class Player:
             assert not line.startswith('ERROR'), line
 
 
+def start_session(host_name, guest_name, save=True):
+    """Host + guest through a whole lobby; returns the session token."""
+    host, guest = Player(host_name), Player(guest_name)
+    host.send('HOST 4')
+    code = host.expect('LOBBY').split()[1]
+    guest.send('JOIN ' + code)
+    guest.expect('LOBBY')
+    guest.send('READY 1')
+    host.send('START')
+    token = bytes.fromhex(host.expect('START').split()[1])
+    guest.expect('START')
+    return token
+
+
+def relay_works(token):
+    u0, u1 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM), socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    u1.settimeout(2)
+    u1.sendto(b'FG' + token + b'\x01hello', ('127.0.0.1', PORT))
+    time.sleep(0.2)
+    u0.sendto(b'FG' + token + b'\x00inputs', ('127.0.0.1', PORT))
+    try:
+        data, _ = u1.recvfrom(1500)
+    except socket.timeout:
+        return False, u0, u1
+    return data == b'FG' + token + b'\x00inputs', u0, u1
+
+
 def main():
-    srv = subprocess.Popen([sys.executable, os.path.join(HERE, 'fguy_lobby.py'), '--port', str(PORT)])
+    srv = None if LIVE else subprocess.Popen([sys.executable, os.path.join(HERE, 'fguy_lobby.py'), '--port', str(PORT)])
     try:
         time.sleep(1)
+        if LIVE:
+            ok, _, _ = relay_works(start_session('LiveHost', 'LiveGuest'))
+            print('PASS: the running server relays' if ok else 'FAIL: the running server does not relay any more')
+            return
         host, guest = Player('Host'), Player('Guest')
         host.send('HOST 4')
         code = host.expect('LOBBY').split()[1]
@@ -75,9 +107,20 @@ def main():
         u0.sendto(b'FG' + token + b'\x00inputs', ('127.0.0.1', PORT))
         data, _ = u1.recvfrom(1500)
         assert data == b'FG' + token + b'\x00inputs', data
-        print('PASS: lobby, save sharing, start and relay all work')
+
+        # a player's game closes mid-match: the server keeps sending to their old address (on Windows that
+        # comes back as "connection reset" on the server's socket) - later sessions must still relay
+        u1.close()
+        for _ in range(20):
+            u0.sendto(b'FG' + token + b'\x00inputs', ('127.0.0.1', PORT))
+            time.sleep(0.02)
+        time.sleep(0.5)
+        ok, _, _ = relay_works(start_session('Host2', 'Guest2'))
+        assert ok, 'the relay stopped working after a player left'
+        print('PASS: lobby, save sharing, start and relay all work (also after a player leaves)')
     finally:
-        srv.terminate()
+        if srv:
+            srv.terminate()
 
 
 if __name__ == '__main__':

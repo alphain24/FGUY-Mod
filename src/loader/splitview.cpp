@@ -6,8 +6,10 @@
 //   * enable:        0x4d1860 queues 0x476390(camera, on)          - stored at +0x1e
 // Both commands keep the function's address as a constant in the queuing code, so we point those two
 // constants at our own functions. On the render thread we then give the local player's viewport the
-// whole screen (0,0,1,1) and switch the other viewports' cameras off. Only drawing changes: every
+// whole screen (0,0,1,1) and squeeze the other viewports into one corner pixel. Only drawing changes: every
 // player's camera, input and game state keep running identically on every PC, so lockstep is unaffected.
+// (Switching the other cameras off instead broke that: the game updates a camera - and the aim that follows
+// it - only while it's on.)
 //
 // The HUD (one Scaleform movie for all players) follows along: tools/ui/make_hud_patch.py makes it lay out
 // as single player with my viewport as its viewport 0, and the game's own HUD code, which writes values
@@ -79,10 +81,14 @@ int MyViewport() {
     return count > 1 && mine >= 0 && mine < count ? mine : -1;
 }
 
-void ApplyEnables(int mine) {
+// The other players' views: their cameras keep running (the game updates a player's camera - and with it
+// where they aim - only while that view is on, so switching them off made each PC play them differently).
+// They're just drawn into a single pixel in the screen's corner, under my view's HUD.
+void SqueezeOthers(int mine) {
     int count = Count();
     for (int v = 0; v < count && v < kMaxViewports; ++v)
-        for (int k = 0; k < 2; ++k) Real_Enable(Camera(v, k), v == mine);
+        if (v != mine)
+            for (int k = 0; k < 2; ++k) Real_Rect(Camera(v, k), 0.999f, 0.999f, 1.0f, 1.0f);
 }
 
 void __fastcall Hook_Rect(void* camera, void*, float x, float y, float w, float h) {
@@ -97,14 +103,12 @@ void __fastcall Hook_Rect(void* camera, void*, float x, float y, float w, float 
         Log(L"SplitView: %d viewports - showing viewport %d full screen", Count(), mine);
     }
     if (v == mine) Real_Rect(camera, 0, 0, 1, 1);
-    else Real_Rect(camera, x, y, w, h);
-    ApplyEnables(mine);
+    else Real_Rect(camera, 0.999f, 0.999f, 1.0f, 1.0f);
+    SqueezeOthers(mine);
 }
 
 void __fastcall Hook_Enable(void* camera, void*, int on) {
-    int v = ViewportOf(camera), mine = v >= 0 ? MyViewport() : -1;
-    if (mine >= 0) on = v == mine;
-    Real_Enable(camera, on & 0xff);
+    Real_Enable(camera, on & 0xff);  // every view stays as the game wants it (see SqueezeOthers)
 }
 
 // ---- HUD object paths ---------------------------------------------------------------------------------
@@ -235,7 +239,7 @@ void SplitViewMenuRect(float left, float top, float right, float bottom) {
 void InitSplitView() {
     wchar_t env[16];
     if (GetEnvironmentVariableW(L"FGUYMOD_FULLVIEW", env, 16)) g_forced = _wtoi(env);
-    bool online = NetplayEnabled() && SettingInt(L"Netplay", L"FullScreenView", nullptr, 1) != 0;
+    bool online = NetplayEnabled() && SettingInt(L"Netplay", L"FullScreenView", L"FGUYMOD_FULLSCREENVIEW", 1) != 0;
     if (!online && g_forced < 0) return;
     if (PatchImm(kRectImm, kRectFn, (void*)Hook_Rect) && PatchImm(kEnableImm, kEnableFn, (void*)Hook_Enable) &&
         PatchJump(kIconPath, kIconPathStart, sizeof(kIconPathStart), (void*)Hook_IconPath)) {

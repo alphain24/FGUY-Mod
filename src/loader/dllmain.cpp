@@ -15,6 +15,7 @@
 //   vpad.cpp     virtual controller for test scripts (and later, remote players)
 //   online.cpp   the lobby; handoff.cpp starts its sessions without the game visibly restarting
 //   sounds.cpp   a Family Guy sting on loading screens
+//   kbm.cpp      keyboard and mouse as this player's controller in online sessions
 // Loader settings: FGUYMod\FGUYMod.ini. Log: FGUYMod\FGUYMod_<pid>.log.
 
 #include "common.h"

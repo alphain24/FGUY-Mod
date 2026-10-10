@@ -19,8 +19,9 @@
 //   * Background work finishes inside the tick that started it: file reads complete before ReadFile
 //     returns, and each tick starts only when the game's other threads (except the render thread, which is
 //     busy drawing the previous frame by design) are parked in a wait/sleep ("quiescence").
-//   * Local keyboard / mouse / cursor don't reach the game (dinput.cpp, Hook_GetCursorPos).
-// Every SyncCheckFrames ticks peers compare a hash of the players' positions, taken at the tick boundary.
+//   * Local keyboard / mouse / cursor don't reach the game directly (dinput.cpp, Hook_GetCursorPos); they
+//     play as this player's controller instead (kbm.cpp), so they go through the lockstep like a pad.
+// Every SyncCheckFrames ticks peers compare a hash of the players' positions and aim, taken at the tick boundary.
 // Scenes that hold the game thread (loading screens) are skipped for everyone when any player skips.
 //
 // Settings ([Netplay] in FGUYMod.ini, env overrides for tests):
@@ -480,6 +481,15 @@ Pad SampleLocal(unsigned f) {
         p.ry = st.Gamepad.sThumbRY;
     }
     p.buttons |= VPadButtons(0);  // test tools press this player's buttons through the pipe
+    KbmMerge(&p.buttons, &p.lt, &p.rt, &p.lx, &p.ly, &p.rx, &p.ry);  // and the keyboard / mouse (kbm.cpp)
+    static Pad last{};
+    static int logged = 0;
+    if (memcmp(&p, &last, sizeof(p)) != 0 && logged < 60) {  // the first few changes (input problems)
+        ++logged;
+        last = p;
+        Log(L"Netplay: my input for tick %u: buttons %04x sticks L(%d, %d) R(%d, %d) triggers %d %d", f, p.buttons,
+            p.lx, p.ly, p.rx, p.ry, p.lt, p.rt);
+    }
     return p;
 }
 
@@ -487,11 +497,26 @@ Pad SampleLocal(unsigned f) {
 // The player spy remembers every player object it ever saw, including deleted ones (e.g. character
 // previews in the menus): only live players count (still the player class, index 0..3).
 const ULONG_PTR kPlayerVtable = 0xa1af14;
+// What the sync check compares per player (found by watching memory while players run and look around,
+// tools/re/memwatch.py): the position (+0x38 points to the player's transform, position at +0x30) and the
+// camera / aim point (+0xf88 points to an object with it at +0xcc), which follows the player's camera.
+const int kXform = 0x38, kXformPos = 0x30, kAim = 0xf88, kAimPos = 0xcc;
+const float* PlayerPos(unsigned char* self) {
+    auto xform = *reinterpret_cast<unsigned char**>(self + kXform);
+    return IsBadReadPtr(xform, kXformPos + 12) ? nullptr : reinterpret_cast<const float*>(xform + kXformPos);
+}
+const float* PlayerAim(unsigned char* self) {
+    int viewport = *reinterpret_cast<int*>(self + 0xdfc);  // only players with a view of their own have one
+    if (viewport < 0 || viewport > 3) return nullptr;       // (others can point at leftover memory)
+    auto aim = *reinterpret_cast<unsigned char**>(self + kAim);
+    return IsBadReadPtr(aim, kAimPos + 12) ? nullptr : reinterpret_cast<const float*>(aim + kAimPos);
+}
+
 bool LivePlayer(unsigned char* self) {
-    if (IsBadReadPtr(self, 0xe00)) return false;
+    if (IsBadReadPtr(self, kAim + 4)) return false;
     if (*reinterpret_cast<ULONG_PTR*>(self) != kPlayerVtable) return false;
     unsigned index = *reinterpret_cast<unsigned*>(self + 0xdf8);
-    return index < 4 && !IsBadReadPtr(*reinterpret_cast<void**>(self + 0x38), 0x40);
+    return index < 4 && PlayerPos(self);
 }
 
 }  // namespace
@@ -524,10 +549,12 @@ unsigned HashPlayers() {
     int n = GamePlayers(players, 8);
     for (int i = 0; i < n; ++i) {
         auto self = players[i];
-        auto xform = *reinterpret_cast<unsigned char**>(self + 0x38);
+        auto pos = reinterpret_cast<const unsigned char*>(PlayerPos(self));
+        auto aim = reinterpret_cast<const unsigned char*>(PlayerAim(self));
         int index = *reinterpret_cast<int*>(self + 0xdf8);
         h = (h ^ (unsigned)index) * 16777619u;
-        for (int k = 0; k < 12; ++k) h = (h ^ xform[0x30 + k]) * 16777619u;
+        for (int k = 0; k < 12; ++k) h = (h ^ pos[k]) * 16777619u;
+        for (int k = 0; aim && k < 12; ++k) h = (h ^ aim[k]) * 16777619u;
     }
     return h;
 }
@@ -536,9 +563,12 @@ void LogPlayers(const wchar_t* tag) {
     unsigned char* players[8];
     int n = GamePlayers(players, 8);
     for (int i = 0; i < n; ++i) {
-        auto xform = *reinterpret_cast<float**>(players[i] + 0x38);
-        Log(L"Netplay: %s tick %u player %d at (%.4f, %.4f, %.4f)", tag, g_tick,
-            *reinterpret_cast<int*>(players[i] + 0xdf8), xform[12], xform[13], xform[14]);
+        const float* pos = PlayerPos(players[i]);
+        const float* aim = PlayerAim(players[i]);
+        static const float none[3] = {0, 0, 0};
+        if (!aim) aim = none;
+        Log(L"Netplay: %s tick %u player %d at (%.4f, %.4f, %.4f) aim (%.3f, %.3f, %.3f)", tag, g_tick,
+            *reinterpret_cast<int*>(players[i] + 0xdf8), pos[0], pos[1], pos[2], aim[0], aim[1], aim[2]);
     }
 }
 
@@ -660,6 +690,7 @@ WORD ScenePad() {
             if (g_realXInput(0, &st) == ERROR_SUCCESS) buttons = st.Gamepad.wButtons;
             buttons |= VPadButtons(0);
         }
+        if (KbmSkipPressed()) buttons |= XINPUT_GAMEPAD_A;  // Space / Enter / Esc skip too
         WORD pressed = buttons & ~g_localButtonsLast;
         g_localButtonsLast = buttons;
         if (pressed & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_START) && now >= g_skipPressUntil + 300) {

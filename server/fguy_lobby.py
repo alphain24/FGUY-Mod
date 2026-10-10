@@ -51,6 +51,7 @@ import math
 import os
 import re
 import secrets
+import socket
 import time
 
 PROTO = 2
@@ -332,12 +333,31 @@ class Server:
 class Relay(asyncio.DatagramProtocol):
     def __init__(self, server):
         self.server = server
+        self.closed = asyncio.get_running_loop().create_future()
 
     def connection_made(self, transport):
+        sock = transport.get_extra_info('socket')
+        if sock is not None and hasattr(socket, 'SIO_UDP_CONNRESET'):
+            # Windows reports "port unreachable" (a player's game has closed) as an error on the next read,
+            # and Python then closes the whole UDP socket - quietly. Ask Windows not to report it.
+            try:
+                sock.ioctl(socket.SIO_UDP_CONNRESET, False)
+            except OSError:
+                pass
         self.server.transport = transport
 
     def datagram_received(self, data, addr):
-        self.server.datagram(data, addr)
+        try:
+            self.server.datagram(data, addr)
+        except Exception as e:  # one bad packet must never stop the relay
+            log.exception('relay packet failed: %s', e)
+
+    def error_received(self, exc):
+        log.info('relay: %s', exc)
+
+    def connection_lost(self, exc):
+        if not self.closed.done():
+            self.closed.set_result(exc)
 
 
 async def main():
@@ -347,13 +367,27 @@ async def main():
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
     server = Server(a.port)
-    loop = asyncio.get_running_loop()
-    await loop.create_datagram_endpoint(lambda: Relay(server), local_addr=(a.host, a.port))
     tcp = await asyncio.start_server(server.handle, a.host, a.port, limit=MAX_LINE)
     asyncio.ensure_future(server.cleanup())
+    asyncio.ensure_future(relay_forever(server, a.host, a.port))
     log.info('FGUY lobby server on port %d (TCP lobby + UDP relay)', a.port)
     async with tcp:
         await tcp.serve_forever()
+
+
+async def relay_forever(server, host, port):
+    """The UDP relay; if its socket ever closes, it is opened again (sessions carry on: they're kept)."""
+    loop = asyncio.get_running_loop()
+    while True:
+        try:
+            _, relay = await loop.create_datagram_endpoint(lambda: Relay(server), local_addr=(host, port))
+        except OSError as e:
+            log.info('relay: cannot open UDP port %d (%s) - retrying', port, e)
+            await asyncio.sleep(2)
+            continue
+        exc = await relay.closed
+        log.info('relay: the UDP socket closed (%s) - reopening it', exc)
+        await asyncio.sleep(0.2)
 
 
 if __name__ == '__main__':

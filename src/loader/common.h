@@ -85,6 +85,12 @@ bool HandoffHidden();                  //   this game is a session booting hidde
 void HandoffMatchRunning();            //   the match is running: show it
 void HandoffRevealed();
 
+// kbm.cpp: keyboard and mouse as this player's controller in online sessions
+void KbmInit(HWND wnd);
+bool KbmOnMessage(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT* result);
+bool KbmSkipPressed();
+void KbmMerge(WORD* buttons, BYTE* lt, BYTE* rt, SHORT* lx, SHORT* ly, SHORT* rx, SHORT* ry);
+
 // sounds.cpp: loading-screen music
 void InitSounds();
 void SoundsOnFileOpen(const wchar_t* path);       //   config.cpp: a file the game opens
