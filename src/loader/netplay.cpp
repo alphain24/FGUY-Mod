@@ -21,6 +21,7 @@
 //     busy drawing the previous frame by design) are parked in a wait/sleep ("quiescence").
 //   * Local keyboard / mouse / cursor don't reach the game (dinput.cpp, Hook_GetCursorPos).
 // Every SyncCheckFrames ticks peers compare a hash of the players' positions, taken at the tick boundary.
+// Scenes that hold the game thread (loading screens) are skipped for everyone when any player skips.
 //
 // Settings ([Netplay] in FGUYMod.ini, env overrides for tests):
 //   Enable=1  Slot=0..3  Players=2  Port=7600  Peers=127.0.0.1:7601,...  InputDelay=3
@@ -33,6 +34,8 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <xinput.h>
+
+#include <intrin.h>
 
 #include <cstdio>
 #include <cstring>
@@ -167,15 +170,35 @@ decltype(&SetEvent) Real_SetEvent;
 decltype(&ReleaseSemaphore) Real_ReleaseSemaphore;
 decltype(&ReadFile) Real_ReadFile;
 
+// Research: the game thread blocking many times inside one tick (time stands still there).
+int g_mainBlocksThisTick = 0;
+void NoteMainBlock(const wchar_t* what, DWORD ms, void* caller) {
+    if (GetCurrentThreadId() != g_mainThread || g_phase != Phase::Running) return;
+    int n = ++g_mainBlocksThisTick;
+    if (n == 50 || n == 1000 || n == 20000)
+        Log(L"Netplay: tick %u: game thread %s(%lu) #%d this tick, from %p (clock reads %lld)", g_tick, what, ms, n,
+            caller, g_callsThisTick);
+}
+
 DWORD WINAPI Hook_WaitForSingleObject(HANDLE h, DWORD ms) {
+    NoteMainBlock(L"WaitForSingleObject", ms, _ReturnAddress());
     IdleScope idle;
     Trace(1, (ULONG_PTR)h);
     DWORD r = Real_WaitForSingleObject(h, ms);
     Trace(2, (ULONG_PTR)h);
     return r;
 }
-void WINAPI Hook_Sleep(DWORD ms) { Trace(7, ms); IdleScope idle; Real_Sleep(ms); }
-DWORD WINAPI Hook_SleepEx(DWORD ms, BOOL alertable) { IdleScope idle; return Real_SleepEx(ms, alertable); }
+void WINAPI Hook_Sleep(DWORD ms) {
+    NoteMainBlock(L"Sleep", ms, _ReturnAddress());
+    Trace(7, ms);
+    IdleScope idle;
+    Real_Sleep(ms);
+}
+DWORD WINAPI Hook_SleepEx(DWORD ms, BOOL alertable) {
+    NoteMainBlock(L"SleepEx", ms, _ReturnAddress());
+    IdleScope idle;
+    return Real_SleepEx(ms, alertable);
+}
 BOOL WINAPI Hook_SetEvent(HANDLE h) { Trace(3, (ULONG_PTR)h); return Real_SetEvent(h); }
 BOOL WINAPI Hook_ReleaseSemaphore(HANDLE h, LONG count, LONG* previous) {
     Trace(4, (ULONG_PTR)h);
@@ -292,11 +315,12 @@ void WaitForQuiescence() {
 
 // ---- packets ------------------------------------------------------------------------------------------
 // All little-endian. 'R' ready: slot. 'I' inputs: slot, first tick, count, Pad[count]. 'H' hash: slot,
-// tick, hash.
+// tick, hash. 'S' skip the scene that's holding the game: slot, sequence number.
 #pragma pack(push, 1)
 struct PktHeader { char type; BYTE slot; };
 struct PktInputs { PktHeader h; unsigned first; BYTE count; Pad pads[16]; };
 struct PktHash { PktHeader h; unsigned tick; unsigned hash; };
+struct PktSkip { PktHeader h; unsigned seq; };
 #pragma pack(pop)
 
 void SendAll(const void* data, int len) {
@@ -322,8 +346,14 @@ void CompareHash(int slot, unsigned tick, unsigned hash) {
     }
 }
 
+CRITICAL_SECTION g_netLock;  // Receive() runs on the game thread, and on the render thread during scenes
+unsigned g_skipSeqSeen[4];
+void StartSkip(const wchar_t* why);
+
 void Receive() {
     char buf[1500];
+    EnterCriticalSection(&g_netLock);
+    struct Unlock { ~Unlock() { LeaveCriticalSection(&g_netLock); } } unlock;
     for (;;) {
         int n = recvfrom(g_sock, buf, sizeof(buf), 0, nullptr, nullptr);
         if (n < (int)sizeof(PktHeader)) return;
@@ -348,6 +378,12 @@ void Receive() {
             g_peerHash[slot][k] = p->hash;
             g_peerHashTick[slot][k] = p->tick;
             CompareHash(slot, p->tick, p->hash);
+        } else if (h->type == 'S' && n >= (int)sizeof(PktSkip)) {
+            auto p = reinterpret_cast<PktSkip*>(buf);
+            if (p->seq > g_skipSeqSeen[slot]) {
+                g_skipSeqSeen[slot] = p->seq;
+                StartSkip(L"a peer skipped");
+            }
         }
     }
 }
@@ -441,6 +477,9 @@ void LogPlayers(const wchar_t* tag) {
     }
 }
 
+volatile ULONGLONG g_tickStartMs = 0;
+DWORD WINAPI Watchdog(LPVOID);
+
 // ---- tick boundary ----------------------------------------------------------------------------------------
 void Barrier() {
     // Hold the game's first tick until every peer has reached it.
@@ -464,12 +503,83 @@ void Barrier() {
             g_haveTick[f % kRing][s] = f;
         }
     g_phase = Phase::Running;
+    CloseHandle(CreateThread(nullptr, 0, Watchdog, nullptr, 0, nullptr));
     Log(L"Netplay: all %d players ready - lockstep from the first tick (slot %d, input delay %d ticks)",
         g_players, g_slot, g_delay);
 }
 
+// Research watchdog: if a tick runs long, show where the game thread is.
+DWORD WINAPI Watchdog(LPVOID) {
+    for (;;) {
+        Real_Sleep(2000);
+        ULONGLONG start = g_tickStartMs;
+        if (start && GetTickCount64() - start > 15000) {  // longer than any skipped scene
+            Log(L"Netplay: tick %u running for %llu ms - game thread:", g_tick, GetTickCount64() - start);
+            LogStack(g_mainThread);
+            Real_Sleep(30000);
+        }
+    }
+}
+
+// ---- skipping scenes ---------------------------------------------------------------------------------------
+// Some scenes (e.g. the loading screen in Stewie's weapon closet, which waits for A once the level has
+// loaded) hold the game thread inside one tick while the render thread shows them and polls the controller. Those polls see a skip
+// press only when any player skips: the press is sent to everyone, so every copy skips together.
+const ULONGLONG kSceneAfterMs = 500;     // a tick this long means a scene is holding the game
+volatile ULONGLONG g_skipPressUntil = 0;
+ULONGLONG g_skipSendUntil = 0, g_skipNextSend = 0;
+unsigned g_skipSeq = 0;
+WORD g_localButtonsLast = 0;
+
+void StartSkip(const wchar_t* why) {
+    ULONGLONG now = GetTickCount64();
+    if (now < g_skipPressUntil + 300) return;  // one press per skip
+    g_skipPressUntil = now + 80;
+    Log(L"Netplay: skipping the scene at tick %u (%s)", g_tick, why);
+}
+
+// Render-thread controller poll while a scene holds the game: the buttons it should see.
+WORD ScenePad() {
+    ULONGLONG now = GetTickCount64();
+    ULONGLONG start = g_tickStartMs;
+    bool scene = g_phase == Phase::Running && start && now - start > kSceneAfterMs;
+    if (scene && TryEnterCriticalSection(&g_netLock)) {
+        Receive();  // the game thread isn't receiving while it's held
+        WORD buttons = 0;
+        if (g_script) {
+            if (g_slot == 0 && (now - start) % 2000 > 1500) buttons = XINPUT_GAMEPAD_A;  // tap every 2 s
+        } else if (g_realXInput) {
+            XINPUT_STATE st{};
+            if (g_realXInput(0, &st) == ERROR_SUCCESS) buttons = st.Gamepad.wButtons;
+        }
+        WORD pressed = buttons & ~g_localButtonsLast;
+        g_localButtonsLast = buttons;
+        if (pressed & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_START) && now >= g_skipPressUntil + 300) {
+            ++g_skipSeq;
+            g_skipSendUntil = now + 300;
+            StartSkip(L"skipped here");
+        }
+        if (now < g_skipSendUntil && now >= g_skipNextSend) {  // a few copies against packet loss
+            PktSkip pk{{'S', (BYTE)g_slot}, g_skipSeq};
+            SendAll(&pk, sizeof(pk));
+            g_skipNextSend = now + 50;
+        }
+        LeaveCriticalSection(&g_netLock);
+    }
+    return scene && now < g_skipPressUntil ? XINPUT_GAMEPAD_A : 0;
+}
+
 // Called on the main thread at the start of every game tick (its first controller poll).
 void Tick() {
+    static ULONGLONG lastStart = 0;
+    ULONGLONG nowMs = GetTickCount64();
+    if (lastStart && nowMs - lastStart > 1000)
+        Log(L"Netplay: tick %u took %llu ms (%lld clock reads, %d waits/sleeps)", g_tick, nowMs - lastStart,
+            g_callsThisTick, g_mainBlocksThisTick);
+    lastStart = nowMs;
+    EnterCriticalSection(&g_netLock);
+    struct Unlock { ~Unlock() { LeaveCriticalSection(&g_netLock); } } unlock;
+    g_tickStartMs = nowMs;
     Receive();
     if (g_phase == Phase::Boot) {
         Barrier();
@@ -495,6 +605,7 @@ void Tick() {
         }
         ++g_tick;
     }
+    g_mainBlocksThisTick = 0;
     g_callsThisTick = 0;  // the clock reads exactly base + tick x 1/60 s from here
 
     unsigned future = g_tick + g_delay - 1;
@@ -554,12 +665,15 @@ bool NetplayPad(DWORD pad, XINPUT_STATE* state, DWORD(WINAPI* real)(DWORD, XINPU
     Trace(6, pad);
     if (pad == 0 && GetCurrentThreadId() == g_mainThread) Tick();  // a new game tick starts
     if (pad >= 4 || (int)pad >= g_players) return true;              // unused slots: "not connected"
-    static DWORD packet[4];
-    static Pad last[4];
-    Pad p = g_phase == Phase::Running && GetCurrentThreadId() == g_mainThread ? g_current[pad] : Pad{};
-    if (memcmp(&p, &last[pad], sizeof(p)) != 0) { last[pad] = p; ++packet[pad]; }
+    static DWORD packet[2][4];
+    static Pad last[2][4];
+    bool game = GetCurrentThreadId() == g_mainThread;
+    Pad p{};
+    if (game && g_phase == Phase::Running) p = g_current[pad];
+    if (!game && pad == 0) p.buttons = ScenePad();
+    if (memcmp(&p, &last[game][pad], sizeof(p)) != 0) { last[game][pad] = p; ++packet[game][pad]; }
     ZeroMemory(state, sizeof(*state));
-    state->dwPacketNumber = packet[pad];
+    state->dwPacketNumber = packet[game][pad];
     state->Gamepad.wButtons = p.buttons;
     state->Gamepad.bLeftTrigger = p.lt;
     state->Gamepad.bRightTrigger = p.rt;
@@ -623,6 +737,7 @@ void InitNetplay(HMODULE exe) {
         g_peers.push_back(a);
     }
     QueryPerformanceFrequency(&g_freq);
+    InitializeCriticalSection(&g_netLock);
     g_phase = Phase::Boot;
     Log(L"Netplay: on - slot %d of %d players, UDP port %d, %zu peers, input delay %d, %s input",
         g_slot, g_players, port, g_peers.size(), g_delay, g_script ? L"scripted" : L"controller");

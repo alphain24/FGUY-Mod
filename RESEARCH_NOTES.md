@@ -144,16 +144,20 @@ sent. The TCP 7534 / UDP 7533 beacon is most likely the developers' editor link 
 - Random: `srand` seeded from QPC at startup (`0x4ca150`); more RNGs: Mersenne Twister (`0x4f6790`,
   `0x49ed60`), LCGs (`0x41f260`, `0x4f67e0`, `0x6fab40`, `0x8601b0`, `0x8c3050`).
 - Time: QPC used 108×, GetTickCount 12×, timeGetTime 4×; `LockFramerate = 0` (variable dt).
-- Input: XInput is read on a pad thread in passes of 19 device polls (~0.02 ms), each pass starting
-  ~0.06 ms after the render thread's Present returns. `0x4cc4a0` reads XInput (`0x4b5670`) and
-  keyboard/mouse (`0x450930`, which also reads QPC). DirectInput joystick loop `0x47b080` (Sleep 15).
-  The game also pauses itself at level start (pause menu) in these tests.
-- Lockstep results (two copies, same PC, scripted input, fixed clock, fixed srand, KB/M blocked):
-  * with ~100 ms of real time per frame: 0 desyncs over 1800-3600 frames, with walking and jumping
-  * at full speed: identical for 1000+ frames, then small drift (cm) after a jump/landing
-  * the start barrier ("players exist + 5 s") is not exact: copies can differ at frame 0
-- Next: exact start alignment (freeze both at the same simulation state), make sure the render thread
-  reads input only after the pad pass completes, then find any remaining async sources.
+- Threads (2026-10-10): the MAIN thread (the one that loads dinput8) runs game logic. Each tick:
+  wait for the render thread's go-ahead, poll XInput pads 0..18 itself (`0x4cc4a0` → `0x4b5670`;
+  keyboard/mouse `0x450930`), update (handing jobs to `_beginthreadex` workers, start `0x74B7E0`),
+  then hand the frame to the render thread, which draws/presents while main starts the next tick.
+  DirectInput joystick loop `0x47b080` (Sleep 15). The game pauses itself at level start.
+- Lockstep design that works: step at main's first pad poll of a tick; fixed clock on main =
+  base + tick/60 s; fixed srand; synchronous overlapped reads; before each tick wait until all other
+  threads (except render) are parked in a hooked wait/sleep/socket call (exited threads skipped).
+  Result: 0 desyncs over 4200+ ticks at 60 ticks/s, two copies, scripted movement; hashes are even
+  identical between separate runs.
+- Leftover dev link thread blocks in `accept()` on TCP 7534 forever (second copy fails bind and exits).
+- Loading screen (Stewie's weapon closet): main waits in `0x4c9310` (MsgWaitForMultipleObjects on
+  `[0xaf38bc]`) while the render thread (`0x47a110` loop) shows it and polls XInput hard; it waits for
+  an A press once the level is loaded (~3.5 s), otherwise ~3.5 minutes. Netplay forwards a synced skip.
 
 ## Display settings
 Registry `HKCU\Software\Heavy Iron Studios Inc.\Family Guy\Settings`: `ScreenWidth`, `ScreenHeight`,
