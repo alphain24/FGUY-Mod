@@ -30,6 +30,7 @@ void InstallHooks(HMODULE exe, HookSpec (&hooks)[N]) { InstallHooks(exe, hooks, 
 
 // Modules
 void InitConfigOverride(HMODULE exe);  // fguy.ini override + file-open log   (config.cpp)
+const wchar_t* ConfigSaveDir();        //   folder the game's saves are in right now
 void InitNetSpy(HMODULE exe);          // winsock + debug-print logging        (netspy.cpp)
 void InitDisplay(HMODULE exe);         // windowed / borderless / resolution   (display.cpp)
 void InitVirtualPad(HMODULE exe);      // injected controller input for tests  (vpad.cpp)
@@ -50,6 +51,16 @@ void InitNetplay(HMODULE exe);         // lockstep online play core            (
 bool NetplayEnabled();
 void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
+
+// online.cpp: lobby + the in-game ONLINE page
+void OnlineEnter();
+void OnlineExit();
+const char* OnlineLabel(const char* row);
+const char* OnlineText(const char* row);
+const char* OnlineList();
+int OnlineGet(const char* row);
+void OnlineSet(const char* row, int value);
+void OnlinePress(const char* row);
 
 // display.cpp
 bool DisplayIsWindowed();              // windowed or borderless right now

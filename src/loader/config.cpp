@@ -98,6 +98,13 @@ HANDLE WINAPI Hook_CreateFileA(LPCSTR path, DWORD access, DWORD share, LPSECURIT
 
 }  // namespace
 
+const wchar_t* ConfigSaveDir() {
+    static wchar_t real[MAX_PATH];
+    if (g_saveDir[0]) return g_saveDir;
+    swprintf_s(real, L"%s\\Save", g_gameDir);
+    return real;
+}
+
 void InitConfigOverride(HMODULE exe) {
     wchar_t iniName[MAX_PATH] = L"fguy.ini";
     wchar_t env[MAX_PATH];

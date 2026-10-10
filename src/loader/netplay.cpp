@@ -39,6 +39,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #pragma comment(lib, "ws2_32.lib")
@@ -323,7 +324,23 @@ struct PktHash { PktHeader h; unsigned tick; unsigned hash; };
 struct PktSkip { PktHeader h; unsigned seq; };
 #pragma pack(pop)
 
+// Relay mode (online sessions): every packet goes to the lobby server, wrapped as
+// 'F' 'G' <8-byte session token> <our slot> <packet>; the server forwards it to the other players.
+bool g_relay = false;
+unsigned char g_token[8];
+
 void SendAll(const void* data, int len) {
+    if (g_relay) {
+        char buf[1500];
+        if (len > (int)sizeof(buf) - 11) return;
+        buf[0] = 'F';
+        buf[1] = 'G';
+        memcpy(buf + 2, g_token, 8);
+        buf[10] = (char)g_slot;
+        memcpy(buf + 11, data, len);
+        sendto(g_sock, buf, len + 11, 0, (const sockaddr*)&g_peers[0], sizeof(g_peers[0]));
+        return;
+    }
     for (auto& p : g_peers) sendto(g_sock, (const char*)data, len, 0, (const sockaddr*)&p, sizeof(p));
 }
 
@@ -356,6 +373,12 @@ void Receive() {
     struct Unlock { ~Unlock() { LeaveCriticalSection(&g_netLock); } } unlock;
     for (;;) {
         int n = recvfrom(g_sock, buf, sizeof(buf), 0, nullptr, nullptr);
+        if (n == SOCKET_ERROR && WSAGetLastError() == WSAECONNRESET) continue;  // ICMP noise, not an error
+        if (g_relay && n >= 11) {
+            if (buf[0] != 'F' || buf[1] != 'G' || memcmp(buf + 2, g_token, 8) != 0) continue;
+            memmove(buf, buf + 11, n - 11);
+            n -= 11;
+        }
         if (n < (int)sizeof(PktHeader)) return;
         auto h = reinterpret_cast<PktHeader*>(buf);
         int slot = h->slot & 3;
@@ -728,6 +751,15 @@ void InitNetplay(HMODULE exe) {
 
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
+    wchar_t relay[256], token[32];
+    SettingString(L"Netplay", L"_", L"FGUYMOD_NET_RELAY", L"", relay, 256);
+    SettingString(L"Netplay", L"_", L"FGUYMOD_NET_TOKEN", L"", token, 32);
+    if (relay[0] && wcslen(token) == 16) {
+        g_relay = true;
+        for (int i = 0; i < 8; ++i) g_token[i] = (unsigned char)wcstoul(std::wstring(token + 2 * i, 2).c_str(), nullptr, 16);
+        port = 0;  // any free local port: the server learns it from our packets
+        wcscpy_s(peers, relay);
+    }
     g_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     sockaddr_in me{};
     me.sin_family = AF_INET;
@@ -743,14 +775,23 @@ void InitNetplay(HMODULE exe) {
         sockaddr_in a{};
         a.sin_family = AF_INET;
         a.sin_port = htons((u_short)peerPort);
-        InetPtonW(AF_INET, host, &a.sin_addr);
+        if (InetPtonW(AF_INET, host, &a.sin_addr) != 1) {  // a name (the lobby server): look it up
+            ADDRINFOW hints{}, *res = nullptr;
+            hints.ai_family = AF_INET;
+            if (GetAddrInfoW(host, nullptr, &hints, &res) != 0 || !res) {
+                Log(L"Netplay: can't find %s", host);
+                continue;
+            }
+            a.sin_addr = reinterpret_cast<sockaddr_in*>(res->ai_addr)->sin_addr;
+            FreeAddrInfoW(res);
+        }
         g_peers.push_back(a);
     }
     QueryPerformanceFrequency(&g_freq);
     InitializeCriticalSection(&g_netLock);
     g_phase = Phase::Boot;
-    Log(L"Netplay: on - slot %d of %d players, UDP port %d, %zu peers, input delay %d, %s input",
-        g_slot, g_players, port, g_peers.size(), g_delay, g_script ? L"scripted" : L"controller");
+    Log(L"Netplay: on - slot %d of %d players, %s, input delay %d, %s input", g_slot, g_players,
+        g_relay ? L"through the lobby server's relay" : L"direct UDP", g_delay, g_script ? L"scripted" : L"controller");
 
     HookSpec hooks[] = {
         {"kernel32.dll", "QueryPerformanceCounter", (void*)Hook_QPC, (void**)&Real_QPC},

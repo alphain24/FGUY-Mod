@@ -51,7 +51,8 @@ double ArgNumber(const GFxValue* args, unsigned argc, unsigned i) {
     switch (args[i].type & 0x0F) {
         case kNumber: return args[i].number;
         case kBool: return args[i].boolean ? 1 : 0;
-        case kString: return atof(args[i].string);
+        case kString: return atof((args[i].type & 0x40) ? *reinterpret_cast<const char* const*>(args[i].string)
+                                                           : args[i].string);
         default: return 0;
     }
 }
@@ -198,11 +199,27 @@ void ReturnToMenu(void* movie, const GFxValue& v) {
 }
 void ReturnNumber(void* movie, double n) { GFxValue v{}; v.type = kNumber; v.number = n; ReturnToMenu(movie, v); }
 void ReturnBool(void* movie, bool b) { GFxValue v{}; v.type = kBool; v.boolean = b; ReturnToMenu(movie, v); }
+void ReturnString(void* movie, const char* s) { GFxValue v{}; v.type = kString; v.string = s; ReturnToMenu(movie, v); }
+// String arguments from the menu are "managed" (type | 0x40): the value then points at the string's
+// node, whose first field is the text.
+const char* ArgString(const GFxValue* args, unsigned argc, unsigned i) {
+    if (i >= argc || (args[i].type & 0x0F) != kString || !args[i].string) return "";
+    if (args[i].type & 0x40) {
+        auto node = reinterpret_cast<const char* const*>(args[i].string);
+        return IsBadReadPtr(node, 4) || !*node ? "" : *node;
+    }
+    return args[i].string;
+}
 
 void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, const GFxValue* args,
                               unsigned argc) {
     if (name && strncmp(name, "FGUYMOD_", 8) == 0) {
         const char* fn = name + 8;
+        static int logged = 0;
+        if (logged < 12 && strncmp(fn, "Online", 6) == 0) {
+            ++logged;
+            Log(L"UI: mod call %S(%S) [%u args]", name, ArgString(args, argc, 0), argc);
+        }
         if (strcmp(fn, "GetDisplayMode") == 0) {
             ReturnNumber(movie, DisplayMenuIndex());
         } else if (strcmp(fn, "SetDisplayMode") == 0) {
@@ -213,6 +230,22 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnNumber(movie, VideoFrameRateIndex());
         } else if (strcmp(fn, "SetFrameRate") == 0) {
             VideoSetFrameRate((int)ArgNumber(args, argc, 0));
+        } else if (strcmp(fn, "OnlineEnter") == 0) {
+            OnlineEnter();
+        } else if (strcmp(fn, "OnlineExit") == 0) {
+            OnlineExit();
+        } else if (strcmp(fn, "OnlineLabel") == 0) {
+            ReturnString(movie, OnlineLabel(ArgString(args, argc, 0)));
+        } else if (strcmp(fn, "OnlineList") == 0) {
+            ReturnString(movie, OnlineList());
+        } else if (strcmp(fn, "OnlineText") == 0) {
+            ReturnString(movie, OnlineText(ArgString(args, argc, 0)));
+        } else if (strcmp(fn, "OnlinePress") == 0) {
+            OnlinePress(ArgString(args, argc, 0));
+        } else if (strncmp(fn, "GetOnline", 9) == 0) {  // list rows: SF_Invoke("FGUYMOD", "Get<row>")
+            ReturnNumber(movie, OnlineGet(fn + 3));
+        } else if (strncmp(fn, "SetOnline", 9) == 0) {  //   ... and "Set<row>"(value)
+            OnlineSet(fn + 3, (int)ArgNumber(args, argc, 0));
         } else {
             Log(L"UI: unknown mod call %S", name);
         }

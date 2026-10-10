@@ -7,6 +7,9 @@ Changes:
   * The Screen page's OK handler first calls FGUYMOD_ApplyDisplayMode.
   * A new Options > Screen row, Frame Rate (VSync / 30-240 FPS / Uncapped), backed by
     FGUYMOD_GetFrameRate / FGUYMOD_SetFrameRate.
+  * Main Menu > ONLINE: the online lobby page (src/loader/online.cpp has the logic). It reuses the
+    Options > Screen page's frame: while FGUYOnline is set, that page's events (On<page>Enter,
+    ButtonHover, ButtonPressed, Exit) go to our OnOnline* functions instead.
 
 How list rows work in this menu: a row named X takes its choices from ButtonListStrings[
 ButtonIndexMapping[X]], reads its value with GetXValue() and reports changes to OnXValueChanged(v).
@@ -26,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gfxpatch import (Patch, Reg, action, constant_pool, define_function, define_function2,  # noqa: E402
                       external_call, function_at, parse_actions, push, push_records, record_text,
                       root_doaction_containing)
+import as2asm as A  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
@@ -33,6 +37,14 @@ MOVIE_SIZE = 290635  # the front-end menu movie inside FGUY/Global_Scenes/MNUS.h
 
 # Frame Rate choices, in the order the loader expects (d3d9.cpp kFrameRates).
 FRAME_RATES = ['VSync', '30 FPS', '60 FPS', '120 FPS', '144 FPS', '240 FPS', 'Uncapped']
+
+# The ONLINE page: five rows (what the borrowed page's panel fits), Online1..Online5. The loader decides
+# what each row is right now: FGUYMOD_OnlineLabel(row) / FGUYMOD_OnlineText(row) give its label and
+# value, FGUYMOD_OnlinePress(row) handles A. Online3 is a list row (left/right browses the open games, or
+# the players while in a lobby): its choices come from FGUYMOD_OnlineList(), '|' separated.
+ONLINE_ROWS = ['Online1', 'Online2', 'Online3', 'Online4', 'Online5']
+ONLINE_LIST_ROW = 'Online3'
+ONLINE_LIST_INDEX = 100  # its entry in ButtonListStrings (the game's own lists use 0..21)
 
 
 def find_menu_movie(game_dir):
@@ -116,6 +128,7 @@ def build(data):
                              external_call('FGUYMOD_GetFrameRate') + action('ToNumber') + action('Return'))
     funcs += define_function2('OnFrameRateValueChanged', ['curValue'],
                               external_call('FGUYMOD_SetFrameRate', Reg(1)) + action('Pop'))
+    funcs += online_functions()
     p.replace(o, total, funcs)
 
     # 4. OnDisplayModeValueChanged(curValue): replace 'needWindowed = (curValue == 0)' with
@@ -164,12 +177,100 @@ def build(data):
     p.fix_top_level_jumps(inner)
     p.replace(size_field, 2, struct.pack('<H', code_end - code_start + p.delta_between(code_start, code_end)))
 
+    # 8. GetEventFuncName(Name, Event): while the ONLINE page is up, events of the page it borrows
+    #    ('OptionsScreen') go to OnOnline<Event> instead. Inserted at the very start (r1 = Name).
+    o, total = function_at(data, actions, 'GetEventFuncName')
+    code_start, code_end, size_field = function2_code(data, o)
+    redirect = (A.Code(A.getvar('FGUYOnline'), A.op('Not')).if_true('keep') +
+                A.Code(A.pushes(Reg(1), 'OptionsScreen'), A.op('StrictEquals'), A.op('Not')).if_true('keep') +
+                A.store(1, 'Online'))
+    redirect.label('keep')
+    new_code = redirect.assemble()
+    p.replace(code_start, 0, new_code)
+    p.replace(size_field, 2, struct.pack('<H', code_end - code_start + len(new_code)))
+
+    # 9. OnHomeEnter(): FGUYOnline = false first; an ONLINE button right after MULTIPLAYER (before the
+    #    'demoType' check that adds CHALLENGE MODE). Same shape as the original buttons (r2 scratch,
+    #    r3 the button array).
+    o, total = function_at(data, actions, 'OnHomeEnter')
+    code_start, code_end, size_field = function2_code(data, o)
+    inner = parse_actions(data, code_start, code_end)
+    at, _ = find_action(inner, 0x96, lambda q, t: texts(q) == ['demoType'])
+    button = (A.store(2, A.new_object('Object')) + A.setmember(Reg(2), 'name', 'Online') +
+              A.setmember(Reg(2), 'text', 'ONLINE') + A.method(Reg(3), 'push', Reg(2))).assemble()
+    p.replace(code_start, 0, A.setvar('FGUYOnline', False).assemble())
+    p.replace(at, 0, button)
+    p.fix_top_level_jumps(inner)
+    p.replace(size_field, 2, struct.pack('<H', code_end - code_start + p.delta_between(code_start, code_end)))
+
     # Fix-ups: top-level jumps across edits, DoAction tag length, file length in the GFX header.
     p.fix_top_level_jumps(actions)
     assert struct.unpack_from('<H', data, tag)[0] & 0x3f == 0x3f, 'expected long DoAction header'
     p.fix_length_u32(tag + 2, start, end)
     p.fix_length_u32(4, 0, len(data))
     return p
+
+
+def online_functions():
+    """The ONLINE page (see ONLINE_ROWS). r1 = _root in all of them (the game's own convention)."""
+    ext = A.external
+    container = A.member(A.ROOT, 'subMenu', 'buttonContainer')
+
+    # Main Menu > ONLINE
+    select = A.Code(A.setvar('FGUYOnline', True), A.call('PauseTVSound'), A.call('PlayOptionsSubMenuMusic'),
+                    A.call('GotoPage', 'OptionsScreen'))
+
+    # Page enter: connect, build the rows, start refreshing.
+    enter = A.Code(ext('FGUYMOD_OnlineEnter'), A.op('Pop'), A.setvar('CurButtonListFetchMode', 'FGUYMOD'))
+    enter += A.setmember(A.member(A.ROOT, 'Title'), 'titleText', 'ONLINE')
+    enter += A.setmember(A.getvar('ButtonIndexMapping'), ONLINE_LIST_ROW, ONLINE_LIST_INDEX)
+    enter += A.setmember(A.getvar('ButtonListStrings'), ONLINE_LIST_INDEX, A.new_object('Array', ' '))
+    enter += A.store(3, A.new_object('Array'))
+    for row in ONLINE_ROWS:
+        enter += (A.store(2, A.new_object('Object')) + A.setmember(Reg(2), 'name', row) +
+                  A.setmember(Reg(2), 'text', ' ') + A.method(Reg(3), 'push', Reg(2)))
+    enter += A.setmember(Reg(3), 'linkageID', A.getvar('SCROLLER_LINKAGE_ID'))
+    enter += A.setmember(Reg(3), 'buttonHeight', A.getvar('SCROLLER_BUTTON_HEIGHT'))
+    enter += A.setmember(Reg(3), 'align', A.getvar('SCROLLER_ALIGN'))
+    enter += A.call('GenerateButtons', container, Reg(3), 0, True)
+    enter += A.call('FGUYOnlineRefresh')
+    enter += A.setvar('FGUYOnlineTimer', A.callv('setInterval', A.getvar('FGUYOnlineRefresh'), 150))
+
+    # Refresh: write every row's label and value straight into its text fields (the label is
+    # button.text / button.text2 as GenerateButtons sets it, the value button.textbox.animText.textbox).
+    # The list row's choices also go to ButtonListStrings so left/right can browse them.
+    refresh = A.Code(A.store(2, container), A.Code(A.val(Reg(2)), A.op('Not')).if_true('done'))
+    for row in ONLINE_ROWS:
+        skip = 'skip_' + row
+        refresh += A.store(3, A.member(Reg(2), row, 'button'))
+        refresh += A.Code(A.val(Reg(3)), A.op('Not')).if_true(skip)
+        refresh += A.store(4, A.callv('String', ext('FGUYMOD_OnlineLabel', row)))
+        refresh += A.setmember(A.member(Reg(3), 'text'), 'htmlText', Reg(4))
+        refresh += A.setmember(A.member(Reg(3), 'text2'), 'htmlText', Reg(4))
+        refresh += A.setmember(A.member(Reg(3), 'textbox', 'animText', 'textbox'), 'htmlText',
+                               A.callv('String', ext('FGUYMOD_OnlineText', row)))
+        refresh.label(skip)
+    refresh += A.setmember(A.getvar('ButtonListStrings'), ONLINE_LIST_INDEX,
+                           A.methodv(A.callv('String', ext('FGUYMOD_OnlineList')), 'split', '|'))
+    refresh += A.Code(A.pushes(A.getvar('CurButtonList'), ONLINE_LIST_ROW), A.op('StrictEquals'),
+                      A.op('Not')).if_true('done')
+    refresh += A.setvar('NumListBtns', A.member(A.getvar('ButtonListStrings'), ONLINE_LIST_INDEX, 'length'))
+    refresh.label('done')
+
+    exit_ = A.Code(A.call('clearInterval', A.getvar('FGUYOnlineTimer')), ext('FGUYMOD_OnlineExit'), A.op('Pop'),
+                   A.setvar('FGUYOnline', False))
+
+    # Hover: the list row (left/right browses).
+    hover = A.Code(A.pushes(Reg(2), ONLINE_LIST_ROW), A.op('StrictEquals'), A.op('Not')).if_true('done')
+    hover += A.call('SetButtonListFetchMode', 'FGUYMOD') + A.call('CreateButtonList', 'FGUYMOD', A.getvar('SF_Invoke'))
+    hover.label('done')
+
+    pressed = A.Code(ext('FGUYMOD_OnlinePress', Reg(2)), A.op('Pop'))
+
+    return (A.define_function2('OnOnlineSelect', [], select) + A.define_function2('OnOnlineEnter', [], enter) +
+            A.define_function2('FGUYOnlineRefresh', [], refresh) + A.define_function2('OnOnlineExit', [], exit_) +
+            A.define_function2('OnOnlineButtonHover', ['buttonStr'], hover) +
+            A.define_function2('OnOnlineButtonPressed', ['buttonStr'], pressed))
 
 
 if __name__ == '__main__':
