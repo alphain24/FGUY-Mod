@@ -173,6 +173,21 @@ const unsigned char kIsVerticalSplitStart[] = {0x83, 0x3d, 0x60, 0x3e, 0xb5, 0x0
 const uintptr_t kMarkerCountCall = 0x97b885, kGetViewportCount = 0x625fe0;
 int __cdecl MarkerViewportCount() { return MyViewport() >= 0 ? 1 : Count(); }
 
+// The game makes those markers per viewing player (0x9909a0: find the viewer, project the point with their
+// viewport's camera, then 0x97b880 maps it into HUD space). Full screen, the other viewers' markers would
+// land on my screen too - my own name tag among them - so markers for any viewport but mine go off screen.
+// 0x97b880: bool __thiscall (float* screenPoint, int viewport, float* hudOut)  ret 0xc; called once.
+const uintptr_t kMarkerToHudCall = 0x990af7, kMarkerToHud = 0x97b880;
+using MarkerToHud_t = void(__thiscall*)(void* hud, float* point, int viewport, float* out);
+void __fastcall Hook_MarkerToHud(void* hud, void*, float* point, int viewport, float* out) {
+    reinterpret_cast<MarkerToHud_t>(kMarkerToHud)(hud, point, viewport, out);
+    int mine = MyViewport();
+    if (mine >= 0 && viewport != mine) {
+        point[0] = point[1] = -10000.0f;
+        out[0] = out[1] = -10000.0f;
+    }
+}
+
 bool PatchCall(uintptr_t at, uintptr_t expectedTarget, void* to) {
     auto b = reinterpret_cast<unsigned char*>(at);
     if (IsBadReadPtr(b, 5) || b[0] != 0xE8 || at + 5 + *reinterpret_cast<int*>(b + 1) != expectedTarget) {
@@ -246,6 +261,7 @@ void InitSplitView() {
         static const unsigned char no[] = {0x31, 0xc0, 0xc3};  // xor eax, eax; ret
         PatchBytes(kIsVerticalSplit, kIsVerticalSplitStart, sizeof(kIsVerticalSplitStart), no, sizeof(no));
         PatchCall(kMarkerCountCall, kGetViewportCount, (void*)MarkerViewportCount);
+        PatchCall(kMarkerToHudCall, kMarkerToHud, (void*)Hook_MarkerToHud);
         g_active = true;
         Log(L"SplitView: on - one full-screen view per PC%s", g_forced >= 0 ? L" (test: forced viewport)" : L"");
     }
