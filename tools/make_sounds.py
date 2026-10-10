@@ -1,7 +1,8 @@
 """Builds the loading-screen sounds: dist/FGUYMod/sounds/opening.wav and strings_01.wav, strings_02.wav, ...
 
 Input (not in the repo - Family Guy show audio, supplied by you): sounds/
-  "Family Guy (Opening Sound Effect #1).wav"  -> opening.wav (story level 1, the first multiplayer match)
+  "Family Guy (Opening Sound Effect #1).wav"  -> opening.wav (story level 1, the first multiplayer match):
+                                                silence trimmed, a smooth fade in and a long fade out
   "Family Guy - Music Strings.wav"            -> one file per music string (every other loading screen)
 The strings file holds several cues with short quiet gaps between them; each cue is cut from just before
 it starts to the quietest moment of the gap after it (keeping its reverb tail), with short fades.
@@ -9,7 +10,6 @@ it starts to the quietest moment of the gap after it (keeping its reverb tail), 
 Usage: make_sounds.py [<input folder>] [<output folder>]
 """
 import os
-import shutil
 import sys
 import wave
 
@@ -26,6 +26,8 @@ LOUD_DB = -40       # louder than this = part of a cue
 MIN_GAP = 0.35      # a quiet stretch at least this long separates two cues
 LEAD = 0.03         # keep this much before a cue starts
 FADE = 0.03
+OPENING_FADE_IN = 0.6
+OPENING_FADE_OUT = 1.8
 
 
 def read(path):
@@ -78,9 +80,25 @@ def fade(a, rate):
     return a
 
 
+def ease(n):
+    """0 -> 1 along a smooth S curve (no click at either end)."""
+    return (0.5 - 0.5 * np.cos(np.linspace(0, np.pi, n)))[:, None]
+
+
+def opening(a, rate):
+    found = cues(a, rate)
+    s, e = found[0][0], found[-1][1]           # from the first sound to the end of the last (silence trimmed)
+    out = a[s:e].astype(np.float32)
+    n_in, n_out = min(len(out) // 3, int(OPENING_FADE_IN * rate)), min(len(out) // 2, int(OPENING_FADE_OUT * rate))
+    out[:n_in] *= ease(n_in)
+    out[-n_out:] *= ease(n_out)[::-1]
+    return out
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
-    shutil.copyfile(os.path.join(SRC, OPENING), os.path.join(OUT, 'opening.wav'))
+    a, rate = read(os.path.join(SRC, OPENING))
+    write(os.path.join(OUT, 'opening.wav'), opening(a, rate), rate)
     a, rate = read(os.path.join(SRC, STRINGS))
     found = cues(a, rate)
     for i, (s, e) in enumerate(found, 1):

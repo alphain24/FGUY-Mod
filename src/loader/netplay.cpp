@@ -349,6 +349,10 @@ unsigned g_peerHash[4][8];           // recent hashes from peers, by (tick / syn
 unsigned g_peerHashTick[4][8];
 unsigned g_myHash[8], g_myHashTick[8];
 int g_desyncs = 0;
+// What each check hashed, kept so a mismatch can show the exact values of that tick (both PCs log the same tick).
+struct Hashed { int count; int index[8]; float pos[8][3], aim[8][3]; };
+Hashed g_hashed[8];
+
 
 void LogPlayers(const wchar_t* tag);
 
@@ -360,7 +364,12 @@ void CompareHash(int slot, unsigned tick, unsigned hash) {
     } else {
         ++g_desyncs;
         Log(L"Netplay: DESYNC at tick %u: mine %08x, peer %d has %08x", tick, g_myHash[k], slot, hash);
-        if (g_desyncs == 1) LogPlayers(L"first desync, at");
+        if (g_desyncs <= 3) {   // what this PC hashed at that tick (compare with the peer's log)
+            const Hashed& v = g_hashed[k];
+            for (int i = 0; i < v.count; ++i)
+                Log(L"Netplay:   tick %u player %d pos (%.5f, %.5f, %.5f) aim (%.5f, %.5f, %.5f)", tick, v.index[i],
+                    v.pos[i][0], v.pos[i][1], v.pos[i][2], v.aim[i][0], v.aim[i][1], v.aim[i][2]);
+        }
     }
 }
 
@@ -543,14 +552,18 @@ int GamePlayers(unsigned char** out, int max) {
 
 namespace {
 
-unsigned HashPlayers() {
+unsigned HashPlayers(Hashed* keep) {
     unsigned h = 2166136261u;
     unsigned char* players[8];
     int n = GamePlayers(players, 8);
+    keep->count = n;
     for (int i = 0; i < n; ++i) {
         auto self = players[i];
         auto pos = reinterpret_cast<const unsigned char*>(PlayerPos(self));
         auto aim = reinterpret_cast<const unsigned char*>(PlayerAim(self));
+        keep->index[i] = *reinterpret_cast<int*>(self + 0xdf8);
+        memcpy(keep->pos[i], pos, 12);
+        if (aim) memcpy(keep->aim[i], aim, 12); else memset(keep->aim[i], 0, 12);
         int index = *reinterpret_cast<int*>(self + 0xdf8);
         h = (h ^ (unsigned)index) * 16777619u;
         for (int k = 0; k < 12; ++k) h = (h ^ pos[k]) * 16777619u;
@@ -732,8 +745,8 @@ void Tick() {
             }
         }
         if (g_syncEvery > 0 && g_tick % g_syncEvery == 0) {
-            unsigned h = HashPlayers();
             int k = (g_tick / g_syncEvery) % 8;
+            unsigned h = HashPlayers(&g_hashed[k]);
             g_myHash[k] = h;
             g_myHashTick[k] = g_tick;
             PktHash p{{'H', (BYTE)g_slot}, g_tick, h};
