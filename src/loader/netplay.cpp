@@ -374,22 +374,27 @@ void Receive() {
     for (;;) {
         int n = recvfrom(g_sock, buf, sizeof(buf), 0, nullptr, nullptr);
         if (n == SOCKET_ERROR && WSAGetLastError() == WSAECONNRESET) continue;  // ICMP noise, not an error
-        if (g_relay && n >= 11) {
-            if (buf[0] != 'F' || buf[1] != 'G' || memcmp(buf + 2, g_token, 8) != 0) continue;
+        if (n == SOCKET_ERROR) return;  // nothing more to read
+        if (g_relay) {  // only our session's packets, through the server
+            if (n < 11 + (int)sizeof(PktHeader) || buf[0] != 'F' || buf[1] != 'G' || memcmp(buf + 2, g_token, 8) != 0)
+                continue;
             memmove(buf, buf + 11, n - 11);
             n -= 11;
         }
-        if (n < (int)sizeof(PktHeader)) return;
+        if (n < (int)sizeof(PktHeader)) continue;
         auto h = reinterpret_cast<PktHeader*>(buf);
-        int slot = h->slot & 3;
+        int slot = h->slot;
+        if (slot >= g_players || slot == g_slot) continue;  // not a peer's (our own inputs are never replaced)
         if (h->type == 'R') {
             if (!g_peerReady[slot]) Log(L"Netplay: peer with slot %d is ready", slot);
             g_peerReady[slot] = true;
         } else if (h->type == 'I' && n >= (int)offsetof(PktInputs, pads)) {
             auto p = reinterpret_cast<PktInputs*>(buf);
-            for (int i = 0; i < p->count && i < 16; ++i) {
+            int count = (n - (int)offsetof(PktInputs, pads)) / (int)sizeof(Pad);  // what actually arrived
+            if (count > p->count) count = p->count;
+            for (int i = 0; i < count && i < 16; ++i) {
                 unsigned f = p->first + i;
-                if (f + kRing / 2 < g_tick) continue;  // far too old
+                if (f + kRing / 2 < g_tick || f > g_tick + kRing / 2) continue;  // far too old / too far ahead
                 int r = f % kRing;
                 g_inputs[r][slot] = p->pads[i];
                 g_have[r][slot] = true;
@@ -411,10 +416,17 @@ void Receive() {
     }
 }
 
+bool g_gone[4];                      // a player who stopped sending (left): their pad stays idle
+
 bool HaveAll(unsigned tick) {
     int r = tick % kRing;
-    for (int s = 0; s < g_players; ++s)
-        if (!g_have[r][s] || g_haveTick[r][s] != tick) return false;
+    for (int s = 0; s < g_players; ++s) {
+        if (g_have[r][s] && g_haveTick[r][s] == tick) continue;
+        if (!g_gone[s]) return false;
+        g_inputs[r][s] = Pad{};
+        g_have[r][s] = true;
+        g_haveTick[r][s] = tick;
+    }
     return true;
 }
 
@@ -482,13 +494,36 @@ bool LivePlayer(unsigned char* self) {
     return index < 4 && !IsBadReadPtr(*reinterpret_cast<void**>(self + 0x38), 0x40);
 }
 
+}  // namespace
+
+// The game's own list of players in the level (0xbad988: up to 8 pointers, count at +0x20), live ones only,
+// in player-index order - the same set and order on every PC. (The research player spy's list is in the
+// order this PC happened to notice each object, holds leftovers from the menus, and fills up.)
+int GamePlayers(unsigned char** out, int max) {
+    auto list = *reinterpret_cast<unsigned char* volatile*>(0xbad988);
+    if (!list || IsBadReadPtr(list, 0x24)) return 0;
+    int count = *reinterpret_cast<int*>(list + 0x20), n = 0;
+    for (int i = 0; i < count && i < 8 && n < max; ++i) {
+        auto p = reinterpret_cast<unsigned char**>(list)[i];
+        if (!p || !LivePlayer(p)) continue;
+        int k = n++;
+        while (k > 0 && *reinterpret_cast<int*>(out[k - 1] + 0xdf8) > *reinterpret_cast<int*>(p + 0xdf8)) {
+            out[k] = out[k - 1];
+            --k;
+        }
+        out[k] = p;
+    }
+    return n;
+}
+
+namespace {
+
 unsigned HashPlayers() {
     unsigned h = 2166136261u;
-    void* players[8];
-    int n = ResearchPlayers(players, 8);
+    unsigned char* players[8];
+    int n = GamePlayers(players, 8);
     for (int i = 0; i < n; ++i) {
-        auto self = static_cast<unsigned char*>(players[i]);
-        if (!LivePlayer(self)) continue;
+        auto self = players[i];
         auto xform = *reinterpret_cast<unsigned char**>(self + 0x38);
         int index = *reinterpret_cast<int*>(self + 0xdf8);
         h = (h ^ (unsigned)index) * 16777619u;
@@ -498,14 +533,12 @@ unsigned HashPlayers() {
 }
 
 void LogPlayers(const wchar_t* tag) {
-    void* players[8];
-    int n = ResearchPlayers(players, 8);
+    unsigned char* players[8];
+    int n = GamePlayers(players, 8);
     for (int i = 0; i < n; ++i) {
-        auto self = static_cast<unsigned char*>(players[i]);
-        if (!LivePlayer(self)) continue;
-        auto xform = *reinterpret_cast<float**>(self + 0x38);
+        auto xform = *reinterpret_cast<float**>(players[i] + 0x38);
         Log(L"Netplay: %s tick %u player %d at (%.4f, %.4f, %.4f)", tag, g_tick,
-            *reinterpret_cast<int*>(self + 0xdf8), xform[12], xform[13], xform[14]);
+            *reinterpret_cast<int*>(players[i] + 0xdf8), xform[12], xform[13], xform[14]);
     }
 }
 
@@ -661,8 +694,8 @@ void Tick() {
     } else {
         // The previous tick g_tick is complete: sample state at this exact boundary.
         if (!g_playStartTick) {
-            void* players[8];
-            if (ResearchPlayers(players, 8) > 0) {
+            unsigned char* players[8];
+            if (GamePlayers(players, 8) > 0) {
                 g_playStartTick = g_tick + 1;
                 Log(L"Netplay: players exist from tick %u", g_playStartTick);
             }
@@ -697,13 +730,14 @@ void Tick() {
     while (!HaveAll(g_tick)) {
         Receive();
         if (GetTickCount64() >= nextResend) { SendInputs(future); nextResend = GetTickCount64() + 5; }
-        if (GetTickCount64() > until) {
-            Log(L"Netplay: no input from a peer for 10 s at tick %u - continuing without it", g_tick);
+        if (GetTickCount64() > until) {  // they've left (or their connection is gone): play on without them
             int q = g_tick % kRing;
             for (int s = 0; s < g_players; ++s)
                 if (!g_have[q][s] || g_haveTick[q][s] != g_tick) {
-                    g_inputs[q][s] = Pad{}; g_have[q][s] = true; g_haveTick[q][s] = g_tick;
+                    g_gone[s] = true;
+                    Log(L"Netplay: no input from player %d for 10 s at tick %u - they left; their character stays idle", s, g_tick);
                 }
+            HaveAll(g_tick);
             break;
         }
         Real_Sleep(0);

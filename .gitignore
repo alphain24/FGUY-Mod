@@ -13,3 +13,7 @@ reference/
 backups/
 *.obj
 *.exe
+
+# Family Guy show audio (loading-screen music): yours to use, not ours to publish
+sounds/
+dist/FGUYMod/sounds/

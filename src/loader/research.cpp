@@ -101,7 +101,7 @@ void InitResearch() {
         InstallHooks(GetModuleHandleW(nullptr), hooks);
     }
     g_spyLog = SettingInt(L"Debug", L"PlayerSpy", L"FGUYMOD_PLAYERSPY", 0) != 0;
-    g_spy = g_spyLog || NetplayEnabled();  // netplay needs to know the players
+    g_spy = g_spyLog;
     if (!g_spy) return;
     auto vt = reinterpret_cast<void**>(kPlayerVtable);
     DWORD old;

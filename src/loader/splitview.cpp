@@ -61,11 +61,10 @@ int MyPlayerViewport() {
     if (g_forced >= 0) return g_forced;
     int slot = NetplayLocalSlot();
     if (slot < 0) return -1;
-    void* players[8];
-    int n = ResearchPlayers(players, 8);  // live players: find the one with my slot's index
+    unsigned char* players[8];
+    int n = GamePlayers(players, 8);  // the level's players: find the one with my slot's index
     for (int i = 0; i < n; ++i) {
-        auto p = static_cast<unsigned char*>(players[i]);
-        if (IsBadReadPtr(p, 0xe00) || *reinterpret_cast<uintptr_t*>(p) != 0xa1af14) continue;
+        auto p = players[i];
         if (*reinterpret_cast<int*>(p + 0xdf8) == slot) {
             int vp = *reinterpret_cast<int*>(p + 0xdfc);
             if (vp >= 0 && vp < kMaxViewports) return vp;

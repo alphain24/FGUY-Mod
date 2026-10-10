@@ -380,9 +380,14 @@ DWORD WINAPI HandoffWait(LPVOID arg) {
 // START <token> <slot> <players> <delay> <udp port> <lang> <conf> <picks>. Called with g_lock held.
 void StartSession(const std::vector<std::string>& f) {
     // The session's save folder: FGUYMod\online (test copies on one PC: online_<their test folder>).
-    wchar_t dirName[80] = L"online", test[64];
-    if (GetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", test, 64) && _wcsnicmp(test, L"online", 6) != 0)
-        swprintf_s(dirName, L"online_%s", test);
+    // (worked out once: starting sets FGUYMOD_SAVEDIR itself, and a failed start can be retried)
+    static wchar_t dirName[80] = L"";
+    if (!dirName[0]) {
+        wchar_t test[64];
+        wcscpy_s(dirName, L"online");
+        if (GetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", test, 64) && _wcsnicmp(test, L"online", 6) != 0)
+            swprintf_s(dirName, L"online_%s", test);
+    }
     wchar_t dir[MAX_PATH], save[MAX_PATH];
     swprintf_s(dir, L"%s\\%s", g_modDir, dirName);
     CreateDirectoryW(dir, nullptr);

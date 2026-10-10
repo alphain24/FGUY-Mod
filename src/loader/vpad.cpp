@@ -8,6 +8,10 @@
 //   quit                                        exit the game cleanly (test tools)
 // Each button is held for kHoldMs, then released for kGapMs before the next one.
 // Off unless FGUYMod.ini [Debug] TestInput=1 (or env FGUYMOD_TESTINPUT=1).
+//
+// The hook is always on, though, to note when each controller button was last pressed: the menus get
+// some buttons as letter keys (A, LB = L, RB = R, X, Y), and the online lobby asks VPadPressedWithin to
+// tell those from letters typed on a keyboard (lobby codes).
 
 #include "common.h"
 
@@ -36,6 +40,20 @@ DWORD g_packet = 1;
 using XInputGetState_t = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
 XInputGetState_t Real_XInputGetState;
 
+// When each button (bit) last went down, on any pad.
+volatile ULONGLONG g_downAt[16];
+WORD g_lastSeen[4];
+
+void NoteButtons(DWORD pad, WORD buttons) {
+    if (pad >= 4) return;
+    WORD down = buttons & ~g_lastSeen[pad];
+    g_lastSeen[pad] = buttons;
+    if (!down) return;
+    ULONGLONG now = GetTickCount64();
+    for (int b = 0; b < 16; ++b)
+        if (down & (1 << b)) g_downAt[b] = now;
+}
+
 // Buttons currently held on `pad` by the queue (advances the queue as time passes).
 WORD CurrentButtons(DWORD pad) {
     std::lock_guard<std::mutex> lock(g_lock);
@@ -54,6 +72,14 @@ WORD CurrentButtons(DWORD pad) {
 }  // namespace
 bool NetplayPad(DWORD pad, XINPUT_STATE* state, DWORD(WINAPI* real)(DWORD, XINPUT_STATE*));
 WORD VPadButtons(DWORD pad) { return CurrentButtons(pad); }
+
+// Did any of these buttons go down on a controller in the last `ms` milliseconds?
+bool VPadPressedWithin(WORD buttons, DWORD ms) {
+    ULONGLONG now = GetTickCount64();
+    for (int b = 0; b < 16; ++b)
+        if ((buttons & (1 << b)) && g_downAt[b] && now - g_downAt[b] <= ms) return true;
+    return false;
+}
 
 // A press after a delay (the session autopilot's presses in test copies without netplay).
 struct DelayedPress { DWORD pad; WORD buttons; DWORD ms; };
@@ -80,7 +106,10 @@ DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
     static LONG calls[4];
     if (pad < 4 && InterlockedIncrement(&calls[pad]) == 1)
         Log(L"VPad: game polls pad %lu (real pad %s)", pad, r == ERROR_SUCCESS ? L"connected" : L"absent");
-    if (pad >= 4 || !g_padActive[pad] || !state) return r;
+    if (pad >= 4 || !g_padActive[pad] || !state) {
+        if (state) NoteButtons(pad, r == ERROR_SUCCESS ? state->Gamepad.wButtons : 0);
+        return r;
+    }
     if (r != ERROR_SUCCESS) ZeroMemory(state, sizeof(*state));  // no real pad: pretend one is there
     WORD buttons = CurrentButtons(pad);
     static WORD last[4];
@@ -91,6 +120,7 @@ DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
     }
     state->Gamepad.wButtons |= buttons;
     state->dwPacketNumber += g_packet;
+    NoteButtons(pad, state->Gamepad.wButtons);
     return ERROR_SUCCESS;
 }
 
@@ -167,7 +197,6 @@ DWORD WINAPI PipeThread(LPVOID) {
 
 void InitVirtualPad(HMODULE exe) {
     bool testInput = SettingInt(L"Debug", L"TestInput", L"FGUYMOD_TESTINPUT", 0) != 0;
-    if (!testInput && !NetplayEnabled()) return;
     HookSpec hooks[] = {
         {"xinput1_3.dll", MAKEINTRESOURCEA(2), (void*)Hook_XInputGetState, (void**)&Real_XInputGetState},
     };

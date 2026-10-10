@@ -612,11 +612,14 @@ def check_no_outer_locals(fnode, outer):
 
 def call(f, e):
     _, target, args = e
-    if target[0] == 'name' and target[1] == 'getURL' and not f.reg_for('getURL'):  # an instruction
+    if target[0] == 'name' and target[1] == 'getURL' and not f.reg_for('getURL'):  # an instruction (so is getTimer)
         expr(f, args[0])
         expr(f, args[1] if len(args) > 1 else ('str', ''))
         f.op('GetURL2', b'\x00')
         f.push(UNDEF)  # it has no value; calls always leave one
+        return
+    if target[0] == 'name' and target[1] == 'getTimer' and not args and not f.reg_for('getTimer'):  # an instruction
+        f.op('GetTime')
         return
     for a in reversed(args):
         expr(f, a)

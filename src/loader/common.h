@@ -36,6 +36,7 @@ void InitDisplay(HMODULE exe);         // windowed / borderless / resolution   (
 void InitVirtualPad(HMODULE exe);      // injected controller input for tests  (vpad.cpp)
 WORD VPadButtons(DWORD pad);           //   buttons the test pipe holds on a pad right now
 void VPadPressLater(DWORD pad, WORD buttons, DWORD ms);
+bool VPadPressedWithin(WORD buttons, DWORD ms);  //   a controller button went down just now
 void InitDirectInput();                // Windows key in windowed modes        (dinput.cpp)
 void OnDirectInputCreated(void* directInput);
 
@@ -46,7 +47,8 @@ void VideoRequestQuit();               //   exit cleanly at the end of the next 
 void InitUi();                         // menu movie patches + menu calls      (ui.cpp)
 void InitResearch();                   // optional research hooks              (research.cpp)
 void ResearchOnFrame(unsigned frame);
-int ResearchPlayers(void** out, int max);  // live player objects (needs the player spy)
+int ResearchPlayers(void** out, int max);  // player objects the research spy has seen
+int GamePlayers(unsigned char** out, int max);  // the game's live players, by player index (netplay.cpp)
 
 void InitNetplay(HMODULE exe);         // lockstep online play core            (netplay.cpp)
 bool NetplayEnabled();
@@ -82,3 +84,8 @@ void InitHandoff();
 bool HandoffHidden();                  //   this game is a session booting hidden
 void HandoffMatchRunning();            //   the match is running: show it
 void HandoffRevealed();
+
+// sounds.cpp: loading-screen music
+void InitSounds();
+void SoundsOnFileOpen(const wchar_t* path);       //   config.cpp: a file the game opens
+void SoundsOnlineLoading(const char* mode, const char* map);  // the lobby's loading screen

@@ -47,7 +47,7 @@ sendto_t Real_sendto;
 send_t Real_send;
 recvfrom_t Real_recvfrom;
 recv_t Real_recv;
-int g_netLogBudget = 300;
+int g_netLogBudget = 30;   // the game sends a LAN beacon every second; the first few calls say enough
 int g_netDumpBudget = 40;  // packets whose bytes we hex-dump
 
 void LogHex(const wchar_t* tag, const char* buf, int len) {

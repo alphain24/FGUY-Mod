@@ -75,6 +75,7 @@ HANDLE WINAPI Hook_CreateFileW(LPCWSTR path, DWORD access, DWORD share, LPSECURI
         actual = saveRedirect;
     }
     HANDLE h = Real_CreateFileW(actual, access, share, sa, disposition, flags, templ);
+    if (h != INVALID_HANDLE_VALUE) SoundsOnFileOpen(path);  // a level's package: loading music
     if (path && g_fileLogBudget > 0) {
         --g_fileLogBudget;
         Log(L"Open%s \"%s\"%s", (access & GENERIC_WRITE) ? L"(write)" : L"", path,

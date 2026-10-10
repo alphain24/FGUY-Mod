@@ -17,6 +17,7 @@
 #include <cstring>
 #include <cwchar>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
@@ -156,11 +157,13 @@ bool BuildPatched(MoviePatch& p, const unsigned char* orig) {
 using OpenFile_t = void*(__thiscall*)(void* self, const char* url, int flags, int mode);
 OpenFile_t Real_OpenFile;
 std::set<std::string> g_seenFiles;
+std::mutex g_openLock;  // movies can be opened by the game's loading threads too
 
 void* __fastcall Hook_OpenFile(void* self, void*, const char* url, int flags, int mode) {
     void* file = Real_OpenFile(self, url, flags, mode);
     if (!file || !url) return file;
     auto bytes = reinterpret_cast<unsigned char*>(file);
+    std::lock_guard<std::mutex> lock(g_openLock);
     if (g_seenFiles.insert(url).second)
         Log(L"UI: game opens \"%S\" (file type %#x, %d bytes)", url, *reinterpret_cast<unsigned*>(file),
             *reinterpret_cast<int*>(bytes + kMemFileLen));
@@ -172,11 +175,12 @@ void* __fastcall Hook_OpenFile(void* self, void*, const char* url, int flags, in
     unsigned movieLength;
     memcpy(&movieLength, data + 4, 4);
     if (movieLength > (unsigned)length) return file;
+    unsigned crc = 0;
     for (MoviePatch& p : g_patches) {
         if (movieLength != p.origLength) continue;
-        if (p.patched.empty()) {
-            if (Crc32(data, movieLength) != p.origCrc || !BuildPatched(p, data)) continue;
-        }
+        if (!crc) crc = Crc32(data, movieLength);   // the very movie the patch was made for, every time
+        if (crc != p.origCrc) continue;
+        if (p.patched.empty() && !BuildPatched(p, data)) continue;
         data = p.patched.data();
         length = (int)p.patched.size();
         *reinterpret_cast<int*>(bytes + kMemFilePos) = 0;
@@ -272,6 +276,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             static char v[32];
             if (!GetEnvironmentVariableA("FGUYMOD_TEST_AUTOMENU", v, sizeof(v))) v[0] = 0;
             ReturnString(movie, v);
+        } else if (strcmp(fn, "LoadingSound") == 0) {  // (mode, map): the lobby shows its loading screen
+            SoundsOnlineLoading(ArgString(args, argc, 0), ArgString(args, argc, 1));
+        } else if (strcmp(fn, "PadPressed") == 0) {  // (button bits): pressed on a controller just now?
+            ReturnBool(movie, VPadPressedWithin((WORD)ArgNumber(args, argc, 0), 250));
         } else if (strcmp(fn, "MenuView") == 0) {  // (left, top, right, bottom) of the screen, 0..1
             SplitViewMenuRect((float)ArgNumber(args, argc, 0), (float)ArgNumber(args, argc, 1),
                               (float)ArgNumber(args, argc, 2), (float)ArgNumber(args, argc, 3));

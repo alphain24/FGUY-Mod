@@ -14,6 +14,7 @@
 //   netplay.cpp  online play core: lockstep input sync, fixed clock, desync checks
 //   vpad.cpp     virtual controller for test scripts (and later, remote players)
 //   online.cpp   the lobby; handoff.cpp starts its sessions without the game visibly restarting
+//   sounds.cpp   a Family Guy sting on loading screens
 // Loader settings: FGUYMod\FGUYMod.ini. Log: FGUYMod\FGUYMod_<pid>.log.
 
 #include "common.h"
@@ -52,6 +53,7 @@ void Init() {
     InitNetplay(exe);
     InitConfigOverride(exe);
     InitHandoff();
+    InitSounds();
     InitDisplay(exe);
     InitD3D9(exe);
     InitDirectInput();

@@ -54,9 +54,9 @@ import secrets
 import time
 
 PROTO = 2
-# No I/O/0/1 (look alike), and no A/L/R/X/Y: the game turns the controller's A, LB, RB, X and Y buttons into
-# those letter keys, so typing a code on a keyboard must never need them.
-CODE_LETTERS = 'BCDEFGHJKMNPQSTUVWZ23456789'
+# No I/O/0/1 (they look alike). (The game turns some controller buttons into letter keys; the lobby tells
+# those apart from typed letters, so codes can use the whole alphabet.)
+CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 NAME_RE = re.compile(r'^[A-Za-z0-9_\-]{1,16}$')
 TOKEN_RE = re.compile(r'^[A-Za-z0-9_\-]{1,24}$')   # characters, modes, maps, numbers
 MAX_LINE = 2 * 1024 * 1024        # a save file (~450 KB) as base64 fits easily
@@ -64,6 +64,8 @@ MAX_SAVE = 1024 * 1024
 MAX_CLIENTS_PER_IP = 8
 MAX_LOBBIES = 500
 SESSION_IDLE_S = 120              # forget a game session after this long without packets
+CLIENT_IDLE_S = 60                # drop a lobby connection silent this long (the game pings every 2 s)
+SLOT_MOVE_S = 5                   # a slot's address may change (new NAT port) only after this much silence
 RELAY_MAX_PPS = 2000              # per player address
 TICK_MS = 1000 / 60
 
@@ -118,6 +120,7 @@ class Lobby:
 class Session:
     def __init__(self, players):
         self.addrs = [None] * players
+        self.heard = [0.0] * players   # when each slot's address last sent
         self.last = time.monotonic()
 
 
@@ -139,7 +142,7 @@ class Server:
         self.clients.add(c)
         try:
             while True:
-                line = await reader.readline()
+                line = await asyncio.wait_for(reader.readline(), CLIENT_IDLE_S)
                 if not line:
                     break
                 try:
@@ -148,7 +151,8 @@ class Server:
                     log.exception('command failed: %s', e)
                     c.send('ERROR bad request')
                 await writer.drain()
-        except (asyncio.LimitOverrunError, ValueError, ConnectionError, asyncio.IncompleteReadError):
+        except (asyncio.LimitOverrunError, ValueError, ConnectionError, asyncio.IncompleteReadError,
+                asyncio.TimeoutError):
             pass
         finally:
             self.leave(c)
@@ -207,6 +211,10 @@ class Server:
                 c.send('ERROR That lobby is full')
             else:
                 self.leave(c)
+                taken = {m.name for m in lobby.members}
+                if c.name in taken:  # two players with one name: number the newcomer
+                    base = c.name[:14]
+                    c.name = next(f'{base}{k}' for k in range(2, 10) if f'{base}{k}' not in taken)
                 c.lobby, c.ready = lobby, False
                 lobby.members.append(c)
                 c.send(f'LOBBY {code} {int(lobby.private)}')
@@ -300,7 +308,13 @@ class Server:
         slot = data[10]
         if not s or slot >= len(s.addrs):
             return
-        s.addrs[slot] = addr
+        if s.addrs[slot] != addr:
+            # a slot keeps its address; another one may take it over only once it has gone quiet (a player's
+            # router can give them a new port), so nobody can grab someone else's slot mid-game
+            if s.addrs[slot] is not None and now - s.heard[slot] < SLOT_MOVE_S:
+                return
+            s.addrs[slot] = addr
+        s.heard[slot] = now
         s.last = now
         for i, a in enumerate(s.addrs):
             if a and i != slot:
