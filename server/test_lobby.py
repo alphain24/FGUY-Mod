@@ -85,8 +85,8 @@ def main():
         while not line.startswith('ERROR'):
             line = host.f.readline().strip()
         assert 'ready' in line, line
-        guest.send('SET Lois 2 1')
-        assert ',Lois,2,1' in host.expect('MEMBERS')
+        guest.send('SET Lois 2 1 k')
+        assert ',Lois,2,1,k' in host.expect('MEMBERS')
         host.send('CONF CF AM 1 2 1')
         while guest.expect('CONF') != 'CONF CF AM 1 2 1':  # the first one is the defaults, sent on join
             pass
@@ -99,7 +99,7 @@ def main():
         start_guest = guest.expect('START').split()
         token = bytes.fromhex(start_host[1])
         assert start_guest[1] == start_host[1] and start_host[2] == '0' and start_guest[2] == '1'
-        assert start_guest[7] == 'CF,AM,1,2,1' and start_guest[8] == 'Peter:0:0;Lois:2:1', start_guest
+        assert start_guest[7] == 'CF,AM,1,2,1' and start_guest[8] == 'Peter:0:0:c;Lois:2:1:k', start_guest
         print('   input delay for 80 ms:', start_host[4])
 
         # relay: both players say hello, then host -> guest

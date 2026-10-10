@@ -73,6 +73,16 @@ WORD CurrentButtons(DWORD pad) {
 bool NetplayPad(DWORD pad, XINPUT_STATE* state, DWORD(WINAPI* real)(DWORD, XINPUT_STATE*));
 WORD VPadButtons(DWORD pad) { return CurrentButtons(pad); }
 
+// Is a real controller plugged in (pads 0-3)?
+bool VPadRealPadConnected() {
+    if (!Real_XInputGetState) return false;
+    for (DWORD pad = 0; pad < 4; ++pad) {
+        XINPUT_STATE st;
+        if (Real_XInputGetState(pad, &st) == ERROR_SUCCESS) return true;
+    }
+    return false;
+}
+
 // Did any of these buttons go down on a controller in the last `ms` milliseconds?
 bool VPadPressedWithin(WORD buttons, DWORD ms) {
     ULONGLONG now = GetTickCount64();
@@ -142,6 +152,14 @@ void HandleCommand(char* line) {
     char* cmd = strtok_s(line, " \t\r\n", &ctx);
     if (cmd && _stricmp(cmd, "quit") == 0) {  // test tools: exit cleanly (see VideoRequestQuit)
         VideoRequestQuit();
+        return;
+    }
+    if (cmd && _stricmp(cmd, "kbm") == 0) {  // test keyboard / mouse (online keyboard players, kbm.cpp)
+        char* what = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* a = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* b = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* c = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (what) KbmTestCommand(what, a ? atoi(a) : 0, b ? atoi(b) : 0, c ? atoi(c) : 0);
         return;
     }
     if (!cmd || _stricmp(cmd, "press") != 0) return;

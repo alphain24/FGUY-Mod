@@ -36,7 +36,8 @@ void InitDisplay(HMODULE exe);         // windowed / borderless / resolution   (
 void InitVirtualPad(HMODULE exe);      // injected controller input for tests  (vpad.cpp)
 WORD VPadButtons(DWORD pad);           //   buttons the test pipe holds on a pad right now
 void VPadPressLater(DWORD pad, WORD buttons, DWORD ms);
-bool VPadPressedWithin(WORD buttons, DWORD ms);  //   a controller button went down just now
+bool VPadPressedWithin(WORD buttons, DWORD ms);
+bool VPadRealPadConnected();           //   a real controller is plugged in  //   a controller button went down just now
 void InitDirectInput();                // Windows key in windowed modes        (dinput.cpp)
 void OnDirectInputCreated(void* directInput);
 
@@ -84,12 +85,26 @@ void InitHandoff();
 bool HandoffHidden();                  //   this game is a session booting hidden
 void HandoffMatchRunning();            //   the match is running: show it
 void HandoffRevealed();
+bool HandoffHudUp();                   //   this game's level HUD has laid itself out (ui.cpp)
 
-// kbm.cpp: keyboard and mouse as this player's controller in online sessions
+// kbm.cpp: the game's own keyboard / mouse controls in online sessions
+#pragma pack(push, 1)
+struct KbmRaw {            // one player's raw keyboard and mouse for one tick (sent with their inputs)
+    BYTE keys[32];         //   key down bits, by Windows key code
+    SHORT dx, dy, dz;      //   mouse movement and wheel
+    BYTE buttons;          //   mouse buttons (bit 0 left, 1 right, 2 middle, 3/4 side)
+    SHORT cursorX, cursorY;
+    BYTE flags;            //   bit 0: this player's level HUD is up (every player's: keyboard mode starts)
+};
+#pragma pack(pop)
 void KbmInit(HWND wnd);
 bool KbmOnMessage(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT* result);
 bool KbmSkipPressed();
-void KbmMerge(WORD* buttons, BYTE* lt, BYTE* rt, SHORT* lx, SHORT* ly, SHORT* rx, SHORT* ry);
+void KbmSessionStart(const char* session);     // netplay.cpp: which players play with keyboard and mouse
+bool KbmIsKeyboardSlot(int slot);
+void KbmCapture(KbmRaw* out);                  //   my keyboard and mouse now
+void KbmApply(const KbmRaw* bySlot, int players);  //   every tick: feed the keyboard players' devices
+void KbmTestCommand(const char* what, int a, int b, int c);  // test pipe: kbm key <vk> <ms> | mouse <dx> <dy> <ticks> | click <ms>
 
 // sounds.cpp: loading-screen music
 void InitSounds();

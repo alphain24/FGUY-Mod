@@ -18,7 +18,8 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     HOST <maxplayers 2-4> [<private 0|1>]   create a lobby (you get slot 0); private = join by code only
     JOIN <code>                      join a lobby by its code
     READY <0|1>
-    SET <character> <costume> <team> your picks (character name, costume index, team 0 good / 1 evil)
+    SET <character> <costume> <team> [<input>]   your picks (character name, costume index, team 0 good /
+                                     1 evil; input k = keyboard and mouse, c = controller)
     CONF <mode> <map> <time> <score> <ff>   host: match settings (short codes / list indices)
     OWN <list>                       host: what the host's save has (the session plays on it), so everyone
                                      picks from it: <char>:<costume>.<costume>...;<char>:...
@@ -32,12 +33,12 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     WELCOME <proto>
     LIST [<code>,<host>,<players>,<max>,<mode>,<map> ...]     (public lobbies)
     LOBBY <code> <private>
-    MEMBERS <your slot> [<slot>,<name>,<ready>,<rtt>,<character>,<costume>,<team> ...]
+    MEMBERS <your slot> [<slot>,<name>,<ready>,<rtt>,<character>,<costume>,<team>,<input> ...]
     CONF <mode> <map> <time> <score> <ff>
     OWN <list>                       the host's characters and costumes (also sent on joining)
     SAVE <base64>                    sent right before START when the host shared a save
     START <token> <slot> <players> <input delay> <udp port> <lang> <conf> <picks>
-                                     conf = mode,map,time,score,ff; picks = char:costume:team;... by slot
+                                     conf = mode,map,time,score,ff; picks = char:costume:team:input;... by slot
                                      (a snapshot, so every player starts from exactly the same choices)
     CLOSED <reason...>               the lobby is gone (host left)
     ERROR <text...>
@@ -86,7 +87,7 @@ class Client:
         self.lobby = None
         self.ready = False
         self.rtt = 0
-        self.char, self.costume, self.team = 'Peter', '0', '0'
+        self.char, self.costume, self.team, self.input = 'Peter', '0', '0', 'c'
 
     def send(self, line):
         try:
@@ -113,7 +114,7 @@ class Lobby:
         return self.members[0]
 
     def broadcast_members(self):
-        entries = ' '.join(f'{i},{c.name},{int(c.ready)},{c.rtt},{c.char},{c.costume},{c.team}'
+        entries = ' '.join(f'{i},{c.name},{int(c.ready)},{c.rtt},{c.char},{c.costume},{c.team},{c.input}'
                            for i, c in enumerate(self.members))
         for c in self.members:
             c.send(f'MEMBERS {c.slot} {entries}'.rstrip())
@@ -233,8 +234,9 @@ class Server:
             c.ready = bool(args and args[0] == '1')
             c.lobby.broadcast_members()
         elif cmd == 'SET' and c.lobby:
-            if len(args) == 3 and all(TOKEN_RE.match(a) for a in args):
-                c.char, c.costume, c.team = args
+            if len(args) in (3, 4) and all(TOKEN_RE.match(a) for a in args):
+                c.char, c.costume, c.team = args[:3]
+                c.input = 'k' if len(args) == 4 and args[3] == 'k' else 'c'
                 c.lobby.broadcast_members()
         elif cmd == 'CONF' and c.lobby and c is c.lobby.host:
             if len(args) == 5 and all(TOKEN_RE.match(a) for a in args):
@@ -296,7 +298,7 @@ class Server:
         worst = max(m.rtt for m in lobby.members)
         delay = max(2, min(15, 1 + math.ceil((worst + 15) / TICK_MS)))
         conf = ','.join(lobby.conf)
-        picks = ';'.join(f'{m.char}:{m.costume}:{m.team}' for m in lobby.members)
+        picks = ';'.join(f'{m.char}:{m.costume}:{m.team}:{m.input}' for m in lobby.members)
         for i, m in enumerate(lobby.members):
             if lobby.save and i > 0:
                 m.send('SAVE ' + lobby.save)

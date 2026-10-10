@@ -145,5 +145,6 @@ function FGUYSessionCheckJoined() {
         prepTeam[p] = pick.team == 1 ? TEAM_EVIL : TEAM_GOOD;
         prepState[p] = PREP_READY;
     }
+    flash.external.ExternalInterface.call('FGUYMOD_SessionLevel');   // the level is launched (the loader's cue)
     MultiplayerStartGame();
 }

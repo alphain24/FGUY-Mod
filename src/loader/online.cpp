@@ -35,7 +35,7 @@ const int kProto = 2;
 const char* kModVersion = "0.5";
 
 struct Member {
-    std::string name, character = "Peter", costume = "0", team = "0";
+    std::string name, character = "Peter", costume = "0", team = "0", input = "c";  // input: k keyboard, c controller
     bool ready = false;
     int rtt = 0;
 };
@@ -206,7 +206,8 @@ void SetStatus(State s, const std::string& text) {
 }
 
 void SendPicks() {  // g_lock held
-    SendLine("SET " + CleanToken(g_mine.character) + " " + CleanToken(g_mine.costume) + " " + CleanToken(g_mine.team));
+    SendLine("SET " + CleanToken(g_mine.character) + " " + CleanToken(g_mine.costume) + " " + CleanToken(g_mine.team) +
+             " " + (g_mine.input == "k" ? "k" : "c"));
 }
 
 void StartSession(const std::vector<std::string>& f);
@@ -245,6 +246,7 @@ void HandleLine(const std::string& line) {
             m.character = e[4];
             m.costume = e[5];
             m.team = e[6];
+            if (e.size() > 7) m.input = e[7] == "k" ? "k" : "c";
             g_members.push_back(m);
         }
     } else if (cmd == "OWN" && f.size() > 1) {
@@ -492,6 +494,16 @@ void OnlineEnter() {
     g_serverHost = colon == std::string::npos ? s : s.substr(0, colon);
     g_serverPort = colon == std::string::npos ? 7650 : atoi(s.c_str() + colon + 1);
     g_name = CleanName(Narrow(name));
+    // keyboard and mouse or controller online: [Online] Controls = auto | keyboard | controller
+    // (auto: a controller if one is plugged in)
+    wchar_t controls[16];
+    SettingString(L"Online", L"Controls", L"FGUYMOD_ONLINE_CONTROLS", L"auto", controls, 16);
+    {
+        std::lock_guard<std::mutex> lock(g_lock);
+        if (_wcsicmp(controls, L"keyboard") == 0) g_mine.input = "k";
+        else if (_wcsicmp(controls, L"controller") == 0) g_mine.input = "c";
+        else g_mine.input = VPadRealPadConnected() ? "c" : "k";
+    }
     g_wantConnection = true;
     if (g_thread) { WaitForSingleObject(g_thread, 3000); CloseHandle(g_thread); }
     g_thread = CreateThread(nullptr, 0, LobbyThread, nullptr, 0, nullptr);
@@ -511,7 +523,7 @@ void OnlineExit() {
 //        state: off, connecting, online, lobby, starting, failed
 //   C|<mode>|<map>|<time>|<score>|<ff>                      the lobby's match settings
 //   O|<char>:<costume>.<costume>;...                         what the host's save has (in a lobby)
-//   M|<slot>|<name>|<ready>|<ping>|<character>|<costume>|<team>    one per player in my lobby
+//   M|<slot>|<name>|<ready>|<ping>|<character>|<costume>|<team>|<input k/c>   one per player in my lobby
 //   L|<code>|<host>|<players>|<max>|<mode>|<map>            one per open lobby (when not in one)
 const char* LobbyState() {
     std::lock_guard<std::mutex> lock(g_lock);
@@ -525,7 +537,8 @@ const char* LobbyState() {
         for (size_t i = 0; i < g_members.size(); ++i) {
             const Member& m = g_members[i];
             g_text += "M|" + std::to_string(i) + "|" + Field(m.name) + "|" + (m.ready ? "1" : "0") + "|" +
-                      std::to_string(m.rtt) + "|" + Field(m.character) + "|" + Field(m.costume) + "|" + Field(m.team) + "\n";
+                      std::to_string(m.rtt) + "|" + Field(m.character) + "|" + Field(m.costume) + "|" + Field(m.team) +
+                      "|" + m.input + "\n";
         }
     } else {
         for (const LobbyInfo& l : g_lobbies)
@@ -535,7 +548,7 @@ const char* LobbyState() {
     return g_text.c_str();
 }
 
-// host <max> <private>   join <code>   leave   ready   start   pick <char> <costume> <team>
+// host <max> <private>   join <code>   leave   ready   start   pick <char> <costume> <team> [<input k/c>]
 // conf <mode> <map> <time> <score> <ff>   own <list> (host)
 void LobbyDo(const char* command, const char* a, const char* b, const char* c, const char* d, const char* e) {
     std::lock_guard<std::mutex> lock(g_lock);
@@ -566,11 +579,13 @@ void LobbyDo(const char* command, const char* a, const char* b, const char* c, c
         g_mine.character = CleanToken(a);
         g_mine.costume = CleanToken(b);
         g_mine.team = CleanToken(c);
+        if (d && (d[0] == 'k' || d[0] == 'c')) g_mine.input = d[0] == 'k' ? "k" : "c";
         if (g_state == State::InLobby) {
             if (g_mySlot >= 0 && g_mySlot < (int)g_members.size()) {  // show it right away
                 g_members[g_mySlot].character = g_mine.character;
                 g_members[g_mySlot].costume = g_mine.costume;
                 g_members[g_mySlot].team = g_mine.team;
+                g_members[g_mySlot].input = g_mine.input;
             }
             SendPicks();
         }

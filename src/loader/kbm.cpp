@@ -1,120 +1,204 @@
-// Keyboard and mouse in online sessions - with the game's own controls.
+// Keyboard and mouse in online sessions - the game's own controls, exactly as offline.
 //
-// In a session every player is one controller (netplay.cpp sends each player's pad state to everyone; the
-// game's own keyboard / mouse support can only drive player 1 of the PC it runs on). So each of the game's
-// keyboard actions is played as the controller input that does the same thing, using the player's own key
-// bindings (the game's Options > Controls > Keyboard mapping, saved in the registry as KeyConfig): pairs of
-// <action, key>, keys being Windows key codes, or 0x100.. for the mouse buttons and wheel.
+// How the game does keyboard / mouse (FGUY.exe, see RESEARCH_NOTES.md): it's one more "controller". Each
+// controller slot (ConsolePad0..19) has a device; slot 0 is the keyboard / mouse device (type 8), the others
+// XInput pads. Every tick the slot's Update (0x49bb90) copies the device state's current half to its previous
+// half and polls: for keyboard / mouse, 0x450930(state, 0) - keys from the game window's key table
+// ([0xad39e8]+0xc2, by Windows key code), mouse movement / wheel / buttons / cursor from the raw poll
+// 0x4b6ad0 (DirectInput into globals at 0xaefad4..0xaefaf4). A player's input object (player+0x101c,
+// zPlayerInputHuman) reads its device (input+0x30): its key bindings, its mouse aiming - all the game's code.
 //
-//   action (default key)                     controller
-//   17/15/18/16 move fwd/left/back/right     left stick
-//    8 Jump (Space)          A               43 Melee Attack (F)        B
-//   21 Reload/Interact (R)   X               27 Weapon Wheel (Mouse 3)  Y (held)
-//   29/30 Next / Previous Weapon (wheel)     Y (tapped)
-//   23 Shoot Weapon (Mouse 1)  RT            25 Zoom/Detonate (Mouse 2)  LT
-//   37 Throw Grenade (G)     RB              22 Special Ability/Item (Q)  LB
-//   20 Sprint (Shift)        left stick click   52 Center Camera (C)  right stick click
-//   51 Switch Character (E)  d-pad up        48 Taunt (T)               d-pad down
-//   40 Toggle Item Forward (Z), 42 Item Wheel (Ctrl)  d-pad right       41 Toggle Item Backward (X)  d-pad left
-//   54 Objectives (Tab)      Back            10 Pause Menu (Esc)         Start
-//   Quick Weapon 1-6 (31-36): no controller equivalent.
-// Mouse movement is the camera (right stick). In menus: arrows, Enter (A) and Backspace (B) work too.
-// Only while the game window is in front; the mouse is read as raw input and the cursor stays in the window.
+// Online every PC runs every player, so each keyboard player gets a device of their own: every tick, on every
+// PC, the raw keyboard / mouse state that player's PC sent (KbmRaw, in their inputs) is put where the game's
+// poll reads it, the game's own Update steps run on that player's device, and their input object points at
+// it. The game's global "keyboard and mouse" switch (0xacc4cd, which some gameplay code checks) is turned on
+// on every PC at the same tick, once the level's players exist. Nothing reads this PC's real keyboard / mouse
+// directly (dinput.cpp keeps DirectInput quiet; the raw poll is ours in sessions).
 //
-// Settings ([Input] in FGUYMod.ini): MouseSensitivity=1.0, InvertMouse=0.
+// Who plays with keyboard and mouse: the session's picks (char:costume:team:input, input k = keyboard), from
+// the lobby. Test knob: FGUYMOD_TEST_KBMSLOTS=0,1 (slots).
 
 #include "common.h"
 
-#include <xinput.h>
-
-#include <cmath>
+#include <cstring>
 #include <cwchar>
-#include <vector>
 
 namespace {
 
-bool g_on = false;
+bool g_session = false;            // an online session with keyboard players
+bool g_kbmSlot[4] = {};
 HWND g_wnd = nullptr;
-volatile LONG g_dx = 0, g_dy = 0;           // raw mouse movement since the last tick
-volatile LONG g_wheelUp = 0, g_wheelDown = 0;  // wheel notches since the last tick
-int g_tapTicks = 0;                          // ticks left of a wheel notch's change-weapon tap
+volatile LONG g_dx = 0, g_dy = 0, g_dz = 0;   // raw mouse movement / wheel since the last capture
 bool g_clipped = false;
-float g_sensitivity = 1.0f;
-bool g_invert = false;
 
-// Full right-stick deflection at about this many mouse counts per tick (1/60 s), sensitivity 1.0.
-const float kCountsForFull = 40.0f;  // (a 1000 Hz mouse moved briskly gives about that much)
-const float kDeadZone = 8700.0f;     // the game ignores small stick movements; mouse moves start past it
+// ---- addresses in FGUY.exe ---------------------------------------------------------------------------
+const uintptr_t kRawPoll = 0x4b6ad0;        // bool __cdecl RawPoll(): DirectInput -> the globals below
+const unsigned char kRawPollStart[] = {0x55, 0x8b, 0xec, 0x83, 0xec, 0x2c, 0x56, 0x57};
+const uintptr_t kKbmPoll = 0x450930;        // bool __cdecl Poll(state*, int deviceIndex)
+const uintptr_t kWindow = 0xad39e8;         // the game window object; its key table at +0xc2 (256 bytes)
+const int kWindowKeys = 0xc2;
+const uintptr_t kKbmFlag = 0xacc4cd;        // keyboard / mouse mode
+const uintptr_t kPlayerInputVtable = 0xa1a29c;
+const int kPlayerInput = 0x101c, kInputDevice = 0x30;
+volatile LONG* const gMouseDx = reinterpret_cast<volatile LONG*>(0xaefae4);
+volatile LONG* const gMouseDy = reinterpret_cast<volatile LONG*>(0xaefae0);
+volatile LONG* const gMouseDz = reinterpret_cast<volatile LONG*>(0xaefadc);
+volatile LONG* const gMouseSumX = reinterpret_cast<volatile LONG*>(0xaefaf4);
+volatile LONG* const gMouseSumY = reinterpret_cast<volatile LONG*>(0xaefaf0);
+volatile LONG* const gMouseSumZ = reinterpret_cast<volatile LONG*>(0xaefaec);
+volatile LONG* const gMouseButtons = reinterpret_cast<volatile LONG*>(0xaefae8);
+volatile LONG* const gCursorX = reinterpret_cast<volatile LONG*>(0xaefad8);
+volatile LONG* const gCursorY = reinterpret_cast<volatile LONG*>(0xaefad4);
 
-// ---- the game's key bindings --------------------------------------------------------------------------
-enum Target { kButton, kLeftTrigger, kRightTrigger, kMoveX, kMoveY, kWheelTap };
-struct Action { int id; Target target; int value; };  // value: button bits, or the stick direction
-const Action kActions[] = {
-    {17, kMoveY, 1}, {18, kMoveY, -1}, {15, kMoveX, -1}, {16, kMoveX, 1},
-    {8, kButton, XINPUT_GAMEPAD_A}, {43, kButton, XINPUT_GAMEPAD_B}, {21, kButton, XINPUT_GAMEPAD_X},
-    {27, kButton, XINPUT_GAMEPAD_Y}, {29, kWheelTap, 0}, {30, kWheelTap, 0},
-    {23, kRightTrigger, 0}, {25, kLeftTrigger, 0},
-    {37, kButton, XINPUT_GAMEPAD_RIGHT_SHOULDER}, {22, kButton, XINPUT_GAMEPAD_LEFT_SHOULDER},
-    {20, kButton, XINPUT_GAMEPAD_LEFT_THUMB}, {52, kButton, XINPUT_GAMEPAD_RIGHT_THUMB},
-    {51, kButton, XINPUT_GAMEPAD_DPAD_UP}, {48, kButton, XINPUT_GAMEPAD_DPAD_DOWN},
-    {40, kButton, XINPUT_GAMEPAD_DPAD_RIGHT}, {42, kButton, XINPUT_GAMEPAD_DPAD_RIGHT},
-    {41, kButton, XINPUT_GAMEPAD_DPAD_LEFT},
-    {54, kButton, XINPUT_GAMEPAD_BACK}, {10, kButton, XINPUT_GAMEPAD_START},
-};
-// The game's defaults (what an untouched KeyConfig holds).
-const int kDefaults[][2] = {
-    {17, 'W'}, {15, 'A'}, {18, 'S'}, {16, 'D'}, {8, VK_SPACE}, {23, 0x100}, {25, 0x101}, {37, 'G'}, {21, 'R'},
-    {43, 'F'}, {20, VK_LSHIFT}, {48, 'T'}, {51, 'E'}, {22, 'Q'}, {54, VK_TAB}, {52, 'C'}, {27, 0x102},
-    {29, 0x105}, {30, 0x104}, {42, VK_CONTROL}, {40, 'Z'}, {41, 'X'}, {10, VK_ESCAPE},
-};
-const int kMouse1 = 0x100, kMouse2 = 0x101, kMouse3 = 0x102, kWheelUp = 0x104, kWheelDown = 0x105;
+const int kDeviceSize = 0x6dc;              // devices sit 0x6dc apart; the state is at +8
+unsigned char* g_device[4];                 // one keyboard / mouse device per keyboard player
 
-struct Binding { int action, key; };
-std::vector<Binding> g_bindings;
+// ---- the raw poll: ours in sessions --------------------------------------------------------------------
+const KbmRaw* g_feed = nullptr;             // set while we poll a keyboard player's device
+KbmRaw g_menuFeed;                          // the game's own keyboard slot (menus, "click to start" prompts):
+bool g_menuFeedReady = false;               //   all keyboard players together, from the previous tick
 
-void LoadBindings() {
-    std::vector<Binding> b;
-    HKEY key;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Heavy Iron Studios Inc.\\Family Guy\\Settings", 0, KEY_READ,
-                      &key) == ERROR_SUCCESS) {
-        BYTE data[1024];
-        DWORD size = sizeof(data), type = 0;
-        if (RegQueryValueExW(key, L"KeyConfig", nullptr, &type, data, &size) == ERROR_SUCCESS)
-            for (DWORD o = 0; o + 8 <= size; o += 8) {
-                Binding one;
-                memcpy(&one.action, data + o, 4);
-                memcpy(&one.key, data + o + 4, 4);
-                b.push_back(one);
+bool __cdecl Hook_RawPoll() {
+    if (!g_feed && g_menuFeedReady) {       // the game's own slot polls at the start of each tick
+        g_feed = &g_menuFeed;
+        g_menuFeedReady = false;
+        bool r = Hook_RawPoll();
+        g_feed = nullptr;
+        return r;
+    }
+    if (!g_feed) return false;
+    *gMouseDx = g_feed->dx;
+    *gMouseDy = g_feed->dy;
+    *gMouseDz = g_feed->dz;
+    *gMouseSumX += g_feed->dx;
+    *gMouseSumY += g_feed->dy;
+    *gMouseSumZ += g_feed->dz;
+    *gMouseButtons = g_feed->buttons;
+    *gCursorX = g_feed->cursorX;
+    *gCursorY = g_feed->cursorY;
+    return true;
+}
+
+bool PatchJump(uintptr_t at, const unsigned char* expected, size_t n, void* to) {
+    if (IsBadReadPtr((void*)at, n) || memcmp((void*)at, expected, n) != 0) {
+        Log(L"Input: code at %p isn't what we expect (different game version?) - keyboard online off", (void*)at);
+        return false;
+    }
+    DWORD old;
+    VirtualProtect((void*)at, 5, PAGE_EXECUTE_READWRITE, &old);
+    auto b = reinterpret_cast<unsigned char*>(at);
+    b[0] = 0xE9;
+    *reinterpret_cast<int*>(b + 1) = (int)(reinterpret_cast<uintptr_t>(to) - (at + 5));
+    VirtualProtect((void*)at, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), (void*)at, 5);
+    return true;
+}
+
+// The game's Update for a controller slot (0x49bb90), for our own devices: current -> previous, then poll.
+void SetWindowKeys(const KbmRaw& raw) {
+    auto window = *reinterpret_cast<unsigned char**>(kWindow);
+    if (window && !IsBadWritePtr(window + kWindowKeys, 0x100))
+        for (int k = 0; k < 256; ++k) window[kWindowKeys + k] = (raw.keys[k >> 3] >> (k & 7)) & 1 ? 0x80 : 0;
+}
+
+void UpdateDevice(unsigned char* device, const KbmRaw& raw) {
+    unsigned char* st = device + 8;
+    auto i32 = [st](int off) -> LONG& { return *reinterpret_cast<LONG*>(st + off); };
+    i32(0x464) = i32(0x44c);
+    i32(0x468) = i32(0x450);
+    i32(0x46c) = i32(0x454);
+    i32(0x470) = i32(0x458);
+    i32(0x474) = i32(0x45c);
+    i32(0x478) = i32(0x460);
+    memcpy(st + 0x57c, st + 0x47c, 0x100);
+    SetWindowKeys(raw);  // this player's keys where the poll copies them from (the window's key table)
+    g_feed = &raw;
+    using Poll_t = bool(__cdecl*)(unsigned char* state, int index);
+    reinterpret_cast<Poll_t>(kKbmPoll)(st, 0);
+    g_feed = nullptr;
+    i32(0) = 8;  // the state's device type: keyboard / mouse (what the player input asks)
+}
+
+}  // namespace
+
+// netplay.cpp, before the first tick: does this session have keyboard players? (picks char:costume:team:input)
+void KbmSessionStart(const char* session) {
+    char test[32];
+    if (GetEnvironmentVariableA("FGUYMOD_TEST_KBMSLOTS", test, sizeof(test))) {
+        for (char* c = test; *c; ++c)
+            if (*c >= '0' && *c <= '3') g_kbmSlot[*c - '0'] = true;
+    } else if (session) {
+        const char* picks = strchr(session, '|');
+        int slot = 0;
+        for (const char* p = picks ? picks + 1 : ""; *p && slot < 4; ++slot) {
+            const char* end = strchr(p, ';');
+            size_t len = end ? (size_t)(end - p) : strlen(p);
+            int colons = 0;
+            const char* last = p;
+            for (size_t i = 0; i < len; ++i)
+                if (p[i] == ':') { ++colons; last = p + i + 1; }
+            if (colons >= 3 && *last == 'k') g_kbmSlot[slot] = true;
+            p = end ? end + 1 : p + len;
+        }
+    }
+    for (int s = 0; s < 4; ++s) g_session |= g_kbmSlot[s];
+    if (!g_session) return;
+    if (!PatchJump(kRawPoll, kRawPollStart, sizeof(kRawPollStart), (void*)Hook_RawPoll)) {
+        g_session = false;
+        return;
+    }
+    for (int s = 0; s < 4; ++s)
+        if (g_kbmSlot[s]) {
+            g_device[s] = static_cast<unsigned char*>(VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+            *reinterpret_cast<LONG*>(g_device[s]) = 1;      // connected
+            *reinterpret_cast<LONG*>(g_device[s] + 8) = 8;  // keyboard / mouse
+        }
+    Log(L"Input: keyboard and mouse players: %s%s%s%s(the game's own controls)", g_kbmSlot[0] ? L"1 " : L"",
+        g_kbmSlot[1] ? L"2 " : L"", g_kbmSlot[2] ? L"3 " : L"", g_kbmSlot[3] ? L"4 " : L"");
+}
+
+bool KbmIsKeyboardSlot(int slot) { return slot >= 0 && slot < 4 && g_kbmSlot[slot]; }
+
+// display.cpp: the game's main window exists.
+void KbmInit(HWND wnd) { g_wnd = wnd; }
+
+// display.cpp's window procedure. Returns true if the message was ours.
+bool KbmOnMessage(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT* result) {
+    if (!NetplayEnabled()) return false;
+    // In a session this PC's keys reach the game only through the lockstep (as a keyboard player's input):
+    // the game window doesn't see them (Windows still handles Alt+Tab, Alt+F4 and the like).
+    if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP || msg == WM_CHAR ||
+        msg == WM_SYSCHAR || msg == WM_DEADCHAR) {
+        *result = DefWindowProcW(wnd, msg, wp, lp);
+        return true;
+    }
+    if (!g_session) return false;
+    if (msg == WM_INPUT) {
+        RAWINPUT in;
+        UINT size = sizeof(in);
+        if (GetRawInputData((HRAWINPUT)lp, RID_INPUT, &in, &size, sizeof(RAWINPUTHEADER)) != (UINT)-1 &&
+            in.header.dwType == RIM_TYPEMOUSE) {
+            if (!(in.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
+                InterlockedExchangeAdd(&g_dx, in.data.mouse.lLastX);
+                InterlockedExchangeAdd(&g_dy, in.data.mouse.lLastY);
             }
-        RegCloseKey(key);
+            if (in.data.mouse.usButtonFlags & RI_MOUSE_WHEEL) InterlockedExchangeAdd(&g_dz, (SHORT)in.data.mouse.usButtonData);
+        }
+        *result = DefWindowProcW(wnd, msg, wp, lp);
+        return true;
     }
-    bool fromGame = !b.empty();
-    if (!fromGame)
-        for (auto& d : kDefaults) b.push_back({d[0], d[1]});
-    static bool logged = false;
-    if (!logged) {
-        logged = true;
-        Log(L"Input: %zu key bindings from %s", b.size(), fromGame ? L"the game's keyboard mapping" : L"the game's defaults");
-    }
-    g_bindings = b;
+    return false;
 }
 
-// Is a bound key held (or was a bound wheel direction turned this tick)?
-bool KeyDown(int key, LONG up, LONG down) {
-    switch (key) {
-        case kMouse1: return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-        case kMouse2: return (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
-        case kMouse3: return (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
-        case kWheelUp: return up > 0;
-        case kWheelDown: return down > 0;
-        default: return key > 0 && key < 0x100 && (GetAsyncKeyState(key) & 0x8000) != 0;
-    }
+// netplay.cpp, while a scene holds the game: Enter / Space / Esc skip it too.
+bool KbmSkipPressed() {
+    bool front = g_wnd && GetForegroundWindow() == g_wnd;
+    return front && ((GetAsyncKeyState(VK_RETURN) | GetAsyncKeyState(VK_SPACE) | GetAsyncKeyState(VK_ESCAPE)) & 0x8000);
 }
 
-bool Down(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
-
-// Raw mouse input goes to one window per program; the game's DirectInput mouse (silent in sessions,
-// dinput.cpp) takes it over when it starts. Make sure it's ours.
+namespace {
+// Raw mouse input goes to one window per program; the game's DirectInput mouse (quiet in sessions) takes it
+// over when it starts, so we claim it back now and then.
 void ClaimRawMouse() {
     RAWINPUTDEVICE now[8];
     UINT n = 8;
@@ -127,75 +211,38 @@ void ClaimRawMouse() {
     if (logged++ < 3) Log(L"Input: mouse movement %s", ok ? L"claimed for the game window" : L"could not be claimed");
 }
 
-SHORT StickFromMouse(LONG counts, bool flip) {
-    if (!counts) return 0;
-    float v = counts / kCountsForFull * g_sensitivity;
-    if (flip) v = -v;
-    float a = std::fabs(v);
-    if (a > 1) a = 1;
-    float out = kDeadZone + a * (32767.0f - kDeadZone);
-    return (SHORT)(v < 0 ? -out : out);
-}
+SHORT Clamp16(LONG v) { return (SHORT)(v > 32767 ? 32767 : (v < -32768 ? -32768 : v)); }
 
+// Test input (vpad.cpp's pipe: kbm key / mouse / click): pretend keys are held and the mouse moves, without
+// touching the real keyboard and mouse. Merged into my capture.
+CRITICAL_SECTION g_testLock;
+bool g_testInit = false;
+ULONGLONG g_testKeyUntil[256];
+LONG g_testDx = 0, g_testDy = 0;
+int g_testMoveTicks = 0;
+ULONGLONG g_testClickUntil = 0;
 }  // namespace
 
-// display.cpp: the game's main window exists.
-void KbmInit(HWND wnd) {
-    if (!NetplayEnabled() || g_on) return;
-    g_wnd = wnd;
-    wchar_t sens[16];
-    SettingString(L"Input", L"MouseSensitivity", nullptr, L"1.0", sens, 16);
-    g_sensitivity = (float)_wtof(sens);
-    if (g_sensitivity <= 0) g_sensitivity = 1.0f;
-    g_invert = SettingInt(L"Input", L"InvertMouse", nullptr, 0) != 0;
-    LoadBindings();
-    g_on = true;   // the raw mouse is claimed once the game runs (KbmMerge)
-    Log(L"Input: keyboard and mouse play as this player's controller (mouse sensitivity %.2f%s)", g_sensitivity,
-        g_invert ? L", inverted" : L"");
+void KbmTestCommand(const char* what, int a, int b, int c) {
+    if (!g_testInit) { InitializeCriticalSection(&g_testLock); g_testInit = true; }
+    EnterCriticalSection(&g_testLock);
+    ULONGLONG now = GetTickCount64();
+    if (!strcmp(what, "key") && a > 0 && a < 256) g_testKeyUntil[a] = now + (b > 0 ? b : 100);
+    else if (!strcmp(what, "mouse")) { g_testDx = a; g_testDy = b; g_testMoveTicks = c > 0 ? c : 1; }
+    else if (!strcmp(what, "click")) g_testClickUntil = now + (a > 0 ? a : 100);
+    LeaveCriticalSection(&g_testLock);
+    Log(L"Input: test %S %d %d %d", what, a, b, c);
 }
 
-// display.cpp's window procedure. Returns true if the message was ours.
-bool KbmOnMessage(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT* result) {
-    if (!g_on) return false;
-    if (msg == WM_INPUT) {
-        RAWINPUT in;
-        UINT size = sizeof(in);
-        if (GetRawInputData((HRAWINPUT)lp, RID_INPUT, &in, &size, sizeof(RAWINPUTHEADER)) != (UINT)-1 &&
-            in.header.dwType == RIM_TYPEMOUSE) {
-            if (!(in.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
-                InterlockedExchangeAdd(&g_dx, in.data.mouse.lLastX);
-                InterlockedExchangeAdd(&g_dy, in.data.mouse.lLastY);
-            }
-            if (in.data.mouse.usButtonFlags & RI_MOUSE_WHEEL) {
-                if ((SHORT)in.data.mouse.usButtonData > 0) InterlockedIncrement(&g_wheelUp);
-                else InterlockedIncrement(&g_wheelDown);
-            }
-        }
-        *result = DefWindowProcW(wnd, msg, wp, lp);
-        return true;
+// netplay.cpp, once per tick (for the tick being sent): my keyboard and mouse right now.
+void KbmCapture(KbmRaw* out) {
+    memset(out, 0, sizeof(*out));
+    LONG dx = InterlockedExchange(&g_dx, 0), dy = InterlockedExchange(&g_dy, 0), dz = InterlockedExchange(&g_dz, 0);
+    static ULONGLONG lastClaim = 0;
+    if (g_wnd && GetTickCount64() - lastClaim > 2000) {
+        lastClaim = GetTickCount64();
+        ClaimRawMouse();
     }
-    if (msg == WM_SETCURSOR && LOWORD(lp) == HTCLIENT && GetForegroundWindow() == wnd) {
-        SetCursor(nullptr);  // no pointer over the game while it's played with the mouse
-        *result = TRUE;
-        return true;
-    }
-    return false;
-}
-
-// netplay.cpp, while a scene holds the game: a key that skips it (Jump / Pause as bound, or Enter).
-bool KbmSkipPressed() {
-    if (!g_on || !g_wnd || GetForegroundWindow() != g_wnd) return false;
-    if (Down(VK_RETURN)) return true;
-    for (auto& b : g_bindings)
-        if ((b.action == 8 || b.action == 10) && KeyDown(b.key, 0, 0)) return true;
-    return false;
-}
-
-// netplay.cpp, once per tick: add the keyboard and mouse to this player's controller state.
-void KbmMerge(WORD* buttons, BYTE* lt, BYTE* rt, SHORT* lx, SHORT* ly, SHORT* rx, SHORT* ry) {
-    if (!g_on) return;
-    LONG dx = InterlockedExchange(&g_dx, 0), dy = InterlockedExchange(&g_dy, 0);
-    LONG up = InterlockedExchange(&g_wheelUp, 0), down = InterlockedExchange(&g_wheelDown, 0);
     bool front = g_wnd && GetForegroundWindow() == g_wnd;
     if (front) {
         RECT r;
@@ -207,56 +254,76 @@ void KbmMerge(WORD* buttons, BYTE* lt, BYTE* rt, SHORT* lx, SHORT* ly, SHORT* rx
         ClipCursor(nullptr);
         g_clipped = false;
     }
-    static ULONGLONG lastCheck = 0;
-    if (GetTickCount64() - lastCheck > 2000) {  // and pick up rebinding in the game's Options
-        lastCheck = GetTickCount64();
-        ClaimRawMouse();
-        LoadBindings();
+    if (g_testInit) {   // test input counts as "in front"
+        EnterCriticalSection(&g_testLock);
+        ULONGLONG now = GetTickCount64();
+        for (int k = 1; k < 256; ++k)
+            if (g_testKeyUntil[k] > now) out->keys[k >> 3] |= (BYTE)(1 << (k & 7));
+        if (g_testMoveTicks > 0) { dx += g_testDx; dy += g_testDy; --g_testMoveTicks; }
+        if (g_testClickUntil > now) out->buttons |= 1;
+        LeaveCriticalSection(&g_testLock);
+        if (!front) { out->dx = Clamp16(dx); out->dy = Clamp16(dy); return; }
     }
-    if (!front) { g_tapTicks = 0; return; }
+    if (!front) return;   // not in front: nothing held
+    for (int k = 1; k < 256; ++k)
+        if (GetAsyncKeyState(k) & 0x8000) out->keys[k >> 3] |= (BYTE)(1 << (k & 7));
+    out->dx = Clamp16(dx);
+    out->dy = Clamp16(dy);
+    out->dz = Clamp16(dz);
+    const int buttons[5] = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2};
+    for (int b = 0; b < 5; ++b)
+        if (GetAsyncKeyState(buttons[b]) & 0x8000) out->buttons |= (BYTE)(1 << b);
+    POINT c;
+    if (GetCursorPos(&c) && ScreenToClient(g_wnd, &c)) {
+        out->cursorX = Clamp16(c.x);
+        out->cursorY = Clamp16(c.y);
+    }
+}
 
-    WORD b = 0;
-    int mx = 0, my = 0;
-    bool tap = false;
-    for (auto& bind : g_bindings) {
-        if (!KeyDown(bind.key, up, down)) continue;
-        for (auto& a : kActions) {
-            if (a.id != bind.action) continue;
-            switch (a.target) {
-                case kButton: b |= (WORD)a.value; break;
-                case kLeftTrigger: *lt = 255; break;
-                case kRightTrigger: *rt = 255; break;
-                case kMoveX: mx += a.value; break;
-                case kMoveY: my += a.value; break;
-                case kWheelTap: tap = true; break;
-            }
+// netplay.cpp, at the start of every tick, with every player's inputs for this tick: give each keyboard
+// player their device, updated by the game's own code from their keyboard and mouse.
+void KbmApply(const KbmRaw* bySlot, int players) {
+    if (!g_session) return;
+    // Keyboard mode starts once every player's level HUD is up - told through the inputs, so it's the same
+    // tick on every PC. (Before that the session autopilot drives the menus with controller presses, and the
+    // level setup would otherwise stop for a "click anywhere to start".)
+    static bool started = false;
+    if (!started) {
+        bool all = players > 0;
+        for (int s = 0; s < players && s < 4; ++s) all &= (bySlot[s].flags & 1) != 0;
+        if (!all) return;
+        started = true;
+        Log(L"Input: everyone's level is up - keyboard and mouse on");
+    }
+    unsigned char* list[8];
+    int n = GamePlayers(list, 8);
+    bool inLevel = false;  // a player with a view of their own: the level runs (menus: the session autopilot
+    for (int i = 0; i < n; ++i)   // drives them with controller presses)
+        if (*reinterpret_cast<int*>(list[i] + 0xdfc) >= 0) inLevel = true;
+    if (!inLevel) return;
+    *reinterpret_cast<volatile BYTE*>(kKbmFlag) = 1;  // the game's keyboard / mouse mode (same tick on every PC)
+    KbmRaw menu = {};
+    bool first = true;
+    for (int s = 0; s < players && s < 4; ++s) {
+        if (!g_kbmSlot[s] || !g_device[s]) continue;
+        const KbmRaw& r = bySlot[s];
+        for (int k = 0; k < 32; ++k) menu.keys[k] |= r.keys[k];
+        menu.dx = (SHORT)(menu.dx + r.dx);
+        menu.dy = (SHORT)(menu.dy + r.dy);
+        menu.dz = (SHORT)(menu.dz + r.dz);
+        menu.buttons |= r.buttons;
+        if (first) { menu.cursorX = r.cursorX; menu.cursorY = r.cursorY; first = false; }
+        UpdateDevice(g_device[s], r);
+        for (int i = 0; i < n; ++i) {
+            if (*reinterpret_cast<int*>(list[i] + 0xdf8) != s) continue;
+            auto input = *reinterpret_cast<unsigned char**>(list[i] + kPlayerInput);
+            if (input && !IsBadWritePtr(input, kInputDevice + 4) &&
+                *reinterpret_cast<uintptr_t*>(input) == kPlayerInputVtable)
+                *reinterpret_cast<unsigned char**>(input + kInputDevice) = g_device[s];
         }
     }
-    if (tap) g_tapTicks = 4;   // a wheel notch: tap change weapon
-    if (g_tapTicks > 0) { b |= XINPUT_GAMEPAD_Y; --g_tapTicks; }
-    // menus: arrows, Enter, Backspace
-    if (Down(VK_UP)) b |= XINPUT_GAMEPAD_DPAD_UP;
-    if (Down(VK_DOWN)) b |= XINPUT_GAMEPAD_DPAD_DOWN;
-    if (Down(VK_LEFT)) b |= XINPUT_GAMEPAD_DPAD_LEFT;
-    if (Down(VK_RIGHT)) b |= XINPUT_GAMEPAD_DPAD_RIGHT;
-    if (Down(VK_RETURN)) b |= XINPUT_GAMEPAD_A;
-    if (Down(VK_BACK)) b |= XINPUT_GAMEPAD_B;
-    *buttons |= b;
-
-    mx = mx > 0 ? 1 : (mx < 0 ? -1 : 0);
-    my = my > 0 ? 1 : (my < 0 ? -1 : 0);
-    if (mx || my) {
-        float k = (mx && my) ? 0.7071f : 1.0f;  // diagonals as fast as straight lines
-        *lx = (SHORT)(mx * k * 32767);
-        *ly = (SHORT)(my * k * 32767);
-    }
-    // mouse reports and game ticks don't line up exactly: average over two ticks, or the camera stutters
-    static LONG prevDx = 0, prevDy = 0;
-    LONG sx = (dx + prevDx) / 2, sy = (dy + prevDy) / 2;
-    prevDx = dx;
-    prevDy = dy;
-    if (sx || sy) {
-        *rx = StickFromMouse(sx, false);
-        *ry = StickFromMouse(sy, !g_invert);  // mouse up = look up
-    }
+    // the game's own keyboard slot (polled at the start of the next tick): everyone with keyboard together
+    g_menuFeed = menu;
+    g_menuFeedReady = true;
+    SetWindowKeys(menu);
 }

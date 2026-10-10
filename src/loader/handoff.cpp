@@ -78,6 +78,8 @@ void InitHandoff() {
     wchar_t old[16];
     if (!GetEnvironmentVariableW(L"FGUYMOD_HANDOFF", old, 16)) return;
     SetEnvironmentVariableW(L"FGUYMOD_HANDOFF", nullptr);
+    wchar_t show[8];
+    if (GetEnvironmentVariableW(L"FGUYMOD_TEST_SHOWSESSION", show, 8)) return;  // test knob: boot visibly
     g_on = true;
     wchar_t name[64];
     swprintf_s(name, L"Local\\FGUYMod_SessionReady_%lu", GetCurrentProcessId());
@@ -89,8 +91,12 @@ void InitHandoff() {
 
 bool HandoffHidden() { return g_on && !g_revealed; }
 
+volatile LONG g_hudUp = 0;
+bool HandoffHudUp() { return g_hudUp != 0; }
+
 // The level is running (its HUD has laid itself out). Show it a moment later.
 void HandoffMatchRunning() {
+    InterlockedExchange(&g_hudUp, 1);
     if (!g_on || InterlockedExchange(&g_revealAsked, 1)) return;
     Log(L"Handoff: the match is running");
     CloseHandle(CreateThread(nullptr, 0, RevealLater, nullptr, 0, nullptr));

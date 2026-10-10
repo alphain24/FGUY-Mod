@@ -8,7 +8,8 @@ param(
     [string]$GameDir = "A:\Games\Activision\Family Guy Back to the Multiverse",
     [int]$Players = 2,
     [string]$Server = "127.0.0.1:7650",
-    [string]$Save = (Join-Path $PSScriptRoot "..\backups\Save\player0_default.sav")
+    [string]$Save = (Join-Path $PSScriptRoot "..\backups\Save\player0_default.sav"),
+    [string[]]$Controls = @()   # per copy: keyboard / controller (default: the mod's auto choice)
 )
 & (Join-Path $PSScriptRoot "stop_tests.ps1") -GameDir $GameDir
 $start = Join-Path $PSScriptRoot "start_test.ps1"
@@ -20,10 +21,11 @@ foreach ($i in 0..($Players - 1)) {
     Copy-Item $Save $dir -Force
     $env:FGUYMOD_SAVEDIR = "testsave$i"; $env:FGUYMOD_ONLINE_NAME = $names[$i]; $env:FGUYMOD_ONLINE_SERVER = $Server
     $env:FGUYMOD_TEST_AUTOMENU = "online"
+    if ($Controls.Count -gt $i) { $env:FGUYMOD_ONLINE_CONTROLS = $Controls[$i] } else { Remove-Item Env:FGUYMOD_ONLINE_CONTROLS -ErrorAction SilentlyContinue }
     $ids += & $start -Res "960x540"
     Start-Sleep -Seconds 1
 }
-foreach ($v in "FGUYMOD_SAVEDIR", "FGUYMOD_ONLINE_NAME", "FGUYMOD_ONLINE_SERVER", "FGUYMOD_TEST_AUTOMENU") { Remove-Item "Env:$v" -ErrorAction SilentlyContinue }
+foreach ($v in "FGUYMOD_SAVEDIR", "FGUYMOD_ONLINE_NAME", "FGUYMOD_ONLINE_SERVER", "FGUYMOD_TEST_AUTOMENU", "FGUYMOD_ONLINE_CONTROLS") { Remove-Item "Env:$v" -ErrorAction SilentlyContinue }
 
 function WaitLog([int]$id, [string]$text, [int]$seconds) {
     $log = Join-Path $GameDir "FGUYMod\FGUYMod_$id.log"

@@ -59,6 +59,7 @@ struct Pad {
     WORD buttons;
     BYTE lt, rt;
     SHORT lx, ly, rx, ry;
+    KbmRaw kbm;          // keyboard / mouse players: their raw keyboard and mouse (kbm.cpp)
 };
 const int kRing = 256;               // ticks of input history kept
 Pad g_inputs[kRing][4];
@@ -443,7 +444,7 @@ bool HaveAll(unsigned tick) {
 void SendInputs(unsigned upTo) {
     PktInputs p{};
     p.h = {'I', (BYTE)g_slot};
-    unsigned first = upTo >= 15 ? upTo - 15 : 0;  // resend the last 16 ticks (packet loss)
+    unsigned first = upTo >= 7 ? upTo - 7 : 0;  // resend the last 8 ticks (packet loss; ~27 KB/s per player)
     p.first = first;
     p.count = (BYTE)(upTo - first + 1);
     for (unsigned f = first; f <= upTo; ++f) p.pads[f - first] = g_inputs[f % kRing][g_slot];
@@ -490,14 +491,18 @@ Pad SampleLocal(unsigned f) {
         p.ry = st.Gamepad.sThumbRY;
     }
     p.buttons |= VPadButtons(0);  // test tools press this player's buttons through the pipe
-    KbmMerge(&p.buttons, &p.lt, &p.rt, &p.lx, &p.ly, &p.rx, &p.ry);  // and the keyboard / mouse (kbm.cpp)
+    if (KbmIsKeyboardSlot(g_slot)) KbmCapture(&p.kbm);  // keyboard / mouse players: the raw state (kbm.cpp)
+    if (HandoffHudUp()) p.kbm.flags |= 1;              // my level's HUD is up (kbm.cpp waits for everyone's)
     static Pad last{};
     static int logged = 0;
     if (memcmp(&p, &last, sizeof(p)) != 0 && logged < 60) {  // the first few changes (input problems)
         ++logged;
         last = p;
-        Log(L"Netplay: my input for tick %u: buttons %04x sticks L(%d, %d) R(%d, %d) triggers %d %d", f, p.buttons,
-            p.lx, p.ly, p.rx, p.ry, p.lt, p.rt);
+        int keys = 0;
+        for (BYTE b : p.kbm.keys) for (; b; b &= b - 1) ++keys;
+        Log(L"Netplay: my input for tick %u: buttons %04x sticks L(%d, %d) R(%d, %d) triggers %d %d; keys %d, mouse "
+            L"(%d, %d, %d) buttons %x", f, p.buttons, p.lx, p.ly, p.rx, p.ry, p.lt, p.rt, keys, p.kbm.dx, p.kbm.dy,
+            p.kbm.dz, p.kbm.buttons);
     }
     return p;
 }
@@ -728,6 +733,7 @@ void Tick() {
     if (lastStart && nowMs - lastStart > 1000)
         Log(L"Netplay: tick %u took %llu ms (%lld clock reads, %d waits/sleeps)", g_tick, nowMs - lastStart,
             g_callsThisTick, g_mainBlocksThisTick);
+
     lastStart = nowMs;
     EnterCriticalSection(&g_netLock);
     struct Unlock { ~Unlock() { LeaveCriticalSection(&g_netLock); } } unlock;
@@ -788,6 +794,9 @@ void Tick() {
     }
     for (int s = 0; s < g_players; ++s) g_current[s] = g_inputs[g_tick % kRing][s];
     TakeSessionPresses();
+    KbmRaw kbm[4] = {};
+    for (int s = 0; s < g_players && s < 4; ++s) kbm[s] = g_current[s].kbm;
+    KbmApply(kbm, g_players);  // keyboard / mouse players' devices, from their raw input (kbm.cpp)
     Real_QPC(&s1);
     WaitForQuiescence();
     Real_QPC(&s2);
@@ -927,6 +936,7 @@ void InitNetplay(HMODULE exe) {
     char session[512];  // (too small a buffer gets nothing copied)
     DWORD sessionLen = GetEnvironmentVariableA("FGUYMOD_SESSION", session, sizeof(session));
     g_sessionStory = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "ST,", 3) == 0;
+    KbmSessionStart(sessionLen > 0 && sessionLen < sizeof(session) ? session : nullptr);
     g_phase = Phase::Boot;
     Log(L"Netplay: on - slot %d of %d players, %s, input delay %d, %s input", g_slot, g_players,
         g_relay ? L"through the lobby server's relay" : L"direct UDP", g_delay, g_script ? L"scripted" : L"controller");

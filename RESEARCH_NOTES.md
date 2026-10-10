@@ -213,3 +213,21 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   the socket silently (logged only in debug mode). Fixed with SIO_UDP_CONNRESET off + reopening.
 - In the menus the controller's Y arrives as key 89; DirectInput's mouse takes over raw mouse input when it
   starts (re-register raw input after it).
+
+## Keyboard / mouse internals (2026-10-11)
+- Controllers are slots ConsolePad0..19 (IO::ConsolePadDevice, vtable 0x9fd18c; slot +8 = device, +0x18 =
+  index). Slot 0 = the keyboard / mouse device (type 8 at device+8), slots 1.. = XInput pads 0... A player's
+  input object is `[player+0x101c]` (zPlayerInputHuman, vtable 0xa1a29c); its device is `input+0x30`,
+  controller slot `input+0x34`. Devices are 0x6dc bytes; the state is at device+8.
+- Slot Update 0x49bb90: copies the state's current half to its previous half (keys +0x47c -> +0x57c, cursor,
+  wheel, buttons +0x460 -> +0x478), then polls via 0x4cc4a0 (type 8 -> 0x450930, pads -> 0x4b5670).
+- Keyboard / mouse poll 0x450930(state, index): raw poll 0x4b6ad0 (DirectInput mouse -> globals: deltas
+  0xaefae4/e0/dc, sums 0xaefaf4/f0/ec, buttons 0xaefae8, cursor 0xaefad8/d4 from GetCursorPos), keys copied
+  from the game window's key table `[0xad39e8]+0xc2` (256 bytes, Windows key codes, 0x80 = down), mouse ->
+  analog +0x30/+0x34 (clamped +-60), WASD move vector +0x14/+0x18.
+- Player input queries (zPlayerInputHuman vtable [21..23]) check the device type: 8 -> KeyConfig table at
+  0xadc290/0xadc294 (action*8: {context, key}), keys < 0x100 Windows codes, 0x100.. mouse buttons / wheel.
+- Global keyboard mode 0xacc4cd (from the registry's IsKeyboardMouseInput) is checked by gameplay code too.
+  In KBM mode a level that starts in KBM mode stops at "CLICK ANYWHERE TO START" before its HUD.
+- Online: every player's raw KBM state travels in their inputs; each keyboard player gets their own device fed
+  by the game's poll; mode 0xacc4cd turns on once every player's HUD is up (told through the inputs).
