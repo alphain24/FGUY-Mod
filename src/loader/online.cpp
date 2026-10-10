@@ -6,6 +6,8 @@
 // all choices, and every player's game restarts into a netplay session (netplay.cpp) through the
 // server's UDP relay. In the session the menu script reads that snapshot (FGUYMOD_SessionConfig) and
 // starts the match itself - identically on every PC, so the match is in sync from its first frame.
+// The restart isn't seen: this game shows the loading screen until the new one has the match running
+// and shows itself (handoff.cpp), then closes.
 //
 // All copies must start identical, so the session uses the host's save file (sent through the
 // server, stored in FGUYMod\online\) - each player's own save is never touched by online play.
@@ -347,6 +349,34 @@ DWORD WINAPI LobbyThread(LPVOID) {
 }
 
 // ---- starting the session -----------------------------------------------------------------------------
+// The old game's side of the handoff: wait for the session to show itself (then close), or to die.
+struct Handoff {
+    HANDLE process, ready;
+    DWORD pid;
+};
+
+DWORD WINAPI HandoffWait(LPVOID arg) {
+    auto* h = static_cast<Handoff*>(arg);
+    HANDLE both[2] = {h->ready, h->process};
+    DWORD r = WaitForMultipleObjects(2, both, FALSE, 240000);
+    if (r == WAIT_OBJECT_0 + 1) {
+        DWORD code = 0;
+        GetExitCodeProcess(h->process, &code);
+        Log(L"Online: the session game (process %lu) closed before the match started (exit code %#lx)", h->pid, code);
+        SetStatus(State::Failed, "The match couldn't start - please try again");
+        g_wantConnection = false;
+    } else {
+        Log(L"Online: %s - closing this game", r == WAIT_OBJECT_0 ? L"the session game is showing the match"
+                                                                    : L"the session game took too long");
+        DisplayHideWindow();
+        VideoRequestQuit();
+    }
+    CloseHandle(h->ready);
+    CloseHandle(h->process);
+    delete h;
+    return 0;
+}
+
 // START <token> <slot> <players> <delay> <udp port> <lang> <conf> <picks>. Called with g_lock held.
 void StartSession(const std::vector<std::string>& f) {
     // The session's save folder: FGUYMod\online (test copies on one PC: online_<their test folder>).
@@ -382,13 +412,16 @@ void StartSession(const std::vector<std::string>& f) {
     set(L"FGUYMOD_SESSION", f[7] + "|" + f[8]);  // conf: mode,map,time,score,ff | picks: char:costume:team;...
     SetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", dirName);
     set(L"FGUYMOD_PADMODE", "1");  // every player is a controller in a session
+    set(L"FGUYMOD_HANDOFF", std::to_string(GetCurrentProcessId()));  // boot hidden, tell us when it shows
     wchar_t exe[MAX_PATH];
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     std::wstring cmd = GetCommandLineW();
     STARTUPINFOW si{sizeof(si)};
     PROCESS_INFORMATION pi{};
-    if (CreateProcessW(exe, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, g_gameDir, &si, &pi)) {
-        Log(L"Online: session %S, slot %S of %S, input delay %S, %S %S - restarting the game (new process %lu)",
+    BOOL started = CreateProcessW(exe, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, g_gameDir, &si, &pi);
+    SetEnvironmentVariableW(L"FGUYMOD_HANDOFF", nullptr);
+    if (started) {
+        Log(L"Online: session %S, slot %S of %S, input delay %S, %S %S - starting it hidden (new process %lu)",
             f[1].c_str(), f[2].c_str(), f[3].c_str(), f[4].c_str(), f[7].c_str(), f[8].c_str(), pi.dwProcessId);
         wchar_t pids[MAX_PATH], env[8];
         if (GetEnvironmentVariableW(L"FGUYMOD_TESTINPUT", env, 8)) {  // test copies: let stop_tests find it
@@ -400,8 +433,11 @@ void StartSession(const std::vector<std::string>& f) {
             if (h != INVALID_HANDLE_VALUE) { WriteFile(h, line, n, &put, nullptr); CloseHandle(h); }
         }
         CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-        VideoRequestQuit();
+        AllowSetForegroundWindow(pi.dwProcessId);  // so it can come to the front when it shows
+        wchar_t name[64];
+        swprintf_s(name, L"Local\\FGUYMod_SessionReady_%lu", pi.dwProcessId);
+        auto* h = new Handoff{pi.hProcess, CreateEventW(nullptr, TRUE, FALSE, name), pi.dwProcessId};
+        CloseHandle(CreateThread(nullptr, 0, HandoffWait, h, 0, nullptr));
     } else {
         g_status = "Couldn't restart the game (" + std::to_string(GetLastError()) + ")";
         g_state = State::Failed;

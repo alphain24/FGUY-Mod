@@ -181,3 +181,20 @@ Suffixes: `XX` = story level, `DM` / `CF` / `HD` / `IN` = multiplayer modes (lik
 Capture the Flag, King of the Hill/"Hold", and Infection, to confirm), `C1`/`C2`/`C3` = challenges,
 `MP` = multiplayer hub(?). `Levels_Loading\LDxx` = loading screens.
 Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
+
+## Menu 3D character, view rectangles, controller keys (2026-10-10)
+- The Store's 3D character is menu player 2 in the MNUS scene. Store entry: `PLYR_SetJoinEnabled(false)`,
+  `DropOtherPlayers()`, `MENU_EnableStore`, `GAME_Run MNUS_Script_Camera_StoreEnter_ref`. Model:
+  `PLYR_SetCharacter(2, GetCharacterIndex(name))`, then `PLYR_ApplyCostume(2, CostumeIndex)`. Exit:
+  `PLYR_ResetRotation(2)`, `PLYR_Refresh(0/1)`, `MENU_ExitStoreCam` (in MNUS), `MENU_DisableStore`,
+  `GAME_Run MNUS_Script_Camera_StoreExit_ref`. Full screen, that camera shows the model at ~65% across,
+  6%..87% down.
+- Render camera rectangle (0x403480, camera +0x34..+0x40) is **left, top, right, bottom** as fractions
+  of the screen (not x, y, w, h). Outside it the screen is cleared black. The online lobby uses this to
+  draw the menu scene inside a panel (FGUYMOD_MenuView).
+- Controller buttons reach menu key handlers as: A = 65 then 13, Start = 36 then 32, **Y = 89** (112 is
+  only the keyboard's F1), X = 88, LB = 76, RB = 82, Back = 35.
+- `screenshot_<level>.tif` level shots have a TV bezel painted in; zoom ~1.6x to show only the picture.
+- `getPixel` on `BitmapData.loadBitmap` pictures returns 0 (black), so it can't sample their colours.
+- The level HUD's layout call (our `FGUYMOD_HudSplitMode`, make_hud_patch.py) is the first sign a level
+  is running (MP and story); the HUD icon path builder already runs on the MP join screen.

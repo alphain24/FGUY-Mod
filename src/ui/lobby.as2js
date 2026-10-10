@@ -98,12 +98,30 @@ function FGUYBitmap(linkage) {
     return FGUYBmps[linkage];
 }
 
-// A game picture fitted into a box (centred). backdrop: fill the box with the picture's own corner colour
-// first, so pictures with a painted background blend into their frame.
-function FGUYPicture(mc, linkage, x, y, w, h, backdrop) {
+// A game picture filling a box edge to edge (scaled to cover it, the overflow cut off by a rounded mask of
+// radius r). fy picks which part of a too-tall picture stays: 0 = its top, 0.5 = its middle. zoom > 1
+// enlarges it further around that point (to cut off a frame painted into the picture).
+function FGUYPicture(mc, linkage, x, y, w, h, r, fy, zoom) {
     var bmp = FGUYBitmap(linkage);
     if (!bmp) return null;
-    if (backdrop) FGUYRect(mc, x, y, w, h, 0, bmp.getPixel(2, 2), 100, 0, 0, 0);
+    FGUYTextN = FGUYTextN + 1;
+    var holder = mc.createEmptyMovieClip('p' + FGUYTextN, mc.getNextHighestDepth());
+    holder.attachBitmap(bmp, 1, 'auto', true);
+    var s = Math.max(w / bmp.width, h / bmp.height) * (zoom > 1 ? zoom : 1);
+    holder._xscale = s * 100;
+    holder._yscale = s * 100;
+    holder._x = x + (w - bmp.width * s) / 2;
+    holder._y = y + (h - bmp.height * s) * fy;
+    var mask = mc.createEmptyMovieClip('m' + FGUYTextN, mc.getNextHighestDepth());
+    FGUYRect(mask, x, y, w, h, r, 0xFFFFFF, 100, 0, 0, 0);
+    holder.setMask(mask);
+    return holder;
+}
+
+// A small picture (button glyph) fitted whole into a box, centred.
+function FGUYIcon(mc, linkage, x, y, w, h) {
+    var bmp = FGUYBitmap(linkage);
+    if (!bmp) return null;
     FGUYTextN = FGUYTextN + 1;
     var holder = mc.createEmptyMovieClip('p' + FGUYTextN, mc.getNextHighestDepth());
     holder.attachBitmap(bmp, 1, 'auto', true);
@@ -113,6 +131,62 @@ function FGUYPicture(mc, linkage, x, y, w, h, backdrop) {
     holder._x = x + (w - bmp.width * s) / 2;
     holder._y = y + (h - bmp.height * s) / 2;
     return holder;
+}
+
+// ---- the live 3D character ---------------------------------------------------------------------------------
+// The Store's character model (menu player 2) in the main menu scene, seen through the Store camera. While
+// the ONLINE page is open the camera stays in the Store; the lobby and character screens leave a window open
+// in their background (FGUYDraw) and have the loader draw the 3D scene into it (FGUYStageView).
+function FGUY3DStart() {
+    FGUY3DChar = undefined;
+    FGUY3DCostume = undefined;
+    FGUYViewAt = '';
+    flash.external.ExternalInterface.call('PLYR_SetJoinEnabled', false);
+    DropOtherPlayers();
+    flash.external.ExternalInterface.call('MENU_EnableStore');
+    getURL('FSCommand:GAME_Run', 'MNUS_Script_Camera_StoreEnter_ref');
+}
+
+function FGUY3DStop() {
+    flash.external.ExternalInterface.call('PLYR_ResetRotation', 2);
+    flash.external.ExternalInterface.call('PLYR_Refresh', 0);
+    flash.external.ExternalInterface.call('PLYR_Refresh', 1);
+    if (GetSceneID() == 'MNUS') flash.external.ExternalInterface.call('MENU_ExitStoreCam');
+    flash.external.ExternalInterface.call('MENU_DisableStore');
+    getURL('FSCommand:GAME_Run', 'MNUS_Script_Camera_StoreExit_ref');
+    flash.external.ExternalInterface.call('FGUYMOD_MenuView', 0, 0, 1, 1);
+}
+
+function FGUY3DShow(c, costume) {
+    if (c != FGUY3DChar) {
+        flash.external.ExternalInterface.call('PLYR_SetCharacter', 2, GetCharacterIndex(c));
+        FGUY3DChar = c;
+        FGUY3DCostume = undefined;
+    }
+    if (String(costume) != String(FGUY3DCostume)) {
+        flash.external.ExternalInterface.call('PLYR_ApplyCostume', 2, Number(costume));
+        FGUY3DCostume = costume;
+    }
+}
+
+// Draw the 3D scene so the model stands centred at design x, from design y top to bottom. Full screen,
+// the Store camera shows the model at 65% across, from 6% to 87% down; the scene keeps the screen's shape.
+function FGUYStageView(cx, top, bottom) {
+    var key = cx + ',' + top + ',' + bottom;
+    if (key == FGUYViewAt) return;
+    FGUYViewAt = key;
+    var vr = Stage.visibleRect, vy = 0, vh = 720;
+    if (vr) { vy = vr.y; vh = vr.height; }
+    var nt = (top * 0.8 - vy) / vh, nb = (bottom * 0.8 - vy) / vh;
+    var h = (nb - nt) / 0.81;
+    var x = Math.max(0, cx / 1600 - 0.648 * h), y = Math.max(0, nt - 0.06 * h);
+    flash.external.ExternalInterface.call('FGUYMOD_MenuView', x, y, Math.min(1, x + h), Math.min(1, y + h));
+}
+
+// A frame around the 3D window: rims only, so the scene shows through.
+function FGUYStage(mc, x, y, w, h) {
+    FGUYRect(mc, x - 6, y - 6, w + 12, h + 12, 12, 0, 0, FGUYC.glow, 22, 5);
+    FGUYRect(mc, x, y, w, h, 6, 0, 0, FGUYC.glow, 100, 3);
 }
 
 // A round portrait: the top of a costume picture inside a circle.
@@ -137,7 +211,7 @@ function FGUYPortrait(mc, linkage, cx, cy, r) {
 }
 
 function FGUYButtonHint(mc, x, y, glyph, label) {
-    FGUYPicture(mc, 'controllerSymbol_' + glyph + '.tif', x, y, 34, 34, false);
+    FGUYIcon(mc, 'controllerSymbol_' + glyph + '.tif', x, y, 34, 34);
     FGUYText(mc, x + 40, y + 2, 200, 34, label, false, 20, FGUYC.white, 'left');
     return x + 56 + label.length * 10;
 }
@@ -216,6 +290,11 @@ function FGUYMapName(map, code) {
     return String(s).toUpperCase();
 }
 
+// The game's level shots are drawn as a TV screen inside a dark bezel: show just the screen.
+function FGUYMapPicture(mc, map, code, x, y, w, h, r) {
+    return FGUYPicture(mc, FGUYMapPic(map, code), x, y, w, h, r, 0.5, 1.6);
+}
+
 function FGUYMapPic(map, code) {
     var p = FGUYMapPics[map];
     if (p == undefined) return FGUYMode(code).pic;
@@ -285,6 +364,10 @@ function FGUYParse(blob) {
 
 function FGUYPoll() {
     var blob = flash.external.ExternalInterface.call('FGUYMOD_LobbyState');
+    if (FGUYScreen == 'loading') {   // animate
+        var step = Math.floor((getTimer() - FGUYLoadStart) / 450);
+        if (step != FGUYLoadStep) { FGUYLoadStep = step; FGUYDraw(); }
+    }
     if (blob == FGUYLastBlob) return;
     FGUYLastBlob = blob;
     var was = FGUYS.state;
@@ -294,6 +377,10 @@ function FGUYPoll() {
         FGUYFocus = 0;
         FGUYSound('accept');
         if (FGUYIsHost()) FGUYCheckMap();
+    }
+    if (FGUYS.state == 'starting' && FGUYScreen != 'loading') {
+        FGUYScreen = 'loading';
+        FGUYLoadStart = getTimer();
     }
     if (FGUYS.state != 'lobby' && FGUYS.state != 'starting' && FGUYScreen != 'hub') FGUYScreen = 'hub';
     FGUYDraw();
@@ -339,16 +426,18 @@ function OnOnlineEnter() {
     FGUYCode = [0, 0, 0, 0];
     FGUYCodeLen = 0;
     FGUYCodePos = 0;
-    FGUYCodeChars = 'BCDEFGHJKMNPQSTUVWYZ23456789';   // as the server's codes: no A L R X (controller keys)
+    FGUYCodeChars = 'BCDEFGHJKMNPQSTUVWZ23456789';   // as the server's codes: no A L R X Y (controller keys)
     if (FGUYPickChar == undefined) { FGUYPickChar = 'Peter'; FGUYPickCostume = 0; FGUYPickTeam = 0; }
     FGUYLastBlob = '';
     FGUYS = FGUYParse('');
+    FGUY3DStart();
     FGUYDraw();
     FGUYTimer = setInterval(FGUYPoll, 150);
 }
 
 function OnOnlineExit() {
     clearInterval(FGUYTimer);
+    FGUY3DStop();
     flash.external.ExternalInterface.call('FGUYMOD_OnlineExit');
     _root.FGUYLobbyUI.removeMovieClip();
     _root.subMenu._visible = true;
@@ -366,10 +455,22 @@ function FGUYDraw() {
     ui._xscale = width / 1600 * 100;
     ui._yscale = 720 / 900 * 100;
     FGUYTextN = 0;
-    FGUYRect(ui, 0, 0, 1600, 900, 0, FGUYC.bg, 100, 0, 0, 0);
+    // the background, with a window left open for the 3D character on the lobby and character screens
+    var hole = null;
+    if (FGUYScreen == 'lobby') hole = [483, 309, 554, 502];
+    else if (FGUYScreen == 'char') hole = [1045, 123, 504, 437];
+    if (hole == null) FGUYRect(ui, 0, 0, 1600, 900, 0, FGUYC.bg, 100, 0, 0, 0);
+    else {
+        var hx = hole[0], hy = hole[1], hw = hole[2], hh = hole[3];
+        FGUYRect(ui, 0, 0, 1600, hy + 1, 0, FGUYC.bg, 100, 0, 0, 0);
+        FGUYRect(ui, 0, hy + hh - 1, 1600, 901 - hy - hh, 0, FGUYC.bg, 100, 0, 0, 0);
+        FGUYRect(ui, 0, hy, hx + 1, hh, 0, FGUYC.bg, 100, 0, 0, 0);
+        FGUYRect(ui, hx + hw - 1, hy, 1601 - hx - hw, hh, 0, FGUYC.bg, 100, 0, 0, 0);
+    }
     if (FGUYScreen == 'hub') FGUYDrawHub(ui);
     else if (FGUYScreen == 'lobby') FGUYDrawLobby(ui);
     else if (FGUYScreen == 'char') FGUYDrawChar(ui);
+    else if (FGUYScreen == 'loading') FGUYDrawLoading(ui);
     else FGUYDrawSettings(ui);
 }
 
@@ -526,20 +627,23 @@ function FGUYDrawLobby(ui) {
         }
     }
 
-    // centre: the match and my character
-    var cx = 480, cw = 560;
-    FGUYPanel(ui, cx, 130, cw, 384, 28, FGUYC.panel2, FGUYC.glow);
-    FGUYPicture(ui, FGUYMapPic(FGUYS.map, FGUYS.mode), cx + 3, 133, cw - 6, 250, true);
-    FGUYRect(ui, cx, 383, cw, 3, 0, FGUYC.glow, 100, 0, 0, 0);
-    FGUYTitle(ui, cx + 24, 396, cw - 48, 46, mode.name, 32, FGUYC.title, 'left');
-    FGUYText(ui, cx + 24, 446, cw - 48, 56, FGUYMapName(FGUYS.map, FGUYS.mode) + (mode.code == 'ST' ? '' : ' - ' + FGUYRulesLine(false)), false, 18, FGUYC.soft, 'left');
-    FGUYRect(ui, cx, 534, cw, 280, 28, FGUYC.deep, 100, FGUYC.rowLine, 100, 2);
-    FGUYPicture(ui, FGUYCostumePic(FGUYPickChar, FGUYPickCostume), cx + 2, 536, 210, 276, true);
-    FGUYText(ui, cx + 240, 580, 300, 26, "YOU'RE PLAYING", false, 16, FGUYC.muted, 'left');
-    FGUYTitle(ui, cx + 240, 610, 300, 64, FGUYCharName(FGUYPickChar), 48, FGUYC.yellow, 'left');
-    FGUYText(ui, cx + 240, 680, 300, 30, 'Skin: ' + FGUYCostumeName(FGUYPickChar, FGUYPickCostume), false, 19, FGUYC.soft, 'left');
-    if (mode.teams) FGUYText(ui, cx + 240, 708, 300, 30, 'Team: ' + (FGUYPickTeam == 1 ? 'Evil' : 'Good'), false, 19, FGUYC.soft, 'left');
-    FGUYText(ui, cx + 240, 750, 300, 30, 'Press Y to change', false, 17, FGUYC.muted, 'left');
+    // centre: the match, and my character live in 3D
+    var cx = 480, cw = 560, rules = FGUYRulesParts(false);
+    FGUYPanel(ui, cx, 130, cw, 160, 24, FGUYC.panel2, FGUYC.glow);
+    FGUYMapPicture(ui, FGUYS.map, FGUYS.mode, cx + 3, 133, 250, 154, 21);
+    FGUYTitle(ui, cx + 272, 140, cw - 290, 40, mode.name, 26, FGUYC.title, 'left');
+    FGUYText(ui, cx + 272, 184, cw - 290, 30, FGUYMapName(FGUYS.map, FGUYS.mode), false, 21, FGUYC.white, 'left');
+    FGUYText(ui, cx + 272, 216, cw - 290, 28, rules.slice(0, 2).join(' - '), false, 17, FGUYC.soft, 'left');
+    FGUYText(ui, cx + 272, 242, cw - 290, 28, rules.slice(2).join(' - '), false, 17, FGUYC.soft, 'left');
+    FGUYStage(ui, cx, 306, cw, 508);
+    FGUY3DShow(FGUYPickChar, FGUYPickCostume);
+    FGUYStageView(cx + cw / 2, 332, 724);
+    FGUYRect(ui, cx + 16, 322, 170, 32, 16, FGUYC.ink, 70, 0, 0, 0);
+    FGUYText(ui, cx + 16, 326, 170, 26, "YOU'RE PLAYING", false, 15, FGUYC.muted2, 'center');
+    FGUYRect(ui, cx + 3, 744, cw - 6, 67, 4, FGUYC.ink, 78, 0, 0, 0);
+    FGUYTitle(ui, cx + 22, 748, 280, 56, FGUYCharName(FGUYPickChar), 40, FGUYC.yellow, 'left');
+    FGUYText(ui, cx + 290, 750, cw - 312, 28, 'Skin: ' + FGUYCostumeName(FGUYPickChar, FGUYPickCostume), false, 18, FGUYC.soft, 'right');
+    FGUYText(ui, cx + 290, 778, cw - 312, 28, (mode.teams ? 'Team ' + (FGUYPickTeam == 1 ? 'Evil' : 'Good') + ' - ' : '') + 'Y to change', false, 17, FGUYC.muted, 'right');
 
     // right: players
     var rx = 1072, rw = 480;
@@ -585,13 +689,21 @@ function FGUYPlayerRow(ui, x, y, w, m) {
 function FGUYRulesLine(short) {
     var mode = FGUYMode(FGUYS.mode);
     if (mode.code == 'ST') return 'Story level';
+    return FGUYRulesParts(short).join(' - ');
+}
+
+function FGUYRulesParts(short) {
+    var mode = FGUYMode(FGUYS.mode);
+    if (mode.code == 'ST') return ['Story level', 'Drop in any time'];
     var t = FGUYRules.TimeLimit[FGUYS.time];
     var parts = [];
     if (mode.teams) parts.push(short ? 'Teams' : 'Good vs Evil');
-    parts.push((t == undefined ? '-' : t) + (short ? '' : ' min'));
+    if (t == undefined) t = '-';
+    if (isNaN(Number(t))) parts.push(short ? t : 'No time limit');
+    else parts.push(t + (short ? '' : ' min'));
     if (!short && mode.score != '') parts.push('to ' + FGUYRules[mode.score][FGUYS.score]);
     if (!short) parts.push('Friendly fire ' + FGUYRules.FriendlyFire[FGUYS.ff]);
-    return parts.join(' - ');
+    return parts;
 }
 
 // ---- character & skin ---------------------------------------------------------------------------------------------
@@ -610,28 +722,57 @@ function FGUYDrawChar(ui) {
         if (sel) FGUYRect(ui, x - 6, y - 6, 192, 292, 24, FGUYC.yellow, 35, 0, 0, 0);
         FGUYRect(ui, x, y, 180, 280, 20, FGUYC.panel, 100, sel ? FGUYC.yellow : FGUYC.rowLine, 100, 3);
         var list = FGUYCostumeList(c);
-        FGUYPicture(ui, FGUYEntryPic(c, list[0]), x + 3, y + 3, 174, 224, true);
+        FGUYPicture(ui, FGUYEntryPic(c, list[0]), x + 3, y + 3, 174, 224, 17, 0.08);
         FGUYText(ui, x + 6, y + 236, 168, 34, FGUYCharName(c), true, 22, sel ? FGUYC.yellow : FGUYC.white, 'center');
     }
-    // preview
+    // preview: the character live in 3D, then its skins
     var px = 1042, pw = 510, c2 = FGUYChars[FGUYCharSel];
-    FGUYPanel(ui, px, 120, pw, 700, 28, FGUYC.panel, FGUYC.glow);
     var costumes = FGUYCostumeList(c2);
     if (FGUYCostumeSel >= costumes.length) FGUYCostumeSel = 0;
-    var pic = FGUYEntryPic(c2, costumes[FGUYCostumeSel]);
-    FGUYPicture(ui, pic, px + 3, 123, pw - 6, 400, true);
-    FGUYRect(ui, px, 523, pw, 3, 0, FGUYC.glow, 100, 0, 0, 0);
-    FGUYTitle(ui, px + 26, 540, pw - 52, 64, FGUYCharName(c2), 48, FGUYC.yellow, 'left');
-    FGUYText(ui, px + 26, 610, 300, 24, 'SKIN', false, 16, FGUYC.muted, 'left');
+    FGUYStage(ui, px, 120, pw, 443);
+    FGUY3DShow(c2, costumes.length > 0 ? costumes[FGUYCostumeSel].CostumeIndex : 0);
+    FGUYStageView(px + pw / 2, 156, 528);
+    FGUYPanel(ui, px, 578, pw, 242, 24, FGUYC.panel, FGUYC.glow);
+    FGUYTitle(ui, px + 26, 588, pw - 52, 56, FGUYCharName(c2), 42, FGUYC.yellow, 'left');
     var skinName = costumes.length > 0 ? FGUYCostumeName(c2, costumes[FGUYCostumeSel].CostumeIndex) : 'Classic';
-    FGUYText(ui, px + 26, 636, pw - 52, 32, skinName + '   (' + (FGUYCostumeSel + 1) + ' / ' + Math.max(1, costumes.length) + ')', false, 22, FGUYC.white, 'left');
+    FGUYText(ui, px + 26, 646, pw - 52, 30, 'Skin: ' + skinName + '   (' + (FGUYCostumeSel + 1) + ' / ' + Math.max(1, costumes.length) + ')', false, 20, FGUYC.white, 'left');
     var first = Math.max(0, Math.min(FGUYCostumeSel - 2, costumes.length - 5));
     for (var k = first; k < costumes.length && k < first + 5; k++) {
         var tx = px + 26 + (k - first) * 92, on = k == FGUYCostumeSel;
-        FGUYRect(ui, tx, 680, 82, 82, 12, FGUYC.panel2, 100, on ? FGUYC.yellow : FGUYC.rowLine, 100, on ? 3 : 2);
-        FGUYPicture(ui, FGUYEntryPic(c2, costumes[k]), tx + 3, 683, 76, 76, true);
+        FGUYRect(ui, tx, 690, 82, 112, 12, FGUYC.panel2, 100, on ? FGUYC.yellow : FGUYC.rowLine, 100, on ? 3 : 2);
+        FGUYPicture(ui, FGUYEntryPic(c2, costumes[k]), tx + 3, 693, 76, 106, 9, 0.05);
     }
     FGUYFooter(ui, ['A', 'Confirm', 'B', 'Back', 'LB', 'Skin', 'RB', 'Skin'], 'Arrows pick a character');
+}
+
+// ---- loading: the match is starting (the session game boots hidden and takes over when it's ready) ---------
+function FGUYDrawLoading(ui) {
+    var mode = FGUYMode(FGUYS.mode);
+    FGUYMapPicture(ui, FGUYS.map, FGUYS.mode, 0, 0, 1600, 900, 0);
+    var top = ui.createEmptyMovieClip('loadTop', ui.getNextHighestDepth());
+    FGUYRect(top, 0, 0, 1600, 900, 0, FGUYC.bg, 45, 0, 0, 0);
+    FGUYRect(top, 0, 560, 1600, 340, 0, FGUYC.bg, 80, 0, 0, 0);
+    FGUYRect(top, 0, 558, 1600, 3, 0, FGUYC.glow, 100, 0, 0, 0);
+    FGUYText(top, 64, 594, 900, 30, mode.name, false, 22, FGUYC.title, 'left');
+    FGUYTitle(top, 64, 622, 1000, 90, FGUYMapName(FGUYS.map, FGUYS.mode), 66, FGUYC.yellow, 'left');
+    FGUYText(top, 64, 712, 1000, 30, FGUYRulesLine(false), false, 20, FGUYC.soft, 'left');
+    // everyone in the match
+    var n = FGUYS.members.length, x = 64;
+    for (var i = 0; i < n; i++) {
+        var m = FGUYS.members[i];
+        FGUYRect(top, x, 770, 330, 76, 18, FGUYC.panel, 90, m.slot == FGUYS.slot ? FGUYC.yellow : FGUYC.rowLine, 100, 2);
+        FGUYPortrait(top, FGUYCostumePic(m.character, m.costume), x + 38, 808, 28);
+        FGUYText(top, x + 76, 776, 240, 32, m.name, false, 22, FGUYC.white, 'left');
+        FGUYText(top, x + 76, 808, 240, 28, FGUYCharName(m.character) + (mode.teams ? ' - ' + (m.team == 1 ? 'Evil' : 'Good') : ''), false, 17, FGUYC.muted2, 'left');
+        x = x + 350;
+    }
+    // "LOADING..." with a spinner of dots
+    var dots = FGUYLoadStep % 4, d = '';
+    for (var k = 0; k < dots; k++) d = d + '.';
+    FGUYTitle(top, 1100, 640, 440, 70, 'LOADING' + d, 48, FGUYC.white, 'left');
+    for (var j = 0; j < 5; j++)
+        FGUYCircle(top, 1124 + j * 34, 734, 10, j == FGUYLoadStep % 5 ? FGUYC.yellow : FGUYC.chipLine, 100, 0, 0);
+    FGUYText(top, 64, 40, 1472, 30, 'Everyone gets their own full screen', false, 20, FGUYC.soft, 'right');
 }
 
 // ---- match settings --------------------------------------------------------------------------------------------------
@@ -664,7 +805,7 @@ function FGUYDrawSettings(ui) {
     FGUYRow(ui, 76, 160 + rows.length * 84, 884, 70, 'LOBBY', FGUYS.priv ? 'Code only' : 'Anyone can join', false);
     var px = 1020, pw = 532;
     FGUYPanel(ui, px, 130, pw, 470, 28, FGUYC.panel2, FGUYC.glow);
-    FGUYPicture(ui, FGUYMapPic(FGUYS.map, FGUYS.mode), px + 3, 133, pw - 6, 250, true);
+    FGUYMapPicture(ui, FGUYS.map, FGUYS.mode, px + 3, 133, pw - 6, 250, 25);
     FGUYTitle(ui, px + 24, 396, pw - 48, 46, FGUYMapName(FGUYS.map, FGUYS.mode), 30, FGUYC.title, 'left');
     var about = mode.about.split(' '), line = '', ly = 446;
     for (var w = 0; w < about.length; w++) {   // simple word wrap
@@ -679,9 +820,10 @@ function FGUYDrawSettings(ui) {
 }
 
 // ---- input ------------------------------------------------------------------------------------------------------------
-// Keys from the menu: 38 up, 40 down, 37 left, 39 right, 13 A, 27 B, 36 Start, 88 X, 112 Y, 76 LB, 82 RB;
-// on a keyboard also letters / digits (code entry) and 8 backspace.
+// Keys from the menu: 38 up, 40 down, 37 left, 39 right, 13 A (after 65), 27 B, 36 Start (then 32), 88 X,
+// 89 Y (112 = F1 on a keyboard), 76 LB, 82 RB; on a keyboard also letters / digits (code entry), 8 backspace.
 function OnOnlineHandleInput(key, controller) {
+    if (FGUYScreen == 'loading') return;   // the match is on its way
     if (FGUYScreen == 'hub') FGUYInputHub(key);
     else if (FGUYScreen == 'lobby') FGUYInputLobby(key);
     else if (FGUYScreen == 'char') FGUYInputChar(key);
@@ -762,7 +904,7 @@ function FGUYInputLobby(key) {
     if (key == 38) { FGUYFocus = (FGUYFocus + items.length - 1) % items.length; FGUYSound('nav'); return; }
     if (key == 40) { FGUYFocus = (FGUYFocus + 1) % items.length; FGUYSound('nav'); return; }
     if (key == 88 || key == 36) { FGUYPrimary(); return; }
-    if (key == 112) { FGUYOpenChar(); return; }
+    if (key == 89 || key == 112) { FGUYOpenChar(); return; }
     var dir = key == 39 ? 1 : (key == 37 ? -1 : 0);
     if (dir != 0) {
         if (it == 'mode' && host) { FGUYCycleMode(dir); FGUYSound('change'); }

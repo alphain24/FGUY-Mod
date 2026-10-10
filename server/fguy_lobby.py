@@ -54,9 +54,9 @@ import secrets
 import time
 
 PROTO = 2
-# No I/O/0/1 (look alike), and no A/L/R/X: the game turns the controller's A, LB, RB and X buttons into
+# No I/O/0/1 (look alike), and no A/L/R/X/Y: the game turns the controller's A, LB, RB, X and Y buttons into
 # those letter keys, so typing a code on a keyboard must never need them.
-CODE_LETTERS = 'BCDEFGHJKMNPQSTUVWYZ23456789'
+CODE_LETTERS = 'BCDEFGHJKMNPQSTUVWZ23456789'
 NAME_RE = re.compile(r'^[A-Za-z0-9_\-]{1,16}$')
 TOKEN_RE = re.compile(r'^[A-Za-z0-9_\-]{1,24}$')   # characters, modes, maps, numbers
 MAX_LINE = 2 * 1024 * 1024        # a save file (~450 KB) as base64 fits easily

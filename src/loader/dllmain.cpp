@@ -13,6 +13,7 @@
 //   ui.cpp       menu movie patches (e.g. Borderless in Options) + menu-to-loader calls
 //   netplay.cpp  online play core: lockstep input sync, fixed clock, desync checks
 //   vpad.cpp     virtual controller for test scripts (and later, remote players)
+//   online.cpp   the lobby; handoff.cpp starts its sessions without the game visibly restarting
 // Loader settings: FGUYMod\FGUYMod.ini. Log: FGUYMod\FGUYMod_<pid>.log.
 
 #include "common.h"
@@ -50,6 +51,7 @@ void Init() {
     HMODULE exe = GetModuleHandleW(nullptr);
     InitNetplay(exe);
     InitConfigOverride(exe);
+    InitHandoff();
     InitDisplay(exe);
     InitD3D9(exe);
     InitDirectInput();

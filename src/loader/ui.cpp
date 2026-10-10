@@ -238,7 +238,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             sprintf_s(line, "%s: %g %g %g", ArgString(args, argc, 0), ArgNumber(args, argc, 1), ArgNumber(args, argc, 2),
                       ArgNumber(args, argc, 3));
             if (seen.size() < 80 && seen.insert(line).second) Log(L"UI: HUD %S", line);
-        } else if (strcmp(fn, "HudSplitMode") == 0) {
+        } else if (strcmp(fn, "HudSplitMode") == 0) {  // the level's HUD lays itself out: the level runs
+            HandoffMatchRunning();
             Log(L"UI: HUD split mode %d -> %d", (int)ArgNumber(args, argc, 0), SplitViewHudMode((int)ArgNumber(args, argc, 0)));
             ReturnNumber(movie, SplitViewHudMode((int)ArgNumber(args, argc, 0)));
         } else if (strcmp(fn, "HudViewport") == 0) {
@@ -271,6 +272,9 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             static char v[32];
             if (!GetEnvironmentVariableA("FGUYMOD_TEST_AUTOMENU", v, sizeof(v))) v[0] = 0;
             ReturnString(movie, v);
+        } else if (strcmp(fn, "MenuView") == 0) {  // (left, top, right, bottom) of the screen, 0..1
+            SplitViewMenuRect((float)ArgNumber(args, argc, 0), (float)ArgNumber(args, argc, 1),
+                              (float)ArgNumber(args, argc, 2), (float)ArgNumber(args, argc, 3));
         } else if (strcmp(fn, "SessionLevel") == 0) {
             NetplaySessionLevel();
         } else if (strcmp(fn, "SessionLog") == 0) {

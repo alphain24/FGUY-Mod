@@ -2,7 +2,7 @@
 //
 // The game lays out split screen in 0x640950(count, mode): for each viewport i it queues render-thread
 // commands on that viewport's two render cameras (at 0xb5a9b0 + i*0x3c70, and +0x2c0):
-//   * set rectangle: 0x4db0b0 queues 0x403480(camera, x, y, w, h)  - normalized, stored at +0x34..+0x40
+//   * set rectangle: 0x4db0b0 queues 0x403480(camera, l, t, r, b)  - normalized edges, at +0x34..+0x40
 //   * enable:        0x4d1860 queues 0x476390(camera, on)          - stored at +0x1e
 // Both commands keep the function's address as a constant in the queuing code, so we point those two
 // constants at our own functions. On the render thread we then give the local player's viewport the
@@ -223,6 +223,14 @@ int SplitViewHudViewport(int viewport) {
     int mine = MyPlayerViewport();
     if (mine < 0) return viewport;
     return viewport == mine ? 0 : -1;
+}
+
+// The online lobby shows the menu scene's 3D character (the Store's model) inside its centre panel: it
+// draws viewport 0 into that part of the screen (the camera's rectangle is left, top, right, bottom as
+// fractions of the screen; the lobby keeps the screen's shape, so the picture isn't stretched) and back to
+// the whole screen when it closes. The rest of the screen is covered by the lobby.
+void SplitViewMenuRect(float left, float top, float right, float bottom) {
+    for (int k = 0; k < 2; ++k) Real_Rect(Camera(0, k), left, top, right, bottom);
 }
 
 void InitSplitView() {

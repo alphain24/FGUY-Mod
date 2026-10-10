@@ -58,6 +58,7 @@ void NetplaySessionLevel();            //   the menu launched the level
 void InitSplitView();                  // one full-screen view per PC online    (splitview.cpp)
 int SplitViewHudMode(int mode);
 int SplitViewHudViewport(int viewport);
+void SplitViewMenuRect(float left, float top, float right, float bottom);  // lobby: 3D scene inside a panel
 
 // online.cpp: lobby + the in-game ONLINE screens
 void OnlineEnter();
@@ -73,3 +74,11 @@ bool DisplayMenuSelect(int index);     //   returns the game's own "windowed" fl
 void DisplayMenuApply();
 void DisplayMenuReset();
 void DisplayOnChangeResolution(int width, int height, bool windowed);
+void DisplayReveal();                  // show the hidden online-session window
+void DisplayHideWindow();              // hide the window (old game handing over to the session)
+
+// handoff.cpp: the old game shows the loading screen while the session boots hidden
+void InitHandoff();
+bool HandoffHidden();                  //   this game is a session booting hidden
+void HandoffMatchRunning();            //   the match is running: show it
+void HandoffRevealed();

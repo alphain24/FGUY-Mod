@@ -69,7 +69,7 @@ function OnSessHomeEnter() {
         FGUYPress(0, 'a', 130);
         return;
     }
-    if (FGUYSessAuto != undefined) { FGUYSessStage = 'done'; return; }
+    if (FGUYSessAuto != undefined) { FGUYSessStage = 'done'; FGUYSessLog('at the main menu'); return; }
     FGUYSessLog('main menu - going to ' + FGUYSess.mode + ' ' + FGUYSess.map);
     if (FGUYSess.mode == 'ST') FGUYSessionStory();
     else OnMultiplayerSelect();

@@ -16,6 +16,11 @@
 //   Mode   = default | fullscreen | windowed | borderless      (env FGUYMOD_MODE; FGUYMOD_WINDOWED=1)
 //   Width, Height = borderless render size, 0 = monitor's native (env FGUYMOD_RES=WxH, any mode)
 //   RunInBackground = 1 keeps the game running when it isn't the active window (env FGUYMOD_BACKGROUND)
+//
+// Online sessions boot hidden (handoff.cpp): the main window is created invisible and stays so until
+// DisplayReveal. Such a session can't use exclusive fullscreen (a hidden window can't own the screen, and
+// the old game still shows the loading screen), so fullscreen becomes borderless at the same resolution;
+// it also keeps running in the background (lockstep needs every game ticking).
 
 #include "common.h"
 
@@ -38,6 +43,8 @@ bool g_padMode = false;          // report controller mode instead of keyboard/m
 WNDPROC g_gameWndProc = nullptr;
 Mode g_menuChoice = Mode::Default;  // picked in Options > Screen, applied on OK
 bool g_testRun = false;          // mode forced by an environment variable: don't save choices
+bool g_hidden = false;           // online session booting hidden until DisplayReveal (handoff.cpp)
+bool g_noFullscreen = false;     //   and therefore borderless instead of fullscreen
 
 // Order of the choices in the (patched) Options > Screen > Display Mode list.
 const int kMenuWindowed = 0, kMenuFullscreen = 1, kMenuBorderless = 2;
@@ -88,6 +95,10 @@ LSTATUS WINAPI Hook_RegQueryValueExW(HKEY key, LPCWSTR name, LPDWORD reserved, L
     bool sizeOverride = g_width > 0 && (g_envRes || g_mode == Mode::Borderless);
     if (_wcsicmp(name, L"ScreenWindowed") == 0) {
         g_gameWindowed = stored ? 1 : 0;
+        if (g_noFullscreen && g_mode == Mode::Default && !stored) {
+            g_mode = Mode::Borderless;
+            Log(L"Display: online session - borderless instead of fullscreen");
+        }
         if (g_mode != Mode::Default) value = g_mode == Mode::Fullscreen ? 0 : 1;
     } else if (_wcsicmp(name, L"ScreenWidth") == 0) {
         g_gameWidth = sizeOverride ? g_width : stored;
@@ -122,12 +133,26 @@ LSTATUS WINAPI Hook_RegSetValueExW(HKEY key, LPCWSTR name, DWORD reserved, DWORD
 //   deadlock). So the menu posts kRestyleMsg and the restyle happens here, on the window's thread.
 
 const UINT kRestyleMsg = WM_APP + 0x4647;  // wParam = target Mode
+const UINT kRevealMsg = WM_APP + 0x4648;   // show the hidden session window (handoff.cpp)
+const UINT kHideMsg = WM_APP + 0x4649;     // hide the window (the old game, while it closes)
 void RestyleWindow(Mode to);
 
 LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
         case kRestyleMsg:
             RestyleWindow(static_cast<Mode>(wp));
+            return 0;
+        case kRevealMsg:
+            if (g_hidden) {
+                g_hidden = false;
+                ShowWindow(wnd, SW_SHOW);
+                SetWindowPos(wnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                SetForegroundWindow(wnd);
+                HandoffRevealed();
+            }
+            return 0;
+        case kHideMsg:
+            ShowWindow(wnd, SW_HIDE);
             return 0;
         case WM_WINDOWPOSCHANGED:
             // In windowed mode the game takes its screen size from the window's client area here
@@ -172,11 +197,13 @@ decltype(&SetWindowLongW) Real_SetWindowLongW;
 decltype(&SetWindowPos) Real_SetWindowPos;
 decltype(&AdjustWindowRect) Real_AdjustWindowRect;
 decltype(&ChangeDisplaySettingsW) Real_ChangeDisplaySettingsW;
+decltype(&ShowWindow) Real_ShowWindow;
 
 HWND WINAPI Hook_CreateWindowExW(DWORD ex, LPCWSTR cls, LPCWSTR title, DWORD style, int x, int y,
                                  int w, int h, HWND parent, HMENU menu, HINSTANCE inst, LPVOID param) {
     bool main = !(style & WS_CHILD) && IsGameMainWindowClass(cls);
     if (main && (style & WS_CAPTION)) g_windowedStyle = (LONG)style;
+    if (main && g_hidden) style &= ~WS_VISIBLE;
     if (main && g_mode == Mode::Borderless) {
         style = (style & ~kBorderStyles) | WS_POPUP;
         ex &= ~kBorderExStyles;
@@ -208,9 +235,18 @@ LONG WINAPI Hook_SetWindowLongW(HWND wnd, int index, LONG value) {
     return Real_SetWindowLongW(wnd, index, value);
 }
 
+BOOL WINAPI Hook_ShowWindow(HWND wnd, int cmd) {
+    if (g_hidden && wnd && wnd == g_mainWnd && cmd != SW_HIDE) {
+        Log(L"Window: staying hidden (online session still loading)");
+        return FALSE;
+    }
+    return Real_ShowWindow(wnd, cmd);
+}
+
 BOOL WINAPI Hook_SetWindowPos(HWND wnd, HWND after, int x, int y, int cx, int cy, UINT flags) {
     if (wnd && wnd == g_mainWnd)
         Log(L"Window: game moves window to %d,%d %dx%d flags %#x (mode %s)", x, y, cx, cy, flags, ModeName(g_mode));
+    if (g_hidden && wnd && wnd == g_mainWnd) flags &= ~SWP_SHOWWINDOW;
     if (g_mode == Mode::Borderless && wnd && wnd == g_mainWnd) {
         x = g_monitor.left;
         y = g_monitor.top;
@@ -328,6 +364,16 @@ void DisplayMenuApply() {
 
 void DisplayMenuReset() { g_menuChoice = Mode::Default; }
 
+// Online session: show the hidden window (handoff.cpp). Done on the window's own thread.
+void DisplayReveal() {
+    if (g_mainWnd) PostMessageW(g_mainWnd, kRevealMsg, 0, 0);
+    else g_hidden = false;
+}
+
+void DisplayHideWindow() {
+    if (g_mainWnd) PostMessageW(g_mainWnd, kHideMsg, 0, 0);
+}
+
 void DisplayOnChangeResolution(int width, int height, bool windowed) {
     Log(L"Display: game changes resolution to %dx%d %s (mode %s)", width, height,
         windowed ? L"windowed" : L"fullscreen", ModeName(EffectiveMode()));
@@ -390,6 +436,15 @@ void InitDisplay(HMODULE exe) {
         g_width = MonitorW();
         g_height = MonitorH();
     }
+    if (HandoffHidden()) {
+        g_hidden = true;
+        g_noFullscreen = true;
+        g_background = true;
+        if (g_mode == Mode::Fullscreen) {
+            g_mode = Mode::Borderless;   // at the game's own resolution (g_width stays as set)
+            Log(L"Display: online session - borderless instead of fullscreen");
+        }
+    }
     Log(L"Display: mode %s, render size %s%dx%d, run in background %s", ModeName(g_mode),
         g_width > 0 ? L"" : L"(game setting) ", g_width, g_height, g_background ? L"on" : L"off");
 
@@ -402,6 +457,7 @@ void InitDisplay(HMODULE exe) {
         {"user32.dll", "AdjustWindowRect", (void*)Hook_AdjustWindowRect, (void**)&Real_AdjustWindowRect},
         {"user32.dll", "GetClientRect", (void*)Hook_GetClientRect, (void**)&Real_GetClientRect},
         {"user32.dll", "ChangeDisplaySettingsW", (void*)Hook_ChangeDisplaySettingsW, (void**)&Real_ChangeDisplaySettingsW},
+        {"user32.dll", "ShowWindow", (void*)Hook_ShowWindow, (void**)&Real_ShowWindow},
     };
     InstallHooks(exe, hooks);
 
