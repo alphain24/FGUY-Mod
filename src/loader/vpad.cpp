@@ -5,6 +5,7 @@
 //
 // Test tools talk to us over a named pipe, \\.\pipe\FGUYMod_<pid>, one command per line:
 //   press <pad 0-3> <button> [<button> ...]    buttons: a b x y start back up down left right lb rb
+//   quit                                        exit the game cleanly (test tools)
 // Each button is held for kHoldMs, then released for kGapMs before the next one.
 // Off unless FGUYMod.ini [Debug] TestInput=1 (or env FGUYMOD_TESTINPUT=1).
 
@@ -91,6 +92,10 @@ WORD ButtonFromName(const char* n) {
 void HandleCommand(char* line) {
     char* ctx = nullptr;
     char* cmd = strtok_s(line, " \t\r\n", &ctx);
+    if (cmd && _stricmp(cmd, "quit") == 0) {  // test tools: exit cleanly (see VideoRequestQuit)
+        VideoRequestQuit();
+        return;
+    }
     if (!cmd || _stricmp(cmd, "press") != 0) return;
     char* padStr = strtok_s(nullptr, " \t\r\n", &ctx);
     if (!padStr) return;

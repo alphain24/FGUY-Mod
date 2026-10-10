@@ -33,6 +33,7 @@ const FrameRateChoice kFrameRates[] = {
 };
 const int kFrameRateCount = sizeof(kFrameRates) / sizeof(kFrameRates[0]);
 int g_frameRate = 0;           // index into kFrameRates
+volatile bool g_quitRequested = false;
 bool g_fullscreen = false;     // current device is exclusive fullscreen
 
 // ---- curated resolution list --------------------------------------------------------------------
@@ -193,6 +194,13 @@ void PaceFrame() {
 HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, const RECT* dst, HWND wnd,
                                        const RGNDATA* dirty) {
     HRESULT hr = Real_Present(self, src, dst, wnd, dirty);
+    if (g_quitRequested) {
+        // Exiting from the render thread between frames lets Direct3D and the driver clean up in this
+        // process. Killing the process instead can leave the driver unable to create D3D9 devices for a
+        // minute or two on some PCs.
+        Log(L"D3D: quit requested - exiting");
+        ExitProcess(0);
+    }
     PaceFrame();
     NetplayOnFrame();
     static unsigned frame = 0;
@@ -293,6 +301,8 @@ void SaveFrameRate() {
 }
 
 }  // namespace
+
+void VideoRequestQuit() { g_quitRequested = true; }
 
 // In-game Options > Screen > Frame Rate (see ui.cpp).
 int VideoFrameRateIndex() { return g_frameRate; }

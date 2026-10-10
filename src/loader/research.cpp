@@ -21,8 +21,16 @@ void* volatile g_players[8];
 bool g_spy = false;      // stubs installed
 bool g_spyLog = false;   // periodic research log
 
+volatile DWORD g_callerTids[6];
+volatile LONG g_callerCounts[6];
+
 void __cdecl Record(int slot, void* self) {
     InterlockedIncrement(&g_calls[slot]);
+    DWORD me = GetCurrentThreadId();
+    for (int i = 0; i < 6; ++i) {
+        if (g_callerTids[i] == me) { InterlockedIncrement(&g_callerCounts[i]); break; }
+        if (!g_callerTids[i] && InterlockedCompareExchange(&g_callerTids[i], me, 0) == 0) { g_callerCounts[i] = 1; break; }
+    }
     for (int i = 0; i < 8; ++i) {
         if (g_players[i] == self) return;
         if (!g_players[i] &&
@@ -62,9 +70,36 @@ void* MakeStub(int slot, void* original) {
 
 bool Readable(const void* p, size_t n) { return p && !IsBadReadPtr(p, n); }
 
+// Thread creation log: which engine thread is which (CreateThread and the C runtime's _beginthreadex).
+decltype(&CreateThread) Real_CreateThread;
+using beginthreadex_t = uintptr_t(__cdecl*)(void*, unsigned, unsigned(__stdcall*)(void*), void*, unsigned, unsigned*);
+beginthreadex_t Real_beginthreadex;
+uintptr_t __cdecl Hook_beginthreadex(void* sa, unsigned stack, unsigned(__stdcall* start)(void*), void* arg, unsigned flags,
+                                     unsigned* tidOut) {
+    unsigned tid = 0;
+    uintptr_t h = Real_beginthreadex(sa, stack, start, arg, flags, &tid);
+    if (tidOut) *tidOut = tid;
+    Log(L"Research: thread %u created (_beginthreadex), start %p, arg %p (by thread %lu)", tid, (void*)start, arg,
+        GetCurrentThreadId());
+    return h;
+}
+HANDLE WINAPI Hook_CreateThread(LPSECURITY_ATTRIBUTES sa, SIZE_T stack, LPTHREAD_START_ROUTINE start, LPVOID arg,
+                                DWORD flags, LPDWORD tidOut) {
+    DWORD tid = 0;
+    HANDLE h = Real_CreateThread(sa, stack, start, arg, flags, &tid);
+    if (tidOut) *tidOut = tid;
+    Log(L"Research: thread %lu created, start %p, arg %p (by thread %lu)", tid, (void*)start, arg, GetCurrentThreadId());
+    return h;
+}
+
 }  // namespace
 
 void InitResearch() {
+    if (SettingInt(L"Debug", L"ThreadLog", L"FGUYMOD_THREADLOG", 0)) {
+        HookSpec hooks[] = {{"kernel32.dll", "CreateThread", (void*)Hook_CreateThread, (void**)&Real_CreateThread},
+                            {"msvcr100.dll", "_beginthreadex", (void*)Hook_beginthreadex, (void**)&Real_beginthreadex}};
+        InstallHooks(GetModuleHandleW(nullptr), hooks);
+    }
     g_spyLog = SettingInt(L"Debug", L"PlayerSpy", L"FGUYMOD_PLAYERSPY", 0) != 0;
     g_spy = g_spyLog || NetplayEnabled();  // netplay needs to know the players
     if (!g_spy) return;
@@ -102,6 +137,9 @@ void ResearchOnFrame(unsigned frame) {
         wcscat_s(line, one);
     }
     Log(L"Research: frame %u, busiest player methods:%s", frame, line);
+    Log(L"Research:   player methods called by thread %lu x%ld, %lu x%ld, %lu x%ld, %lu x%ld (render thread %lu)",
+        g_callerTids[0], g_callerCounts[0], g_callerTids[1], g_callerCounts[1], g_callerTids[2], g_callerCounts[2],
+        g_callerTids[3], g_callerCounts[3], GetCurrentThreadId());
     for (int i = 0; i < 8 && g_players[i]; ++i) {
         auto self = static_cast<unsigned char*>(g_players[i]);
         if (!Readable(self, 0xe00)) continue;

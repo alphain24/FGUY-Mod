@@ -44,7 +44,7 @@ void Init() {
     CreateDirectoryW(g_modDir, nullptr);
 
     OpenLog();
-    Log(L"FGUY Mod Loader starting. Game folder: %s", g_gameDir);
+    Log(L"FGUY Mod Loader starting (main thread %lu). Game folder: %s", GetCurrentThreadId(), g_gameDir);
     if (!LoadRealDinput()) Log(L"ERROR: could not load the system dinput8.dll");
 
     HMODULE exe = GetModuleHandleW(nullptr);

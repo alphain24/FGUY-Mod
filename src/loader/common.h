@@ -39,6 +39,7 @@ void OnDirectInputCreated(void* directInput);
 void InitD3D9(HMODULE exe);            // resolutions, frame rate, crash fix   (d3d9.cpp)
 int VideoFrameRateIndex();             //   Options > Screen > Frame Rate support
 void VideoSetFrameRate(int index);
+void VideoRequestQuit();               //   exit cleanly at the end of the next frame (test tools)
 void InitUi();                         // menu movie patches + menu calls      (ui.cpp)
 void InitResearch();                   // optional research hooks              (research.cpp)
 void ResearchOnFrame(unsigned frame);
