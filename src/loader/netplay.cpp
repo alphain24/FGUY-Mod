@@ -444,19 +444,29 @@ Pad SampleLocal(unsigned f) {
         p.rx = st.Gamepad.sThumbRX;
         p.ry = st.Gamepad.sThumbRY;
     }
+    p.buttons |= VPadButtons(0);  // test tools press this player's buttons through the pipe
     return p;
 }
 
 // ---- state hash -------------------------------------------------------------------------------------------
+// The player spy remembers every player object it ever saw, including deleted ones (e.g. character
+// previews in the menus): only live players count (still the player class, index 0..3).
+const ULONG_PTR kPlayerVtable = 0xa1af14;
+bool LivePlayer(unsigned char* self) {
+    if (IsBadReadPtr(self, 0xe00)) return false;
+    if (*reinterpret_cast<ULONG_PTR*>(self) != kPlayerVtable) return false;
+    unsigned index = *reinterpret_cast<unsigned*>(self + 0xdf8);
+    return index < 4 && !IsBadReadPtr(*reinterpret_cast<void**>(self + 0x38), 0x40);
+}
+
 unsigned HashPlayers() {
     unsigned h = 2166136261u;
     void* players[8];
     int n = ResearchPlayers(players, 8);
     for (int i = 0; i < n; ++i) {
         auto self = static_cast<unsigned char*>(players[i]);
-        if (IsBadReadPtr(self, 0xe00)) continue;
+        if (!LivePlayer(self)) continue;
         auto xform = *reinterpret_cast<unsigned char**>(self + 0x38);
-        if (IsBadReadPtr(xform, 0x40)) continue;
         int index = *reinterpret_cast<int*>(self + 0xdf8);
         h = (h ^ (unsigned)index) * 16777619u;
         for (int k = 0; k < 12; ++k) h = (h ^ xform[0x30 + k]) * 16777619u;
@@ -469,9 +479,8 @@ void LogPlayers(const wchar_t* tag) {
     int n = ResearchPlayers(players, 8);
     for (int i = 0; i < n; ++i) {
         auto self = static_cast<unsigned char*>(players[i]);
-        if (IsBadReadPtr(self, 0xe00)) continue;
+        if (!LivePlayer(self)) continue;
         auto xform = *reinterpret_cast<float**>(self + 0x38);
-        if (IsBadReadPtr(xform, 0x40)) continue;
         Log(L"Netplay: %s tick %u player %d at (%.4f, %.4f, %.4f)", tag, g_tick,
             *reinterpret_cast<int*>(self + 0xdf8), xform[12], xform[13], xform[14]);
     }
@@ -551,6 +560,7 @@ WORD ScenePad() {
         } else if (g_realXInput) {
             XINPUT_STATE st{};
             if (g_realXInput(0, &st) == ERROR_SUCCESS) buttons = st.Gamepad.wButtons;
+            buttons |= VPadButtons(0);
         }
         WORD pressed = buttons & ~g_localButtonsLast;
         g_localButtonsLast = buttons;

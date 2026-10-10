@@ -7,7 +7,9 @@
 //   reported at 60 Hz. For real fullscreen we then pick a refresh rate the monitor really supports.
 // * Frame rate ([Display] FrameRate = vsync | 30 | 60 | 120 | 144 | 240 | uncapped): presents
 //   without vsync and paces frames ourselves. "vsync" in windowed/borderless waits for the desktop
-//   compositor (no tearing); in exclusive fullscreen it keeps the game's own vsync.
+//   compositor (no tearing); in exclusive fullscreen it keeps the game's own vsync. "uncapped" still
+//   stops at 500 fps: some of the game's timers (e.g. the legal screen at boot) never finish when
+//   frames take under a millisecond.
 // * Crash fix: the game sometimes fails to create its device at startup and then crashes using it
 //   (FGUY.exe +0x876e9). We retry CreateDevice for a few seconds.
 
@@ -171,6 +173,7 @@ DwmFlush_t g_dwmFlush = nullptr;
 void PaceFrame() {
     // Netplay runs the game on a fixed 1/60 s clock, so real time must match: always 60 fps.
     int fps = NetplayEnabled() ? 60 : kFrameRates[g_frameRate].fps;
+    if (fps < 0) fps = 500;  // "uncapped": see the top of this file
     if (fps == 0 && !g_fullscreen && g_dwmFlush) {
         g_dwmFlush();  // vsync in windowed modes: wait for the compositor's next frame
     } else if (fps > 0) {

@@ -1,6 +1,6 @@
 # Screenshot of the game window's own picture, even when it's behind other windows.
-# Usage: window_shot.ps1 <out.png> [-Scale 0.5]
-param([string]$Out, [double]$Scale = 0.5)
+# Usage: window_shot.ps1 <out.png> [-Scale 0.5] [-Id <process id>]
+param([string]$Out, [double]$Scale = 0.5, [int]$Id = 0)
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
 using System; using System.Runtime.InteropServices;
@@ -12,7 +12,7 @@ public static class W {
 }
 "@
 [W]::SetProcessDPIAware() | Out-Null
-$h = (Get-Process FGUY | Select-Object -First 1).MainWindowHandle
+$h = $(if ($Id) { Get-Process -Id $Id } else { Get-Process FGUY | Select-Object -First 1 }).MainWindowHandle
 $r = New-Object W+RECT
 [W]::GetClientRect($h, [ref]$r) | Out-Null
 $bmp = New-Object System.Drawing.Bitmap ($r.R - $r.L), ($r.B - $r.T)

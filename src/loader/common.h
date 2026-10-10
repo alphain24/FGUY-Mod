@@ -33,6 +33,7 @@ void InitConfigOverride(HMODULE exe);  // fguy.ini override + file-open log   (c
 void InitNetSpy(HMODULE exe);          // winsock + debug-print logging        (netspy.cpp)
 void InitDisplay(HMODULE exe);         // windowed / borderless / resolution   (display.cpp)
 void InitVirtualPad(HMODULE exe);      // injected controller input for tests  (vpad.cpp)
+WORD VPadButtons(DWORD pad);           //   buttons the test pipe holds on a pad right now
 void InitDirectInput();                // Windows key in windowed modes        (dinput.cpp)
 void OnDirectInputCreated(void* directInput);
 

@@ -53,6 +53,7 @@ WORD CurrentButtons(DWORD pad) {
 
 }  // namespace
 bool NetplayPad(DWORD pad, XINPUT_STATE* state, DWORD(WINAPI* real)(DWORD, XINPUT_STATE*));
+WORD VPadButtons(DWORD pad) { return CurrentButtons(pad); }
 namespace {
 
 DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
