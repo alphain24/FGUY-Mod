@@ -1,6 +1,7 @@
 """Self-test for fguy_lobby.py: starts a server on a spare port and plays a whole lobby through it.
 
-Usage: python test_lobby.py [--live]     (--live: test the server already running on port 7650)
+Usage: python test_lobby.py [--live [host[:port]]]
+  --live: test a server that's already running (default 127.0.0.1:7650), e.g. your VPS
 """
 import base64
 import os
@@ -10,13 +11,15 @@ import sys
 import time
 
 LIVE = '--live' in sys.argv
-PORT = 7650 if LIVE else 7659
+_target = sys.argv[sys.argv.index('--live') + 1] if LIVE and len(sys.argv) > sys.argv.index('--live') + 1 else '127.0.0.1'
+HOST = _target.split(':')[0] if LIVE else '127.0.0.1'
+PORT = int(_target.split(':')[1]) if LIVE and ':' in _target else (7650 if LIVE else 7659)
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 class Player:
     def __init__(self, name):
-        self.s = socket.create_connection(('127.0.0.1', PORT))
+        self.s = socket.create_connection((HOST, PORT))
         self.f = self.s.makefile('rw', encoding='utf-8', newline='\n')
         self.send(f'HELLO 2 testgame {name}')
         assert self.expect('WELCOME')
@@ -51,9 +54,9 @@ def start_session(host_name, guest_name, save=True):
 def relay_works(token):
     u0, u1 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM), socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     u1.settimeout(2)
-    u1.sendto(b'FG' + token + b'\x01hello', ('127.0.0.1', PORT))
+    u1.sendto(b'FG' + token + b'\x01hello', (HOST, PORT))
     time.sleep(0.2)
-    u0.sendto(b'FG' + token + b'\x00inputs', ('127.0.0.1', PORT))
+    u0.sendto(b'FG' + token + b'\x00inputs', (HOST, PORT))
     try:
         data, _ = u1.recvfrom(1500)
     except socket.timeout:
@@ -102,9 +105,9 @@ def main():
         # relay: both players say hello, then host -> guest
         u0, u1 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM), socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         u1.settimeout(2)
-        u1.sendto(b'FG' + token + b'\x01hello', ('127.0.0.1', PORT))
+        u1.sendto(b'FG' + token + b'\x01hello', (HOST, PORT))
         time.sleep(0.2)
-        u0.sendto(b'FG' + token + b'\x00inputs', ('127.0.0.1', PORT))
+        u0.sendto(b'FG' + token + b'\x00inputs', (HOST, PORT))
         data, _ = u1.recvfrom(1500)
         assert data == b'FG' + token + b'\x00inputs', data
 
@@ -112,7 +115,7 @@ def main():
         # comes back as "connection reset" on the server's socket) - later sessions must still relay
         u1.close()
         for _ in range(20):
-            u0.sendto(b'FG' + token + b'\x00inputs', ('127.0.0.1', PORT))
+            u0.sendto(b'FG' + token + b'\x00inputs', (HOST, PORT))
             time.sleep(0.02)
         time.sleep(0.5)
         ok, _, _ = relay_works(start_session('Host2', 'Guest2'))
