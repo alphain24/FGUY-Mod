@@ -249,8 +249,11 @@ function FGUYData() {
     FGUYMapPics = {FR: 'screenshot_FratRow.tif', AM: 'screenshot_Amish.tif', CT: 'screenshot_Crippletron.tif',
                    CH: 'screenshot_CH.tif', TF: 'screenshot_TF.tif', SS: 'screenshot_SS.tif', BP: 'screenshot_BertramPrime.tif',
                    MC: 'screenshot_MC.tif', PI: 'screenshot_PI.tif', GC: 'screenshot_PvGC.tif'};
-    FGUYChars = GetMultiplayerCharacterList();
-    FGUYCostumes = GetCostumesInfo();
+    FGUYCostumes = GetCostumesInfo();          // my save's bought costumes, by character index
+    FGUYAllCostumes = [];                      // every costume (names and pictures for any save's picks)
+    for (var i = 0; i < 11; i++) FGUYAllCostumes[i] = flash.external.ExternalInterface.call('STOR_GetCostumesInfo', 0, i);
+    FGUYOwnAt = '';
+    FGUYChars = FGUYCharList();
     FGUYRules = {TimeLimit: FGUYRuleList('TimeLimit'), WinningScore: FGUYRuleList('WinningScore'),
                  FlagLimit: FGUYRuleList('FlagLimit'), FriendlyFire: ['OFF', 'ON']};
 }
@@ -341,10 +344,77 @@ function FGUYCharName(c) {
     return String(c).toUpperCase();
 }
 
+// The pick lists. In a lobby they come from the host's save (FGUYS.own, shared through the server), because
+// the match plays on it; otherwise from mine.
+function FGUYOwned() {
+    var own = FGUYS.state == 'lobby' ? FGUYS.own : '';
+    if (own == FGUYOwnAt && FGUYOwnParsed != undefined) return FGUYOwnParsed;
+    FGUYOwnAt = own;
+    FGUYOwnParsed = null;
+    if (own == undefined || own == '') return null;
+    var o = {chars: [], costumes: {}};
+    var entries = String(own).split(';');
+    for (var i = 0; i < entries.length; i++) {
+        var f = entries[i].split(':');
+        if (f[0] == '') continue;
+        o.chars.push(f[0]);
+        o.costumes[f[0]] = f.length > 1 && f[1] != '' ? f[1].split('.') : ['0'];
+    }
+    FGUYOwnParsed = o;
+    return o;
+}
+
+function FGUYCharList() {
+    var o = FGUYOwned();
+    if (o != null) {
+        var all = GetMultiplayerCharacterList(), out = [];
+        for (var i = 0; i < all.length; i++)
+            for (var k = 0; k < o.chars.length; k++) if (o.chars[k] == all[i]) out.push(all[i]);
+        if (out.length > 0) return out;
+    }
+    var mine = GetUnlockedMultiplayerCharacterList();
+    return mine.length > 0 ? mine : GetMultiplayerCharacterList();
+}
+
 function FGUYCostumeList(c) {
-    var list = FGUYCostumes[GetCharacterIndex(c)];
+    var o = FGUYOwned(), ci = GetCharacterIndex(c);
+    if (o != null && o.costumes[c] != undefined) {
+        var all = FGUYAllCostumes[ci], wanted = o.costumes[c], out = [];
+        if (all != undefined)
+            for (var i = 0; i < all.length; i++)
+                for (var k = 0; k < wanted.length; k++) if (String(all[i].CostumeIndex) == String(wanted[k])) out.push(all[i]);
+        if (out.length > 0) return out;
+    }
+    var list = FGUYCostumes[ci];
     if (list == undefined) return [];
     return list;
+}
+
+// Host: what my save has, for everyone's pick lists: Peter:0.1.3;Lois:0.2
+function FGUYOwnString() {
+    var chars = GetUnlockedMultiplayerCharacterList(), parts = [];
+    for (var i = 0; i < chars.length; i++) {
+        var list = FGUYCostumes[GetCharacterIndex(chars[i])], idx = [];
+        if (list != undefined) for (var k = 0; k < list.length; k++) idx.push(list[k].CostumeIndex);
+        parts.push(chars[i] + ':' + idx.join('.'));
+    }
+    return parts.join(';');
+}
+
+// My pick must be something the host's save has; if not, take the first one that is.
+function FGUYCheckPick() {
+    FGUYChars = FGUYCharList();
+    var ok = false;
+    for (var i = 0; i < FGUYChars.length; i++) if (FGUYChars[i] == FGUYPickChar) ok = true;
+    var changed = false;
+    if (!ok) { FGUYPickChar = FGUYChars[0]; changed = true; }
+    var list = FGUYCostumeList(FGUYPickChar), cok = false;
+    for (var k = 0; k < list.length; k++) if (String(list[k].CostumeIndex) == String(FGUYPickCostume)) cok = true;
+    if (!cok) { FGUYPickCostume = list.length > 0 ? list[0].CostumeIndex : 0; changed = true; }
+    if (changed && FGUYS.state == 'lobby') {
+        FGUYSendPick();
+        FGUYToast("The host's save doesn't have your pick - you're " + FGUYCharName(FGUYPickChar));
+    }
 }
 
 // The picture for a character in a costume (game costume index). Like the game's join screen: a costume
@@ -378,7 +448,7 @@ function FGUYCostumeName(c, costume) {
 // ---- lobby state from the loader ---------------------------------------------------------------------------
 function FGUYParse(blob) {
     var st = {state: 'off', status: '', code: '', slot: -1, priv: false, name: '', server: '', ping: 0,
-              mode: 'DM', map: 'FR', time: 0, score: 0, ff: 0, members: [], lobbies: []};
+              mode: 'DM', map: 'FR', time: 0, score: 0, ff: 0, own: '', members: [], lobbies: []};
     var lines = String(blob).split('\n');
     for (var i = 0; i < lines.length; i++) {
         var f = lines[i].split('|');
@@ -387,6 +457,8 @@ function FGUYParse(blob) {
             st.name = f[6]; st.server = f[7]; st.ping = Number(f[8]);
         } else if (f[0] == 'C') {
             st.mode = f[1]; st.map = f[2]; st.time = Number(f[3]); st.score = Number(f[4]); st.ff = Number(f[5]);
+        } else if (f[0] == 'O') {
+            st.own = f[1];
         } else if (f[0] == 'M') {
             st.members.push({slot: Number(f[1]), name: f[2], ready: f[3] == '1', ping: Number(f[4]), character: f[5],
                              costume: f[6], team: Number(f[7])});
@@ -413,8 +485,9 @@ function FGUYPoll() {
         FGUYScreen = 'lobby';
         FGUYFocus = 0;
         FGUYSound('accept');
-        if (FGUYIsHost()) FGUYCheckMap();
+        if (FGUYIsHost()) { FGUYCheckMap(); FGUYDo('own', FGUYOwnString()); }
     }
+    if (FGUYS.own != old.own || FGUYS.state != was) FGUYCheckPick();
     if (FGUYS.state == 'starting' && FGUYScreen != 'loading') {
         FGUYScreen = 'loading';
         FGUYLoadStart = getTimer();
@@ -828,7 +901,8 @@ function FGUYRulesParts(short) {
 function FGUYDrawChar(ui) {
     var mode = FGUYMode(FGUYS.mode);
     FGUYTitle(ui, 48, 26, 900, 80, 'CHARACTER', 60, FGUYC.title, 'left');
-    FGUYText(ui, 900, 52, 652, 30, 'Lobby ' + FGUYS.code + ' - others see your pick live', false, 20, FGUYC.muted2, 'right');
+    FGUYText(ui, 700, 52, 852, 30, (FGUYIsHost() ? 'From your save' : "From the host's save (the match plays on it)") +
+             ' - others see your pick live', false, 20, FGUYC.muted2, 'right');
     if (mode.teams) {
         FGUYChoice(ui, 48, 120, 150, 'GOOD', FGUYPickTeam == 0, false);
         FGUYChoice(ui, 210, 120, 150, 'EVIL', FGUYPickTeam == 1, false);

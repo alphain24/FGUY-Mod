@@ -54,6 +54,8 @@ int g_mySlot = -1;
 std::vector<Member> g_members;
 std::vector<LobbyInfo> g_lobbies;
 std::string g_conf = "DM|FR|0|0|0";  // mode|map|time|score|ff, as the menu uses it
+std::string g_own;                  // the host's characters and costumes: Peter:0.1.3;Lois:0.2 (the session
+                                    // plays on the host's save, so everyone picks from it)
 bool g_ready = false;
 Member g_mine;                      // my picks (kept across lobbies)
 SOCKET g_sock = INVALID_SOCKET;
@@ -87,6 +89,15 @@ std::string CleanToken(const std::string& s) {
         if (isalnum((unsigned char)c) || c == '_' || c == '-') out += c;
     if (out.size() > 24) out.resize(24);
     return out.empty() ? "0" : out;
+}
+
+// The host's ownership list: letters, digits and : ; . _ - only.
+std::string CleanList(const std::string& s) {
+    std::string out;
+    for (char c : s)
+        if (isalnum((unsigned char)c) || strchr(":;._-", c)) out += c;
+    if (out.size() > 800) out.resize(800);
+    return out;
 }
 
 // For the menu's text blob: no field or line separators inside a field.
@@ -215,6 +226,7 @@ void HandleLine(const std::string& line) {
         }
     } else if (cmd == "LOBBY" && f.size() > 1) {
         g_state = State::InLobby;
+        g_own.clear();
         g_code = f[1];
         g_private = f.size() > 2 && f[2] == "1";
         g_ready = false;
@@ -235,6 +247,8 @@ void HandleLine(const std::string& line) {
             m.team = e[6];
             g_members.push_back(m);
         }
+    } else if (cmd == "OWN" && f.size() > 1) {
+        g_own = CleanList(f[1]);
     } else if (cmd == "CONF" && f.size() >= 6) {
         g_conf = f[1] + "|" + f[2] + "|" + f[3] + "|" + f[4] + "|" + f[5];
     } else if (cmd == "CLOSED") {
@@ -496,6 +510,7 @@ void OnlineExit() {
 //   S|<state>|<status>|<code>|<my slot>|<private>|<my name>|<server>|<my ping>
 //        state: off, connecting, online, lobby, starting, failed
 //   C|<mode>|<map>|<time>|<score>|<ff>                      the lobby's match settings
+//   O|<char>:<costume>.<costume>;...                         what the host's save has (in a lobby)
 //   M|<slot>|<name>|<ready>|<ping>|<character>|<costume>|<team>    one per player in my lobby
 //   L|<code>|<host>|<players>|<max>|<mode>|<map>            one per open lobby (when not in one)
 const char* LobbyState() {
@@ -505,6 +520,7 @@ const char* LobbyState() {
              "|" + (g_private ? "1" : "0") + "|" + Field(g_name) + "|" + Field(g_serverHost) + "|" +
              std::to_string(g_rtt) + "\n";
     g_text += "C|" + g_conf + "\n";
+    if (inLobby && !g_own.empty()) g_text += "O|" + g_own + "\n";
     if (inLobby) {
         for (size_t i = 0; i < g_members.size(); ++i) {
             const Member& m = g_members[i];
@@ -520,7 +536,7 @@ const char* LobbyState() {
 }
 
 // host <max> <private>   join <code>   leave   ready   start   pick <char> <costume> <team>
-// conf <mode> <map> <time> <score> <ff>
+// conf <mode> <map> <time> <score> <ff>   own <list> (host)
 void LobbyDo(const char* command, const char* a, const char* b, const char* c, const char* d, const char* e) {
     std::lock_guard<std::mutex> lock(g_lock);
     std::string cmd = command ? command : "";
@@ -558,6 +574,11 @@ void LobbyDo(const char* command, const char* a, const char* b, const char* c, c
             }
             SendPicks();
         }
+    } else if (cmd == "own" && g_state == State::InLobby && g_mySlot == 0) {
+        g_own = CleanList(a);
+        char test[800];  // test knob: pretend the host's save has only this
+        if (GetEnvironmentVariableA("FGUYMOD_TEST_OWN", test, sizeof(test))) g_own = CleanList(test);
+        if (!g_own.empty()) SendLine("OWN " + g_own);
     } else if (cmd == "conf" && g_state == State::InLobby && g_mySlot == 0) {
         g_conf = CleanToken(a) + "|" + CleanToken(b) + "|" + CleanToken(c) + "|" + CleanToken(d) + "|" + CleanToken(e);
         SendLine("CONF " + CleanToken(a) + " " + CleanToken(b) + " " + CleanToken(c) + " " + CleanToken(d) + " " +

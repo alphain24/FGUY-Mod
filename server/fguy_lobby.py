@@ -20,6 +20,8 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     READY <0|1>
     SET <character> <costume> <team> your picks (character name, costume index, team 0 good / 1 evil)
     CONF <mode> <map> <time> <score> <ff>   host: match settings (short codes / list indices)
+    OWN <list>                       host: what the host's save has (the session plays on it), so everyone
+                                     picks from it: <char>:<costume>.<costume>...;<char>:...
     RTT <ms>                         your measured round trip to this server
     PING <x>                         answered with PONG <x>
     SAVE <base64>                    host: the save file every player starts the session from
@@ -32,6 +34,7 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     LOBBY <code> <private>
     MEMBERS <your slot> [<slot>,<name>,<ready>,<rtt>,<character>,<costume>,<team> ...]
     CONF <mode> <map> <time> <score> <ff>
+    OWN <list>                       the host's characters and costumes (also sent on joining)
     SAVE <base64>                    sent right before START when the host shared a save
     START <token> <slot> <players> <input delay> <udp port> <lang> <conf> <picks>
                                      conf = mode,map,time,score,ff; picks = char:costume:team;... by slot
@@ -60,6 +63,7 @@ PROTO = 2
 CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 NAME_RE = re.compile(r'^[A-Za-z0-9_\-]{1,16}$')
 TOKEN_RE = re.compile(r'^[A-Za-z0-9_\-]{1,24}$')   # characters, modes, maps, numbers
+OWN_RE = re.compile(r'^[A-Za-z0-9_\-:;.]{1,800}$')  # Peter:0.1.3;Lois:0.2
 MAX_LINE = 2 * 1024 * 1024        # a save file (~450 KB) as base64 fits easily
 MAX_SAVE = 1024 * 1024
 MAX_CLIENTS_PER_IP = 8
@@ -102,6 +106,7 @@ class Lobby:
         self.save = None
         self.lang = '-'
         self.conf = ['DM', 'FR', '0', '0', '0']  # mode, map, time, score, friendly fire
+        self.own = None                           # the host's characters and costumes
 
     @property
     def host(self):
@@ -116,6 +121,8 @@ class Lobby:
     def broadcast_conf(self, only=None):
         for c in ([only] if only else self.members):
             c.send('CONF ' + ' '.join(self.conf))
+            if self.own:
+                c.send('OWN ' + self.own)
 
 
 class Session:
@@ -232,6 +239,10 @@ class Server:
         elif cmd == 'CONF' and c.lobby and c is c.lobby.host:
             if len(args) == 5 and all(TOKEN_RE.match(a) for a in args):
                 c.lobby.conf = list(args)
+                c.lobby.broadcast_conf()
+        elif cmd == 'OWN' and c.lobby and c is c.lobby.host:
+            if len(args) == 1 and OWN_RE.match(args[0]):
+                c.lobby.own = args[0]
                 c.lobby.broadcast_conf()
         elif cmd == 'RTT':
             c.rtt = max(0, min(2000, int(args[0]))) if args and args[0].isdigit() else 0
