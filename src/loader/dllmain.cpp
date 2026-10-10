@@ -57,6 +57,7 @@ void Init() {
     InitVirtualPad(exe);
     InitUi();
     InitResearch();
+    InitSplitView();
 }
 
 }  // namespace

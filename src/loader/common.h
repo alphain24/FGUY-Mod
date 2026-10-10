@@ -51,6 +51,10 @@ void InitNetplay(HMODULE exe);         // lockstep online play core            (
 bool NetplayEnabled();
 void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
+int NetplayLocalSlot();                //   my player slot, -1 when netplay is off
+void InitSplitView();                  // one full-screen view per PC online    (splitview.cpp)
+int SplitViewHudMode(int mode);
+int SplitViewHudViewport(int viewport);
 
 // online.cpp: lobby + the in-game ONLINE page
 void OnlineEnter();

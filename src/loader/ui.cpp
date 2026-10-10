@@ -230,6 +230,21 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnNumber(movie, VideoFrameRateIndex());
         } else if (strcmp(fn, "SetFrameRate") == 0) {
             VideoSetFrameRate((int)ArgNumber(args, argc, 0));
+        } else if (strcmp(fn, "HudDebug") == 0) {  // research: make_hud_patch.py --debug
+            static std::set<std::string> seen;
+            char line[256];
+            sprintf_s(line, "%s: %g %g %g", ArgString(args, argc, 0), ArgNumber(args, argc, 1), ArgNumber(args, argc, 2),
+                      ArgNumber(args, argc, 3));
+            if (seen.size() < 80 && seen.insert(line).second) Log(L"UI: HUD %S", line);
+        } else if (strcmp(fn, "HudSplitMode") == 0) {
+            Log(L"UI: HUD split mode %d -> %d", (int)ArgNumber(args, argc, 0), SplitViewHudMode((int)ArgNumber(args, argc, 0)));
+            ReturnNumber(movie, SplitViewHudMode((int)ArgNumber(args, argc, 0)));
+        } else if (strcmp(fn, "HudViewport") == 0) {
+            int v = SplitViewHudViewport((int)ArgNumber(args, argc, 0));
+            static std::set<int> hudSeen;
+            int in = (int)ArgNumber(args, argc, 0);
+            if (hudSeen.insert(in * 16 + v).second) Log(L"UI: HUD viewport %d -> %d", in, v);
+            ReturnNumber(movie, v);
         } else if (strcmp(fn, "OnlineEnter") == 0) {
             OnlineEnter();
         } else if (strcmp(fn, "OnlineExit") == 0) {

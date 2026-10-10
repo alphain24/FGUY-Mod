@@ -730,6 +730,7 @@ void NetplayOnFrame() {
 }
 
 bool NetplayEnabled() { return g_enabled; }
+int NetplayLocalSlot() { return g_enabled ? g_slot : -1; }
 
 void InitNetplay(HMODULE exe) {
     g_enabled = SettingInt(L"Netplay", L"Enable", L"FGUYMOD_NET", 0) != 0;
