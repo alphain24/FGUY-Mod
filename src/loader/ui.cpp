@@ -260,11 +260,19 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnString(movie, SessionConfig());
         } else if (strcmp(fn, "SessionPress") == 0) {  // (pad, button name, delay in ticks)
             static const struct { const char* name; WORD bit; } buttons[] = {
-                {"a", 0x1000}, {"b", 0x2000}, {"x", 0x4000}, {"y", 0x8000}, {"start", 0x0010}, {"back", 0x0020}};
+                {"a", 0x1000}, {"b", 0x2000}, {"x", 0x4000}, {"y", 0x8000}, {"start", 0x0010}, {"back", 0x0020},
+                {"up", 0x0001}, {"down", 0x0002}, {"left", 0x0004}, {"right", 0x0008}};
             WORD bit = 0;
             for (auto& b : buttons)
                 if (_stricmp(ArgString(args, argc, 1), b.name) == 0) bit = b.bit;
-            NetplaySessionPress((int)ArgNumber(args, argc, 0), bit, (int)ArgNumber(args, argc, 2));
+            if (NetplayEnabled()) NetplaySessionPress((int)ArgNumber(args, argc, 0), bit, (int)ArgNumber(args, argc, 2));
+            else VPadPressLater((DWORD)ArgNumber(args, argc, 0), bit, (DWORD)(ArgNumber(args, argc, 2) * 1000 / 60));
+        } else if (strcmp(fn, "TestAutoMenu") == 0) {  // test copies: walk to a menu page by themselves
+            static char v[32];
+            if (!GetEnvironmentVariableA("FGUYMOD_TEST_AUTOMENU", v, sizeof(v))) v[0] = 0;
+            ReturnString(movie, v);
+        } else if (strcmp(fn, "SessionLevel") == 0) {
+            NetplaySessionLevel();
         } else if (strcmp(fn, "SessionLog") == 0) {
             Log(L"Session: %S", ArgString(args, argc, 0));
         } else {

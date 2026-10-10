@@ -25,7 +25,8 @@ SOURCE = r'''
 function FGUYTitleSession() {
     if (FGUYTitleDone) return;
     var cfg = flash.external.ExternalInterface.call('FGUYMOD_SessionConfig');
-    if (cfg == undefined || cfg == '') return;
+    var auto = flash.external.ExternalInterface.call('FGUYMOD_TestAutoMenu');
+    if ((cfg == undefined || cfg == '') && (auto == undefined || auto == '')) return;
     FGUYTitleDone = true;
     flash.external.ExternalInterface.call('FGUYMOD_SessionLog', 'title screen');
     flash.external.ExternalInterface.call('FGUYMOD_SessionPress', 0, 'start', 60);

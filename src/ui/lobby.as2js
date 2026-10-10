@@ -327,6 +327,7 @@ function OnOnlineSelect() {
 function OnOnlineEnter() {
     flash.external.ExternalInterface.call('FGUYMOD_OnlineEnter');
     _root.subMenu._visible = false;
+    Selection.setFocus(null);   // a menu button left with focus would swallow A / Enter
     FGUYColors();
     FGUYData();
     FGUYScreen = 'hub';
@@ -338,7 +339,7 @@ function OnOnlineEnter() {
     FGUYCode = [0, 0, 0, 0];
     FGUYCodeLen = 0;
     FGUYCodePos = 0;
-    FGUYCodeChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    FGUYCodeChars = 'BCDEFGHJKMNPQSTUVWYZ23456789';   // as the server's codes: no A L R X (controller keys)
     if (FGUYPickChar == undefined) { FGUYPickChar = 'Peter'; FGUYPickCostume = 0; FGUYPickTeam = 0; }
     FGUYLastBlob = '';
     FGUYS = FGUYParse('');

@@ -21,6 +21,14 @@ function FGUYSessionInit() {
     FGUYSessChecked = true;
     var cfg = flash.external.ExternalInterface.call('FGUYMOD_SessionConfig');
     FGUYSessOn = cfg != undefined && cfg != '';
+    var auto = flash.external.ExternalInterface.call('FGUYMOD_TestAutoMenu');
+    if (!FGUYSessOn && auto != undefined && auto != '') {   // test copies: boot by themselves, then open a page
+        FGUYSessOn = true;
+        FGUYSessAuto = String(auto);
+        FGUYSessStage = 'boot';
+        FGUYSessLog('test auto menu: ' + auto);
+        return;
+    }
     if (!FGUYSessOn) return;
     var parts = String(cfg).split('|');
     var c = parts[0].split(',');
@@ -54,6 +62,14 @@ function OnSessHomeEnter() {
     OnHomeEnter();
     if (FGUYSessStage != 'boot') return;
     FGUYSessStage = 'menu';
+    if (FGUYSessAuto == 'online') {   // as a player would: down, down, A (ONLINE)
+        FGUYSessStage = 'done';
+        FGUYPress(0, 'down', 90);
+        FGUYPress(0, 'down', 110);
+        FGUYPress(0, 'a', 130);
+        return;
+    }
+    if (FGUYSessAuto != undefined) { FGUYSessStage = 'done'; return; }
     FGUYSessLog('main menu - going to ' + FGUYSess.mode + ' ' + FGUYSess.map);
     if (FGUYSess.mode == 'ST') FGUYSessionStory();
     else OnMultiplayerSelect();
@@ -65,6 +81,7 @@ function FGUYSessionStory() {
     SetNetworkEnabled(false);
     SetDesiredLevel(FGUYSess.map + 'XX');
     FGUYSessStage = 'started';
+    flash.external.ExternalInterface.call('FGUYMOD_SessionLevel');   // the loader drops the others in
     LevelSelectConfirm(true);
 }
 

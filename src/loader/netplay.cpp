@@ -521,6 +521,8 @@ struct SessionPress { int pad; WORD buttons; int delay; unsigned from; };
 CRITICAL_SECTION g_pressLock;
 std::vector<SessionPress> g_pressQueue, g_pressActive;
 bool g_sessionStory = false;     // story co-op session: guests drop in once the level runs
+volatile LONG g_sessionLevelAsked = 0;  // the menu launched the level (taken at the next tick)
+unsigned g_levelTick = 0;
 
 void TakeSessionPresses() {      // main thread, start of a tick
     EnterCriticalSection(&g_pressLock);
@@ -536,11 +538,19 @@ void TakeSessionPresses() {      // main thread, start of a tick
         if (g_tick >= p.from && p.pad >= 0 && p.pad < 4) g_current[p.pad].buttons |= p.buttons;
         ++i;
     }
-    // story co-op: once the host's player is in the level, everyone else presses Start to drop in
-    if (g_sessionStory && g_playStartTick && g_tick == g_playStartTick + 240) {
-        for (int s = 1; s < g_players; ++s) g_pressActive.push_back({s, XINPUT_GAMEPAD_START, 0, g_tick});
-        for (int s = 1; s < g_players; ++s) g_current[s].buttons |= XINPUT_GAMEPAD_START;
-        Log(L"Netplay: session - the other players drop in");
+    if (InterlockedExchange(&g_sessionLevelAsked, 0)) g_levelTick = g_tick;
+    // story co-op: once the level runs, every other player presses Start to drop in, again every 3 s until
+    // the game has given them their viewport (the viewport count is game state, the same on every PC)
+    const int kViewportCount = 0xb53e60;
+    if (g_sessionStory && g_levelTick && g_tick >= g_levelTick + 600 && (g_tick - g_levelTick - 600) % 180 == 0) {
+        int views = *reinterpret_cast<volatile int*>(kViewportCount);
+        for (int s = 1; s < g_players; ++s)
+            if (views < s + 1) {
+                g_pressActive.push_back({s, XINPUT_GAMEPAD_START, 0, g_tick});
+                g_current[s].buttons |= XINPUT_GAMEPAD_START;
+                Log(L"Netplay: session - player %d drops in (tick %u)", s, g_tick);
+                break;  // one at a time, in slot order
+            }
     }
 }
 
@@ -764,6 +774,10 @@ void NetplayOnFrame() {
 
 bool NetplayEnabled() { return g_enabled; }
 
+void NetplaySessionLevel() {
+    if (g_enabled) InterlockedExchange(&g_sessionLevelAsked, 1);
+}
+
 void NetplaySessionPress(int pad, WORD buttons, int delayTicks) {
     if (!g_enabled) return;
     EnterCriticalSection(&g_pressLock);
@@ -832,8 +846,9 @@ void InitNetplay(HMODULE exe) {
     QueryPerformanceFrequency(&g_freq);
     InitializeCriticalSection(&g_netLock);
     InitializeCriticalSection(&g_pressLock);
-    char session[8];
-    g_sessionStory = GetEnvironmentVariableA("FGUYMOD_SESSION", session, 8) && strncmp(session, "ST,", 3) == 0;
+    char session[512];  // (too small a buffer gets nothing copied)
+    DWORD sessionLen = GetEnvironmentVariableA("FGUYMOD_SESSION", session, sizeof(session));
+    g_sessionStory = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "ST,", 3) == 0;
     g_phase = Phase::Boot;
     Log(L"Netplay: on - slot %d of %d players, %s, input delay %d, %s input", g_slot, g_players,
         g_relay ? L"through the lobby server's relay" : L"direct UDP", g_delay, g_script ? L"scripted" : L"controller");

@@ -71,7 +71,7 @@ int MyPlayerViewport() {
             if (vp >= 0 && vp < kMaxViewports) return vp;
         }
     }
-    return slot;  // not in the level (yet): the usual slot = viewport layout
+    return -1;  // not in the level (yet): watch the host's view, with its HUD
 }
 
 // The viewport this PC should show full screen, or -1 for normal drawing (only one viewport).

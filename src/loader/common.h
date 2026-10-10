@@ -35,6 +35,7 @@ void InitNetSpy(HMODULE exe);          // winsock + debug-print logging        (
 void InitDisplay(HMODULE exe);         // windowed / borderless / resolution   (display.cpp)
 void InitVirtualPad(HMODULE exe);      // injected controller input for tests  (vpad.cpp)
 WORD VPadButtons(DWORD pad);           //   buttons the test pipe holds on a pad right now
+void VPadPressLater(DWORD pad, WORD buttons, DWORD ms);
 void InitDirectInput();                // Windows key in windowed modes        (dinput.cpp)
 void OnDirectInputCreated(void* directInput);
 
@@ -53,6 +54,7 @@ void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
 int NetplayLocalSlot();                //   my player slot, -1 when netplay is off
 void NetplaySessionPress(int pad, WORD buttons, int delayTicks);  // session autopilot
+void NetplaySessionLevel();            //   the menu launched the level
 void InitSplitView();                  // one full-screen view per PC online    (splitview.cpp)
 int SplitViewHudMode(int mode);
 int SplitViewHudViewport(int viewport);

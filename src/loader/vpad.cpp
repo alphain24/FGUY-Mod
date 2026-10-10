@@ -54,6 +54,23 @@ WORD CurrentButtons(DWORD pad) {
 }  // namespace
 bool NetplayPad(DWORD pad, XINPUT_STATE* state, DWORD(WINAPI* real)(DWORD, XINPUT_STATE*));
 WORD VPadButtons(DWORD pad) { return CurrentButtons(pad); }
+
+// A press after a delay (the session autopilot's presses in test copies without netplay).
+struct DelayedPress { DWORD pad; WORD buttons; DWORD ms; };
+DWORD WINAPI DelayedPressThread(LPVOID arg) {
+    auto d = static_cast<DelayedPress*>(arg);
+    Sleep(d->ms);
+    {
+        std::lock_guard<std::mutex> lock(g_lock);
+        g_padActive[d->pad & 3] = true;
+        g_queue.push_back({d->pad & 3, d->buttons});
+    }
+    delete d;
+    return 0;
+}
+void VPadPressLater(DWORD pad, WORD buttons, DWORD ms) {
+    CloseHandle(CreateThread(nullptr, 0, DelayedPressThread, new DelayedPress{pad, buttons, ms}, 0, nullptr));
+}
 namespace {
 
 DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {

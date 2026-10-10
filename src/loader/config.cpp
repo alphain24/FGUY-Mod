@@ -152,8 +152,9 @@ void InitConfigOverride(HMODULE exe) {
         Log(L"Config: test run - saves go to %s", g_saveDir);
     }
     wchar_t session[8];
-    if (envLen == 0 && saveLen > 0 && saveLen < 64 && GetEnvironmentVariableW(L"FGUYMOD_SESSION", session, 8) &&
-        MakeSessionIni(exe, saveDir, g_iniPath))
+    bool autoBoot = GetEnvironmentVariableW(L"FGUYMOD_SESSION", session, 8) ||
+                    GetEnvironmentVariableW(L"FGUYMOD_TEST_AUTOMENU", session, 8);
+    if (envLen == 0 && saveLen > 0 && saveLen < 64 && autoBoot && MakeSessionIni(exe, saveDir, g_iniPath))
         g_iniOverride = true;
     Log(g_iniOverride ? L"Config override ON: %s" : L"Config override off (no %s)", g_iniPath);
 
