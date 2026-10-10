@@ -17,7 +17,7 @@ class Player:
     def __init__(self, name):
         self.s = socket.create_connection(('127.0.0.1', PORT))
         self.f = self.s.makefile('rw', encoding='utf-8', newline='\n')
-        self.send(f'HELLO 1 testgame {name}')
+        self.send(f'HELLO 2 testgame {name}')
         assert self.expect('WELCOME')
 
     def send(self, line):
@@ -50,6 +50,11 @@ def main():
         while not line.startswith('ERROR'):
             line = host.f.readline().strip()
         assert 'ready' in line, line
+        guest.send('SET Lois 2 1')
+        assert ',Lois,2,1' in host.expect('MEMBERS')
+        host.send('CONF CF AM 1 2 1')
+        while guest.expect('CONF') != 'CONF CF AM 1 2 1':  # the first one is the defaults, sent on join
+            pass
         guest.send('RTT 80')
         guest.send('READY 1')
         host.send('SAVE ' + base64.b64encode(b'save bytes').decode())
@@ -59,6 +64,7 @@ def main():
         start_guest = guest.expect('START').split()
         token = bytes.fromhex(start_host[1])
         assert start_guest[1] == start_host[1] and start_host[2] == '0' and start_guest[2] == '1'
+        assert start_guest[7] == 'CF,AM,1,2,1' and start_guest[8] == 'Peter:0:0;Lois:2:1', start_guest
         print('   input delay for 80 ms:', start_host[4])
 
         # relay: both players say hello, then host -> guest

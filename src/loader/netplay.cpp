@@ -512,6 +512,38 @@ void LogPlayers(const wchar_t* tag) {
 volatile ULONGLONG g_tickStartMs = 0;
 DWORD WINAPI Watchdog(LPVOID);
 
+// ---- session autopilot presses ----------------------------------------------------------------------------
+// In an online session the menu scripts get everyone's game from boot to the match by themselves
+// (src/ui/session.as2js): they ask for button presses with FGUYMOD_SessionPress. A request made while a
+// frame's menus run is taken at the start of the next tick - the same tick on every PC, because the next
+// tick can't start before that frame is done - and pressed for a few ticks on every copy alike.
+struct SessionPress { int pad; WORD buttons; int delay; unsigned from; };
+CRITICAL_SECTION g_pressLock;
+std::vector<SessionPress> g_pressQueue, g_pressActive;
+bool g_sessionStory = false;     // story co-op session: guests drop in once the level runs
+
+void TakeSessionPresses() {      // main thread, start of a tick
+    EnterCriticalSection(&g_pressLock);
+    for (auto& p : g_pressQueue) {
+        p.from = g_tick + p.delay;
+        g_pressActive.push_back(p);
+    }
+    g_pressQueue.clear();
+    LeaveCriticalSection(&g_pressLock);
+    for (size_t i = 0; i < g_pressActive.size();) {
+        const SessionPress& p = g_pressActive[i];
+        if (g_tick >= p.from + 4) { g_pressActive.erase(g_pressActive.begin() + i); continue; }
+        if (g_tick >= p.from && p.pad >= 0 && p.pad < 4) g_current[p.pad].buttons |= p.buttons;
+        ++i;
+    }
+    // story co-op: once the host's player is in the level, everyone else presses Start to drop in
+    if (g_sessionStory && g_playStartTick && g_tick == g_playStartTick + 240) {
+        for (int s = 1; s < g_players; ++s) g_pressActive.push_back({s, XINPUT_GAMEPAD_START, 0, g_tick});
+        for (int s = 1; s < g_players; ++s) g_current[s].buttons |= XINPUT_GAMEPAD_START;
+        Log(L"Netplay: session - the other players drop in");
+    }
+}
+
 // ---- tick boundary ----------------------------------------------------------------------------------------
 void Barrier() {
     // Hold the game's first tick until every peer has reached it.
@@ -667,6 +699,7 @@ void Tick() {
         Real_Sleep(0);
     }
     for (int s = 0; s < g_players; ++s) g_current[s] = g_inputs[g_tick % kRing][s];
+    TakeSessionPresses();
     Real_QPC(&s1);
     WaitForQuiescence();
     Real_QPC(&s2);
@@ -730,6 +763,14 @@ void NetplayOnFrame() {
 }
 
 bool NetplayEnabled() { return g_enabled; }
+
+void NetplaySessionPress(int pad, WORD buttons, int delayTicks) {
+    if (!g_enabled) return;
+    EnterCriticalSection(&g_pressLock);
+    g_pressQueue.push_back({pad, buttons, delayTicks < 0 ? 0 : delayTicks, 0});
+    LeaveCriticalSection(&g_pressLock);
+    Log(L"Netplay: session press pad %d buttons %04x in %d ticks", pad, buttons, delayTicks);
+}
 int NetplayLocalSlot() { return g_enabled ? g_slot : -1; }
 
 void InitNetplay(HMODULE exe) {
@@ -790,6 +831,9 @@ void InitNetplay(HMODULE exe) {
     }
     QueryPerformanceFrequency(&g_freq);
     InitializeCriticalSection(&g_netLock);
+    InitializeCriticalSection(&g_pressLock);
+    char session[8];
+    g_sessionStory = GetEnvironmentVariableA("FGUYMOD_SESSION", session, 8) && strncmp(session, "ST,", 3) == 0;
     g_phase = Phase::Boot;
     Log(L"Netplay: on - slot %d of %d players, %s, input delay %d, %s input", g_slot, g_players,
         g_relay ? L"through the lobby server's relay" : L"direct UDP", g_delay, g_script ? L"scripted" : L"controller");

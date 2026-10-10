@@ -1,0 +1,132 @@
+// Online session autopilot (main menu movie). After the lobby's Start every player's game restarts into
+// a lockstepped netplay session; this script then walks the game's own menus to the match with the
+// lobby's choices - the same steps on every PC, so everyone's game stays identical.
+//
+// The menus report each page through GetEventFuncName (patched to ask FGUYEventName). In a session,
+// Enter / PlayerJoined events of the pages below go to our OnSess<Page><Event> wrappers, which run the
+// game's own handler first and then take the next step. Button presses the game must see (joining
+// players, the save slot) come from the loader: FGUYMOD_SessionPress(pad, button, delay in ticks).
+//
+// Config from the loader (FGUYMOD_SessionConfig): "mode,map,time,score,ff|char:costume:team;..." by slot.
+
+function FGUYEventName(name, event) {
+    if (FGUYOnline && name == 'OptionsScreen') return 'Online';
+    if (!FGUYSessChecked) FGUYSessionInit();
+    if (FGUYSessOn && (event == 'Enter' || event == 'PlayerJoined') && _root['OnSess' + name + event] != undefined)
+        return 'Sess' + name;
+    return name;
+}
+
+function FGUYSessionInit() {
+    FGUYSessChecked = true;
+    var cfg = flash.external.ExternalInterface.call('FGUYMOD_SessionConfig');
+    FGUYSessOn = cfg != undefined && cfg != '';
+    if (!FGUYSessOn) return;
+    var parts = String(cfg).split('|');
+    var c = parts[0].split(',');
+    FGUYSess = {mode: c[0], map: c[1], time: Number(c[2]), score: Number(c[3]), ff: Number(c[4]), picks: []};
+    var p = parts[1].split(';');
+    for (var i = 0; i < p.length; i++) {
+        var f = p[i].split(':');
+        FGUYSess.picks.push({character: f[0], costume: f[1], team: Number(f[2])});
+    }
+    FGUYSessStage = 'boot';
+    FGUYSessLog('session ' + cfg);
+}
+
+function FGUYSessLog(text) {
+    flash.external.ExternalInterface.call('FGUYMOD_SessionLog', text);
+}
+
+function FGUYPress(pad, button, delay) {
+    flash.external.ExternalInterface.call('FGUYMOD_SessionPress', pad, button, delay);
+}
+
+// ---- boot: save slot -> main menu ---------------------------------------------------------------------------
+function OnSessSaveSlotsEnter() {
+    OnSaveSlotsEnter();
+    if (FGUYSessStage != 'boot') return;
+    FGUYSessLog('save slots');
+    FGUYPress(0, 'a', 90);   // load the (host's) save in the first slot
+}
+
+function OnSessHomeEnter() {
+    OnHomeEnter();
+    if (FGUYSessStage != 'boot') return;
+    FGUYSessStage = 'menu';
+    FGUYSessLog('main menu - going to ' + FGUYSess.mode + ' ' + FGUYSess.map);
+    if (FGUYSess.mode == 'ST') FGUYSessionStory();
+    else OnMultiplayerSelect();
+}
+
+// ---- story co-op: straight into the level; the others drop in once it runs (the loader presses Start) -------
+function FGUYSessionStory() {
+    _root.MenuType = MENU_TYPE_SINGLE_PLAYER;
+    SetNetworkEnabled(false);
+    SetDesiredLevel(FGUYSess.map + 'XX');
+    FGUYSessStage = 'started';
+    LevelSelectConfirm(true);
+}
+
+// ---- multiplayer: mode -> rules -> join screen -> start ------------------------------------------------------
+function OnSessMultiplayerModesEnter() {
+    OnMultiplayerModesEnter();
+    if (FGUYSessStage != 'menu') return;
+    FGUYSessStage = 'modes';
+    var m = FGUYSess.mode;
+    if (m == 'HD') OnHordeSelect();
+    else if (m == 'CF') OnCTFSelect();
+    else if (m == 'IN') OnInvasionSelect();
+    else OnDeathmatchSelect();
+}
+
+function OnSessMultiplayerEnter() {
+    OnMultiplayerEnter();
+    if (FGUYSessStage != 'modes') return;
+    FGUYSessStage = 'rules';
+    var at = 0;
+    for (var i = 0; i < mapPrefixes.length; i++)   // entries look like 'AMX' (map + X), then 'random'
+        if (String(mapPrefixes[i]).substr(0, 2) == FGUYSess.map) at = i;
+    OnSelectMapValueChanged(at);
+    OnTimeLimitValueChanged(FGUYSess.time);
+    if (FGUYSess.mode == 'CF') OnFlagLimitValueChanged(FGUYSess.score);
+    else if (FGUYSess.mode != 'HD') OnWinningScoreValueChanged(FGUYSess.score);
+    OnFriendlyFireEnabledValueChanged(FGUYSess.ff);
+    FGUYSessLog('rules set: level ' + DesiredLevel);
+    OnMultiplayerNextButtonPressed();
+}
+
+function OnSessMultiplayerPrepEnter() {
+    OnMultiplayerPrepEnter();
+    if (FGUYSessStage != 'rules') return;
+    FGUYSessStage = 'prep';
+    FGUYSessLog('join screen');
+    for (var i = 1; i < FGUYSess.picks.length; i++) FGUYPress(i, 'a', 30 + i * 30);   // everyone joins
+    FGUYSessionCheckJoined();
+}
+
+function OnSessMultiplayerPrepPlayerJoined(playerIndex) {
+    OnMultiplayerPrepPlayerJoined(playerIndex);
+    FGUYSessionCheckJoined();
+}
+
+function FGUYSessionCheckJoined() {
+    if (FGUYSessStage != 'prep') return;
+    for (var i = 0; i < FGUYSess.picks.length; i++) if (!IsJoined(i)) return;
+    FGUYSessStage = 'started';
+    FGUYSessLog('everyone joined - starting');
+    // everyone's lobby picks, as the join screen would have them
+    for (var p = 0; p < FGUYSess.picks.length; p++) {
+        var pick = FGUYSess.picks[p];
+        var list = selectableCharacters[p], ci = 0;
+        for (var k = 0; k < list.length; k++) if (list[k] == pick.character) ci = k;
+        prepCharacter[p] = ci;
+        var costumes = costumesInfo[GetCharacterIndex(list[ci])], co = 0;
+        if (costumes != undefined)
+            for (var q = 0; q < costumes.length; q++) if (String(costumes[q].CostumeIndex) == String(pick.costume)) co = q;
+        prepCostume[p] = co;
+        prepTeam[p] = pick.team == 1 ? TEAM_EVIL : TEAM_GOOD;
+        prepState[p] = PREP_READY;
+    }
+    MultiplayerStartGame();
+}

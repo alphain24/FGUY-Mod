@@ -10,6 +10,7 @@
 #include "common.h"
 
 #include <cwchar>
+#include <string>
 
 namespace {
 
@@ -105,6 +106,37 @@ const wchar_t* ConfigSaveDir() {
     return real;
 }
 
+// Online sessions boot without the logo / intro movies (everyone's game goes straight to the menus,
+// where the session takes over) and without the developers' network link. We make that config from
+// the game's own built-in one at runtime: FGUYMod\<session folder>\session_fguy.ini.
+bool MakeSessionIni(HMODULE exe, const wchar_t* folder, wchar_t* out) {
+    HRSRC r = FindResourceW(exe, MAKEINTRESOURCEW(101), L"INI");
+    HGLOBAL g = r ? LoadResource(exe, r) : nullptr;
+    const char* text = g ? static_cast<const char*>(LockResource(g)) : nullptr;
+    DWORD size = r ? SizeofResource(exe, r) : 0;
+    if (!text || !size) return false;
+    std::string ini(text, size);
+    auto set = [&](const char* key, const char* value) {
+        size_t at = ini.find(std::string("\n") + key);
+        if (at == std::string::npos) return;
+        size_t eq = ini.find('=', at), end = ini.find_first_of("\r\n", at + 1);
+        if (eq == std::string::npos || eq > end) return;
+        ini.replace(eq + 1, end - eq - 1, std::string(" ") + value);
+    };
+    set("NoMovies", "1");
+    set("IsServer", "0");
+    set("EnableNetworkPlay", "0");
+    swprintf_s(out, MAX_PATH, L"%s\\%s", g_modDir, folder);
+    CreateDirectoryW(out, nullptr);
+    wcscat_s(out, MAX_PATH, L"\\session_fguy.ini");
+    HANDLE f = CreateFileW(out, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    DWORD put;
+    WriteFile(f, ini.data(), (DWORD)ini.size(), &put, nullptr);
+    CloseHandle(f);
+    return true;
+}
+
 void InitConfigOverride(HMODULE exe) {
     wchar_t iniName[MAX_PATH] = L"fguy.ini";
     wchar_t env[MAX_PATH];
@@ -119,6 +151,10 @@ void InitConfigOverride(HMODULE exe) {
         CreateDirectoryW(g_saveDir, nullptr);
         Log(L"Config: test run - saves go to %s", g_saveDir);
     }
+    wchar_t session[8];
+    if (envLen == 0 && saveLen > 0 && saveLen < 64 && GetEnvironmentVariableW(L"FGUYMOD_SESSION", session, 8) &&
+        MakeSessionIni(exe, saveDir, g_iniPath))
+        g_iniOverride = true;
     Log(g_iniOverride ? L"Config override ON: %s" : L"Config override off (no %s)", g_iniPath);
 
     HookSpec hooks[] = {

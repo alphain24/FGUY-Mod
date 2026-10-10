@@ -1,0 +1,884 @@
+// The ONLINE screens, drawn at runtime inside the main menu movie (compiled by tools/ui/as2c.py and
+// patched in by tools/ui/make_menu_patch.py). Look: the "FGUY Online Lobby" design canvas.
+//
+// Main Menu > ONLINE opens the borrowed Options > Screen page with FGUYOnline set, so that page's
+// events come here (OnOnlineEnter / OnOnlineHandleInput / OnOnlineExit). We hide its own panel and draw
+// everything ourselves on one movie clip on top, with the game's own fonts, pictures and sounds.
+//
+// Screens: 'hub' (host / find / join with code), 'lobby', 'char' (character & skin), 'settings'.
+// The lobby data comes from the loader (FGUYMOD_LobbyState, polled), actions go to FGUYMOD_LobbyDo.
+// Everything is laid out in the design's 1600 x 900 space and scaled to the screen.
+
+// ---- colours (the design's palette) -----------------------------------------------------------------------
+function FGUYColors() {
+    FGUYC = {bg: 0x0A1A36, panel: 0x13396A, panel2: 0x164A7E, deep: 0x10284F, row: 0x123060, rowLine: 0x2E66A8,
+             rowHot: 0x1C5290, glow: 0x7FE3FF, title: 0x5DBBFF, yellow: 0xFFD23F, ink: 0x06122A, dark: 0x1A1200,
+             white: 0xFFFFFF, soft: 0xD8EAFE, muted: 0x9CC3EC, muted2: 0xB9D6F5, chip: 0x13325E, chipLine: 0x3E7FC4,
+             green: 0x1E7A46, greenLine: 0x57E39A, red: 0xFFB4B4, redLine: 0x8A3A3A, good: 0x7FE3FF, evil: 0xFF9C8A};
+}
+
+// ---- drawing helpers --------------------------------------------------------------------------------------
+function FGUYRect(mc, x, y, w, h, r, fill, alpha, line, lineAlpha, thick) {
+    if (thick > 0) mc.lineStyle(thick, line, lineAlpha, true);
+    else mc.lineStyle();
+    if (alpha > 0) mc.beginFill(fill, alpha);
+    mc.moveTo(x + r, y);
+    mc.lineTo(x + w - r, y);
+    mc.curveTo(x + w, y, x + w, y + r);
+    mc.lineTo(x + w, y + h - r);
+    mc.curveTo(x + w, y + h, x + w - r, y + h);
+    mc.lineTo(x + r, y + h);
+    mc.curveTo(x, y + h, x, y + h - r);
+    mc.lineTo(x, y + r);
+    mc.curveTo(x, y, x + r, y);
+    if (alpha > 0) mc.endFill();
+}
+
+// A panel with the design's cyan rim and soft glow (layered rims; Scaleform has no clip filters).
+function FGUYPanel(mc, x, y, w, h, r, fill, rim) {
+    FGUYRect(mc, x - 9, y - 9, w + 18, h + 18, r + 9, rim, 6, 0, 0, 0);
+    FGUYRect(mc, x - 5, y - 5, w + 10, h + 10, r + 5, rim, 12, 0, 0, 0);
+    FGUYRect(mc, x, y, w, h, r, fill, 100, rim, 100, 3);
+}
+
+function FGUYCircle(mc, cx, cy, r, fill, alpha, line, thick) {
+    if (thick > 0) mc.lineStyle(thick, line, 100, true);
+    else mc.lineStyle();
+    if (alpha > 0) mc.beginFill(fill, alpha);
+    var k = 0.4142, s = 0.7071;
+    mc.moveTo(cx + r, cy);
+    mc.curveTo(cx + r, cy + k * r, cx + s * r, cy + s * r);
+    mc.curveTo(cx + k * r, cy + r, cx, cy + r);
+    mc.curveTo(cx - k * r, cy + r, cx - s * r, cy + s * r);
+    mc.curveTo(cx - r, cy + k * r, cx - r, cy);
+    mc.curveTo(cx - r, cy - k * r, cx - s * r, cy - s * r);
+    mc.curveTo(cx - k * r, cy - r, cx, cy - r);
+    mc.curveTo(cx + k * r, cy - r, cx + s * r, cy - s * r);
+    mc.curveTo(cx + r, cy - k * r, cx + r, cy);
+    if (alpha > 0) mc.endFill();
+}
+
+// Text in one of the game's fonts. Shrinks to fit its box.
+function FGUYText(mc, x, y, w, h, str, display, size, color, align) {
+    FGUYTextN = FGUYTextN + 1;
+    var name = 't' + FGUYTextN;
+    mc.createTextField(name, mc.getNextHighestDepth(), x, y, w, h);
+    var t = mc[name];
+    t.embedFonts = true;
+    t.selectable = false;
+    t.wordWrap = false;
+    var f = new TextFormat();
+    f.font = display ? '$font_displayText' : '$font_bodyText';
+    f.size = size;
+    f.color = color;
+    f.align = align;
+    t.setNewTextFormat(f);
+    t.text = str;
+    t.setTextFormat(f);
+    while (t.textWidth > w - 6 && size > 10) {
+        size = size - 2;
+        f.size = size;
+        t.setTextFormat(f);
+    }
+    return t;
+}
+
+// Cartoon title: the game's display font with a dark drop outline under it.
+function FGUYTitle(mc, x, y, w, h, str, size, color, align) {
+    var o = size / 14;
+    FGUYText(mc, x + o, y + o * 1.4, w, h, str, true, size, FGUYC.ink, align);
+    FGUYText(mc, x - o * 0.6, y + o * 0.6, w, h, str, true, size, FGUYC.ink, align);
+    FGUYText(mc, x + o * 0.6, y - o * 0.4, w, h, str, true, size, FGUYC.ink, align);
+    return FGUYText(mc, x, y, w, h, str, true, size, color, align);
+}
+
+function FGUYBitmap(linkage) {
+    if (!FGUYBmps) FGUYBmps = {};
+    if (FGUYBmps[linkage] == undefined) FGUYBmps[linkage] = flash.display.BitmapData.loadBitmap(linkage);
+    return FGUYBmps[linkage];
+}
+
+// A game picture fitted into a box (centred). backdrop: fill the box with the picture's own corner colour
+// first, so pictures with a painted background blend into their frame.
+function FGUYPicture(mc, linkage, x, y, w, h, backdrop) {
+    var bmp = FGUYBitmap(linkage);
+    if (!bmp) return null;
+    if (backdrop) FGUYRect(mc, x, y, w, h, 0, bmp.getPixel(2, 2), 100, 0, 0, 0);
+    FGUYTextN = FGUYTextN + 1;
+    var holder = mc.createEmptyMovieClip('p' + FGUYTextN, mc.getNextHighestDepth());
+    holder.attachBitmap(bmp, 1, 'auto', true);
+    var s = Math.min(w / bmp.width, h / bmp.height);
+    holder._xscale = s * 100;
+    holder._yscale = s * 100;
+    holder._x = x + (w - bmp.width * s) / 2;
+    holder._y = y + (h - bmp.height * s) / 2;
+    return holder;
+}
+
+// A round portrait: the top of a costume picture inside a circle.
+function FGUYPortrait(mc, linkage, cx, cy, r) {
+    FGUYCircle(mc, cx, cy, r, 0x2A6AA6, 100, FGUYC.glow, 0);
+    var bmp = FGUYBitmap(linkage);
+    FGUYTextN = FGUYTextN + 1;
+    if (bmp) {
+        var holder = mc.createEmptyMovieClip('p' + FGUYTextN, mc.getNextHighestDepth());
+        holder.attachBitmap(bmp, 1, 'auto', true);
+        var s = (r * 2.6) / bmp.width;
+        holder._xscale = s * 100;
+        holder._yscale = s * 100;
+        holder._x = cx - bmp.width * s / 2;
+        holder._y = cy - r * 0.9;
+        var mask = mc.createEmptyMovieClip('m' + FGUYTextN, mc.getNextHighestDepth());
+        FGUYCircle(mask, cx, cy, r, 0xFFFFFF, 100, 0, 0);
+        holder.setMask(mask);
+    }
+    var ring = mc.createEmptyMovieClip('r' + FGUYTextN, mc.getNextHighestDepth());
+    FGUYCircle(ring, cx, cy, r, 0, 0, FGUYC.glow, 2);
+}
+
+function FGUYButtonHint(mc, x, y, glyph, label) {
+    FGUYPicture(mc, 'controllerSymbol_' + glyph + '.tif', x, y, 34, 34, false);
+    FGUYText(mc, x + 40, y + 2, 200, 34, label, false, 20, FGUYC.white, 'left');
+    return x + 56 + label.length * 10;
+}
+
+function FGUYSound(name) {
+    getURL('FSCommand:SNDS_PlaySoundFX', name);
+}
+
+function FGUYDo(cmd, a, b, c, d, e) {
+    flash.external.ExternalInterface.call('FGUYMOD_LobbyDo', cmd, String(a), String(b), String(c), String(d), String(e));
+}
+
+function FGUYLocal(text) {  // '=KEY' localisation keys -> the game's text
+    if (text == undefined) return '';
+    text = String(text);
+    if (text.charAt(0) == '=') {
+        var s = flash.external.ExternalInterface.call('MENU_GetString', text.substr(1));
+        if (s != undefined && s != '') return String(s);
+    }
+    return text;
+}
+
+// ---- game data ---------------------------------------------------------------------------------------------
+function FGUYData() {
+    FGUYModes = [
+        {code: 'DM', suffix: 'DM', name: 'DEATHMATCH', pic: 'Deathmatch_Screen1.tif', teams: true, score: 'WinningScore',
+         about: 'Take out the other team. Most points when time runs out, or first to the winning score, wins.'},
+        {code: 'HD', suffix: 'HD', name: 'MULTIVERSE MADNESS', pic: 'Horde_screen1.tif', teams: false, score: '',
+         about: 'Team up and survive wave after wave of enemies.'},
+        {code: 'CF', suffix: 'CF', name: 'CAPTURE THE GREASED-UP DEAF GUY', pic: 'GUDG_screen1.tif', teams: true,
+         score: 'FlagLimit', about: 'Grab the Greased-Up Deaf Guy and bring him home. First to the flag limit wins.'},
+        {code: 'IN', suffix: 'IN', name: 'INFILTRATION!', pic: 'Invasion_screen1a.tif', teams: true, score: 'WinningScore',
+         about: 'One team attacks, the other defends.'},
+        {code: 'ST', suffix: 'XX', name: 'STORY CO-OP', pic: 'screenshot_FratRow.tif', teams: false, score: '',
+         about: 'Play the story together, everyone on their own screen.'}];
+    FGUYMaps = ['FR', 'AM', 'CT', 'CH', 'TF', 'SS', 'AP', 'BP'];
+    FGUYStory = ['FR', 'AM', 'CT', 'CH', 'MC', 'PI', 'TF', 'SS', 'GC', 'BP'];
+    FGUYMapPics = {FR: 'screenshot_FratRow.tif', AM: 'screenshot_Amish.tif', CT: 'screenshot_Crippletron.tif',
+                   CH: 'screenshot_CH.tif', TF: 'screenshot_TF.tif', SS: 'screenshot_SS.tif', BP: 'screenshot_BertramPrime.tif',
+                   MC: 'screenshot_MC.tif', PI: 'screenshot_PI.tif', GC: 'screenshot_PvGC.tif'};
+    FGUYChars = GetMultiplayerCharacterList();
+    FGUYCostumes = GetCostumesInfo();
+    FGUYRules = {TimeLimit: FGUYRuleList('TimeLimit'), WinningScore: FGUYRuleList('WinningScore'),
+                 FlagLimit: FGUYRuleList('FlagLimit'), FriendlyFire: ['OFF', 'ON']};
+}
+
+function FGUYRuleList(row) {
+    var list = ButtonListStrings[ButtonIndexMapping[row]];
+    var out = [];
+    if (list == undefined) return ['-'];
+    for (var i = 0; i < list.length; i++) out.push(FGUYLocal(list[i]));
+    return out;
+}
+
+function FGUYMode(code) {
+    for (var i = 0; i < FGUYModes.length; i++) if (FGUYModes[i].code == code) return FGUYModes[i];
+    return FGUYModes[0];
+}
+
+// The maps a mode has: the host's unlocked multiplayer maps (the session plays on the host's save) that
+// the game's level table has in that mode.
+function FGUYMapsFor(code) {
+    var mode = FGUYMode(code);
+    var list = mode.code == 'ST' ? FGUYStory : GetUnlockedMultiplayerLevelPrefixes();
+    var out = [];
+    for (var i = 0; i < list.length; i++)
+        if (mode.code == 'ST' || LevelMap[list[i] + mode.suffix] != undefined) out.push(list[i]);
+    if (out.length == 0) out.push(list[0]);
+    return out;
+}
+
+function FGUYMapName(map, code) {
+    var key = FGUYMode(code).code == 'ST' ? 'NAM_' + map + 'XX' : 'NAM_' + map + 'MP';
+    var s = flash.external.ExternalInterface.call('MENU_GetString', key);
+    if (s == undefined || s == '' || s == key) return map;
+    return String(s).toUpperCase();
+}
+
+function FGUYMapPic(map, code) {
+    var p = FGUYMapPics[map];
+    if (p == undefined) return FGUYMode(code).pic;
+    return p;
+}
+
+function FGUYCharName(c) {
+    if (c == 'Adam') return 'ADAM WEST';
+    return String(c).toUpperCase();
+}
+
+function FGUYCostumeList(c) {
+    var list = FGUYCostumes[GetCharacterIndex(c)];
+    if (list == undefined) return [];
+    return list;
+}
+
+// The picture for a character in a costume (game costume index). Like the game's join screen: a costume
+// without its own picture name uses Costume_<name>Default.tif (Adam West's pictures are "West").
+function FGUYDefaultPic(c) {
+    return 'Costume_' + (c == 'Adam' ? 'West' : (c == 'Quag' ? 'Quagmire' : c)) + 'Default.tif';
+}
+
+function FGUYEntryPic(c, entry) {
+    if (entry == undefined || entry.LinkageID == undefined || entry.LinkageID == '') return FGUYDefaultPic(c);
+    return entry.LinkageID;
+}
+
+function FGUYCostumePic(c, costume) {
+    var list = FGUYCostumeList(c);
+    for (var i = 0; i < list.length; i++) if (String(list[i].CostumeIndex) == String(costume)) return FGUYEntryPic(c, list[i]);
+    return FGUYDefaultPic(c);
+}
+
+function FGUYCostumeName(c, costume) {
+    var list = FGUYCostumeList(c);
+    for (var i = 0; i < list.length; i++)
+        if (String(list[i].CostumeIndex) == String(costume)) {
+            var n = FGUYLocal(list[i].UIName);
+            if (n.indexOf('Costume(') == 0) return i == 0 ? 'Classic' : 'Skin ' + (i + 1);
+            return n;
+        }
+    return 'Classic';
+}
+
+// ---- lobby state from the loader ---------------------------------------------------------------------------
+function FGUYParse(blob) {
+    var st = {state: 'off', status: '', code: '', slot: -1, priv: false, name: '', server: '', ping: 0,
+              mode: 'DM', map: 'FR', time: 0, score: 0, ff: 0, members: [], lobbies: []};
+    var lines = String(blob).split('\n');
+    for (var i = 0; i < lines.length; i++) {
+        var f = lines[i].split('|');
+        if (f[0] == 'S') {
+            st.state = f[1]; st.status = f[2]; st.code = f[3]; st.slot = Number(f[4]); st.priv = f[5] == '1';
+            st.name = f[6]; st.server = f[7]; st.ping = Number(f[8]);
+        } else if (f[0] == 'C') {
+            st.mode = f[1]; st.map = f[2]; st.time = Number(f[3]); st.score = Number(f[4]); st.ff = Number(f[5]);
+        } else if (f[0] == 'M') {
+            st.members.push({slot: Number(f[1]), name: f[2], ready: f[3] == '1', ping: Number(f[4]), character: f[5],
+                             costume: f[6], team: Number(f[7])});
+        } else if (f[0] == 'L') {
+            st.lobbies.push({code: f[1], host: f[2], players: Number(f[3]), max: Number(f[4]), mode: f[5], map: f[6]});
+        }
+    }
+    return st;
+}
+
+function FGUYPoll() {
+    var blob = flash.external.ExternalInterface.call('FGUYMOD_LobbyState');
+    if (blob == FGUYLastBlob) return;
+    FGUYLastBlob = blob;
+    var was = FGUYS.state;
+    FGUYS = FGUYParse(blob);
+    if (FGUYS.state == 'lobby' && was != 'lobby') {
+        FGUYScreen = 'lobby';
+        FGUYFocus = 0;
+        FGUYSound('accept');
+        if (FGUYIsHost()) FGUYCheckMap();
+    }
+    if (FGUYS.state != 'lobby' && FGUYS.state != 'starting' && FGUYScreen != 'hub') FGUYScreen = 'hub';
+    FGUYDraw();
+}
+
+function FGUYIsHost() {
+    return FGUYS.state == 'lobby' && FGUYS.slot == 0;
+}
+
+function FGUYMe() {
+    for (var i = 0; i < FGUYS.members.length; i++) if (FGUYS.members[i].slot == FGUYS.slot) return FGUYS.members[i];
+    return {name: FGUYS.name, character: FGUYPickChar, costume: FGUYPickCostume, team: FGUYPickTeam, ready: false};
+}
+
+function FGUYSendPick() {
+    FGUYDo('pick', FGUYPickChar, FGUYPickCostume, FGUYPickTeam);
+}
+
+function FGUYSendConf() {
+    FGUYDo('conf', FGUYS.mode, FGUYS.map, FGUYS.time, FGUYS.score, FGUYS.ff);
+}
+
+// ---- the page ----------------------------------------------------------------------------------------------------
+function OnOnlineSelect() {
+    FGUYOnline = true;
+    PauseTVSound();
+    PlayOptionsSubMenuMusic();
+    GotoPage('OptionsScreen');
+}
+
+function OnOnlineEnter() {
+    flash.external.ExternalInterface.call('FGUYMOD_OnlineEnter');
+    _root.subMenu._visible = false;
+    FGUYColors();
+    FGUYData();
+    FGUYScreen = 'hub';
+    FGUYHubPanel = 0;
+    FGUYFocus = 0;
+    FGUYHostPrivate = 0;
+    FGUYHostMax = 4;
+    FGUYFind = 0;
+    FGUYCode = [0, 0, 0, 0];
+    FGUYCodeLen = 0;
+    FGUYCodePos = 0;
+    FGUYCodeChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    if (FGUYPickChar == undefined) { FGUYPickChar = 'Peter'; FGUYPickCostume = 0; FGUYPickTeam = 0; }
+    FGUYLastBlob = '';
+    FGUYS = FGUYParse('');
+    FGUYDraw();
+    FGUYTimer = setInterval(FGUYPoll, 150);
+}
+
+function OnOnlineExit() {
+    clearInterval(FGUYTimer);
+    flash.external.ExternalInterface.call('FGUYMOD_OnlineExit');
+    _root.FGUYLobbyUI.removeMovieClip();
+    _root.subMenu._visible = true;
+    FGUYOnline = false;
+}
+
+// ---- drawing: one full redraw per change -------------------------------------------------------------------------
+function FGUYDraw() {
+    _root.FGUYLobbyUI.removeMovieClip();
+    var ui = _root.createEmptyMovieClip('FGUYLobbyUI', 20000);
+    var vr = Stage.visibleRect;
+    var left = 0, width = 960;
+    if (vr) { left = vr.x; width = vr.width; }
+    ui._x = left;
+    ui._xscale = width / 1600 * 100;
+    ui._yscale = 720 / 900 * 100;
+    FGUYTextN = 0;
+    FGUYRect(ui, 0, 0, 1600, 900, 0, FGUYC.bg, 100, 0, 0, 0);
+    if (FGUYScreen == 'hub') FGUYDrawHub(ui);
+    else if (FGUYScreen == 'lobby') FGUYDrawLobby(ui);
+    else if (FGUYScreen == 'char') FGUYDrawChar(ui);
+    else FGUYDrawSettings(ui);
+}
+
+function FGUYStatusChip(ui) {
+    var st = FGUYS.state, text = 'Not connected', dot = FGUYC.redLine;
+    if (st == 'connecting') { text = 'Connecting to the server...'; dot = FGUYC.yellow; }
+    else if (st == 'failed') text = FGUYS.status != '' ? FGUYS.status : 'Server offline';
+    else if (st == 'online' || st == 'lobby' || st == 'starting') {
+        text = 'Server online' + (FGUYS.ping > 0 ? ' - ' + FGUYS.ping + ' ms' : '');
+        dot = FGUYC.greenLine;
+    }
+    FGUYRect(ui, 1120, 40, 432, 44, 22, FGUYC.chip, 100, dot, 100, 2);
+    FGUYCircle(ui, 1146, 62, 6, dot, 100, 0, 0);
+    FGUYText(ui, 1160, 48, 380, 34, text, false, 20, FGUYC.white, 'left');
+}
+
+function FGUYFooter(ui, hints, note) {
+    var x = 48;
+    for (var i = 0; i < hints.length; i = i + 2) x = FGUYButtonHint(ui, x, 850, hints[i], hints[i + 1]);
+    if (note != '') FGUYText(ui, 760, 852, 792, 34, note, false, 18, FGUYC.muted, 'right');
+}
+
+// A selectable row: label (yellow cartoon text) and value.
+function FGUYRow(ui, x, y, w, h, label, value, hot) {
+    if (hot) {
+        FGUYRect(ui, x - 4, y - 4, w + 8, h + 8, 20, FGUYC.yellow, 30, 0, 0, 0);
+        FGUYRect(ui, x, y, w, h, 16, FGUYC.rowHot, 100, FGUYC.yellow, 100, 3);
+    } else {
+        FGUYRect(ui, x, y, w, h, 16, FGUYC.row, 100, FGUYC.rowLine, 100, 2);
+    }
+    FGUYTitle(ui, x + 20, y + (h - 36) / 2, w * 0.55, 40, label, 26, FGUYC.yellow, 'left');
+    FGUYText(ui, x + w * 0.45, y + (h - 30) / 2 + 2, w * 0.55 - 20, 32, value, false, 20, FGUYC.white, 'right');
+}
+
+// A big yellow action button.
+function FGUYBigButton(ui, x, y, w, h, label, note, hot, enabled) {
+    var fill = enabled ? FGUYC.yellow : 0x6B6430;
+    if (hot) FGUYRect(ui, x - 6, y - 6, w + 12, h + 12, 24, FGUYC.yellow, 35, 0, 0, 0);
+    FGUYRect(ui, x, y, w, h, 18, fill, 100, hot ? FGUYC.white : FGUYC.ink, 100, 3);
+    FGUYText(ui, x + 20, y + (h - 46) / 2, note == '' ? w - 40 : w * 0.62, 50, label, true, 34, FGUYC.dark, note == '' ? 'center' : 'left');
+    if (note != '') FGUYText(ui, x + w * 0.6, y + (h - 26) / 2, w * 0.4 - 20, 30, note, false, 18, FGUYC.dark, 'right');
+}
+
+function FGUYChoice(ui, x, y, w, label, picked, hot) {
+    if (picked) FGUYRect(ui, x, y, w, 58, 14, FGUYC.yellow, 100, hot ? FGUYC.white : FGUYC.yellow, 100, hot ? 3 : 2);
+    else FGUYRect(ui, x, y, w, 58, 14, FGUYC.panel2, 100, hot ? FGUYC.yellow : FGUYC.chipLine, 100, 2);
+    FGUYText(ui, x, y + 12, w, 34, label, false, 22, picked ? FGUYC.dark : FGUYC.white, 'center');
+}
+
+// ---- hub -------------------------------------------------------------------------------------------------------------
+function FGUYDrawHub(ui) {
+    FGUYTitle(ui, 48, 26, 600, 80, 'ONLINE', 60, FGUYC.title, 'left');
+    FGUYStatusChip(ui);
+    FGUYText(ui, 640, 50, 460, 30, FGUYS.name != '' ? 'Playing as ' + FGUYS.name : '', false, 20, FGUYC.muted2, 'right');
+    var online = FGUYS.state == 'online';
+    var px = [48, 545, 1042], pw = 494, py = 130, ph = 690;
+    for (var p = 0; p < 3; p++)
+        FGUYPanel(ui, px[p], py, pw, ph, 28, p == 0 ? FGUYC.panel2 : FGUYC.panel, FGUYHubPanel == p ? FGUYC.yellow : FGUYC.glow);
+    // host
+    var x = px[0] + 28, hot = FGUYHubPanel == 0;
+    FGUYTitle(ui, x, py + 24, pw - 56, 56, 'HOST A GAME', 40, FGUYC.yellow, 'left');
+    FGUYText(ui, x, py + 92, pw - 56, 30, 'Make a lobby. You pick the mode, map', false, 19, FGUYC.soft, 'left');
+    FGUYText(ui, x, py + 118, pw - 56, 30, 'and rules in the lobby.', false, 19, FGUYC.soft, 'left');
+    FGUYText(ui, x, py + 172, 300, 26, 'WHO CAN JOIN', false, 16, FGUYC.muted, 'left');
+    FGUYChoice(ui, x, py + 200, 213, 'Anyone', FGUYHostPrivate == 0, hot && FGUYFocus == 0);
+    FGUYChoice(ui, x + 225, py + 200, 213, 'Code only', FGUYHostPrivate == 1, hot && FGUYFocus == 0);
+    FGUYText(ui, x, py + 286, 300, 26, 'PLAYERS', false, 16, FGUYC.muted, 'left');
+    for (var n = 2; n <= 4; n++) FGUYChoice(ui, x + (n - 2) * 148, py + 314, 138, String(n), FGUYHostMax == n, hot && FGUYFocus == 1);
+    FGUYBigButton(ui, x, py + ph - 120, pw - 56, 90, 'CREATE LOBBY', '', hot && FGUYFocus == 2, online);
+    // find
+    x = px[1] + 28;
+    FGUYTitle(ui, x, py + 24, pw - 56, 56, 'FIND A GAME', 40, FGUYC.title, 'left');
+    var games = FGUYS.lobbies;
+    FGUYText(ui, x, py + 34, pw - 56, 30, games.length + ' open', false, 18, FGUYC.muted, 'right');
+    if (FGUYFind >= games.length) FGUYFind = games.length > 0 ? games.length - 1 : 0;
+    if (games.length == 0)
+        FGUYText(ui, x, py + 110, pw - 56, 30, online ? 'No open games right now - host one!' : 'Waiting for the server...', false, 19, FGUYC.muted2, 'left');
+    var first = Math.max(0, Math.min(FGUYFind - 4, games.length - 7));
+    for (var i = first; i < games.length && i < first + 7; i++) {
+        var g = games[i], y = py + 96 + (i - first) * 76;
+        var sel = FGUYHubPanel == 1 && FGUYFind == i;
+        FGUYRect(ui, x, y, pw - 56, 66, 16, sel ? FGUYC.rowHot : FGUYC.row, 100, sel ? FGUYC.yellow : FGUYC.rowLine, 100, sel ? 3 : 2);
+        FGUYText(ui, x + 16, y + 6, 300, 30, g.host + "'s game", false, 21, FGUYC.white, 'left');
+        FGUYText(ui, x + 16, y + 34, 330, 26, FGUYMode(g.mode).name + ' - ' + FGUYMapName(g.map, g.mode), false, 16, FGUYC.muted2, 'left');
+        FGUYText(ui, x + pw - 56 - 120, y + 18, 104, 30, g.players + ' / ' + g.max, false, 21, FGUYC.white, 'right');
+    }
+    FGUYText(ui, x, py + ph - 50, pw - 56, 30, 'Press A on a game to join', false, 17, FGUYC.muted, 'left');
+    // code
+    x = px[2] + 28;
+    FGUYTitle(ui, x, py + 24, pw - 56, 56, 'JOIN WITH CODE', 40, FGUYC.title, 'left');
+    FGUYText(ui, x, py + 92, pw - 56, 30, 'Got a code from a friend?', false, 19, FGUYC.soft, 'left');
+    FGUYText(ui, x, py + 118, pw - 56, 30, 'Codes are 4 letters or numbers.', false, 19, FGUYC.soft, 'left');
+    FGUYText(ui, x, py + 172, 300, 26, 'LOBBY CODE', false, 16, FGUYC.muted, 'left');
+    for (var k = 0; k < 4; k++) {
+        var bx = x + k * 112, edit = FGUYHubPanel == 2 && FGUYFocus == 0 && FGUYCodePos == k;
+        FGUYRect(ui, bx, py + 200, 100, 110, 16, FGUYC.deep, 100, edit ? FGUYC.yellow : FGUYC.chipLine, 100, 3);
+        var ch = k < FGUYCodeLen || edit ? FGUYCodeChars.charAt(FGUYCode[k]) : '_';
+        FGUYTitle(ui, bx, py + 222, 100, 70, ch, 56, edit ? FGUYC.yellow : (k < FGUYCodeLen ? FGUYC.white : FGUYC.chipLine), 'center');
+    }
+    FGUYText(ui, x, py + 330, pw - 56, 30, 'Type it, or up / down to pick each letter', false, 17, FGUYC.muted, 'left');
+    var codeHot = FGUYHubPanel == 2 && FGUYFocus == 1;
+    FGUYRect(ui, x, py + ph - 120, pw - 56, 90, 18, FGUYC.rowHot, 100, codeHot ? FGUYC.yellow : FGUYC.glow, 100, 3);
+    FGUYTitle(ui, x, py + ph - 100, pw - 56, 56, 'JOIN', 36, FGUYC.white, 'center');
+    if (FGUYS.status != '' && FGUYS.state == 'online') FGUYText(ui, 48, 824, 1504, 28, FGUYS.status, false, 18, FGUYC.red, 'left');
+    FGUYFooter(ui, ['A', 'Select', 'B', 'Main menu', 'LB', 'Switch panel'], '');
+}
+
+// ---- lobby --------------------------------------------------------------------------------------------------------
+function FGUYLobbyItems() {
+    return [FGUYIsHost() ? 'start' : 'ready', 'mode', 'map', 'settings', 'char', 'skin', 'team', 'leave'];
+}
+
+function FGUYReadyCount() {
+    var n = 0;
+    for (var i = 0; i < FGUYS.members.length; i++) if (FGUYS.members[i].slot == 0 || FGUYS.members[i].ready) n++;
+    return n;
+}
+
+function FGUYDrawLobby(ui) {
+    var host = FGUYIsHost(), me = FGUYMe(), mode = FGUYMode(FGUYS.mode);
+    FGUYTitle(ui, 48, 26, 560, 80, 'ONLINE LOBBY', 60, FGUYC.title, 'left');
+    FGUYRect(ui, 600, 46, 140, 40, 20, FGUYC.chip, 100, FGUYC.chipLine, 100, 2);
+    FGUYText(ui, 600, 52, 140, 30, FGUYS.priv ? 'CODE ONLY' : 'PUBLIC', false, 18, FGUYC.white, 'center');
+    FGUYRect(ui, 752, 46, 190, 40, 20, FGUYC.chip, 100, FGUYC.chipLine, 100, 2);
+    FGUYText(ui, 752, 52, 190, 30, 'CODE  ' + FGUYS.code, false, 18, FGUYC.yellow, 'center');
+    FGUYText(ui, 1120, 52, 432, 30, 'Connected - ' + FGUYS.ping + ' ms', false, 20, FGUYC.muted2, 'right');
+
+    // left: actions
+    var items = FGUYLobbyItems(), y = 130;
+    for (var i = 0; i < items.length; i++) {
+        var it = items[i], hot = FGUYFocus == i;
+        if (it == 'start') {
+            var ready = FGUYReadyCount(), all = ready == FGUYS.members.length && FGUYS.members.length > 1;
+            FGUYBigButton(ui, 48, y, 400, 76, 'START MATCH', ready + ' / ' + FGUYS.members.length + ' ready', hot, all);
+            y = y + 92;
+        } else if (it == 'ready') {
+            FGUYBigButton(ui, 48, y, 400, 76, me.ready ? 'READY!' : 'READY UP', me.ready ? 'waiting for host' : '', hot, true);
+            y = y + 92;
+        } else if (it == 'leave') {
+            y = 736;
+            FGUYRect(ui, 48, y, 400, 56, 16, FGUYC.bg, 100, hot ? FGUYC.yellow : FGUYC.redLine, 100, 2);
+            FGUYText(ui, 70, y + 12, 360, 32, 'Leave lobby', false, 21, FGUYC.red, 'left');
+        } else {
+            var label = '', value = '';
+            if (it == 'mode') { label = 'GAME MODE'; value = mode.name; }
+            else if (it == 'map') { label = mode.code == 'ST' ? 'LEVEL' : 'MAP'; value = FGUYMapName(FGUYS.map, FGUYS.mode); }
+            else if (it == 'settings') { label = 'MATCH SETTINGS'; value = FGUYRulesLine(true); }
+            else if (it == 'char') { label = 'CHARACTER'; value = FGUYCharName(FGUYPickChar); }
+            else if (it == 'skin') { label = 'SKIN'; value = FGUYCostumeName(FGUYPickChar, FGUYPickCostume); }
+            else if (it == 'team') { label = 'TEAM'; value = mode.teams ? (FGUYPickTeam == 1 ? 'Evil' : 'Good') : 'Everyone together'; }
+            if (it == 'char') y = y + 8;
+            FGUYRow(ui, 48, y, 400, 62, label, value, hot);
+            y = y + 72;
+        }
+    }
+
+    // centre: the match and my character
+    var cx = 480, cw = 560;
+    FGUYPanel(ui, cx, 130, cw, 384, 28, FGUYC.panel2, FGUYC.glow);
+    FGUYPicture(ui, FGUYMapPic(FGUYS.map, FGUYS.mode), cx + 3, 133, cw - 6, 250, true);
+    FGUYRect(ui, cx, 383, cw, 3, 0, FGUYC.glow, 100, 0, 0, 0);
+    FGUYTitle(ui, cx + 24, 396, cw - 48, 46, mode.name, 32, FGUYC.title, 'left');
+    FGUYText(ui, cx + 24, 446, cw - 48, 56, FGUYMapName(FGUYS.map, FGUYS.mode) + (mode.code == 'ST' ? '' : ' - ' + FGUYRulesLine(false)), false, 18, FGUYC.soft, 'left');
+    FGUYRect(ui, cx, 534, cw, 280, 28, FGUYC.deep, 100, FGUYC.rowLine, 100, 2);
+    FGUYPicture(ui, FGUYCostumePic(FGUYPickChar, FGUYPickCostume), cx + 2, 536, 210, 276, true);
+    FGUYText(ui, cx + 240, 580, 300, 26, "YOU'RE PLAYING", false, 16, FGUYC.muted, 'left');
+    FGUYTitle(ui, cx + 240, 610, 300, 64, FGUYCharName(FGUYPickChar), 48, FGUYC.yellow, 'left');
+    FGUYText(ui, cx + 240, 680, 300, 30, 'Skin: ' + FGUYCostumeName(FGUYPickChar, FGUYPickCostume), false, 19, FGUYC.soft, 'left');
+    if (mode.teams) FGUYText(ui, cx + 240, 708, 300, 30, 'Team: ' + (FGUYPickTeam == 1 ? 'Evil' : 'Good'), false, 19, FGUYC.soft, 'left');
+    FGUYText(ui, cx + 240, 750, 300, 30, 'Press Y to change', false, 17, FGUYC.muted, 'left');
+
+    // right: players
+    var rx = 1072, rw = 480;
+    FGUYPanel(ui, rx, 130, rw, 684, 28, FGUYC.panel, FGUYC.glow);
+    FGUYTitle(ui, rx + 22, 148, 300, 46, 'PLAYERS', 32, FGUYC.title, 'left');
+    FGUYText(ui, rx + rw - 140, 156, 118, 30, FGUYS.members.length + ' / 4', false, 21, FGUYC.soft, 'right');
+    var ry = 206;
+    if (mode.teams) {
+        for (var team = 0; team < 2; team++) {
+            FGUYText(ui, rx + 22, ry, 300, 24, team == 0 ? 'GOOD TEAM' : 'EVIL TEAM', false, 15, team == 0 ? FGUYC.good : FGUYC.evil, 'left');
+            ry = ry + 28;
+            for (var m = 0; m < FGUYS.members.length; m++)
+                if (FGUYS.members[m].team == team) { FGUYPlayerRow(ui, rx + 18, ry, rw - 36, FGUYS.members[m]); ry = ry + 84; }
+            ry = ry + 8;
+        }
+    } else {
+        for (var m2 = 0; m2 < FGUYS.members.length; m2++) { FGUYPlayerRow(ui, rx + 18, ry, rw - 36, FGUYS.members[m2]); ry = ry + 84; }
+    }
+    for (var open = FGUYS.members.length; open < 4 && ry < 730; open++) {
+        FGUYRect(ui, rx + 18, ry, rw - 36, 72, 16, FGUYC.panel, 0, FGUYC.chipLine, 100, 2);
+        FGUYCircle(ui, rx + 54, ry + 36, 24, 0, 0, FGUYC.chipLine, 2);
+        FGUYText(ui, rx + 92, ry + 22, rw - 130, 30, 'Open slot - share code ' + FGUYS.code, false, 18, FGUYC.muted, 'left');
+        ry = ry + 84;
+    }
+    FGUYFooter(ui, ['A', 'Select', 'B', 'Leave', 'X', host ? 'Start' : 'Ready up', 'Y', 'Character'],
+               FGUYS.status != '' ? FGUYS.status : 'Everyone gets their own full screen');
+}
+
+function FGUYPlayerRow(ui, x, y, w, m) {
+    var me = m.slot == FGUYS.slot;
+    FGUYRect(ui, x, y, w, 72, 16, me ? FGUYC.rowHot : 0x174478, 100, me ? FGUYC.yellow : FGUYC.rowLine, 100, 2);
+    FGUYPortrait(ui, FGUYCostumePic(m.character, m.costume), x + 36, y + 36, 26);
+    FGUYText(ui, x + 74, y + 8, w - 230, 32, m.name, false, 22, FGUYC.white, 'left');
+    FGUYText(ui, x + 74, y + 38, w - 230, 26, FGUYCharName(m.character) + ' - ' + m.ping + ' ms', false, 16, FGUYC.muted2, 'left');
+    var label = m.slot == 0 ? 'HOST' : (m.ready ? 'READY' : 'NOT READY');
+    var fill = m.slot == 0 ? FGUYC.yellow : (m.ready ? FGUYC.green : FGUYC.bg);
+    var line = m.slot == 0 ? FGUYC.yellow : (m.ready ? FGUYC.greenLine : FGUYC.redLine);
+    var ink = m.slot == 0 ? FGUYC.dark : (m.ready ? FGUYC.white : FGUYC.red);
+    FGUYRect(ui, x + w - 142, y + 20, 128, 34, 10, fill, 100, line, 100, 2);
+    FGUYText(ui, x + w - 142, y + 25, 128, 28, label, false, 16, ink, 'center');
+}
+
+function FGUYRulesLine(short) {
+    var mode = FGUYMode(FGUYS.mode);
+    if (mode.code == 'ST') return 'Story level';
+    var t = FGUYRules.TimeLimit[FGUYS.time];
+    var parts = [];
+    if (mode.teams) parts.push(short ? 'Teams' : 'Good vs Evil');
+    parts.push((t == undefined ? '-' : t) + (short ? '' : ' min'));
+    if (!short && mode.score != '') parts.push('to ' + FGUYRules[mode.score][FGUYS.score]);
+    if (!short) parts.push('Friendly fire ' + FGUYRules.FriendlyFire[FGUYS.ff]);
+    return parts.join(' - ');
+}
+
+// ---- character & skin ---------------------------------------------------------------------------------------------
+function FGUYDrawChar(ui) {
+    var mode = FGUYMode(FGUYS.mode);
+    FGUYTitle(ui, 48, 26, 900, 80, 'CHARACTER', 60, FGUYC.title, 'left');
+    FGUYText(ui, 900, 52, 652, 30, 'Lobby ' + FGUYS.code + ' - others see your pick live', false, 20, FGUYC.muted2, 'right');
+    if (mode.teams) {
+        FGUYChoice(ui, 48, 120, 150, 'GOOD', FGUYPickTeam == 0, false);
+        FGUYChoice(ui, 210, 120, 150, 'EVIL', FGUYPickTeam == 1, false);
+        FGUYText(ui, 372, 134, 300, 30, 'X to switch team', false, 17, FGUYC.muted, 'left');
+    }
+    for (var i = 0; i < FGUYChars.length; i++) {
+        var col = i % 5, row = Math.floor(i / 5);
+        var x = 48 + col * 196, y = 200 + row * 300, c = FGUYChars[i], sel = FGUYCharSel == i;
+        if (sel) FGUYRect(ui, x - 6, y - 6, 192, 292, 24, FGUYC.yellow, 35, 0, 0, 0);
+        FGUYRect(ui, x, y, 180, 280, 20, FGUYC.panel, 100, sel ? FGUYC.yellow : FGUYC.rowLine, 100, 3);
+        var list = FGUYCostumeList(c);
+        FGUYPicture(ui, FGUYEntryPic(c, list[0]), x + 3, y + 3, 174, 224, true);
+        FGUYText(ui, x + 6, y + 236, 168, 34, FGUYCharName(c), true, 22, sel ? FGUYC.yellow : FGUYC.white, 'center');
+    }
+    // preview
+    var px = 1042, pw = 510, c2 = FGUYChars[FGUYCharSel];
+    FGUYPanel(ui, px, 120, pw, 700, 28, FGUYC.panel, FGUYC.glow);
+    var costumes = FGUYCostumeList(c2);
+    if (FGUYCostumeSel >= costumes.length) FGUYCostumeSel = 0;
+    var pic = FGUYEntryPic(c2, costumes[FGUYCostumeSel]);
+    FGUYPicture(ui, pic, px + 3, 123, pw - 6, 400, true);
+    FGUYRect(ui, px, 523, pw, 3, 0, FGUYC.glow, 100, 0, 0, 0);
+    FGUYTitle(ui, px + 26, 540, pw - 52, 64, FGUYCharName(c2), 48, FGUYC.yellow, 'left');
+    FGUYText(ui, px + 26, 610, 300, 24, 'SKIN', false, 16, FGUYC.muted, 'left');
+    var skinName = costumes.length > 0 ? FGUYCostumeName(c2, costumes[FGUYCostumeSel].CostumeIndex) : 'Classic';
+    FGUYText(ui, px + 26, 636, pw - 52, 32, skinName + '   (' + (FGUYCostumeSel + 1) + ' / ' + Math.max(1, costumes.length) + ')', false, 22, FGUYC.white, 'left');
+    var first = Math.max(0, Math.min(FGUYCostumeSel - 2, costumes.length - 5));
+    for (var k = first; k < costumes.length && k < first + 5; k++) {
+        var tx = px + 26 + (k - first) * 92, on = k == FGUYCostumeSel;
+        FGUYRect(ui, tx, 680, 82, 82, 12, FGUYC.panel2, 100, on ? FGUYC.yellow : FGUYC.rowLine, 100, on ? 3 : 2);
+        FGUYPicture(ui, FGUYEntryPic(c2, costumes[k]), tx + 3, 683, 76, 76, true);
+    }
+    FGUYFooter(ui, ['A', 'Confirm', 'B', 'Back', 'LB', 'Skin', 'RB', 'Skin'], 'Arrows pick a character');
+}
+
+// ---- match settings --------------------------------------------------------------------------------------------------
+function FGUYSettingRows() {
+    var mode = FGUYMode(FGUYS.mode);
+    var rows = ['mode', 'map'];
+    if (mode.code != 'ST') {
+        rows.push('time');
+        if (mode.score != '') rows.push('score');
+        rows.push('ff');
+    }
+    return rows;
+}
+
+function FGUYDrawSettings(ui) {
+    var host = FGUYIsHost(), mode = FGUYMode(FGUYS.mode);
+    FGUYTitle(ui, 48, 26, 900, 80, 'MATCH SETTINGS', 60, FGUYC.title, 'left');
+    FGUYText(ui, 900, 52, 652, 30, host ? 'Left / right to change' : 'Only the host can change these', false, 20, FGUYC.muted2, 'right');
+    FGUYPanel(ui, 48, 130, 940, 690, 28, FGUYC.panel, FGUYC.glow);
+    var rows = FGUYSettingRows();
+    for (var i = 0; i < rows.length; i++) {
+        var r = rows[i], label = '', value = '';
+        if (r == 'mode') { label = 'GAME MODE'; value = mode.name; }
+        else if (r == 'map') { label = mode.code == 'ST' ? 'LEVEL' : 'MAP'; value = FGUYMapName(FGUYS.map, FGUYS.mode); }
+        else if (r == 'time') { label = 'TIME LIMIT'; value = FGUYRules.TimeLimit[FGUYS.time]; }
+        else if (r == 'score') { label = mode.score == 'FlagLimit' ? 'FLAG LIMIT' : 'WINNING SCORE'; value = FGUYRules[mode.score][FGUYS.score]; }
+        else if (r == 'ff') { label = 'FRIENDLY FIRE'; value = FGUYRules.FriendlyFire[FGUYS.ff]; }
+        FGUYRow(ui, 76, 160 + i * 84, 884, 70, label, (host ? '<   ' : '') + value + (host ? '   >' : ''), FGUYFocus == i);
+    }
+    FGUYRow(ui, 76, 160 + rows.length * 84, 884, 70, 'LOBBY', FGUYS.priv ? 'Code only' : 'Anyone can join', false);
+    var px = 1020, pw = 532;
+    FGUYPanel(ui, px, 130, pw, 470, 28, FGUYC.panel2, FGUYC.glow);
+    FGUYPicture(ui, FGUYMapPic(FGUYS.map, FGUYS.mode), px + 3, 133, pw - 6, 250, true);
+    FGUYTitle(ui, px + 24, 396, pw - 48, 46, FGUYMapName(FGUYS.map, FGUYS.mode), 30, FGUYC.title, 'left');
+    var about = mode.about.split(' '), line = '', ly = 446;
+    for (var w = 0; w < about.length; w++) {   // simple word wrap
+        if ((line + ' ' + about[w]).length > 44) { FGUYText(ui, px + 24, ly, pw - 48, 28, line, false, 18, FGUYC.soft, 'left'); ly = ly + 26; line = about[w]; }
+        else line = line == '' ? about[w] : line + ' ' + about[w];
+    }
+    FGUYText(ui, px + 24, ly, pw - 48, 28, line, false, 18, FGUYC.soft, 'left');
+    FGUYRect(ui, px, 620, pw, 110, 20, FGUYC.deep, 100, FGUYC.rowLine, 100, 2);
+    FGUYText(ui, px + 22, 636, pw - 44, 24, 'ONLINE', false, 15, FGUYC.muted, 'left');
+    FGUYText(ui, px + 22, 664, pw - 44, 30, 'Everyone plays full screen on their own PC.', false, 18, FGUYC.soft, 'left');
+    FGUYFooter(ui, ['A', 'Done', 'B', 'Back'], '');
+}
+
+// ---- input ------------------------------------------------------------------------------------------------------------
+// Keys from the menu: 38 up, 40 down, 37 left, 39 right, 13 A, 27 B, 36 Start, 88 X, 112 Y, 76 LB, 82 RB;
+// on a keyboard also letters / digits (code entry) and 8 backspace.
+function OnOnlineHandleInput(key, controller) {
+    if (FGUYScreen == 'hub') FGUYInputHub(key);
+    else if (FGUYScreen == 'lobby') FGUYInputLobby(key);
+    else if (FGUYScreen == 'char') FGUYInputChar(key);
+    else FGUYInputSettings(key);
+    if (FGUYOnline) FGUYDraw();
+}
+
+function FGUYInputHub(key) {
+    var online = FGUYS.state == 'online';
+    if (key == 27) { FGUYSound('back'); PrevPage(); return; }
+    if (key == 76 || key == 82) { FGUYHubPanel = (FGUYHubPanel + (key == 82 ? 1 : 2)) % 3; FGUYFocus = 0; FGUYSound('nav'); return; }
+    if (FGUYHubPanel == 0) {
+        if (key == 38 || key == 40) { FGUYFocus = (FGUYFocus + (key == 40 ? 1 : 2)) % 3; FGUYSound('nav'); }
+        else if ((key == 37 || key == 39) && FGUYFocus == 0) { FGUYHostPrivate = 1 - FGUYHostPrivate; FGUYSound('change'); }
+        else if ((key == 37 || key == 39) && FGUYFocus == 1) { FGUYHostMax = Math.max(2, Math.min(4, FGUYHostMax + (key == 39 ? 1 : -1))); FGUYSound('change'); }
+        else if (key == 39) { FGUYHubPanel = 1; FGUYFocus = 0; FGUYSound('nav'); }
+        else if (key == 13 || key == 36) {
+            if (FGUYFocus < 2) { FGUYFocus = 2; FGUYSound('nav'); }
+            else if (online) { FGUYDo('host', FGUYHostMax, FGUYHostPrivate); FGUYSound('accept'); }
+            else FGUYSound('deny');
+        }
+    } else if (FGUYHubPanel == 1) {
+        var n = FGUYS.lobbies.length;
+        if (key == 38 && n > 0) { FGUYFind = (FGUYFind + n - 1) % n; FGUYSound('nav'); }
+        else if (key == 40 && n > 0) { FGUYFind = (FGUYFind + 1) % n; FGUYSound('nav'); }
+        else if (key == 37 || key == 39) { FGUYHubPanel = key == 39 ? 2 : 0; FGUYFocus = 0; FGUYSound('nav'); }
+        else if (key == 13 && n > 0 && online) { FGUYDo('join', FGUYS.lobbies[FGUYFind].code); FGUYSound('accept'); }
+        else if (key == 13) FGUYSound('deny');
+    } else {
+        FGUYInputCode(key, online);
+    }
+}
+
+function FGUYInputCode(key, online) {
+    var len = FGUYCodeChars.length;
+    if (FGUYFocus == 1) {   // the JOIN button
+        if (key == 38) { FGUYFocus = 0; FGUYSound('nav'); }
+        else if (key == 37) { FGUYHubPanel = 1; FGUYFocus = 0; FGUYSound('nav'); }
+        else if (key == 13 && FGUYCodeLen == 4 && online) {
+            var code = '';
+            for (var i = 0; i < 4; i++) code = code + FGUYCodeChars.charAt(FGUYCode[i]);
+            FGUYDo('join', code);
+            FGUYSound('accept');
+        } else if (key == 13) FGUYSound('deny');
+        return;
+    }
+    if (key == 38 || key == 40) {
+        FGUYCode[FGUYCodePos] = (FGUYCode[FGUYCodePos] + (key == 38 ? 1 : len - 1)) % len;
+        if (FGUYCodeLen <= FGUYCodePos) FGUYCodeLen = FGUYCodePos + 1;
+        FGUYSound('scroll');
+    } else if (key == 37) {
+        if (FGUYCodePos > 0) { FGUYCodePos--; FGUYSound('nav'); }
+        else { FGUYHubPanel = 1; FGUYFocus = 0; FGUYSound('nav'); }
+    } else if (key == 39) {
+        if (FGUYCodePos < 3) { FGUYCodePos++; if (FGUYCodeLen < FGUYCodePos) FGUYCodeLen = FGUYCodePos; FGUYSound('nav'); }
+    } else if (key == 8) {
+        if (FGUYCodeLen > 0) { FGUYCodeLen--; FGUYCodePos = FGUYCodeLen; FGUYSound('back'); }
+    } else if (key == 13) {
+        if (FGUYCodeLen == 4) { FGUYFocus = 1; FGUYSound('nav'); }
+        else if (FGUYCodePos < 3) { FGUYCodePos++; if (FGUYCodeLen < FGUYCodePos) FGUYCodeLen = FGUYCodePos; FGUYSound('nav'); }
+        else { FGUYCodeLen = 4; FGUYFocus = 1; FGUYSound('nav'); }
+    } else {
+        var ch = String.fromCharCode(key).toUpperCase(), at = FGUYCodeChars.indexOf(ch);
+        if (at >= 0 && FGUYCodeLen < 4) {
+            FGUYCode[FGUYCodeLen] = at;
+            FGUYCodeLen++;
+            FGUYCodePos = Math.min(3, FGUYCodeLen);
+            if (FGUYCodeLen == 4) FGUYFocus = 1;
+            FGUYSound('scroll');
+        }
+    }
+}
+
+function FGUYInputLobby(key) {
+    var items = FGUYLobbyItems(), host = FGUYIsHost(), mode = FGUYMode(FGUYS.mode);
+    var it = items[FGUYFocus];
+    if (key == 27) { FGUYDo('leave'); FGUYSound('back'); FGUYScreen = 'hub'; FGUYFocus = 0; return; }
+    if (key == 38) { FGUYFocus = (FGUYFocus + items.length - 1) % items.length; FGUYSound('nav'); return; }
+    if (key == 40) { FGUYFocus = (FGUYFocus + 1) % items.length; FGUYSound('nav'); return; }
+    if (key == 88 || key == 36) { FGUYPrimary(); return; }
+    if (key == 112) { FGUYOpenChar(); return; }
+    var dir = key == 39 ? 1 : (key == 37 ? -1 : 0);
+    if (dir != 0) {
+        if (it == 'mode' && host) { FGUYCycleMode(dir); FGUYSound('change'); }
+        else if (it == 'map' && host) { FGUYCycleMap(dir); FGUYSound('change'); }
+        else if (it == 'skin') { FGUYCycleSkin(dir); FGUYSendPick(); FGUYSound('change'); }
+        else if (it == 'char') { FGUYCycleChar(dir); FGUYSendPick(); FGUYSound('change'); }
+        else if (it == 'team' && mode.teams) { FGUYPickTeam = 1 - FGUYPickTeam; FGUYSendPick(); FGUYSound('change'); }
+        else FGUYSound('deny');
+        return;
+    }
+    if (key == 13) {
+        if (it == 'start' || it == 'ready') FGUYPrimary();
+        else if (it == 'settings' || it == 'mode' || it == 'map') { FGUYScreen = 'settings'; FGUYFocus = it == 'map' ? 1 : 0; FGUYSound('accept'); }
+        else if (it == 'char' || it == 'skin') FGUYOpenChar();
+        else if (it == 'team' && mode.teams) { FGUYPickTeam = 1 - FGUYPickTeam; FGUYSendPick(); FGUYSound('change'); }
+        else if (it == 'leave') { FGUYDo('leave'); FGUYSound('back'); FGUYScreen = 'hub'; FGUYFocus = 0; }
+    }
+}
+
+function FGUYPrimary() {
+    if (FGUYIsHost()) {
+        var all = FGUYReadyCount() == FGUYS.members.length && FGUYS.members.length > 1;
+        if (all) { FGUYDo('start'); FGUYSound('accept'); } else FGUYSound('deny');
+    } else {
+        FGUYDo('ready');
+        FGUYSound('accept');
+    }
+}
+
+function FGUYCycleMode(dir) {
+    var at = 0;
+    for (var i = 0; i < FGUYModes.length; i++) if (FGUYModes[i].code == FGUYS.mode) at = i;
+    at = (at + dir + FGUYModes.length) % FGUYModes.length;
+    FGUYS.mode = FGUYModes[at].code;
+    var maps = FGUYMapsFor(FGUYS.mode), ok = false;
+    for (var k = 0; k < maps.length; k++) if (maps[k] == FGUYS.map) ok = true;
+    if (!ok) FGUYS.map = maps[0];
+    if (!FGUYModes[at].teams) FGUYPickTeam = 0;
+    FGUYSendConf();
+}
+
+// Host: make sure the lobby's map exists in its mode (e.g. right after creating the lobby).
+function FGUYCheckMap() {
+    var maps = FGUYMapsFor(FGUYS.mode);
+    for (var i = 0; i < maps.length; i++) if (maps[i] == FGUYS.map) return;
+    FGUYS.map = maps[0];
+    FGUYSendConf();
+}
+
+function FGUYCycleMap(dir) {
+    var maps = FGUYMapsFor(FGUYS.mode), at = 0;
+    for (var i = 0; i < maps.length; i++) if (maps[i] == FGUYS.map) at = i;
+    FGUYS.map = maps[(at + dir + maps.length) % maps.length];
+    FGUYSendConf();
+}
+
+function FGUYCycleSkin(dir) {
+    var list = FGUYCostumeList(FGUYPickChar), at = 0;
+    if (list.length == 0) return;
+    for (var i = 0; i < list.length; i++) if (String(list[i].CostumeIndex) == String(FGUYPickCostume)) at = i;
+    FGUYPickCostume = list[(at + dir + list.length) % list.length].CostumeIndex;
+}
+
+function FGUYCycleChar(dir) {
+    var at = 0;
+    for (var i = 0; i < FGUYChars.length; i++) if (FGUYChars[i] == FGUYPickChar) at = i;
+    FGUYPickChar = FGUYChars[(at + dir + FGUYChars.length) % FGUYChars.length];
+    var list = FGUYCostumeList(FGUYPickChar);
+    FGUYPickCostume = list.length > 0 ? list[0].CostumeIndex : 0;
+}
+
+function FGUYOpenChar() {
+    FGUYScreen = 'char';
+    FGUYCharSel = 0;
+    for (var i = 0; i < FGUYChars.length; i++) if (FGUYChars[i] == FGUYPickChar) FGUYCharSel = i;
+    FGUYCostumeSel = 0;
+    var list = FGUYCostumeList(FGUYPickChar);
+    for (var k = 0; k < list.length; k++) if (String(list[k].CostumeIndex) == String(FGUYPickCostume)) FGUYCostumeSel = k;
+    FGUYSound('accept');
+}
+
+function FGUYInputChar(key) {
+    var n = FGUYChars.length, mode = FGUYMode(FGUYS.mode);
+    if (key == 27) { FGUYScreen = 'lobby'; FGUYSound('back'); return; }
+    if (key == 37) { FGUYCharSel = (FGUYCharSel + n - 1) % n; FGUYCostumeSel = 0; FGUYSound('nav'); }
+    else if (key == 39) { FGUYCharSel = (FGUYCharSel + 1) % n; FGUYCostumeSel = 0; FGUYSound('nav'); }
+    else if (key == 38 || key == 40) { FGUYCharSel = (FGUYCharSel + 5) % 10; if (FGUYCharSel >= n) FGUYCharSel = n - 1; FGUYCostumeSel = 0; FGUYSound('nav'); }
+    else if (key == 76 || key == 82) {
+        var list = FGUYCostumeList(FGUYChars[FGUYCharSel]);
+        if (list.length > 0) FGUYCostumeSel = (FGUYCostumeSel + (key == 82 ? 1 : list.length - 1)) % list.length;
+        FGUYSound('change');
+    } else if (key == 88 && mode.teams) { FGUYPickTeam = 1 - FGUYPickTeam; FGUYSound('change'); }
+    else if (key == 13 || key == 36) {
+        FGUYPickChar = FGUYChars[FGUYCharSel];
+        var costumes = FGUYCostumeList(FGUYPickChar);
+        FGUYPickCostume = costumes.length > 0 ? costumes[FGUYCostumeSel].CostumeIndex : 0;
+        FGUYSendPick();
+        FGUYScreen = 'lobby';
+        FGUYSound('accept');
+    }
+}
+
+function FGUYInputSettings(key) {
+    var rows = FGUYSettingRows(), r = rows[FGUYFocus], mode = FGUYMode(FGUYS.mode);
+    if (key == 27 || key == 13) { FGUYScreen = 'lobby'; FGUYFocus = 1; FGUYSound(key == 13 ? 'accept' : 'back'); return; }
+    if (key == 38) { FGUYFocus = (FGUYFocus + rows.length - 1) % rows.length; FGUYSound('nav'); return; }
+    if (key == 40) { FGUYFocus = (FGUYFocus + 1) % rows.length; FGUYSound('nav'); return; }
+    var dir = key == 39 ? 1 : (key == 37 ? -1 : 0);
+    if (dir == 0) return;
+    if (!FGUYIsHost()) { FGUYSound('deny'); return; }
+    if (r == 'mode') FGUYCycleMode(dir);
+    else if (r == 'map') FGUYCycleMap(dir);
+    else {
+        var list = r == 'time' ? FGUYRules.TimeLimit : (r == 'score' ? FGUYRules[mode.score] : FGUYRules.FriendlyFire);
+        var field = r == 'time' ? 'time' : (r == 'score' ? 'score' : 'ff');
+        FGUYS[field] = (FGUYS[field] + dir + list.length) % list.length;
+        FGUYSendConf();
+    }
+    FGUYSound('change');
+}

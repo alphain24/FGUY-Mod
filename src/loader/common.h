@@ -52,19 +52,17 @@ bool NetplayEnabled();
 void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
 int NetplayLocalSlot();                //   my player slot, -1 when netplay is off
+void NetplaySessionPress(int pad, WORD buttons, int delayTicks);  // session autopilot
 void InitSplitView();                  // one full-screen view per PC online    (splitview.cpp)
 int SplitViewHudMode(int mode);
 int SplitViewHudViewport(int viewport);
 
-// online.cpp: lobby + the in-game ONLINE page
+// online.cpp: lobby + the in-game ONLINE screens
 void OnlineEnter();
 void OnlineExit();
-const char* OnlineLabel(const char* row);
-const char* OnlineText(const char* row);
-const char* OnlineList();
-int OnlineGet(const char* row);
-void OnlineSet(const char* row, int value);
-void OnlinePress(const char* row);
+const char* LobbyState();
+void LobbyDo(const char* command, const char* a, const char* b, const char* c, const char* d, const char* e);
+const char* SessionConfig();
 
 // display.cpp
 bool DisplayIsWindowed();              // windowed or borderless right now

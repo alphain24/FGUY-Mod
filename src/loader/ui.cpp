@@ -230,6 +230,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnNumber(movie, VideoFrameRateIndex());
         } else if (strcmp(fn, "SetFrameRate") == 0) {
             VideoSetFrameRate((int)ArgNumber(args, argc, 0));
+        } else if (strcmp(fn, "Log") == 0) {  // menu script debugging
+            Log(L"UI: script: %S", ArgString(args, argc, 0));
         } else if (strcmp(fn, "HudDebug") == 0) {  // research: make_hud_patch.py --debug
             static std::set<std::string> seen;
             char line[256];
@@ -249,18 +251,22 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             OnlineEnter();
         } else if (strcmp(fn, "OnlineExit") == 0) {
             OnlineExit();
-        } else if (strcmp(fn, "OnlineLabel") == 0) {
-            ReturnString(movie, OnlineLabel(ArgString(args, argc, 0)));
-        } else if (strcmp(fn, "OnlineList") == 0) {
-            ReturnString(movie, OnlineList());
-        } else if (strcmp(fn, "OnlineText") == 0) {
-            ReturnString(movie, OnlineText(ArgString(args, argc, 0)));
-        } else if (strcmp(fn, "OnlinePress") == 0) {
-            OnlinePress(ArgString(args, argc, 0));
-        } else if (strncmp(fn, "GetOnline", 9) == 0) {  // list rows: SF_Invoke("FGUYMOD", "Get<row>")
-            ReturnNumber(movie, OnlineGet(fn + 3));
-        } else if (strncmp(fn, "SetOnline", 9) == 0) {  //   ... and "Set<row>"(value)
-            OnlineSet(fn + 3, (int)ArgNumber(args, argc, 0));
+        } else if (strcmp(fn, "LobbyState") == 0) {
+            ReturnString(movie, LobbyState());
+        } else if (strcmp(fn, "LobbyDo") == 0) {
+            LobbyDo(ArgString(args, argc, 0), ArgString(args, argc, 1), ArgString(args, argc, 2),
+                    ArgString(args, argc, 3), ArgString(args, argc, 4), ArgString(args, argc, 5));
+        } else if (strcmp(fn, "SessionConfig") == 0) {
+            ReturnString(movie, SessionConfig());
+        } else if (strcmp(fn, "SessionPress") == 0) {  // (pad, button name, delay in ticks)
+            static const struct { const char* name; WORD bit; } buttons[] = {
+                {"a", 0x1000}, {"b", 0x2000}, {"x", 0x4000}, {"y", 0x8000}, {"start", 0x0010}, {"back", 0x0020}};
+            WORD bit = 0;
+            for (auto& b : buttons)
+                if (_stricmp(ArgString(args, argc, 1), b.name) == 0) bit = b.bit;
+            NetplaySessionPress((int)ArgNumber(args, argc, 0), bit, (int)ArgNumber(args, argc, 2));
+        } else if (strcmp(fn, "SessionLog") == 0) {
+            Log(L"Session: %S", ArgString(args, argc, 0));
         } else {
             Log(L"UI: unknown mod call %S", name);
         }

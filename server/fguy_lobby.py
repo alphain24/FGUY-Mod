@@ -15,9 +15,11 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     HELLO <proto> <gamekey> <name>   first line. gamekey identifies the game version (all players
                                      in a lobby must match). name: letters, digits, _ -, max 16.
     LIST                             open lobbies
-    HOST <maxplayers 2-4>            create a lobby (you get slot 0)
+    HOST <maxplayers 2-4> [<private 0|1>]   create a lobby (you get slot 0); private = join by code only
     JOIN <code>                      join a lobby by its code
     READY <0|1>
+    SET <character> <costume> <team> your picks (character name, costume index, team 0 good / 1 evil)
+    CONF <mode> <map> <time> <score> <ff>   host: match settings (short codes / list indices)
     RTT <ms>                         your measured round trip to this server
     PING <x>                         answered with PONG <x>
     SAVE <base64>                    host: the save file every player starts the session from
@@ -26,11 +28,14 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     LEAVE
   server -> client
     WELCOME <proto>
-    LIST [<code>,<host>,<players>,<max> ...]
-    LOBBY <code>
-    MEMBERS <your slot> [<slot>,<name>,<ready>,<rtt> ...]
+    LIST [<code>,<host>,<players>,<max>,<mode>,<map> ...]     (public lobbies)
+    LOBBY <code> <private>
+    MEMBERS <your slot> [<slot>,<name>,<ready>,<rtt>,<character>,<costume>,<team> ...]
+    CONF <mode> <map> <time> <score> <ff>
     SAVE <base64>                    sent right before START when the host shared a save
-    START <token> <slot> <players> <input delay> <udp port> <lang>
+    START <token> <slot> <players> <input delay> <udp port> <lang> <conf> <picks>
+                                     conf = mode,map,time,score,ff; picks = char:costume:team;... by slot
+                                     (a snapshot, so every player starts from exactly the same choices)
     CLOSED <reason...>               the lobby is gone (host left)
     ERROR <text...>
     PONG <x>
@@ -48,9 +53,10 @@ import re
 import secrets
 import time
 
-PROTO = 1
+PROTO = 2
 CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'  # no I/O/0/1
 NAME_RE = re.compile(r'^[A-Za-z0-9_\-]{1,16}$')
+TOKEN_RE = re.compile(r'^[A-Za-z0-9_\-]{1,24}$')   # characters, modes, maps, numbers
 MAX_LINE = 2 * 1024 * 1024        # a save file (~450 KB) as base64 fits easily
 MAX_SAVE = 1024 * 1024
 MAX_CLIENTS_PER_IP = 8
@@ -71,6 +77,7 @@ class Client:
         self.lobby = None
         self.ready = False
         self.rtt = 0
+        self.char, self.costume, self.team = 'Peter', '0', '0'
 
     def send(self, line):
         try:
@@ -84,20 +91,26 @@ class Client:
 
 
 class Lobby:
-    def __init__(self, code, host, max_players):
-        self.code, self.max = code, max_players
+    def __init__(self, code, host, max_players, private):
+        self.code, self.max, self.private = code, max_players, private
         self.members = [host]
         self.save = None
         self.lang = '-'
+        self.conf = ['DM', 'FR', '0', '0', '0']  # mode, map, time, score, friendly fire
 
     @property
     def host(self):
         return self.members[0]
 
     def broadcast_members(self):
-        entries = ' '.join(f'{i},{c.name},{int(c.ready)},{c.rtt}' for i, c in enumerate(self.members))
+        entries = ' '.join(f'{i},{c.name},{int(c.ready)},{c.rtt},{c.char},{c.costume},{c.team}'
+                           for i, c in enumerate(self.members))
         for c in self.members:
             c.send(f'MEMBERS {c.slot} {entries}'.rstrip())
+
+    def broadcast_conf(self, only=None):
+        for c in ([only] if only else self.members):
+            c.send('CONF ' + ' '.join(self.conf))
 
 
 class Session:
@@ -161,19 +174,23 @@ class Server:
             c.send('ERROR say HELLO first')
             return
         if cmd == 'LIST':
-            open_ = [l for l in self.lobbies.values() if l.host.gamekey == c.gamekey and len(l.members) < l.max]
-            c.send(' '.join(['LIST'] + [f'{l.code},{l.host.name},{len(l.members)},{l.max}' for l in open_[:50]]))
+            open_ = [l for l in self.lobbies.values()
+                     if l.host.gamekey == c.gamekey and len(l.members) < l.max and not l.private]
+            c.send(' '.join(['LIST'] + [f'{l.code},{l.host.name},{len(l.members)},{l.max},{l.conf[0]},{l.conf[1]}'
+                                        for l in open_[:50]]))
         elif cmd == 'HOST':
             self.leave(c)
             if len(self.lobbies) >= MAX_LOBBIES:
                 c.send('ERROR The server is full, try again later')
                 return
             n = int(args[0]) if args and args[0].isdigit() else 4
+            private = len(args) > 1 and args[1] == '1'
             code = self.new_code()
-            c.lobby, c.ready = Lobby(code, c, max(2, min(4, n))), False
+            c.lobby, c.ready = Lobby(code, c, max(2, min(4, n)), private), False
             self.lobbies[code] = c.lobby
-            c.send(f'LOBBY {code}')
+            c.send(f'LOBBY {code} {int(private)}')
             c.lobby.broadcast_members()
+            c.lobby.broadcast_conf()
             log.info('%s hosts lobby %s', c.name, code)
         elif cmd == 'JOIN':
             code = args[0].upper() if args else ''
@@ -190,12 +207,21 @@ class Server:
                 self.leave(c)
                 c.lobby, c.ready = lobby, False
                 lobby.members.append(c)
-                c.send(f'LOBBY {code}')
+                c.send(f'LOBBY {code} {int(lobby.private)}')
                 lobby.broadcast_members()
+                lobby.broadcast_conf(only=c)
                 log.info('%s joins lobby %s', c.name, code)
         elif cmd == 'READY' and c.lobby:
             c.ready = bool(args and args[0] == '1')
             c.lobby.broadcast_members()
+        elif cmd == 'SET' and c.lobby:
+            if len(args) == 3 and all(TOKEN_RE.match(a) for a in args):
+                c.char, c.costume, c.team = args
+                c.lobby.broadcast_members()
+        elif cmd == 'CONF' and c.lobby and c is c.lobby.host:
+            if len(args) == 5 and all(TOKEN_RE.match(a) for a in args):
+                c.lobby.conf = list(args)
+                c.lobby.broadcast_conf()
         elif cmd == 'RTT':
             c.rtt = max(0, min(2000, int(args[0]))) if args and args[0].isdigit() else 0
             if c.lobby:
@@ -247,10 +273,12 @@ class Server:
         # Through the relay a packet takes at most about (slowest player's round trip) to arrive.
         worst = max(m.rtt for m in lobby.members)
         delay = max(2, min(15, 1 + math.ceil((worst + 15) / TICK_MS)))
+        conf = ','.join(lobby.conf)
+        picks = ';'.join(f'{m.char}:{m.costume}:{m.team}' for m in lobby.members)
         for i, m in enumerate(lobby.members):
             if lobby.save and i > 0:
                 m.send('SAVE ' + lobby.save)
-            m.send(f'START {token.hex()} {i} {n} {delay} {self.port} {lobby.lang}')
+            m.send(f'START {token.hex()} {i} {n} {delay} {self.port} {lobby.lang} {conf} {picks}')
             m.lobby = None
         self.lobbies.pop(lobby.code, None)
         log.info('lobby %s started: %d players, input delay %d (worst rtt %d ms)', lobby.code, n, delay, worst)

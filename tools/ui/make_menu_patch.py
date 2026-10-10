@@ -30,9 +30,12 @@ from gfxpatch import (Patch, Reg, action, constant_pool, define_function, define
                       external_call, function_at, parse_actions, push, push_records, record_text,
                       root_doaction_containing)
 import as2asm as A  # noqa: E402
+import as2c  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
+LOBBY_SOURCE = os.path.join(HERE, '..', '..', 'src', 'ui', 'lobby.as2js')
+SESSION_SOURCE = os.path.join(HERE, '..', '..', 'src', 'ui', 'session.as2js')
 MOVIE_SIZE = 290635  # the front-end menu movie inside FGUY/Global_Scenes/MNUS.ho
 
 # Frame Rate choices, in the order the loader expects (d3d9.cpp kFrameRates).
@@ -128,7 +131,8 @@ def build(data):
                              external_call('FGUYMOD_GetFrameRate') + action('ToNumber') + action('Return'))
     funcs += define_function2('OnFrameRateValueChanged', ['curValue'],
                               external_call('FGUYMOD_SetFrameRate', Reg(1)) + action('Pop'))
-    funcs += online_functions()
+    funcs += as2c.compile_source(open(LOBBY_SOURCE, encoding='utf-8').read())  # the ONLINE screens
+    funcs += as2c.compile_source(open(SESSION_SOURCE, encoding='utf-8').read())  # online session autopilot
     p.replace(o, total, funcs)
 
     # 4. OnDisplayModeValueChanged(curValue): replace 'needWindowed = (curValue == 0)' with
@@ -177,15 +181,12 @@ def build(data):
     p.fix_top_level_jumps(inner)
     p.replace(size_field, 2, struct.pack('<H', code_end - code_start + p.delta_between(code_start, code_end)))
 
-    # 8. GetEventFuncName(Name, Event): while the ONLINE page is up, events of the page it borrows
-    #    ('OptionsScreen') go to OnOnline<Event> instead. Inserted at the very start (r1 = Name).
+    # 8. GetEventFuncName(Name, Event): Name = FGUYEventName(Name, Event) first (src/ui/session.as2js):
+    #    the ONLINE page borrows 'OptionsScreen', and online sessions route some pages' events to the
+    #    session autopilot. Inserted at the very start (r1 = Name, r2 = Event).
     o, total = function_at(data, actions, 'GetEventFuncName')
     code_start, code_end, size_field = function2_code(data, o)
-    redirect = (A.Code(A.getvar('FGUYOnline'), A.op('Not')).if_true('keep') +
-                A.Code(A.pushes(Reg(1), 'OptionsScreen'), A.op('StrictEquals'), A.op('Not')).if_true('keep') +
-                A.store(1, 'Online'))
-    redirect.label('keep')
-    new_code = redirect.assemble()
+    new_code = A.store(1, A.callv('FGUYEventName', Reg(1), Reg(2))).assemble()
     p.replace(code_start, 0, new_code)
     p.replace(size_field, 2, struct.pack('<H', code_end - code_start + len(new_code)))
 
