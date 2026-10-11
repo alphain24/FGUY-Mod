@@ -28,12 +28,15 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     SAVE <base64>                    host: the save file every player starts the session from
     LANG <code>                      host: game language for the session
     START                            host: start the session
+    REJOIN <code> <token> <slot>     back from a match: take my place in that lobby again (the lobby
+                                     stays while its match runs; its players show as "in match")
     LEAVE
   server -> client
     WELCOME <proto>
     LIST [<code>,<host>,<players>,<max>,<mode>,<map> ...]     (public lobbies)
     LOBBY <code> <private>
     MEMBERS <your slot> [<slot>,<name>,<ready>,<rtt>,<character>,<costume>,<team>,<input> ...]
+                                     ready: 0 / 1, or 2 = still in the match
     CONF <mode> <map> <time> <score> <ff>
     OWN <list>                       the host's characters and costumes (also sent on joining)
     SAVE <base64>                    sent right before START when the host shared a save
@@ -59,7 +62,7 @@ import socket
 import threading
 import time
 
-PROTO = 2
+PROTO = 3
 # No I/O/0/1 (they look alike). (The game turns some controller buttons into letter keys; the lobby tells
 # those apart from typed letters, so codes can use the whole alphabet.)
 CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -71,6 +74,7 @@ MAX_SAVE = 1024 * 1024
 MAX_CLIENTS_PER_IP = 8
 MAX_LOBBIES = 500
 SESSION_IDLE_S = 120              # forget a game session after this long without packets
+LOBBY_KEEP_S = 1800               # a player's place in a lobby waits this long for them to come back
 CLIENT_IDLE_S = 60                # drop a lobby connection silent this long (the game pings every 2 s)
 SLOT_MOVE_S = 5                   # a slot's address may change (new NAT port) only after this much silence
 RELAY_MAX_PPS = 2000              # per player address
@@ -89,6 +93,9 @@ class Client:
         self.ready = False
         self.rtt = 0
         self.char, self.costume, self.team, self.input = 'Peter', '0', '0', 'c'
+        self.away = False     # in a match (the lobby keeps the place for REJOIN)
+        self.gone_at = None   # when an away player's lobby connection closed
+        self.match_slot = -1  # their slot in that match
 
     def send(self, line):
         try:
@@ -109,16 +116,19 @@ class Lobby:
         self.lang = '-'
         self.conf = ['DM', 'FR', '0', '0', '0']  # mode, map, time, score, friendly fire
         self.own = None                           # the host's characters and costumes
+        self.token = None                         # the running match's session token (hex)
+        self.playing = False                      # its match runs and the host isn't back yet
 
     @property
     def host(self):
         return self.members[0]
 
     def broadcast_members(self):
-        entries = ' '.join(f'{i},{c.name},{int(c.ready)},{c.rtt},{c.char},{c.costume},{c.team},{c.input}'
+        entries = ' '.join(f'{i},{c.name},{2 if c.away else int(c.ready)},{c.rtt},{c.char},{c.costume},{c.team},{c.input}'
                            for i, c in enumerate(self.members))
         for c in self.members:
-            c.send(f'MEMBERS {c.slot} {entries}'.rstrip())
+            if not c.away:
+                c.send(f'MEMBERS {c.slot} {entries}'.rstrip())
 
     def broadcast_conf(self, only=None):
         for c in ([only] if only else self.members):
@@ -191,7 +201,7 @@ class Server:
             return
         if cmd == 'LIST':
             open_ = [l for l in self.lobbies.values()
-                     if l.host.gamekey == c.gamekey and len(l.members) < l.max and not l.private]
+                     if l.host.gamekey == c.gamekey and len(l.members) < l.max and not l.private and not l.playing]
             c.send(' '.join(['LIST'] + [f'{l.code},{l.host.name},{len(l.members)},{l.max},{l.conf[0]},{l.conf[1]}'
                                         for l in open_[:50]]))
         elif cmd == 'HOST':
@@ -215,6 +225,8 @@ class Server:
                 c.send('ERROR No lobby with that code')
             elif lobby is c.lobby:
                 pass
+            elif lobby.playing:
+                c.send('ERROR That lobby is in a match - try again when it ends')
             elif lobby.host.gamekey != c.gamekey:
                 c.send('ERROR That lobby runs a different version of the game or mod')
             elif len(lobby.members) >= lobby.max:
@@ -258,6 +270,8 @@ class Server:
             c.lobby.lang = re.sub(r'[^A-Za-z_]', '', args[0])[:8] if args else '-'
         elif cmd == 'START' and c.lobby and c is c.lobby.host:
             self.start(c.lobby)
+        elif cmd == 'REJOIN':
+            self.rejoin(c, args)
         elif cmd == 'LEAVE':
             self.leave(c)
         else:
@@ -269,22 +283,49 @@ class Server:
             if code not in self.lobbies:
                 return code
 
+    def rejoin(self, c, args):
+        lobby = self.lobbies.get(args[0].upper()) if args else None
+        slot = int(args[2]) if len(args) > 2 and args[2].isdigit() else -1
+        old = next((m for m in lobby.members if m.away and m.match_slot == slot), None) if lobby else None
+        if not lobby or not lobby.token or len(args) < 2 or args[1] != lobby.token or not old:
+            c.send('ERROR That lobby is gone')
+            return
+        self.leave(c)
+        slot = lobby.members.index(old)
+        c.name, c.char, c.costume, c.team, c.input = old.name, old.char, old.costume, old.team, old.input
+        c.lobby, c.ready, c.away = lobby, False, False
+        lobby.members[slot] = c
+        if slot == 0:
+            lobby.playing = False   # the host is back: the lobby is the lobby again
+        c.send(f'LOBBY {lobby.code} {int(lobby.private)}')
+        lobby.broadcast_members()
+        lobby.broadcast_conf(only=c)
+        log.info('%s is back in lobby %s', c.name, lobby.code)
+
     def leave(self, c):
         lobby = c.lobby
         if not lobby:
             return
+        if c.away:   # in its match: the lobby keeps the place (REJOIN)
+            c.gone_at = c.gone_at or time.monotonic()
+            return
         c.lobby = None
-        if lobby.host is c:  # the host leaving closes the lobby
+        if lobby.host is c and not any(m.away for m in lobby.members[1:]):  # the host leaving closes the lobby
             self.lobbies.pop(lobby.code, None)
             for m in lobby.members[1:]:
                 m.lobby = None
                 m.send('CLOSED The host left the lobby')
             log.info('lobby %s closed', lobby.code)
+        elif lobby.host is c:   # players still in the match: one of them hosts when they're back
+            lobby.members.remove(c)
+            lobby.broadcast_members()
         else:
             lobby.members.remove(c)
             lobby.broadcast_members()
 
     def start(self, lobby):
+        for m in [m for m in lobby.members if m.away]:   # still in the last match: they miss this one
+            lobby.members.remove(m)
         if len(lobby.members) < 2:
             lobby.host.send('ERROR You need at least one other player')
             return
@@ -304,8 +345,8 @@ class Server:
             if lobby.save and i > 0:
                 m.send('SAVE ' + lobby.save)
             m.send(f'START {token.hex()} {i} {n} {delay} {self.port} {lobby.lang} {conf} {picks}')
-            m.lobby = None
-        self.lobbies.pop(lobby.code, None)
+            m.away, m.gone_at, m.ready, m.match_slot = True, None, False, i
+        lobby.token, lobby.playing = token.hex(), True   # the lobby waits for its players to come back
         log.info('lobby %s started: %d players, input delay %d (worst rtt %d ms)', lobby.code, n, delay, worst)
 
     # ---- relay (UDP) -------------------------------------------------------------------------------
@@ -345,6 +386,19 @@ class Server:
             for t in [t for t, s in list(self.sessions.items()) if now - s.last > SESSION_IDLE_S]:
                 del self.sessions[t]
             self.rate = {a: r for a, r in list(self.rate.items()) if now - r[0] < 5}
+            # lobbies whose players never came back from their match; places nobody reclaimed
+            for code, l in list(self.lobbies.items()):
+                gone = [m for m in l.members if m.away and m.gone_at and now - m.gone_at > LOBBY_KEEP_S]
+                for m in gone:
+                    l.members.remove(m)
+                if not l.members or all(m.away and m.gone_at for m in l.members) and \
+                        min(now - m.gone_at for m in l.members) > LOBBY_KEEP_S:
+                    self.lobbies.pop(code, None)
+                    log.info('lobby %s closed (nobody came back)', code)
+                elif gone:
+                    if l.playing and not l.members[0].away:
+                        l.playing = False
+                    l.broadcast_members()
 
 
 def relay_thread(server, host, port):

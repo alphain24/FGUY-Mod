@@ -75,6 +75,7 @@ unsigned char* g_device[4];                 // one keyboard / mouse device per k
 // ---- the raw poll: ours in sessions --------------------------------------------------------------------
 const KbmRaw* g_feed = nullptr;             // set while we poll a keyboard player's device
 KbmRaw g_menuKeys;                          // every keyboard player's keys this tick (DirectInput keyboard)
+int g_kbmFlagBefore = -1;                   // the game's keyboard / mouse mode before the session turned it on
 bool g_menuKeysLive = false;
 KbmRaw g_menuFeed;                          // the game's own keyboard slot (menus, "click to start" prompts):
 bool g_menuFeedReady = false;               //   all keyboard players together, from the previous tick
@@ -219,6 +220,22 @@ void HookMenuInput() {
     *reinterpret_cast<int*>(t + 9) = (int)((kMenuInputUpdate + 8) - (reinterpret_cast<uintptr_t>(t) + 13));
     g_menuInputOriginal = reinterpret_cast<MenuInputUpdate_t>(t);
     PatchJump(kMenuInputUpdate, kMenuInputUpdateStart, sizeof(kMenuInputUpdateStart), (void*)Hook_MenuInputUpdate);
+}
+
+// The session is over for this game (back to the lobby): the game's own keyboard and mouse again.
+void KbmLeaveSession() {
+    if (!g_session) return;
+    g_session = false;
+    if (g_kbmFlagBefore >= 0) *reinterpret_cast<volatile BYTE*>(kKbmFlag) = (BYTE)g_kbmFlagBefore;  // menus: controllers too
+    g_menuKeysLive = false;
+    g_menuFeedReady = false;
+    DWORD old;   // the raw poll's own first bytes back
+    VirtualProtect((void*)kRawPoll, sizeof(kRawPollStart), PAGE_EXECUTE_READWRITE, &old);
+    memcpy((void*)kRawPoll, kRawPollStart, sizeof(kRawPollStart));
+    VirtualProtect((void*)kRawPoll, sizeof(kRawPollStart), old, &old);
+    FlushInstructionCache(GetCurrentProcess(), (void*)kRawPoll, sizeof(kRawPollStart));
+    if (g_wnd) ClipCursor(nullptr);
+    Log(L"Input: keyboard and mouse straight to the game again");
 }
 
 // Every keyboard player's keys for this tick (the same on every PC) - what the menus read in a session.
@@ -380,6 +397,7 @@ void KbmApply(const KbmRaw* bySlot, int players) {
     for (int i = 0; i < n; ++i)   // drives them with controller presses)
         if (*reinterpret_cast<int*>(list[i] + 0xdfc) >= 0) inLevel = true;
     if (!inLevel) return;
+    if (g_kbmFlagBefore < 0) g_kbmFlagBefore = *reinterpret_cast<volatile BYTE*>(kKbmFlag);
     *reinterpret_cast<volatile BYTE*>(kKbmFlag) = 1;  // the game's keyboard / mouse mode (same tick on every PC)
     KbmRaw menu = {};
     bool first = true;

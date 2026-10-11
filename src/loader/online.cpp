@@ -31,12 +31,13 @@
 
 namespace {
 
-const int kProto = 2;
+const int kProto = 3;
 const char* kModVersion = "0.5";
 
 struct Member {
     std::string name, character = "Peter", costume = "0", team = "0", input = "c";  // input: k keyboard, c controller
     bool ready = false;
+    bool away = false;   // still in the last match (the lobby keeps their place)
     int rtt = 0;
 };
 struct LobbyInfo {
@@ -65,6 +66,7 @@ std::string g_serverHost;
 int g_serverPort = 7650;
 std::string g_name;
 std::string g_saveB64;              // the host's save, received before START
+std::string g_rejoin;               // "<code> <token> <slot>": the lobby to go back to after a match
 int g_rtt = 0;
 
 // ---- helpers ----------------------------------------------------------------------------------------
@@ -219,6 +221,11 @@ void HandleLine(const std::string& line) {
     if (cmd == "WELCOME") {
         g_state = State::Connected;
         g_status.clear();
+        if (!g_rejoin.empty()) {   // back from a match: our place in its lobby
+            SendLine("REJOIN " + g_rejoin);
+            Log(L"Online: back from the match - rejoining lobby %S", g_rejoin.c_str());
+            g_rejoin.clear();
+        }
     } else if (cmd == "LIST") {
         g_lobbies.clear();
         for (size_t i = 1; i < f.size(); ++i) {
@@ -242,6 +249,7 @@ void HandleLine(const std::string& line) {
             Member m;
             m.name = e[1];
             m.ready = e[2] == "1";
+            m.away = e[2] == "2";
             m.rtt = atoi(e[3].c_str());
             m.character = e[4];
             m.costume = e[5];
@@ -429,6 +437,7 @@ void StartSession(const std::vector<std::string>& f) {
     set(L"FGUYMOD_NET_DELAY", f[4]);
     set(L"FGUYMOD_NET_RELAY", g_serverHost + ":" + f[5]);
     set(L"FGUYMOD_NET_TOKEN", f[1]);
+    set(L"FGUYMOD_NET_LOBBY", g_code);   // to come back to this lobby after the match
     set(L"FGUYMOD_NET_LANG", f[6]);
     set(L"FGUYMOD_SESSION", f[7] + "|" + f[8]);  // conf: mode,map,time,score,ff | picks: char:costume:team;...
     SetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", dirName);
@@ -479,6 +488,13 @@ const char* StateName() {
 }
 
 }  // namespace
+
+// netplay.cpp: the match is over for us - the ONLINE screens (opened next) go back to its lobby.
+void OnlineRejoin(const char* code, const char* token, int slot) {
+    std::lock_guard<std::mutex> lock(g_lock);
+    g_rejoin = std::string(code) + " " + token + " " + std::to_string(slot);
+    g_state = State::Off;   // a fresh connection (this game never had one)
+}
 
 void OnlineEnter() {
     OnlineMenuOpen(true);
@@ -538,7 +554,7 @@ const char* LobbyState() {
     if (inLobby) {
         for (size_t i = 0; i < g_members.size(); ++i) {
             const Member& m = g_members[i];
-            g_text += "M|" + std::to_string(i) + "|" + Field(m.name) + "|" + (m.ready ? "1" : "0") + "|" +
+            g_text += "M|" + std::to_string(i) + "|" + Field(m.name) + "|" + (m.away ? "2" : m.ready ? "1" : "0") + "|" +
                       std::to_string(m.rtt) + "|" + Field(m.character) + "|" + Field(m.costume) + "|" + Field(m.team) +
                       "|" + m.input + "\n";
         }

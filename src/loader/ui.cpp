@@ -30,6 +30,8 @@ const uintptr_t kFileOpenerOpenFile = 0x4421d0;        //   [1] OpenFile(url, fl
 const uintptr_t kExtHandlerVtable = 0x9fe56c;          // Scaleform::ExternalInterfaceHandler
 const uintptr_t kExtHandlerCallback = 0x454190;        //   [1] Callback(movie, name, args, argc)
 const uintptr_t kMemoryFileVtable = 0x9fe61c;          // Scaleform::GSFMemoryFile
+const uintptr_t kCommandHandlerVtable = 0x9f7668;      // the game's FSCommand handler (menus' getURL("FSCommand:..."))
+const uintptr_t kCommandHandlerCallback = 0x5a1620;    //   [0] Callback(movie, "CATG_Name", args)
 // GSFMemoryFile fields: +0x08 path, +0x0C data, +0x10 position, +0x14 length.
 const int kMemFileData = 0x0C, kMemFilePos = 0x10, kMemFileLen = 0x14;
 // GFxMovieView vtable slot used by the game to return a value to the menu script.
@@ -276,6 +278,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             static char v[32];
             if (!GetEnvironmentVariableA("FGUYMOD_TEST_AUTOMENU", v, sizeof(v))) v[0] = 0;
             ReturnString(movie, v);
+        } else if (strcmp(fn, "SessionReturn") == 0) {   // a front-end page opened: is the match over?
+            ReturnBool(movie, NetplaySessionReturn());
         } else if (strcmp(fn, "SetMovieVolume") == 0) {   // Options > Audio > MOVIES & TITLE
             AudioSetMovieVolume((float)ArgNumber(args, argc, 0));
         } else if (strcmp(fn, "CoverViewports") == 0) {  // cover.gfx: online it's one full-screen view
@@ -333,6 +337,22 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
     Real_Callback(self, movie, name, args, argc);
 }
 
+// ---- menu commands (FSCommand) ---------------------------------------------------------------------
+using Command_t = void(__fastcall*)(void* self, void* edx, void* movie, const char* command, const char* args);
+Command_t Real_Command = nullptr;
+
+void __fastcall Hook_Command(void* self, void* edx, void* movie, const char* command, const char* args) {
+    if (command && (strncmp(command, "CTRL_", 5) == 0 || strncmp(command, "GAME_", 5) == 0)) {
+        static int logged = 0;
+        if (logged < 200) {
+            ++logged;
+            Log(L"UI: command %S(%S), buttons %s", command, args ? args : "",
+                self && !IsBadReadPtr(static_cast<char*>(self) + 0x60, 1) && static_cast<char*>(self)[0x60] ? L"on" : L"off");
+        }
+    }
+    Real_Command(self, edx, movie, command, args);
+}
+
 // ---- vtable patching -------------------------------------------------------------------------------
 bool PatchSlot(uintptr_t vtable, int slot, uintptr_t expected, void* hook, void** real, const wchar_t* what) {
     auto entry = reinterpret_cast<uintptr_t*>(vtable + 4 * slot);
@@ -357,4 +377,6 @@ void InitUi() {
               L"Scaleform::FileOpener::OpenFile");
     PatchSlot(kExtHandlerVtable, 1, kExtHandlerCallback, (void*)Hook_Callback, (void**)&Real_Callback,
               L"Scaleform::ExternalInterfaceHandler::Callback");
+    PatchSlot(kCommandHandlerVtable, 0, kCommandHandlerCallback, (void*)Hook_Command, (void**)&Real_Command,
+              L"the menus' FSCommand handler");
 }

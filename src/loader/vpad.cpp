@@ -153,10 +153,13 @@ void HandleCommand(char* line) {
     char* cmd = strtok_s(line, " \t\r\n", &ctx);
     if (cmd && _stricmp(cmd, "quit") == 0) {  // test tools: exit cleanly (see VideoRequestQuit)
         VideoRequestQuit();
-        // Paused games don't present frames, so that check may never come: then exit from here (still a
-        // normal exit - only killing the process upsets the graphics driver).
+        // A game whose window can't be seen (covered by other windows) or that's paused stops presenting
+        // frames, and the quit happens at the next one: bring the window up (without the focus) so it draws.
+        // If no frame comes even so, exit from here - the last resort (ending a game mid-frame can leave the
+        // graphics driver refusing new devices for a few minutes).
+        DisplayShowForQuit();
         CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
-            Sleep(3000);
+            Sleep(5000);
             Log(L"VPad: no frame since the quit request - exiting");
             QuitGame();
             return 0;

@@ -61,6 +61,8 @@ unsigned NetplayTick();                //   the lockstep tick being simulated
 bool NetplayLevelLive();               //   session: every player's level HUD is up (same tick everywhere)
 void NetplaySessionPress(int pad, WORD buttons, int delayTicks);  // session autopilot
 void NetplaySessionLevel();            //   the menu launched the level
+void NetplayLeave(const wchar_t* why); //   leave the session (back to the lobby): run on our own
+bool NetplaySessionReturn();           //   the menus: the match is over - back to the lobby (leaves the session)
 void InitSplitView();                  // one full-screen view per PC online    (splitview.cpp)
 int SplitViewHudMode(int mode);
 int SplitViewHudViewport(int viewport);
@@ -79,6 +81,7 @@ const char* BotJoinCode();
 
 // online.cpp: lobby + the in-game ONLINE screens
 void OnlineEnter();
+void OnlineRejoin(const char* code, const char* token, int slot);   //   after a match: back to its lobby
 void OnlineExit();
 const char* LobbyState();
 void LobbyDo(const char* command, const char* a, const char* b, const char* c, const char* d, const char* e);
@@ -93,6 +96,7 @@ void DisplayMenuApply();
 void DisplayMenuReset();
 bool DisplayOnChangeResolution(int* width, int* height, bool windowed);  // may change the size (borderless)
 void DisplayReveal();                  // show the hidden online-session window
+void DisplayShowForQuit();             // test tools' quit: bring the window up so it draws its last frame
 void DisplayHideWindow();              // hide the window (old game handing over to the session)
 
 // handoff.cpp: the old game shows the loading screen while the session boots hidden
@@ -117,6 +121,7 @@ void KbmInit(HWND wnd);
 bool KbmOnMessage(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT* result);
 bool KbmSkipPressed();
 void KbmSessionStart(const char* session);     // netplay.cpp: which players play with keyboard and mouse
+void KbmLeaveSession();                         //   netplay.cpp: the session is over for this game
 bool KbmIsKeyboardSlot(int slot);
 bool KbmCursorScreen(POINT* pt);               //   netplay.cpp: the keyboard players' cursor this tick, on screen
 void KbmCapture(KbmRaw* out);                  //   my keyboard and mouse now

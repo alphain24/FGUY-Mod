@@ -12,6 +12,8 @@
 function FGUYEventName(name, event) {
     if (FGUYOnline && name == 'OptionsScreen') return 'Online';
     if (!FGUYSessChecked) FGUYSessionInit();
+    // after the match (its results, or a quit) the front end comes back: back to the lobby
+    if (FGUYSessOn && event == 'Enter' && FGUYSessStage == 'started' && !FGUYSessReturning) FGUYSessionCheckReturn();
     if (FGUYSessOn && (event == 'Enter' || event == 'PlayerJoined') && _root['OnSess' + name + event] != undefined)
         return 'Sess' + name;
     return name;
@@ -30,6 +32,11 @@ function FGUYSessionInit() {
         return;
     }
     if (!FGUYSessOn) return;
+    if (flash.external.ExternalInterface.call('FGUYMOD_SessionReturn') == true) {   // the movie came back after the match
+        FGUYSessStage = 'started';
+        FGUYSessionCheckReturn();
+        return;
+    }
     var parts = String(cfg).split('|');
     var c = parts[0].split(',');
     FGUYSess = {mode: c[0], map: c[1], time: Number(c[2]), score: Number(c[3]), ff: Number(c[4]), picks: []};
@@ -40,6 +47,22 @@ function FGUYSessionInit() {
     }
     FGUYSessStage = 'boot';
     FGUYSessLog('session ' + cfg);
+}
+
+function FGUYSessionCheckReturn() {
+    if (flash.external.ExternalInterface.call('FGUYMOD_SessionReturn') != true) return;
+    FGUYSessReturning = true;
+    FGUYSessLog('the match is over - back to the lobby');
+    FGUYSessReturnTimer = setInterval(FGUYSessGoOnline, 600);   // once the page has settled
+}
+
+function FGUYSessGoOnline() {
+    clearInterval(FGUYSessReturnTimer);
+    if (FGUYOnline) return;
+    getURL('FSCommand:CTRL_EnableButtonInput', '');   // the quit turned the buttons off (CTRL_DisableButtonInput)
+    getURL('FSCommand:CTRL_ResetInput', '');
+    getURL('FSCommand:CTRL_ClearInput', '');
+    OnOnlineSelect();
 }
 
 function FGUYSessLog(text) {

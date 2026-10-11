@@ -21,7 +21,7 @@ class Player:
     def __init__(self, name):
         self.s = socket.create_connection((HOST, PORT))
         self.f = self.s.makefile('rw', encoding='utf-8', newline='\n')
-        self.send(f'HELLO 2 testgame {name}')
+        self.send(f'HELLO 3 testgame {name}')
         assert self.expect('WELCOME')
 
     def send(self, line):
@@ -120,7 +120,20 @@ def main():
         time.sleep(0.5)
         ok, _, _ = relay_works(start_session('Host2', 'Guest2'))
         assert ok, 'the relay stopped working after a player left'
-        print('PASS: lobby, save sharing, start and relay all work (also after a player leaves)')
+        # back from the match: the lobby kept both places ("in match" until each player rejoins)
+        host_back, guest_back = Player('HostBack'), Player('GuestBack')
+        guest_back.send(f'REJOIN {code} {token.hex()} 1')
+        guest_back.expect('LOBBY')
+        assert ',Host,2,' in guest_back.expect('MEMBERS'), 'the host should still show as in the match'
+        host_back.send(f'REJOIN {code} {token.hex()} 0')
+        assert host_back.expect('LOBBY').split()[1] == code
+        members = host_back.expect('MEMBERS')
+        assert members.startswith('MEMBERS 0 ') and ',Host,0,' in members and ',Guest,0,' in members, members
+        guest_back.send('READY 1')
+        host_back.send('START')   # a second match from the same lobby
+        assert host_back.expect('START').split()[1] != token.hex()
+        guest_back.expect('START')
+        print('PASS: lobby, save sharing, start, relay (also after a player leaves) and back to the lobby')
     finally:
         if srv:
             srv.terminate()

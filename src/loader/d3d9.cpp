@@ -11,7 +11,9 @@
 //   stops at 500 fps: some of the game's timers (e.g. the legal screen at boot) never finish when
 //   frames take under a millisecond.
 // * Crash fix: the game sometimes fails to create its device at startup and then crashes using it
-//   (FGUY.exe +0x876e9). We retry CreateDevice for a few seconds.
+//   (FGUY.exe +0x876e9). We retry CreateDevice - for up to 90 s, also through a fresh Direct3D object (right
+//   after another copy of the game closed, the driver can refuse new devices for a while, and the game's own
+//   Direct3D object can keep failing after a new one would work).
 
 #include "common.h"
 
@@ -264,13 +266,29 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DD
                                             DWORD flags, D3DPRESENT_PARAMETERS* pp, IDirect3DDevice9** out) {
     D3DPRESENT_PARAMETERS original = *pp;  // CreateDevice may modify it; retry with what the game asked
     HRESULT hr = E_FAIL;
-    for (int attempt = 1; attempt <= 20; ++attempt) {
+    ULONGLONG giveUp = GetTickCount64() + 90000;
+    for (int attempt = 1; attempt <= 20 || GetTickCount64() < giveUp; ++attempt) {
         *pp = original;
         FixPresentParameters(pp);
         hr = Real_CreateDevice(self, adapter, type, focus, flags, pp, out);
-        Log(L"D3D: CreateDevice %ux%u %s -> %#lx%s", original.BackBufferWidth, original.BackBufferHeight,
-            original.Windowed ? L"windowed" : L"fullscreen", hr, attempt > 1 ? L" (retry)" : L"");
+        if (attempt <= 20 || attempt % 10 == 0 || SUCCEEDED(hr))
+            Log(L"D3D: CreateDevice %ux%u %s -> %#lx%s", original.BackBufferWidth, original.BackBufferHeight,
+                original.Windowed ? L"windowed" : L"fullscreen", hr, attempt > 1 ? L" (retry)" : L"");
         if (SUCCEEDED(hr)) break;
+        if (attempt >= 4 && attempt % 2 == 0) {   // a fresh Direct3D object
+            using Create9_t = IDirect3D9*(WINAPI*)(UINT);
+            static Create9_t create9 = reinterpret_cast<Create9_t>(GetProcAddress(GetModuleHandleW(L"d3d9.dll"), "Direct3DCreate9"));
+            if (IDirect3D9* fresh = create9 ? create9(D3D_SDK_VERSION) : nullptr) {
+                *pp = original;
+                FixPresentParameters(pp);
+                hr = Real_CreateDevice(fresh, adapter, type, focus, flags, pp, out);
+                if (SUCCEEDED(hr)) {
+                    Log(L"D3D: CreateDevice through a fresh Direct3D object -> 0");
+                    break;
+                }
+                fresh->Release();
+            }
+        }
         if (attempt == 1) {
             RECT rc = {};
             GetClientRect(pp->hDeviceWindow ? pp->hDeviceWindow : focus, &rc);
@@ -306,7 +324,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DD
             original.MultiSampleQuality = 0;
             Log(L"D3D:   retrying without multisampling");
         }
-        Sleep(250);
+        Sleep(attempt < 20 ? 250 : 1000);
     }
     if (SUCCEEDED(hr) && out && *out) {
         if (void* o = PatchVtable(*out, 16, (void*)Hook_Reset)) Real_Reset = (Reset_t)o;

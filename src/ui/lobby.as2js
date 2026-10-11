@@ -462,7 +462,7 @@ function FGUYParse(blob) {
         } else if (f[0] == 'O') {
             st.own = f[1];
         } else if (f[0] == 'M') {
-            st.members.push({slot: Number(f[1]), name: f[2], ready: f[3] == '1', ping: Number(f[4]), character: f[5],
+            st.members.push({slot: Number(f[1]), name: f[2], ready: f[3] == '1', away: f[3] == '2', ping: Number(f[4]), character: f[5],
                              costume: f[6], team: Number(f[7]), input: f[8] == 'k' ? 'k' : 'c'});
         } else if (f[0] == 'L') {
             st.lobbies.push({code: f[1], host: f[2], players: Number(f[3]), max: Number(f[4]), mode: f[5], map: f[6]});
@@ -594,6 +594,7 @@ function OnOnlineEnter() {
     if (FGUYPickChar == undefined) { FGUYPickChar = 'Peter'; FGUYPickCostume = 0; FGUYPickTeam = 0; }
     FGUYLastBlob = '';
     FGUYS = FGUYParse('');
+    FGUYKeyLog = 0;
     FGUYBot = flash.external.ExternalInterface.call('FGUYMOD_IsBot') == true;
     FGUYBotNext = 0;
     FGUY3DStart();
@@ -1050,7 +1051,7 @@ function FGUYPlayerRow(ui, x, y, w, m) {
     FGUYText(ui, x + 74, y + 8, w - 230, 32, m.name, false, 22, FGUYC.white, 'left');
     FGUYText(ui, x + 74, y + 38, w - 230, 26, FGUYCharName(m.character) + ' - ' + (m.input == 'k' ? 'Keyboard' : 'Controller') +
              ' - ' + m.ping + ' ms', false, 16, FGUYC.muted2, 'left');
-    var label = m.slot == 0 ? 'HOST' : (m.ready ? 'READY' : 'NOT READY');
+    var label = m.away ? 'IN MATCH' : (m.slot == 0 ? 'HOST' : (m.ready ? 'READY' : 'NOT READY'));
     var fill = m.slot == 0 ? FGUYC.yellow : (m.ready ? FGUYC.green : FGUYC.bg);
     var line = m.slot == 0 ? FGUYC.yellow : (m.ready ? FGUYC.greenLine : FGUYC.redLine);
     var ink = m.slot == 0 ? FGUYC.dark : (m.ready ? FGUYC.white : FGUYC.red);
@@ -1226,6 +1227,7 @@ function FGUYDrawSettings(ui) {
 // Keys from the menu: 38 up, 40 down, 37 left, 39 right, 13 A (after 65), 27 B, 36 Start (then 32), 88 X,
 // 89 Y (112 = F1 on a keyboard), 76 LB, 82 RB; on a keyboard also letters / digits (code entry), 8 backspace.
 function OnOnlineHandleInput(key, controller) {
+    if (FGUYKeyLog < 30) { FGUYKeyLog = FGUYKeyLog + 1; flash.external.ExternalInterface.call('FGUYMOD_SessionLog', 'online key ' + key + ' from ' + controller); }
     if (FGUYScreen == 'loading') return;   // the match is on its way
     if (key >= 37 && key <= 40 && flash.external.ExternalInterface.call('FGUYMOD_FromWASD', key) == true) return;
     FGUYKeyFromPad = FGUYPadKey(key);

@@ -110,9 +110,19 @@ using srand_t = void(__cdecl*)(unsigned);
 srand_t Real_srand;
 
 bool FixedClock() { return g_phase != Phase::Off && GetCurrentThreadId() == g_mainThread; }
+// After leaving a session (back to the lobby): real time again, shifted so the game thread's clock carries on
+// from the fixed one instead of jumping.
+bool g_left = false;
+LONGLONG g_qpcOffset = 0;
+LONGLONG g_tickCountOffset = 0, g_timeGetTimeOffset = 0;
+bool Shifted() { return g_left && GetCurrentThreadId() == g_mainThread; }
 
 BOOL WINAPI Hook_QPC(LARGE_INTEGER* out) {
-    if (!FixedClock()) return Real_QPC(out);
+    if (!FixedClock()) {
+        BOOL r = Real_QPC(out);
+        if (r && out && Shifted()) out->QuadPart += g_qpcOffset;
+        return r;
+    }
     // base + tick x 1/60 s, plus one count per call so "wait until time passes" loops still finish.
     ++g_statQpcCalls;
     out->QuadPart = kClockBaseSeconds * g_freq.QuadPart + (LONGLONG)g_tick * g_freq.QuadPart / 60 +
@@ -120,14 +130,19 @@ BOOL WINAPI Hook_QPC(LARGE_INTEGER* out) {
     return TRUE;
 }
 DWORD FixedMs() { return (DWORD)(kClockBaseSeconds * 1000 + (ULONGLONG)g_tick * 1000 / 60); }
-DWORD WINAPI Hook_GetTickCount() { return FixedClock() ? FixedMs() : Real_GetTickCount(); }
-DWORD WINAPI Hook_timeGetTime() { return FixedClock() ? FixedMs() : Real_timeGetTime(); }
+DWORD WINAPI Hook_GetTickCount() {
+    return FixedClock() ? FixedMs() : (DWORD)(Real_GetTickCount() + (Shifted() ? g_tickCountOffset : 0));
+}
+DWORD WINAPI Hook_timeGetTime() {
+    return FixedClock() ? FixedMs() : (DWORD)(Real_timeGetTime() + (Shifted() ? g_timeGetTimeOffset : 0));
+}
 void __cdecl Hook_srand(unsigned) { Real_srand(0x46475559); }  // "FGUY"
 
 // The menus react to mouse movement; during netplay the local mouse must not change anything.
 decltype(&GetCursorPos) Real_GetCursorPos;
 BOOL WINAPI Hook_GetCursorPos(POINT* pt) {
     if (!pt) return FALSE;
+    if (!g_enabled) return Real_GetCursorPos(pt);   // after leaving a session
     if (KbmCursorScreen(pt)) return TRUE;  // keyboard players' cursor, through the lockstep (kbm.cpp)
     pt->x = 0;
     pt->y = 0;
@@ -319,12 +334,14 @@ void WaitForQuiescence() {
 
 // ---- packets ------------------------------------------------------------------------------------------
 // All little-endian. 'R' ready: slot. 'I' inputs: slot, first tick, count, Pad[count]. 'H' hash: slot,
-// tick, hash. 'S' skip the scene that's holding the game: slot, sequence number.
+// tick, hash. 'S' skip the scene that's holding the game: slot, sequence number. 'L' left the match (back to
+// the lobby): slot, the last tick with their input - from the next one on they're idle on every PC.
 #pragma pack(push, 1)
 struct PktHeader { char type; BYTE slot; };
 struct PktInputs { PktHeader h; unsigned first; BYTE count; Pad pads[16]; };
 struct PktHash { PktHeader h; unsigned tick; unsigned hash; };
 struct PktSkip { PktHeader h; unsigned seq; };
+struct PktLeave { PktHeader h; unsigned last; };
 #pragma pack(pop)
 
 // Relay mode (online sessions): every packet goes to the lobby server, wrapped as
@@ -376,6 +393,7 @@ void CompareHash(int slot, unsigned tick, unsigned hash) {
 }
 
 CRITICAL_SECTION g_netLock;  // Receive() runs on the game thread, and on the render thread during scenes
+unsigned g_goneFrom[4];      // a player who left the match: idle from this tick on (0: still playing)
 unsigned g_skipSeqSeen[4];
 void StartSkip(const wchar_t* why);
 
@@ -418,6 +436,12 @@ void Receive() {
             g_peerHash[slot][k] = p->hash;
             g_peerHashTick[slot][k] = p->tick;
             CompareHash(slot, p->tick, p->hash);
+        } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
+            auto p = reinterpret_cast<PktLeave*>(buf);
+            if (!g_goneFrom[slot] || p->last + 1 < g_goneFrom[slot]) {
+                g_goneFrom[slot] = p->last + 1;
+                Log(L"Netplay: player %d left the match (back to the lobby) - idle from tick %u", slot, p->last + 1);
+            }
         } else if (h->type == 'S' && n >= (int)sizeof(PktSkip)) {
             auto p = reinterpret_cast<PktSkip*>(buf);
             if (p->seq > g_skipSeqSeen[slot]) {
@@ -433,6 +457,12 @@ bool g_gone[4];                      // a player who stopped sending (left): the
 bool HaveAll(unsigned tick) {
     int r = tick % kRing;
     for (int s = 0; s < g_players; ++s) {
+        if (g_goneFrom[s] && tick >= g_goneFrom[s]) {   // left the match: idle (whatever arrived)
+            g_inputs[r][s] = Pad{};
+            g_have[r][s] = true;
+            g_haveTick[r][s] = tick;
+            continue;
+        }
         if (g_have[r][s] && g_haveTick[r][s] == tick) continue;
         if (!g_gone[s]) return false;
         g_inputs[r][s] = Pad{};
@@ -442,7 +472,10 @@ bool HaveAll(unsigned tick) {
     return true;
 }
 
+unsigned g_lastSent = 0;             // the last tick our inputs went out for
+
 void SendInputs(unsigned upTo) {
+    g_lastSent = upTo;
     PktInputs p{};
     p.h = {'I', (BYTE)g_slot};
     unsigned first = upTo >= 7 ? upTo - 7 : 0;  // resend the last 8 ticks (packet loss; ~27 KB/s per player)
@@ -920,8 +953,55 @@ void NetplayOnFrame() {
 
 bool NetplayEnabled() { return g_enabled; }
 
+bool g_levelLaunched = false;   // this session's level was launched (from then on, the front end = the match is over)
+
 void NetplaySessionLevel() {
     if (g_enabled) InterlockedExchange(&g_sessionLevelAsked, 1);
+    g_levelLaunched = true;
+}
+
+// Leave the session (back to the lobby): tell the others the last tick with our input (they play on with
+// us idle), then run on our own - real clock (carrying on from the fixed one), real controllers, keyboard and
+// mouse straight to the game again.
+void NetplayLeave(const wchar_t* why) {
+    if (!g_enabled) return;
+    {
+        EnterCriticalSection(&g_netLock);
+        PktLeave p{{'L', (BYTE)g_slot}, g_lastSent};
+        for (int i = 0; i < 6; ++i) {   // our last inputs and the notice, a few times (packets get lost)
+            SendInputs(g_lastSent);
+            SendAll(&p, sizeof(p));
+            Real_Sleep(4);
+        }
+        LARGE_INTEGER real;
+        Real_QPC(&real);
+        g_qpcOffset = kClockBaseSeconds * g_freq.QuadPart + (LONGLONG)g_tick * g_freq.QuadPart / 60 +
+                      (++g_callsThisTick) - real.QuadPart;
+        g_tickCountOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_GetTickCount();
+        g_timeGetTimeOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_timeGetTime();
+        g_left = true;
+        g_tickStartMs = 0;   // (the watchdog: no more ticks)
+        g_phase = Phase::Off;
+        g_enabled = false;
+        LeaveCriticalSection(&g_netLock);
+    }
+    KbmLeaveSession();
+    Log(L"Netplay: left the session at tick %u (%s) - this game runs on its own now", g_tick, why);
+}
+
+// The menus, when a page of the front end opens: is the match over (back to the lobby)? Yes once this
+// session's level has been launched - the front end only comes back after the match (its results) or a quit.
+bool NetplaySessionReturn() {
+    static bool returned = false;
+    if (returned) return true;
+    if (!g_inSession || !g_levelLaunched) return false;
+    returned = true;
+    NetplayLeave(L"the match is over");
+    char code[16] = "", token[40] = "";
+    GetEnvironmentVariableA("FGUYMOD_NET_LOBBY", code, sizeof(code));
+    GetEnvironmentVariableA("FGUYMOD_NET_TOKEN", token, sizeof(token));
+    if (code[0] && token[0]) OnlineRejoin(code, token, g_slot);
+    return true;
 }
 
 void NetplaySessionPress(int pad, WORD buttons, int delayTicks) {
