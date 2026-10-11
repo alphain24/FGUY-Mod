@@ -11,6 +11,11 @@
 // (Switching the other cameras off instead broke that: the game updates a camera - and the aim that follows
 // it - only while it's on.)
 //
+// Better still, the other views aren't drawn at all: the render thread's frame (0x44e0f0) goes through its list
+// of cameras twice - the scene, then the effects pass - and for the other players' viewport cameras we jump
+// straight to the next one (DrawSkip). Drawing never changes the game: their cameras are still updated.
+// [Netplay] DrawOtherViews=1 draws them squeezed instead.
+//
 // The HUD (one Scaleform movie for all players) follows along: tools/ui/make_hud_patch.py makes it lay out
 // as single player with my viewport as its viewport 0, and the game's own HUD code, which writes values
 // straight into HUD objects by path ("_root.Icon_<name>_<viewport>_<layout>_<player>", built in
@@ -229,6 +234,70 @@ bool PatchImm(uintptr_t at, uintptr_t expected, void* to) {
     return true;
 }
 
+// ---- not drawing the other views (render thread) --------------------------------------------------------
+// 0x44e327, scene pass, ecx = the camera:  mov ebx, ecx; mov edi, [ebx+290h]   -> next camera at 0x44eb0d
+// 0x44ec4b, effects pass, edx = camera:    mov edi, edx; cmp dword [edi+8Ch], 1 (then jne at 0x44ec54)
+//                                                                                -> next camera at 0x44ecae
+const uintptr_t kScenePass = 0x44e327;   // back at 0x44e32f, next camera at 0x44eb0d (the stub)
+const unsigned char kScenePassStart[] = {0x8b, 0xd9, 0x8b, 0xbb, 0x90, 0x02, 0x00, 0x00};
+const uintptr_t kEffectsPass = 0x44ec4b;   // back at 0x44ec54, next camera at 0x44ecae (the stub)
+const unsigned char kEffectsPassStart[] = {0x8b, 0xfa, 0x83, 0xbf, 0x8c, 0x00, 0x00, 0x00, 0x01};
+
+bool __cdecl DrawSkip(void* camera) {
+    int v = ViewportOf(camera);
+    if (v < 0) return false;
+    int mine = MyViewport();
+    return mine >= 0 && v != mine;
+}
+
+__declspec(naked) void ScenePassStub() {
+    __asm {
+        pushad
+        push ecx
+        call DrawSkip
+        add esp, 4
+        test al, al
+        popad                      // (leaves the flags alone)
+        jnz skip
+        mov ebx, ecx
+        mov edi, dword ptr [ebx + 0x290]
+        push 0x44e32f      // back
+        ret
+    skip:
+        push 0x44eb0d      // the next camera
+        ret
+    }
+}
+
+__declspec(naked) void EffectsPassStub() {
+    __asm {
+        pushad
+        push edx
+        call DrawSkip
+        add esp, 4
+        test al, al
+        popad
+        jnz skip
+        mov edi, edx
+        cmp dword ptr [edi + 0x8c], 1
+        push 0x44ec54      // back (push / ret leave the flags for its jne)
+        ret
+    skip:
+        push 0x44ecae      // the next camera
+        ret
+    }
+}
+
+bool PatchJumpPadded(uintptr_t at, const unsigned char* expected, size_t n, void* to) {
+    if (!PatchJump(at, expected, n, to)) return false;
+    DWORD old;
+    VirtualProtect((void*)(at + 5), n - 5, PAGE_EXECUTE_READWRITE, &old);
+    memset((void*)(at + 5), 0x90, n - 5);   // (never run: the stub comes back after them)
+    VirtualProtect((void*)(at + 5), n - 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), (void*)at, n);
+    return true;
+}
+
 }  // namespace
 
 // The HUD (tools/ui/make_hud_patch.py) asks these before laying itself out.
@@ -264,5 +333,9 @@ void InitSplitView() {
         PatchCall(kMarkerToHudCall, kMarkerToHud, (void*)Hook_MarkerToHud);
         g_active = true;
         Log(L"SplitView: on - one full-screen view per PC%s", g_forced >= 0 ? L" (test: forced viewport)" : L"");
+        if (SettingInt(L"Netplay", L"DrawOtherViews", nullptr, 0) == 0 &&
+            PatchJumpPadded(kScenePass, kScenePassStart, sizeof(kScenePassStart), (void*)ScenePassStub) &&
+            PatchJumpPadded(kEffectsPass, kEffectsPassStart, sizeof(kEffectsPassStart), (void*)EffectsPassStub))
+            Log(L"SplitView: the other players' views aren't drawn");
     }
 }
