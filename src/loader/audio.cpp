@@ -65,7 +65,7 @@ void __fastcall Hook_ApplyVolumes(void* self, void* edx) {
         Remember(L"Music", real[0], g_savedMusic);
         Remember(L"Cinematic", real[2], g_savedCinematic);
     }
-    for (int i = 0; i < 4; ++i) Setting(offs[i]) = Curve(real[i]);
+    for (int i = 0; i < 4; ++i) Setting(offs[i]) = StaysMuted() ? 0.0f : Curve(real[i]);  // bot / test copies: silent
     g_applyOriginal(self, edx);
     for (int i = 0; i < 4; ++i) Setting(offs[i]) = real[i];
 }
@@ -78,7 +78,7 @@ void __stdcall Hook_BinkSetVolume(void* bink, unsigned track, int volume) {
     float now = Setting(kCinematic);
     float setting = g_settingsLoaded ? now : g_savedCinematic;
     double base = now > 0.001f ? volume / now : volume;
-    int out = (int)(base * Curve(setting) * kMovieScale);
+    int out = StaysMuted() ? 0 : (int)(base * Curve(setting) * kMovieScale);
     if (out < 0) out = 0;
     static int logged = 0;
     if (logged < 8) {

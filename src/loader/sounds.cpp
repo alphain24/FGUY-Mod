@@ -62,7 +62,7 @@ bool LoadScaled(const std::wstring& file, float volume, std::vector<char>& out) 
 
 void Play(const std::wstring& file, const wchar_t* why) {
     if (file.empty()) return;
-    if (HandoffHidden()) return;  // a session booting hidden: the lobby's loading screen plays it
+    if (HandoffHidden() || StaysMuted()) return;  // booting hidden (the lobby's loading screen plays it) / bot
     float volume = AudioMusicVolume();
     const wchar_t* name = wcsrchr(file.c_str(), L'\\');
     if (volume <= 0.001f) {

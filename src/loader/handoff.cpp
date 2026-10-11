@@ -32,7 +32,10 @@ volatile LONG g_revealed = 0;
 
 // Mutes this process's audio session (WASAPI, default output device) until g_unmute, then unmutes.
 // Its own thread so COM stays in one place; the game's sound streams join the session's mute later.
-DWORD WINAPI AudioThread(LPVOID) {
+// Windows remembers a program's mute in its volume mixer, so a game that ends while muted would leave the
+// next one silent: every normal start unmutes it first (arg = 1: just unmute).
+DWORD WINAPI AudioThread(LPVOID arg) {
+    bool unmuteOnly = arg != nullptr;
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     ISimpleAudioVolume* volume = nullptr;
     IMMDeviceEnumerator* devices = nullptr;
@@ -44,13 +47,20 @@ DWORD WINAPI AudioThread(LPVOID) {
         SUCCEEDED(device->Activate(__uuidof(IAudioSessionManager), CLSCTX_ALL, nullptr,
                                    reinterpret_cast<void**>(&sessions))) &&
         SUCCEEDED(sessions->GetSimpleAudioVolume(nullptr, FALSE, &volume))) {
-        volume->SetMute(TRUE, nullptr);
-        Log(StaysMuted() ? L"Handoff: test copy - sound off" : L"Handoff: sound muted until the match shows");
+        if (unmuteOnly) {
+            BOOL muted = FALSE;
+            if (SUCCEEDED(volume->GetMute(&muted)) && muted) {
+                volume->SetMute(FALSE, nullptr);
+                Log(L"Handoff: the game's sound was left muted in Windows - unmuted");
+            }
+        } else {
+            volume->SetMute(TRUE, nullptr);
+            Log(L"Handoff: sound muted until the match shows");
+        }
     } else {
-        Log(L"Handoff: couldn't mute the sound while hidden");
+        Log(L"Handoff: couldn't reach the game's sound session");
     }
-    if (StaysMuted()) return 0;   // the test bot / test copies stay muted
-    DWORD r = WaitForSingleObject(g_unmute, kRevealTimeoutMs);
+    DWORD r = unmuteOnly ? WAIT_OBJECT_0 : WaitForSingleObject(g_unmute, kRevealTimeoutMs);
     if (r == WAIT_TIMEOUT) {
         Log(L"Handoff: the match didn't start in time - showing the game anyway");
         DisplayReveal();
@@ -78,7 +88,19 @@ DWORD WINAPI RevealLater(LPVOID) {
 void InitHandoff() {
     wchar_t old[16];
     if (!GetEnvironmentVariableW(L"FGUYMOD_HANDOFF", old, 16)) {
-        if (StaysMuted()) CloseHandle(CreateThread(nullptr, 0, AudioThread, nullptr, 0, nullptr));  // muted
+        // a normal start: make sure Windows isn't keeping the game muted (the bot / test copies are silent
+        // through the game's own volumes instead, audio.cpp - Windows doesn't remember those)
+        if (!StaysMuted()) CloseHandle(CreateThread(nullptr, 0, AudioThread, (LPVOID)1, 0, nullptr));
+        return;
+    }
+    if (StaysMuted()) {   // the bot's / a test copy's session: silent through the game's volumes
+        SetEnvironmentVariableW(L"FGUYMOD_HANDOFF", nullptr);
+        g_on = true;
+        wchar_t name[64];
+        swprintf_s(name, L"Local\\FGUYMod_SessionReady_%lu", GetCurrentProcessId());
+        g_readyEvent = CreateEventW(nullptr, TRUE, FALSE, name);
+        g_unmute = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        Log(L"Handoff: booting hidden (game %s is showing the loading screen), no sound", old);
         return;
     }
     SetEnvironmentVariableW(L"FGUYMOD_HANDOFF", nullptr);
