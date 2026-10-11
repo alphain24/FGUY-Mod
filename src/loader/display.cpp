@@ -6,15 +6,15 @@
 //
 // Borderless = the game runs in windowed mode, and we make its main window a captionless popup that
 // covers the whole monitor, stop it from adding a border back or moving/resizing itself, and swallow
-// its display-mode changes. If the render resolution is lower than the monitor's, Direct3D stretches
-// the picture to fill the window.
+// its display-mode changes. It always renders at the monitor's own resolution (the game's resolution
+// choice is overridden), so the picture, the window and the mouse all agree.
 //
 // The mode can also be switched from the game's own Options > Screen > Display Mode list (which our
 // menu patch extends with "Borderless"; see ui.cpp). The choice is saved to FGUYMod.ini.
 //
 // Settings (FGUYMod\FGUYMod.ini, [Display]) — environment variables override them for test runs:
 //   Mode   = default | fullscreen | windowed | borderless      (env FGUYMOD_MODE; FGUYMOD_WINDOWED=1)
-//   Width, Height = borderless render size, 0 = monitor's native (env FGUYMOD_RES=WxH, any mode)
+//   (env FGUYMOD_RES=WxH: a render size for test runs, any mode)
 //   RunInBackground = 1 keeps the game running when it isn't the active window (env FGUYMOD_BACKGROUND)
 //
 // Online sessions boot hidden (handoff.cpp): the main window is created invisible and stays so until
@@ -97,6 +97,7 @@ LSTATUS WINAPI Hook_RegQueryValueExW(HKEY key, LPCWSTR name, LPDWORD reserved, L
         g_gameWindowed = stored ? 1 : 0;
         if (g_noFullscreen && g_mode == Mode::Default && !stored) {
             g_mode = Mode::Borderless;
+            if (!g_envRes) { g_width = MonitorW(); g_height = MonitorH(); }
             Log(L"Display: online session - borderless instead of fullscreen");
         }
         if (g_mode != Mode::Default) value = g_mode == Mode::Fullscreen ? 0 : 1;
@@ -184,11 +185,49 @@ LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
     return CallWindowProcW(g_gameWndProc, wnd, msg, wp, lp);
 }
 
+// ---- the mouse cursor in borderless mode -----------------------------------------------------------
+// Borderless at a render size below the monitor's (e.g. 1920x1080 on a 4K screen), the game believes its
+// window is render-sized (GetClientRect / GetWindowRect / WM_WINDOWPOSCHANGED below), but Windows reports
+// the cursor in real screen pixels - so the game drew its cursor at the wrong place, mostly off screen. Its
+// cursor reads and cursor clipping are translated between the two: positions it reads are scaled to its
+// size, rectangles it clips the cursor to are scaled back up to the screen.
+bool CursorScaled() {
+    return g_mode == Mode::Borderless && g_gameWidth > 0 && g_gameHeight > 0 &&
+           (g_gameWidth != MonitorW() || g_gameHeight != MonitorH());
+}
+
+decltype(&GetCursorPos) Real_GetCursorPos;
+decltype(&GetWindowRect) Real_GetWindowRect;
+
+BOOL WINAPI Hook_GetCursorPos(POINT* pt) {
+    BOOL ok = Real_GetCursorPos(pt);
+    if (ok && pt && CursorScaled()) {
+        pt->x = g_monitor.left + MulDiv(pt->x - g_monitor.left, g_gameWidth, MonitorW());
+        pt->y = g_monitor.top + MulDiv(pt->y - g_monitor.top, g_gameHeight, MonitorH());
+    }
+    return ok;
+}
+
+BOOL WINAPI Hook_GetWindowRect(HWND wnd, LPRECT rect) {
+    BOOL ok = Real_GetWindowRect(wnd, rect);
+    if (ok && rect && wnd && wnd == g_mainWnd && CursorScaled())
+        SetRect(rect, g_monitor.left, g_monitor.top, g_monitor.left + g_gameWidth, g_monitor.top + g_gameHeight);
+    return ok;
+}
+
 decltype(&ClipCursor) Real_ClipCursor;
 
 BOOL WINAPI Hook_ClipCursor(const RECT* rect) {
     // The game thinks it's always active, so don't let it trap the mouse while you're elsewhere.
-    if (rect && GetForegroundWindow() != g_mainWnd) return ClipCursor(nullptr);
+    if (rect && g_background && GetForegroundWindow() != g_mainWnd) return Real_ClipCursor(nullptr);
+    if (rect && CursorScaled()) {  // the game's rectangle is in its own (render-sized) space
+        RECT r;
+        r.left = g_monitor.left + MulDiv(rect->left - g_monitor.left, MonitorW(), g_gameWidth);
+        r.top = g_monitor.top + MulDiv(rect->top - g_monitor.top, MonitorH(), g_gameHeight);
+        r.right = g_monitor.left + MulDiv(rect->right - g_monitor.left, MonitorW(), g_gameWidth);
+        r.bottom = g_monitor.top + MulDiv(rect->bottom - g_monitor.top, MonitorH(), g_gameHeight);
+        return Real_ClipCursor(&r);
+    }
     return Real_ClipCursor(rect);
 }
 
@@ -329,6 +368,13 @@ void SaveMode(Mode m) {
 
 }  // namespace
 
+// A point in the game window's client area (real pixels) as the game sees it (its render size).
+void DisplayClientToGame(POINT* pt) {
+    if (!pt || !CursorScaled()) return;
+    pt->x = MulDiv(pt->x, g_gameWidth, MonitorW());
+    pt->y = MulDiv(pt->y, g_gameHeight, MonitorH());
+}
+
 bool DisplayIsWindowed() { Mode m = EffectiveMode(); return m == Mode::Windowed || m == Mode::Borderless; }
 
 // ---- Options > Screen > Display Mode (called from the patched menu, see ui.cpp) -----------------
@@ -377,21 +423,22 @@ void DisplayHideWindow() {
     if (g_mainWnd) PostMessageW(g_mainWnd, kHideMsg, 0, 0);
 }
 
-void DisplayOnChangeResolution(int width, int height, bool windowed) {
-    Log(L"Display: game changes resolution to %dx%d %s (mode %s)", width, height,
-        windowed ? L"windowed" : L"fullscreen", ModeName(EffectiveMode()));
-    g_gameWidth = width;
-    g_gameHeight = height;
-    g_gameWindowed = windowed ? 1 : 0;
-    if (g_mode == Mode::Borderless && !g_testRun) {
-        // Remember the chosen render size for next time (borderless otherwise defaults to native).
-        wchar_t path[MAX_PATH], v[16];
-        swprintf_s(path, L"%s\\FGUYMod.ini", g_modDir);
-        swprintf_s(v, L"%d", width);
-        WritePrivateProfileStringW(L"Display", L"Width", v, path);
-        swprintf_s(v, L"%d", height);
-        WritePrivateProfileStringW(L"Display", L"Height", v, path);
+// The menu changes the resolution (ui.cpp, before the game does): borderless always uses the monitor's
+// own resolution, whatever was picked. Returns true if the size was changed.
+bool DisplayOnChangeResolution(int* width, int* height, bool windowed) {
+    bool borderless = g_menuChoice == Mode::Borderless || (g_menuChoice == Mode::Default && g_mode == Mode::Borderless);
+    bool changed = false;
+    if (borderless && windowed && !g_envRes && (*width != MonitorW() || *height != MonitorH())) {
+        *width = MonitorW();
+        *height = MonitorH();
+        changed = true;
     }
+    Log(L"Display: game changes resolution to %dx%d %s (mode %s)%s", *width, *height,
+        windowed ? L"windowed" : L"fullscreen", ModeName(EffectiveMode()), changed ? L" - borderless: the monitor's own" : L"");
+    g_gameWidth = *width;
+    g_gameHeight = *height;
+    g_gameWindowed = windowed ? 1 : 0;
+    return changed;
 }
 
 // Research aid ([Debug] WatchScreenSize=1): log every change of the game's screen-size globals.
@@ -422,8 +469,8 @@ void InitDisplay(HMODULE exe) {
     for (const wchar_t* v : {L"FGUYMOD_MODE", L"FGUYMOD_WINDOWED", L"FGUYMOD_RES", L"FGUYMOD_PADMODE", L"FGUYMOD_NET"})
         g_testRun |= GetEnvironmentVariableW(v, env, 8) != 0;
 
-    g_width = SettingInt(L"Display", L"Width", nullptr, 0);
-    g_height = SettingInt(L"Display", L"Height", nullptr, 0);
+    g_width = 0;   // (older versions kept a borderless render size in [Display] Width / Height: no longer used)
+    g_height = 0;
     wchar_t res[32];
     SettingString(L"Display", L"_", L"FGUYMOD_RES", L"", res, 32);
     if (res[0] && swscanf_s(res, L"%dx%d", &g_width, &g_height) == 2) g_envRes = true;
@@ -435,7 +482,7 @@ void InitDisplay(HMODULE exe) {
     MONITORINFO mi = {sizeof(mi)};
     GetMonitorInfoW(MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY), &mi);
     g_monitor = mi.rcMonitor;
-    if (g_mode == Mode::Borderless && (g_width <= 0 || g_height <= 0)) {
+    if (g_mode == Mode::Borderless && !g_envRes) {   // borderless: the monitor's own resolution
         g_width = MonitorW();
         g_height = MonitorH();
     }
@@ -443,8 +490,9 @@ void InitDisplay(HMODULE exe) {
         g_hidden = true;
         g_noFullscreen = true;
         g_background = true;
+        if (g_noFullscreen && !g_envRes) { g_width = MonitorW(); g_height = MonitorH(); }  // if it goes borderless
         if (g_mode == Mode::Fullscreen) {
-            g_mode = Mode::Borderless;   // at the game's own resolution (g_width stays as set)
+            g_mode = Mode::Borderless;
             Log(L"Display: online session - borderless instead of fullscreen");
         }
     }
@@ -464,10 +512,10 @@ void InitDisplay(HMODULE exe) {
     };
     InstallHooks(exe, hooks);
 
-    if (g_background) {
-        HookSpec clipHook[] = {
-            {"user32.dll", "ClipCursor", (void*)Hook_ClipCursor, (void**)&Real_ClipCursor},
-        };
-        InstallHooks(exe, clipHook);
-    }
+    HookSpec cursorHooks[] = {  // borderless cursor scaling, and background mode's cursor release
+        {"user32.dll", "ClipCursor", (void*)Hook_ClipCursor, (void**)&Real_ClipCursor},
+        {"user32.dll", "GetCursorPos", (void*)Hook_GetCursorPos, (void**)&Real_GetCursorPos},
+        {"user32.dll", "GetWindowRect", (void*)Hook_GetWindowRect, (void**)&Real_GetWindowRect},
+    };
+    InstallHooks(exe, cursorHooks);
 }

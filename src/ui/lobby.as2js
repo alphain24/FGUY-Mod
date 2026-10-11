@@ -209,6 +209,8 @@ function FGUYPortrait(mc, linkage, cx, cy, r) {
 
 function FGUYButtonHint(mc, x, y, glyph, label) {
     FGUYIcon(mc, 'controllerSymbol_' + glyph + '.tif', x, y, 34, 34);
+    var key = glyph == 'A' ? 13 : (glyph == 'B' ? 27 : (glyph == 'X' ? 88 : (glyph == 'Y' ? 89 : (glyph == 'LB' ? 76 : (glyph == 'RB' ? 82 : 0)))));
+    if (key != 0 && FGUYHits != undefined) FGUYHit(x - 4, y - 4, 52 + label.length * 10, 42, 'key', key);
     FGUYText(mc, x + 40, y + 2, 200, 34, label, false, 20, FGUYC.white, 'left');
     return x + 56 + label.length * 10;
 }
@@ -600,6 +602,88 @@ function OnOnlineExit() {
     FGUYOnline = false;
 }
 
+// ---- the mouse ------------------------------------------------------------------------------------------------------
+// Every redraw registers the clickable things (FGUYHit: a box, a kind and an index); at the end of the draw each
+// gets an invisible clip on top of everything. Hovering selects what's under the cursor (like moving there with
+// the d-pad), clicking does what A does there. The handlers run with `this` = the clip.
+function FGUYHit(x, y, w, h, kind, index) {
+    FGUYHits.push({x: x, y: y, w: w, h: h, kind: kind, index: index});
+}
+
+function FGUYMakeHits(ui) {
+    for (var i = 0; i < FGUYHits.length; i++) {
+        var hit = FGUYHits[i];
+        var c = ui.createEmptyMovieClip('hit' + i, ui.getNextHighestDepth());
+        c.beginFill(0xFFFFFF, 0);
+        c.moveTo(hit.x, hit.y);
+        c.lineTo(hit.x + hit.w, hit.y);
+        c.lineTo(hit.x + hit.w, hit.y + hit.h);
+        c.lineTo(hit.x, hit.y + hit.h);
+        c.lineTo(hit.x, hit.y);
+        c.endFill();
+        c.fgKind = hit.kind;
+        c.fgIndex = hit.index;
+        c.onRollOver = FGUYHitOver;
+        c.onRelease = FGUYHitPress;
+    }
+}
+
+function FGUYHitOver() {
+    if (FGUYMouseHover(this.fgKind, this.fgIndex)) { FGUYSound('nav'); FGUYDraw(); }
+}
+
+function FGUYHitPress() {
+    FGUYKeyFromPad = false;
+    FGUYMouseClick(this.fgKind, this.fgIndex);
+    if (FGUYOnline) FGUYDraw();
+}
+
+// Hover: select what's under the cursor. Returns true if that changed anything.
+function FGUYMouseHover(kind, i) {
+    var was = FGUYScreen + FGUYHubPanel + ',' + FGUYFocus + ',' + FGUYFind + ',' + FGUYCharSel + ',' + FGUYCostumeSel;
+    if (kind == 'hubPanel') { if (FGUYHubPanel != i) { FGUYHubPanel = i; FGUYFocus = 0; } }
+    else if (kind == 'hostPrivate' || kind == 'hostMax' || kind == 'hostCreate') {
+        FGUYHubPanel = 0;
+        FGUYFocus = kind == 'hostPrivate' ? 0 : (kind == 'hostMax' ? 1 : 2);
+    } else if (kind == 'find') { FGUYHubPanel = 1; FGUYFind = i; }
+    else if (kind == 'codeBox') { FGUYHubPanel = 2; FGUYFocus = 0; }
+    else if (kind == 'codeJoin') { FGUYHubPanel = 2; FGUYFocus = 1; }
+    else if (kind == 'lobbyItem' || kind == 'lobbyItemLeft' || kind == 'lobbyItemRight' ||
+             kind == 'setRow' || kind == 'setRowLeft' || kind == 'setRowRight') FGUYFocus = i;
+    else if (kind == 'charCard') { if (FGUYCharSel != i) { FGUYCharSel = i; FGUYCostumeSel = 0; } }
+    else if (kind == 'skin') FGUYCostumeSel = i;
+    var now = FGUYScreen + FGUYHubPanel + ',' + FGUYFocus + ',' + FGUYFind + ',' + FGUYCharSel + ',' + FGUYCostumeSel;
+    return now != was;
+}
+
+// Click: do what A (or the arrow, or the button in a hint) does there.
+function FGUYMouseClick(kind, i) {
+    FGUYMouseHover(kind, i);
+    var online = FGUYS.state == 'online';
+    if (kind == 'hostPrivate') { FGUYHostPrivate = i; FGUYSound('change'); }
+    else if (kind == 'hostMax') { FGUYHostMax = i; FGUYSound('change'); }
+    else if (kind == 'hostCreate' || kind == 'find') FGUYInputHub(13);
+    else if (kind == 'codeBox') { FGUYCodePos = Math.min(i, FGUYCodeLen < 4 ? FGUYCodeLen : 3); FGUYSound('nav'); }
+    else if (kind == 'codeJoin') FGUYInputCode(13, online);
+    else if (kind == 'lobbyItem') FGUYInputLobby(13);
+    else if (kind == 'lobbyItemLeft') FGUYInputLobby(37);
+    else if (kind == 'lobbyItemRight') FGUYInputLobby(39);
+    else if (kind == 'setRow') FGUYInputSettings(FGUYIsHost() ? 13 : 39);
+    else if (kind == 'setRowLeft') FGUYInputSettings(37);
+    else if (kind == 'setRowRight') FGUYInputSettings(39);
+    else if (kind == 'charCard') FGUYInputChar(13);
+    else if (kind == 'skin') FGUYSound('change');
+    else if (kind == 'team') { FGUYPickTeam = i; FGUYSound('change'); }
+    else if (kind == 'key') FGUYScreenKey(i);   // a footer button hint: its button
+}
+
+function FGUYScreenKey(key) {   // a key, as if pressed (footer hints, mouse)
+    if (FGUYScreen == 'hub') FGUYInputHub(key);
+    else if (FGUYScreen == 'lobby') FGUYInputLobby(key);
+    else if (FGUYScreen == 'char') FGUYInputChar(key);
+    else if (FGUYScreen == 'settings') FGUYInputSettings(key);
+}
+
 // ---- drawing: one full redraw per change -------------------------------------------------------------------------
 function FGUYDraw() {
     _root.FGUYLobbyUI.removeMovieClip();
@@ -611,6 +695,7 @@ function FGUYDraw() {
     ui._xscale = width / 1600 * 100;
     ui._yscale = 720 / 900 * 100;
     FGUYTextN = 0;
+    FGUYHits = [];
     // the background, with a window left open for the 3D character on the lobby and character screens
     var hole = null;
     if (FGUYScreen == 'lobby') hole = [483, 309, 554, 502];
@@ -628,6 +713,7 @@ function FGUYDraw() {
     else if (FGUYScreen == 'char') FGUYDrawChar(ui);
     else if (FGUYScreen == 'loading') FGUYDrawLoading(ui);
     else FGUYDrawSettings(ui);
+    FGUYMakeHits(ui);
 }
 
 function FGUYStatusChip(ui) {
@@ -678,7 +764,8 @@ function FGUYArrowsHint(ui, x, y, label) {
 
 // A selectable row: label (yellow cartoon text) and value. arrows: the value can be changed with left /
 // right (shown on the selected row). locked: shows who can change it instead.
-function FGUYRow(ui, x, y, w, h, label, value, hot, arrows, locked) {
+function FGUYRow(ui, x, y, w, h, label, value, hot, arrows, locked, kind, index) {
+    if (kind != undefined) FGUYHit(x, y, w, h, kind, index);
     if (hot) {
         FGUYRect(ui, x - 4, y - 4, w + 8, h + 8, 20, FGUYC.yellow, 30, 0, 0, 0);
         FGUYRect(ui, x, y, w, h, 16, FGUYC.rowHot, 100, FGUYC.yellow, 100, 3);
@@ -694,6 +781,10 @@ function FGUYRow(ui, x, y, w, h, label, value, hot, arrows, locked) {
         var lx = right - t.textWidth - 30;
         FGUYPoly(ui, [lx, cy, lx + 12, cy - 10, lx + 12, cy + 10], FGUYC.yellow, 100);
         FGUYPoly(ui, [x + w - 16, cy, x + w - 28, cy - 10, x + w - 28, cy + 10], FGUYC.yellow, 100);
+        if (kind != undefined) {
+            FGUYHit(lx - 10, y, 32, h, kind + 'Left', index);
+            FGUYHit(x + w - 38, y, 38, h, kind + 'Right', index);
+        }
     } else if (hot && locked != undefined && locked != '') {
         FGUYRect(ui, x + w - 150, y - 14, 140, 24, 12, FGUYC.ink, 100, FGUYC.chipLine, 100, 1);
         FGUYText(ui, x + w - 150, y - 12, 140, 22, locked, false, 14, FGUYC.muted2, 'center');
@@ -722,8 +813,10 @@ function FGUYDrawHub(ui) {
     FGUYText(ui, 640, 50, 460, 30, FGUYS.name != '' ? 'Playing as ' + FGUYS.name : '', false, 20, FGUYC.muted2, 'right');
     var online = FGUYS.state == 'online';
     var px = [48, 545, 1042], pw = 494, py = 130, ph = 690;
-    for (var p = 0; p < 3; p++)
+    for (var p = 0; p < 3; p++) {
         FGUYPanel(ui, px[p], py, pw, ph, 28, p == 0 ? FGUYC.panel2 : FGUYC.panel, FGUYHubPanel == p ? FGUYC.yellow : FGUYC.glow);
+        FGUYHit(px[p], py, pw, ph, 'hubPanel', p);
+    }
     // host
     var x = px[0] + 28, hot = FGUYHubPanel == 0;
     FGUYTitle(ui, x, py + 24, pw - 56, 56, 'HOST A GAME', 40, FGUYC.yellow, 'left');
@@ -732,9 +825,15 @@ function FGUYDrawHub(ui) {
     FGUYText(ui, x, py + 172, 300, 26, 'WHO CAN JOIN', false, 16, FGUYC.muted, 'left');
     FGUYChoice(ui, x, py + 200, 213, 'Anyone', FGUYHostPrivate == 0, hot && FGUYFocus == 0);
     FGUYChoice(ui, x + 225, py + 200, 213, 'Code only', FGUYHostPrivate == 1, hot && FGUYFocus == 0);
+    FGUYHit(x, py + 200, 213, 58, 'hostPrivate', 0);
+    FGUYHit(x + 225, py + 200, 213, 58, 'hostPrivate', 1);
     FGUYText(ui, x, py + 286, 300, 26, 'PLAYERS', false, 16, FGUYC.muted, 'left');
-    for (var n = 2; n <= 4; n++) FGUYChoice(ui, x + (n - 2) * 148, py + 314, 138, String(n), FGUYHostMax == n, hot && FGUYFocus == 1);
+    for (var n = 2; n <= 4; n++) {
+        FGUYChoice(ui, x + (n - 2) * 148, py + 314, 138, String(n), FGUYHostMax == n, hot && FGUYFocus == 1);
+        FGUYHit(x + (n - 2) * 148, py + 314, 138, 58, 'hostMax', n);
+    }
     FGUYBigButton(ui, x, py + ph - 120, pw - 56, 90, 'CREATE LOBBY', '', hot && FGUYFocus == 2, online);
+    FGUYHit(x, py + ph - 120, pw - 56, 90, 'hostCreate', 0);
     // find
     x = px[1] + 28;
     FGUYTitle(ui, x, py + 24, pw - 56, 56, 'FIND A GAME', 40, FGUYC.title, 'left');
@@ -748,11 +847,12 @@ function FGUYDrawHub(ui) {
         var g = games[i], y = py + 96 + (i - first) * 76;
         var sel = FGUYHubPanel == 1 && FGUYFind == i;
         FGUYRect(ui, x, y, pw - 56, 66, 16, sel ? FGUYC.rowHot : FGUYC.row, 100, sel ? FGUYC.yellow : FGUYC.rowLine, 100, sel ? 3 : 2);
+        FGUYHit(x, y, pw - 56, 66, 'find', i);
         FGUYText(ui, x + 16, y + 6, 300, 30, g.host + "'s game", false, 21, FGUYC.white, 'left');
         FGUYText(ui, x + 16, y + 34, 330, 26, FGUYMode(g.mode).name + ' - ' + FGUYMapName(g.map, g.mode), false, 16, FGUYC.muted2, 'left');
         FGUYText(ui, x + pw - 56 - 120, y + 18, 104, 30, g.players + ' / ' + g.max, false, 21, FGUYC.white, 'right');
     }
-    FGUYText(ui, x, py + ph - 50, pw - 56, 30, 'Press A on a game to join', false, 17, FGUYC.muted, 'left');
+    FGUYText(ui, x, py + ph - 50, pw - 56, 30, 'Press A or click a game to join', false, 17, FGUYC.muted, 'left');
     // code
     x = px[2] + 28;
     FGUYTitle(ui, x, py + 24, pw - 56, 56, 'JOIN WITH CODE', 40, FGUYC.title, 'left');
@@ -762,12 +862,14 @@ function FGUYDrawHub(ui) {
     for (var k = 0; k < 4; k++) {
         var bx = x + k * 112, edit = FGUYHubPanel == 2 && FGUYFocus == 0 && FGUYCodePos == k;
         FGUYRect(ui, bx, py + 200, 100, 110, 16, FGUYC.deep, 100, edit ? FGUYC.yellow : FGUYC.chipLine, 100, 3);
+        FGUYHit(bx, py + 200, 100, 110, 'codeBox', k);
         var ch = k < FGUYCodeLen || edit ? FGUYCodeChars.charAt(FGUYCode[k]) : '_';
         FGUYTitle(ui, bx, py + 222, 100, 70, ch, 56, edit ? FGUYC.yellow : (k < FGUYCodeLen ? FGUYC.white : FGUYC.chipLine), 'center');
     }
-    FGUYText(ui, x, py + 330, pw - 56, 30, 'Type it, or up / down to pick each letter', false, 17, FGUYC.muted, 'left');
+    FGUYText(ui, x, py + 330, pw - 56, 30, 'Just type it - or up / down on a controller', false, 17, FGUYC.muted, 'left');
     var codeHot = FGUYHubPanel == 2 && FGUYFocus == 1;
     FGUYRect(ui, x, py + ph - 120, pw - 56, 90, 18, FGUYC.rowHot, 100, codeHot ? FGUYC.yellow : FGUYC.glow, 100, 3);
+    FGUYHit(x, py + ph - 120, pw - 56, 90, 'codeJoin', 0);
     FGUYTitle(ui, x, py + ph - 100, pw - 56, 56, 'JOIN', 36, FGUYC.white, 'center');
     if (FGUYS.status != '' && FGUYS.state == 'online') FGUYText(ui, 48, 824, 1504, 28, FGUYS.status, false, 18, FGUYC.red, 'left');
     FGUYFooter(ui, ['A', 'Select', 'B', 'Main menu', 'LB', 'Switch panel'], '');
@@ -800,13 +902,16 @@ function FGUYDrawLobby(ui) {
         if (it == 'start') {
             var ready = FGUYReadyCount(), all = ready == FGUYS.members.length && FGUYS.members.length > 1;
             FGUYBigButton(ui, 48, y, 400, 76, 'START MATCH', ready + ' / ' + FGUYS.members.length + ' ready', hot, all);
+            FGUYHit(48, y, 400, 76, 'lobbyItem', i);
             y = y + 92;
         } else if (it == 'ready') {
             FGUYBigButton(ui, 48, y, 400, 76, me.ready ? 'READY!' : 'READY UP', me.ready ? 'waiting for host' : '', hot, true);
+            FGUYHit(48, y, 400, 76, 'lobbyItem', i);
             y = y + 92;
         } else if (it == 'leave') {
             y = 736;
             FGUYRect(ui, 48, y, 400, 56, 16, FGUYC.bg, 100, hot ? FGUYC.yellow : FGUYC.redLine, 100, 2);
+            FGUYHit(48, y, 400, 56, 'lobbyItem', i);
             FGUYText(ui, 70, y + 12, 360, 32, 'Leave lobby', false, 21, FGUYC.red, 'left');
         } else {
             var label = '', value = '';
@@ -819,7 +924,8 @@ function FGUYDrawLobby(ui) {
             else if (it == 'controls') { label = 'CONTROLS'; value = FGUYInputName(FGUYPickInput); }
             if (it == 'char') y = y + 8;
             var changeable = it == 'char' || it == 'skin' || it == 'controls' || (it == 'team' && mode.teams) || ((it == 'mode' || it == 'map') && host);
-            FGUYRow(ui, 48, y, 400, 62, label, value, hot, changeable, (it == 'mode' || it == 'map' || it == 'settings') && !host ? 'Host picks' : '');
+            FGUYRow(ui, 48, y, 400, 62, label, value, hot, changeable, (it == 'mode' || it == 'map' || it == 'settings') && !host ? 'Host picks' : '',
+                    'lobbyItem', i);
             y = y + 72;
         }
     }
@@ -914,13 +1020,16 @@ function FGUYDrawChar(ui) {
     if (mode.teams) {
         FGUYChoice(ui, 48, 120, 150, 'GOOD', FGUYPickTeam == 0, false);
         FGUYChoice(ui, 210, 120, 150, 'EVIL', FGUYPickTeam == 1, false);
-        FGUYText(ui, 372, 134, 300, 30, 'X to switch team', false, 17, FGUYC.muted, 'left');
+        FGUYHit(48, 120, 150, 58, 'team', 0);
+        FGUYHit(210, 120, 150, 58, 'team', 1);
+        FGUYText(ui, 372, 134, 300, 30, 'X or click to switch team', false, 17, FGUYC.muted, 'left');
     }
     for (var i = 0; i < FGUYChars.length; i++) {
         var col = i % 5, row = Math.floor(i / 5);
         var x = 48 + col * 196, y = 200 + row * 300, c = FGUYChars[i], sel = FGUYCharSel == i;
         if (sel) FGUYRect(ui, x - 6, y - 6, 192, 292, 24, FGUYC.yellow, 35, 0, 0, 0);
         FGUYRect(ui, x, y, 180, 280, 20, FGUYC.panel, 100, sel ? FGUYC.yellow : FGUYC.rowLine, 100, 3);
+        FGUYHit(x, y, 180, 280, 'charCard', i);
         var list = FGUYCostumeList(c);
         FGUYPicture(ui, FGUYEntryPic(c, list[0]), x + 3, y + 3, 174, 224, 17, 0.08);
         FGUYText(ui, x + 6, y + 236, 168, 34, FGUYCharName(c), true, 22, sel ? FGUYC.yellow : FGUYC.white, 'center');
@@ -940,9 +1049,10 @@ function FGUYDrawChar(ui) {
     for (var k = first; k < costumes.length && k < first + 5; k++) {
         var tx = px + 26 + (k - first) * 92, on = k == FGUYCostumeSel;
         FGUYRect(ui, tx, 690, 82, 112, 12, FGUYC.panel2, 100, on ? FGUYC.yellow : FGUYC.rowLine, 100, on ? 3 : 2);
+        FGUYHit(tx, 690, 82, 112, 'skin', k);
         FGUYPicture(ui, FGUYEntryPic(c2, costumes[k]), tx + 3, 693, 76, 106, 9, 0.05);
     }
-    FGUYFooter(ui, ['A', 'Confirm', 'B', 'Back', 'LB', 'Skin', 'RB', 'Skin'], 'Arrows pick a character');
+    FGUYFooter(ui, ['A', 'Confirm', 'B', 'Back', 'LB', 'Skin', 'RB', 'Skin'], 'Hover to look, click to pick');
 }
 
 // ---- loading: the match is starting (the session game boots hidden and takes over when it's ready) ---------
@@ -1024,7 +1134,7 @@ function FGUYDrawSettings(ui) {
     if (FGUYFocus >= rows.length) FGUYFocus = 0;
     for (var i = 0; i < rows.length; i++) {
         var v = FGUYSettingValue(rows[i]);
-        FGUYRow(ui, 76, 160 + i * 84, 884, 70, v[0], v[1], FGUYFocus == i, host, host ? '' : 'Host picks');
+        FGUYRow(ui, 76, 160 + i * 84, 884, 70, v[0], v[1], FGUYFocus == i, host, host ? '' : 'Host picks', 'setRow', i);
     }
     var ly = 160 + rows.length * 84;
     FGUYRow(ui, 76, ly, 884, 70, 'LOBBY', FGUYS.priv ? 'Code only' : 'Anyone can join', false);
@@ -1077,6 +1187,13 @@ function FGUYTyping() {   // the code boxes have the focus: letter keys type
 function FGUYInputHub(key) {
     var online = FGUYS.state == 'online';
     if (key == 27) { FGUYSound('back'); PrevPage(); return; }
+    // keyboard: letters, digits and Backspace go straight into the code (no need to pick the boxes first)
+    if (key >= 96 && key <= 105) key = key - 48;   // the number pad
+    if (!FGUYKeyFromPad && ((key >= 48 && key <= 57) || (key >= 65 && key <= 90) || key == 8)) {
+        if (FGUYHubPanel != 2 || FGUYFocus != 0) { FGUYHubPanel = 2; FGUYFocus = 0; FGUYCodePos = Math.min(FGUYCodeLen, 3); }
+        FGUYInputCode(key, online);
+        return;
+    }
     if ((key == 76 || key == 82) && (FGUYKeyFromPad || !FGUYTyping())) {
         FGUYHubPanel = (FGUYHubPanel + (key == 82 ? 1 : 2)) % 3;
         FGUYFocus = 0;
@@ -1130,7 +1247,7 @@ function FGUYInputCode(key, online) {
     } else if (key == 8) {
         if (FGUYCodeLen > 0) { FGUYCodeLen--; FGUYCodePos = FGUYCodeLen; FGUYSound('back'); }
     } else if (key == 13) {
-        if (FGUYCodeLen == 4) { FGUYFocus = 1; FGUYSound('nav'); }
+        if (FGUYCodeLen == 4) { FGUYFocus = 1; FGUYInputCode(13, online); }   // a whole code: join
         else if (FGUYCodePos < 3) { FGUYCodePos++; if (FGUYCodeLen < FGUYCodePos) FGUYCodeLen = FGUYCodePos; FGUYSound('nav'); }
         else { FGUYCodeLen = 4; FGUYFocus = 1; FGUYSound('nav'); }
     } else {

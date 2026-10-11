@@ -296,9 +296,15 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
     // The Screen page reads the real settings when it opens (and again after OK, once our apply has
     // already run), so a choice left over from backing out without OK is dropped here.
     if (name && strcmp(name, "GRFX_IsWindowed") == 0) DisplayMenuReset();
-    if (name && strcmp(name, "GRFX_ChangeResolution") == 0)
-        DisplayOnChangeResolution((int)ArgNumber(args, argc, 0), (int)ArgNumber(args, argc, 1),
-                                  ArgNumber(args, argc, 2) != 0);
+    if (name && strcmp(name, "GRFX_ChangeResolution") == 0 && argc >= 2) {
+        int w = (int)ArgNumber(args, argc, 0), h = (int)ArgNumber(args, argc, 1);
+        if (DisplayOnChangeResolution(&w, &h, ArgNumber(args, argc, 2) != 0)) {
+            // borderless: the game gets the monitor's own resolution instead of the one picked
+            auto a = const_cast<GFxValue*>(args);
+            if ((a[0].type & 0x0F) == kNumber) a[0].number = w;
+            if ((a[1].type & 0x0F) == kNumber) a[1].number = h;
+        }
+    }
     Real_Callback(self, movie, name, args, argc);
 }
 

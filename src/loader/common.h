@@ -72,11 +72,12 @@ const char* SessionConfig();
 
 // display.cpp
 bool DisplayIsWindowed();              // windowed or borderless right now
+void DisplayClientToGame(POINT* pt);   // window client pixels -> the game's (borderless render size)
 int DisplayMenuIndex();                // Options > Screen > Display Mode support
 bool DisplayMenuSelect(int index);     //   returns the game's own "windowed" flag for that choice
 void DisplayMenuApply();
 void DisplayMenuReset();
-void DisplayOnChangeResolution(int width, int height, bool windowed);
+bool DisplayOnChangeResolution(int* width, int* height, bool windowed);  // may change the size (borderless)
 void DisplayReveal();                  // show the hidden online-session window
 void DisplayHideWindow();              // hide the window (old game handing over to the session)
 

@@ -275,6 +275,7 @@ void KbmCapture(KbmRaw* out) {
         if (GetAsyncKeyState(buttons[b]) & 0x8000) out->buttons |= (BYTE)(1 << b);
     POINT c;
     if (GetCursorPos(&c) && ScreenToClient(g_wnd, &c)) {
+        DisplayClientToGame(&c);
         out->cursorX = Clamp16(c.x);
         out->cursorY = Clamp16(c.y);
     }
