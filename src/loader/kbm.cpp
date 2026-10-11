@@ -81,6 +81,14 @@ bool g_menuFeedReady = false;               //   all keyboard players together, 
 
 using MenuInputUpdate_t = void(__fastcall*)(void* movie, void* edx, int arg);
 MenuInputUpdate_t g_menuInputOriginal = nullptr;
+// A player's cursor (0..32767 of their window) in this PC's window, client pixels.
+POINT CursorClient(const KbmRaw& raw) {
+    RECT r = {0, 0, 1, 1};
+    if (g_wnd) GetClientRect(g_wnd, &r);
+    POINT p = {MulDiv(raw.cursorX, r.right, 32767), MulDiv(raw.cursorY, r.bottom, 32767)};
+    return p;
+}
+
 bool __cdecl Hook_RawPoll() {
     if (!g_feed && g_menuFeedReady) {       // the game's own slot polls at the start of each tick
         g_feed = &g_menuFeed;
@@ -97,8 +105,10 @@ bool __cdecl Hook_RawPoll() {
     *gMouseSumY += g_feed->dy;
     *gMouseSumZ += g_feed->dz;
     *gMouseButtons = g_feed->buttons;
-    *gCursorX = g_feed->cursorX;
-    *gCursorY = g_feed->cursorY;
+    POINT c = CursorClient(*g_feed);
+    DisplayClientToGame(&c);
+    *gCursorX = c.x;
+    *gCursorY = c.y;
     return true;
 }
 
@@ -219,6 +229,14 @@ bool KbmMenuKeys(BYTE keys[32]) {
     return true;
 }
 
+// The game's own cursor reads (menus: the pause menu's pointer) in a session: the keyboard players' cursor
+// for this tick (the same spot in every PC's window). False before keyboard mode is on.
+bool KbmCursorScreen(POINT* pt) {
+    if (!g_session || !g_menuKeysLive || !g_wnd) return false;
+    *pt = CursorClient(g_menuKeys);
+    return ClientToScreen(g_wnd, pt) != FALSE;
+}
+
 bool KbmIsKeyboardSlot(int slot) { return slot >= 0 && slot < 4 && g_kbmSlot[slot]; }
 
 // display.cpp: the game's main window exists.
@@ -285,6 +303,7 @@ ULONGLONG g_testKeyUntil[256];
 LONG g_testDx = 0, g_testDy = 0;
 int g_testMoveTicks = 0;
 ULONGLONG g_testClickUntil = 0;
+int g_testCursorX = -1, g_testCursorY = -1;   // test: the cursor, 0..32767 of the window
 }  // namespace
 
 void KbmTestCommand(const char* what, int a, int b, int c) {
@@ -294,6 +313,7 @@ void KbmTestCommand(const char* what, int a, int b, int c) {
     if (!strcmp(what, "key") && a > 0 && a < 256) g_testKeyUntil[a] = now + (b > 0 ? b : 100);
     else if (!strcmp(what, "mouse")) { g_testDx = a; g_testDy = b; g_testMoveTicks = c > 0 ? c : 1; }
     else if (!strcmp(what, "click")) g_testClickUntil = now + (a > 0 ? a : 100);
+    else if (!strcmp(what, "cursor")) { g_testCursorX = a; g_testCursorY = b; }
     LeaveCriticalSection(&g_testLock);
     Log(L"Input: test %S %d %d %d", what, a, b, c);
 }
@@ -325,6 +345,7 @@ void KbmCapture(KbmRaw* out) {
             if (g_testKeyUntil[k] > now) out->keys[k >> 3] |= (BYTE)(1 << (k & 7));
         if (g_testMoveTicks > 0) { dx += g_testDx; dy += g_testDy; --g_testMoveTicks; }
         if (g_testClickUntil > now) out->buttons |= 1;
+        if (g_testCursorX >= 0) { out->cursorX = Clamp16(g_testCursorX); out->cursorY = Clamp16(g_testCursorY); }
         LeaveCriticalSection(&g_testLock);
         if (!front) { out->dx = Clamp16(dx); out->dy = Clamp16(dy); return; }
     }
@@ -338,10 +359,10 @@ void KbmCapture(KbmRaw* out) {
     for (int b = 0; b < 5; ++b)
         if (GetAsyncKeyState(buttons[b]) & 0x8000) out->buttons |= (BYTE)(1 << b);
     POINT c;
-    if (GetCursorPos(&c) && ScreenToClient(g_wnd, &c)) {
-        DisplayClientToGame(&c);
-        out->cursorX = Clamp16(c.x);
-        out->cursorY = Clamp16(c.y);
+    RECT r;
+    if (GetCursorPos(&c) && ScreenToClient(g_wnd, &c) && GetClientRect(g_wnd, &r) && r.right > 0 && r.bottom > 0) {
+        out->cursorX = Clamp16(MulDiv(max(0L, min(c.x, r.right)), 32767, r.right));
+        out->cursorY = Clamp16(MulDiv(max(0L, min(c.y, r.bottom)), 32767, r.bottom));
     }
 }
 

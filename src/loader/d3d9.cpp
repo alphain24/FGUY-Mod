@@ -174,7 +174,7 @@ void PaceFrame() {
     // Netplay runs the game on a fixed 1/60 s clock, so real time must match: always 60 fps - except while an
     // online session boots hidden (title, menus, level load: nobody watches), which runs as fast as the PCs
     // can (still in lockstep), so the match is up sooner.
-    if (NetplayEnabled() && HandoffBooting()) {
+    if (NetplayEnabled()) {   // online: the ticks keep real time themselves (netplay.cpp PaceTick)
         QueryPerformanceCounter(&g_lastFrame);
         return;
     }
@@ -200,6 +200,28 @@ void PaceFrame() {
     QueryPerformanceCounter(&g_lastFrame);
 }
 
+// Ends the game for the mod (test tools, an online game handing over to its session). ExitProcess runs the
+// game's exit-time cleanup, which crashes (FGUY.exe 0x6c2f8c: a destructor using an allocator that's
+// already gone) - and a crash makes Windows report it and leaves the graphics driver unsettled for the next
+// copy. So once we're exiting, a crash there just ends the process on the spot.
+LONG CALLBACK ExitCrashHandler(EXCEPTION_POINTERS* e) {
+    if (e && e->ExceptionRecord && e->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION)
+        TerminateProcess(GetCurrentProcess(), 0);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+}  // namespace
+
+void QuitGame() {
+    static volatile LONG once = 0;
+    if (InterlockedExchange(&once, 1)) {   // someone's already on it
+        Sleep(INFINITE);
+    }
+    AddVectoredExceptionHandler(1, ExitCrashHandler);
+    ExitProcess(0);
+}
+
+namespace {
+
 HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, const RECT* dst, HWND wnd,
                                        const RGNDATA* dirty) {
     HRESULT hr = Real_Present(self, src, dst, wnd, dirty);
@@ -208,7 +230,7 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, 
         // process. Killing the process instead can leave the driver unable to create D3D9 devices for a
         // minute or two on some PCs.
         Log(L"D3D: quit requested - exiting");
-        ExitProcess(0);
+        QuitGame();
     }
     PaceFrame();
     NetplayOnFrame();

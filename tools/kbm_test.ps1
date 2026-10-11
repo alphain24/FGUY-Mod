@@ -4,6 +4,7 @@
 #     key <Windows key code> <ms>     hold a key (W = 87, A = 65, S = 83, D = 68, Space = 32, R = 82, ...)
 #     mouse <dx> <dy> <ticks>         move the mouse by dx, dy every tick (1/60 s) for that many ticks
 #     click <ms>                      hold the left mouse button
+#     cursor <x> <y>                  put the cursor there (0..32767 across / down the window)
 #     wait <ms>
 param([int]$Id, [Parameter(ValueFromRemainingArguments = $true)][string[]]$Commands)
 foreach ($c in $Commands) {

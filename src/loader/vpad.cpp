@@ -158,7 +158,8 @@ void HandleCommand(char* line) {
         CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
             Sleep(3000);
             Log(L"VPad: no frame since the quit request - exiting");
-            ExitProcess(0);
+            QuitGame();
+            return 0;
         }, nullptr, 0, nullptr));
         return;
     }

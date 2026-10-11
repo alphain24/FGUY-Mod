@@ -128,6 +128,7 @@ void __cdecl Hook_srand(unsigned) { Real_srand(0x46475559); }  // "FGUY"
 decltype(&GetCursorPos) Real_GetCursorPos;
 BOOL WINAPI Hook_GetCursorPos(POINT* pt) {
     if (!pt) return FALSE;
+    if (KbmCursorScreen(pt)) return TRUE;  // keyboard players' cursor, through the lockstep (kbm.cpp)
     pt->x = 0;
     pt->y = 0;
     return TRUE;
@@ -753,8 +754,31 @@ WORD ScenePad() {
     return scene && now < g_skipPressUntil ? XINPUT_GAMEPAD_A : 0;
 }
 
+// Real time keeps step with the fixed 1/60 s clock: each tick starts no sooner than 1/60 s after the last.
+// (Here rather than at Present: a paused game, or one whose window can't be seen, stops presenting, and
+// then ran the match several times too fast.) Not while an online session boots hidden: that runs flat out.
+void PaceTick() {
+    static LONGLONG next = 0;
+    if (g_phase != Phase::Running || HandoffBooting()) {
+        next = 0;
+        return;
+    }
+    LARGE_INTEGER now;
+    Real_QPC(&now);
+    LONGLONG step = g_freq.QuadPart / 60;
+    if (!next) next = now.QuadPart;
+    if (now.QuadPart < next) {
+        LONGLONG ms = (next - now.QuadPart) * 1000 / g_freq.QuadPart;
+        if (ms > 1) Real_Sleep((DWORD)(ms - 1));
+        do Real_QPC(&now); while (now.QuadPart < next);
+    }
+    next += step;
+    if (now.QuadPart - next > g_freq.QuadPart / 4) next = now.QuadPart;  // far behind: don't race to catch up
+}
+
 // Called on the main thread at the start of every game tick (its first controller poll).
 void Tick() {
+    PaceTick();
     static ULONGLONG lastStart = 0;
     ULONGLONG nowMs = GetTickCount64();
     if (lastStart && nowMs - lastStart > 1000)

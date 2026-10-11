@@ -276,6 +276,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             static char v[32];
             if (!GetEnvironmentVariableA("FGUYMOD_TEST_AUTOMENU", v, sizeof(v))) v[0] = 0;
             ReturnString(movie, v);
+        } else if (strcmp(fn, "SetMovieVolume") == 0) {   // Options > Audio > MOVIES & TITLE
+            AudioSetMovieVolume((float)ArgNumber(args, argc, 0));
+        } else if (strcmp(fn, "CoverViewports") == 0) {  // cover.gfx: online it's one full-screen view
+            if (NetplayEnabled()) ReturnNumber(movie, 1);    //   (offline: no answer, the game's own count)
         } else if (strcmp(fn, "TypedText") == 0) {  // letters / digits / \b typed on the ONLINE screens
             ReturnString(movie, OnlineMenuTyped());
         } else if (strcmp(fn, "FromWASD") == 0) {   // (direction key): it came from W A S D
@@ -306,6 +310,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
     // The Screen page reads the real settings when it opens (and again after OK, once our apply has
     // already run), so a choice left over from backing out without OK is dropped here.
     if (name && strcmp(name, "GRFX_IsWindowed") == 0) DisplayMenuReset();
+    if (name && strcmp(name, "SNDS_GetMovieVolume") == 0) {   // our MOVIES & TITLE slider (the game has none)
+        ReturnNumber(movie, AudioMovieVolume());
+        return;
+    }
     // Online every PC shows one full-screen view, but the split-screen cover (cover.gfx, the only in-level
     // caller) still lays itself out for two views: side by side it draws a line down the middle of the
     // screen. Top / bottom has none, so online it's always told that.

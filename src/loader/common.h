@@ -45,6 +45,7 @@ void InitD3D9(HMODULE exe);            // resolutions, frame rate, crash fix   (
 int VideoFrameRateIndex();             //   Options > Screen > Frame Rate support
 void VideoSetFrameRate(int index);
 void VideoRequestQuit();               //   exit cleanly at the end of the next frame (test tools)
+void QuitGame();                       //   exit now (the game's own exit-time crash is skipped)
 void InitUi();                         // menu movie patches + menu calls      (ui.cpp)
 void InitResearch();                   // optional research hooks              (research.cpp)
 void ResearchOnFrame(unsigned frame);
@@ -108,7 +109,7 @@ struct KbmRaw {            // one player's raw keyboard and mouse for one tick (
     BYTE keys[32];         //   key down bits, by Windows key code
     SHORT dx, dy, dz;      //   mouse movement and wheel
     BYTE buttons;          //   mouse buttons (bit 0 left, 1 right, 2 middle, 3/4 side)
-    SHORT cursorX, cursorY;
+    SHORT cursorX, cursorY; //   mouse cursor in the window, 0..32767 across / down (every PC's window differs)
     BYTE flags;            //   bit 0: this player's level HUD is up (every player's: keyboard mode starts)
 };
 #pragma pack(pop)
@@ -117,6 +118,7 @@ bool KbmOnMessage(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT* result);
 bool KbmSkipPressed();
 void KbmSessionStart(const char* session);     // netplay.cpp: which players play with keyboard and mouse
 bool KbmIsKeyboardSlot(int slot);
+bool KbmCursorScreen(POINT* pt);               //   netplay.cpp: the keyboard players' cursor this tick, on screen
 void KbmCapture(KbmRaw* out);                  //   my keyboard and mouse now
 void KbmApply(const KbmRaw* bySlot, int players);  //   every tick: feed the keyboard players' devices
 void KbmTestCommand(const char* what, int a, int b, int c);  // test pipe: kbm key <vk> <ms> | mouse <dx> <dy> <ticks> | click <ms>
@@ -125,6 +127,8 @@ void KbmTestCommand(const char* what, int a, int b, int c);  // test pipe: kbm k
 void InitAudio(HMODULE exe);            // volume curve, movie volume            (audio.cpp)
 void AudioSaveLoaded();                //   config.cpp: the game read its save
 float AudioMusicVolume();              //   0..1, for our own sounds
+float AudioMovieVolume();              //   Options > Audio > MOVIES & TITLE, 0..1
+void AudioSetMovieVolume(float v);
 void InitSounds();
 void SoundsOnFileOpen(const wchar_t* path);       //   config.cpp: a file the game opens
 void SoundsOnlineLoading(const char* mode, const char* map);  // the lobby's loading screen

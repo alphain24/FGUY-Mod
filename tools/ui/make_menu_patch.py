@@ -50,6 +50,20 @@ ONLINE_LIST_ROW = 'Online3'
 ONLINE_LIST_INDEX = 100  # its entry in ButtonListStrings (the game's own lists use 0..21)
 
 
+# The MOVIES & TITLE slider's change handler (the same shape as OnCinematicVolumeValueChanged: the value's
+# text and the meter), telling the loader instead of an FSCommand.
+AUDIO_SOURCE = r'''
+function OnMovieVolumeValueChanged(curValue) {
+    var b = GetSubScreenButtons().MovieVolume;
+    var pct = Math.floor(curValue * 100 + 0.5);
+    flash.external.ExternalInterface.call('FGUYMOD_SetMovieVolume', curValue);
+    b.MovieVolumeText.text = pct;
+    b.percentText = pct;
+    b.MusicVolumeMeter.gotoAndStop(pct + 1);
+}
+'''
+
+
 def find_menu_movie(game_dir):
     ho = open(os.path.join(game_dir, 'FGUY', 'Global_Scenes', 'MNUS.ho'), 'rb').read()
     for m in re.finditer(rb'GFX', ho):
@@ -133,6 +147,7 @@ def build(data):
                               external_call('FGUYMOD_SetFrameRate', Reg(1)) + action('Pop'))
     funcs += as2c.compile_source(open(LOBBY_SOURCE, encoding='utf-8').read())  # the ONLINE screens
     funcs += as2c.compile_source(open(SESSION_SOURCE, encoding='utf-8').read())  # online session autopilot
+    funcs += as2c.compile_source(AUDIO_SOURCE)  # Options > Audio > MOVIES & TITLE
     p.replace(o, total, funcs)
 
     # 4. OnDisplayModeValueChanged(curValue): replace 'needWindowed = (curValue == 0)' with
@@ -221,6 +236,30 @@ def build(data):
                 p.replace(r_at + 1, 8, swf_double(0.05 if r_val == swf_double(0.1) else -0.05))
                 steps += 1
     assert steps == 2, steps
+
+    # 11. Options > Audio gets a MOVIES & TITLE slider (src/loader/audio.cpp: movies, and every sound until the
+    #     save has loaded - the intro and the title screen) before Subtitles. The row: one more object pushed
+    #     onto audioOptionsButtonInfo in the page setup, the same shape as the game's.
+    o, total = find_action(actions, 0x96, lambda o, t: texts(o)[:2] == ['name', 'SubtitlesEnabled'])
+    idx = next(i for i, a in enumerate(actions) if a[0] == o)
+    new_obj = next(actions[k][0] for k in range(idx - 1, idx - 8, -1)
+                   if actions[k][1] == 0x96 and texts(actions[k][0])[:1] == ['obj'] and 'Object' in texts(actions[k][0]))
+    row = (A.setvar('obj', A.new_object('Object')) + A.setmember(A.getvar('obj'), 'name', 'MovieVolume') +
+           A.setmember(A.getvar('obj'), 'text', 'MOVIES & TITLE') +
+           A.method(A.getvar('audioOptionsButtonInfo'), 'push', A.getvar('obj'))).assemble()
+    p.replace(new_obj, 0, row)
+    #     Its value when the page opens (SNDS_GetMovieVolume is answered by the loader), after Cinematic's.
+    o, total = function_at(data, actions, 'OnOptionsAudioEnter')
+    code_start, code_end, size_field = function2_code(data, o)
+    inner = parse_actions(data, code_start, code_end)
+    k = next(i for i, a in enumerate(inner) if a[1] == 0x96 and texts(a[0])[:2] == ['CinematicVolume', 'SNDS'])
+    assert inner[k + 1][1] == 0x3D and inner[k + 2][1] == 0x17   # CallFunction, Pop
+    after = inner[k + 2][0] + 1
+    update = A.call('UpdateSlider', 'SNDS', 'MovieVolume',
+                    A.member(A.ROOT, 'subMenu', 'buttonContainer', 'MovieVolume', 'button')).assemble()
+    p.replace(after, 0, update)
+    p.fix_top_level_jumps(inner)
+    p.replace(size_field, 2, struct.pack('<H', code_end - code_start + p.delta_between(code_start, code_end)))
 
     # Fix-ups: top-level jumps across edits, DoAction tag length, file length in the GFX header.
     p.fix_top_level_jumps(actions)

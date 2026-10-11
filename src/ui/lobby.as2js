@@ -498,6 +498,8 @@ function FGUYPoll() {
         FGUYScreen = 'loading';
         FGUYLoadStart = getTimer();
         StopMusic();   // the menu music stops: the loading screen has its own sting
+        FGUY3DStop();  // and the 3D character (its voice and sounds) goes
+        PauseTVSound();
         flash.external.ExternalInterface.call('FGUYMOD_LoadingSound', FGUYS.mode, FGUYS.map);
     }
     if (FGUYS.state != 'lobby' && FGUYS.state != 'starting' && FGUYScreen != 'hub') FGUYScreen = 'hub';
@@ -837,10 +839,12 @@ function FGUYRow(ui, x, y, w, h, label, value, hot, arrows, locked, kind, index)
     var lt = FGUYTitle(ui, x + 20, y + (h - 36) / 2, w * 0.55, 40, label, 26, FGUYC.yellow, 'left');
     var right = hot && arrows ? x + w - 40 : x + w - 20;
     var left = x + 20 + lt.textWidth + (hot && arrows ? 44 : 18);   // the value never runs into the label
-    var t = FGUYText(ui, left, y + (h - 30) / 2 + 2, right - left, 32, value, false, 20, FGUYC.white, 'right');
+    // the arrows stay put whatever the value (a moving arrow made the next click land on the row instead)
+    var lx = Math.max(x + w - 300, left - 30);
+    if (hot && arrows) left = lx + 24;
+    var t = FGUYText(ui, left, y + (h - 30) / 2 + 2, right - left, 32, value, false, 20, FGUYC.white, hot && arrows ? 'center' : 'right');
     var cy = y + h / 2;
     if (hot && arrows) {
-        var lx = right - t.textWidth - 30;
         FGUYPoly(ui, [lx, cy, lx + 12, cy - 10, lx + 12, cy + 10], FGUYC.yellow, 100);
         FGUYPoly(ui, [x + w - 16, cy, x + w - 28, cy - 10, x + w - 28, cy + 10], FGUYC.yellow, 100);
         if (kind != undefined) {
