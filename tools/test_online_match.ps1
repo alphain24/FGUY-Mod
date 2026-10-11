@@ -7,13 +7,16 @@ param(
     [string]$GameDir = "A:\Games\Activision\Family Guy Back to the Multiverse",
     [switch]$Story,              # story co-op instead of Deathmatch
     [int]$Seconds = 40,          # how long to let the match run before reading the logs
-    [string[]]$Controls = @()    # per copy: keyboard / controller
+    [string[]]$Controls = @(),   # per copy: keyboard / controller
+    [string]$Save = ""            # the save every copy starts from (default: test_online.ps1's)
 )
 $pad = Join-Path $PSScriptRoot "pad.ps1"
 function Press([int]$id, [string]$button) { & $pad -Id $id $button | Out-Null; Start-Sleep -Milliseconds 600 }
 function Log([int]$id) { Join-Path $GameDir "FGUYMod\FGUYMod_$id.log" }
 
-$ids = & (Join-Path $PSScriptRoot "test_online.ps1") -GameDir $GameDir -Players 2 -Controls $Controls
+$extra = @{}
+if ($Save) { $extra.Save = $Save }
+$ids = & (Join-Path $PSScriptRoot "test_online.ps1") -GameDir $GameDir -Players 2 -Controls $Controls @extra
 $hostId = $ids[-2]; $guestId = $ids[-1]
 Write-Output "lobby copies: host $hostId, guest $guestId"
 Start-Sleep 2

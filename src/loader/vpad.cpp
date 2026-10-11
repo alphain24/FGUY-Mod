@@ -153,6 +153,13 @@ void HandleCommand(char* line) {
     char* cmd = strtok_s(line, " \t\r\n", &ctx);
     if (cmd && _stricmp(cmd, "quit") == 0) {  // test tools: exit cleanly (see VideoRequestQuit)
         VideoRequestQuit();
+        // Paused games don't present frames, so that check may never come: then exit from here (still a
+        // normal exit - only killing the process upsets the graphics driver).
+        CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
+            Sleep(3000);
+            Log(L"VPad: no frame since the quit request - exiting");
+            ExitProcess(0);
+        }, nullptr, 0, nullptr));
         return;
     }
     if (cmd && _stricmp(cmd, "kbm") == 0) {  // test keyboard / mouse (online keyboard players, kbm.cpp)

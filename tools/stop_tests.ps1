@@ -21,7 +21,7 @@ foreach ($id in Get-Content $file) {
         $mine += $p.Id
     }
 }
-$deadline = (Get-Date).AddSeconds(20)
+$deadline = (Get-Date).AddSeconds(45)   # an online pair can take a while: each waits for the other first
 while ((Get-Date) -lt $deadline -and ($mine | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })) {
     Start-Sleep -Milliseconds 250
 }

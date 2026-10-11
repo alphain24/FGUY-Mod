@@ -54,6 +54,7 @@ void Init() {
     InitNetplay(exe);
     InitConfigOverride(exe);
     InitHandoff();
+    InitAudio(exe);
     InitSounds();
     InitDisplay(exe);
     InitD3D9(exe);

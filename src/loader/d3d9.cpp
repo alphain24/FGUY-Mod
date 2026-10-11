@@ -171,7 +171,13 @@ using DwmFlush_t = HRESULT(WINAPI*)();
 DwmFlush_t g_dwmFlush = nullptr;
 
 void PaceFrame() {
-    // Netplay runs the game on a fixed 1/60 s clock, so real time must match: always 60 fps.
+    // Netplay runs the game on a fixed 1/60 s clock, so real time must match: always 60 fps - except while an
+    // online session boots hidden (title, menus, level load: nobody watches), which runs as fast as the PCs
+    // can (still in lockstep), so the match is up sooner.
+    if (NetplayEnabled() && HandoffBooting()) {
+        QueryPerformanceCounter(&g_lastFrame);
+        return;
+    }
     int fps = NetplayEnabled() ? 60 : kFrameRates[g_frameRate].fps;
     if (fps < 0) fps = 500;  // "uncapped": see the top of this file
     if (fps == 0 && !g_fullscreen && g_dwmFlush) {

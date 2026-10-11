@@ -7,7 +7,8 @@ param(
     [string]$GameDir = "A:\Games\Activision\Family Guy Back to the Multiverse",
     [switch]$Story,
     [int]$Seconds = 40,
-    [string]$Controls = "controller"   # the host copy: controller (virtual pad) / keyboard
+    [string]$Controls = "controller",  # the host copy: controller (virtual pad) / keyboard
+    [string]$HostRes = "960x540"
 )
 $pad = Join-Path $PSScriptRoot "pad.ps1"
 function Press([int]$id, [string]$button) { & $pad -Id $id $button | Out-Null; Start-Sleep -Milliseconds 600 }
@@ -16,7 +17,7 @@ function Has([int]$id, [string]$text) { (Test-Path (Log $id)) -and (Select-Strin
 
 $botFile = Join-Path $GameDir "FGUYMod\bot_pids.txt"
 Remove-Item $botFile -ErrorAction SilentlyContinue
-$ids = & (Join-Path $PSScriptRoot "test_online.ps1") -GameDir $GameDir -Players 1 -Controls $Controls
+$ids = & (Join-Path $PSScriptRoot "test_online.ps1") -GameDir $GameDir -Players 1 -Controls $Controls -Res $HostRes
 $hostId = $ids[-1]
 Write-Output "host copy $hostId"
 Start-Sleep 2

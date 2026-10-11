@@ -908,6 +908,7 @@ void NetplaySessionPress(int pad, WORD buttons, int delayTicks) {
     Log(L"Netplay: session press pad %d buttons %04x in %d ticks", pad, buttons, delayTicks);
 }
 int NetplayLocalSlot() { return g_enabled ? g_slot : -1; }
+unsigned NetplayTick() { return g_tick; }
 bool NetplayLevelLive() { return g_enabled && g_liveTick && g_tick >= g_liveTick; }
 
 void InitNetplay(HMODULE exe) {

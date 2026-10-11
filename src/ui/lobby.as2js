@@ -497,6 +497,7 @@ function FGUYPoll() {
     if (FGUYS.state == 'starting' && FGUYScreen != 'loading') {
         FGUYScreen = 'loading';
         FGUYLoadStart = getTimer();
+        StopMusic();   // the menu music stops: the loading screen has its own sting
         flash.external.ExternalInterface.call('FGUYMOD_LoadingSound', FGUYS.mode, FGUYS.map);
     }
     if (FGUYS.state != 'lobby' && FGUYS.state != 'starting' && FGUYScreen != 'hub') FGUYScreen = 'hub';

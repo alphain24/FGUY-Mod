@@ -6,7 +6,9 @@
 //   FGUYMOD_FromWASD tells a menu direction that came from W A S D (not the arrows or a controller).
 // * The 3D character preview (the Store's model, menu player 2) turns with a mouse drag on it
 //   (FGUYMOD_TurnPreview) and while Q / E are held (every frame, here). Its facing is [player+0x5c]+0x78
-//   (what PLYR_ResetRotation resets, FGUY.exe 0x69c6e1).
+//   (what PLYR_ResetRotation resets, FGUY.exe 0x69c6e1). The Store itself also turns it with the left
+//   stick, which in keyboard mode is A / D and the arrow keys - the keys that move around the menus - so
+//   every frame small turns we didn't make are undone (big jumps are a new character: kept).
 // * Test bot (FGUYMOD_BOT=1, "FGUYMod\Start test bot.bat"): a second copy of the game that stays hidden
 //   and muted, joins the first open lobby (or FGUYMOD_BOT_JOIN=<code>), readies up and plays on its own.
 
@@ -22,6 +24,8 @@ volatile bool g_open = false;   // the ONLINE screens are showing
 std::mutex g_typedLock;
 std::string g_typed;
 HWND g_menuWnd = nullptr;
+unsigned char* g_yawPlayer = nullptr;  // the preview's facing as we last left it
+float g_yaw = 0;
 
 unsigned char* PreviewPlayer() {
     unsigned char* list[8];
@@ -71,22 +75,61 @@ bool OnlineMenuFromWASD(int key) {
     return (GetAsyncKeyState(letter[i]) & 0x8000) && !(GetAsyncKeyState(arrow[i]) & 0x8000);
 }
 
+float* PreviewYaw(unsigned char** player) {
+    unsigned char* p = PreviewPlayer();
+    if (player) *player = p;
+    if (!p) return nullptr;
+    auto body = *reinterpret_cast<unsigned char**>(p + 0x5c);
+    if (!body || IsBadWritePtr(body + 0x78, 4)) return nullptr;
+    return reinterpret_cast<float*>(body + 0x78);
+}
+
 // FGUYMOD_TurnPreview(radians): turn the 3D character preview.
 void OnlineMenuTurnPreview(float radians) {
-    unsigned char* p = PreviewPlayer();
-    if (!p) return;
-    auto body = *reinterpret_cast<unsigned char**>(p + 0x5c);
-    if (!body || IsBadWritePtr(body + 0x78, 4)) return;
-    float& yaw = *reinterpret_cast<float*>(body + 0x78);
-    yaw += radians;
+    unsigned char* p;
+    float* yaw = PreviewYaw(&p);
+    if (!yaw) return;
+    if (p != g_yawPlayer) {
+        g_yawPlayer = p;
+        g_yaw = *yaw;
+    }
     const float kTwoPi = 6.2831853f;
-    if (yaw > kTwoPi) yaw -= kTwoPi;
-    if (yaw < -kTwoPi) yaw += kTwoPi;
+    g_yaw += radians;
+    if (g_yaw > kTwoPi) g_yaw -= kTwoPi;
+    if (g_yaw < -kTwoPi) g_yaw += kTwoPi;
+    *yaw = g_yaw;
 }
+
+namespace {
+
+// Every frame on the ONLINE screens: undo the Store's own small turns (A / D / arrows / the stick).
+void HoldPreview() {
+    unsigned char* p;
+    float* yaw = PreviewYaw(&p);
+    if (!yaw) {
+        g_yawPlayer = nullptr;
+        return;
+    }
+    if (p != g_yawPlayer) {
+        g_yawPlayer = p;
+        g_yaw = *yaw;
+        return;
+    }
+    if (*yaw == g_yaw) return;
+    float d = std::fmod(*yaw - g_yaw, 6.2831853f);
+    if (d > 3.14159265f) d -= 6.2831853f;
+    if (d < -3.14159265f) d += 6.2831853f;
+    if (std::fabs(d) < 0.35f) *yaw = g_yaw;  // the Store turning it: no
+    else g_yaw = *yaw;                       // a new character / reset: fine
+}
+
+}  // namespace
 
 // d3d9.cpp, every frame: Q / E held on the ONLINE screens turn the preview (about half a turn a second).
 void OnlineMenuFrame() {
-    if (!g_open || NetplayEnabled() || !g_menuWnd || GetForegroundWindow() != g_menuWnd) return;
+    if (!g_open || NetplayEnabled()) return;
+    HoldPreview();
+    if (!g_menuWnd || GetForegroundWindow() != g_menuWnd) return;
     static LARGE_INTEGER last = {}, freq = {};
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
@@ -106,6 +149,16 @@ bool IsBot() {
         bot = GetEnvironmentVariableW(L"FGUYMOD_BOT", v, 8) ? 1 : 0;
     }
     return bot == 1;
+}
+
+// The test bot and test copies (FGUYMOD_MUTE=1, tools\start_test.ps1) play no sound at all.
+bool StaysMuted() {
+    static int muted = -1;
+    if (muted < 0) {
+        wchar_t v[8];
+        muted = IsBot() || GetEnvironmentVariableW(L"FGUYMOD_MUTE", v, 8) ? 1 : 0;
+    }
+    return muted == 1;
 }
 
 const char* BotJoinCode() {

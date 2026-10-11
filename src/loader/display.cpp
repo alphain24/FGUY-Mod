@@ -152,7 +152,7 @@ LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
                 g_hidden = false;
                 ShowWindow(wnd, SW_SHOW);
                 SetWindowPos(wnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-                SetForegroundWindow(wnd);
+                if (!StaysMuted()) SetForegroundWindow(wnd);  // (test copies never take the focus from you)
                 HandoffRevealed();
             }
             return 0;

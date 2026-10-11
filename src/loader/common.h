@@ -56,6 +56,7 @@ bool NetplayEnabled();
 void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
 int NetplayLocalSlot();                //   my player slot, -1 when netplay is off
+unsigned NetplayTick();                //   the lockstep tick being simulated
 bool NetplayLevelLive();               //   session: every player's level HUD is up (same tick everywhere)
 void NetplaySessionPress(int pad, WORD buttons, int delayTicks);  // session autopilot
 void NetplaySessionLevel();            //   the menu launched the level
@@ -72,6 +73,7 @@ bool OnlineMenuFromWASD(int key);
 void OnlineMenuTurnPreview(float radians);
 void OnlineMenuFrame();                     //   d3d9.cpp, every frame
 bool IsBot();                               //   this copy is the test bot (FGUYMOD_BOT)
+bool StaysMuted();                          //   the bot / test copies: no sound
 const char* BotJoinCode();
 
 // online.cpp: lobby + the in-game ONLINE screens
@@ -98,6 +100,7 @@ bool HandoffHidden();                  //   this game is a session booting hidde
 void HandoffMatchRunning();            //   the match is running: show it
 void HandoffRevealed();
 bool HandoffHudUp();                   //   this game's level HUD has laid itself out (ui.cpp)
+bool HandoffBooting();                 //   booting hidden, the match not running yet
 
 // kbm.cpp: the game's own keyboard / mouse controls in online sessions
 #pragma pack(push, 1)
@@ -119,6 +122,9 @@ void KbmApply(const KbmRaw* bySlot, int players);  //   every tick: feed the key
 void KbmTestCommand(const char* what, int a, int b, int c);  // test pipe: kbm key <vk> <ms> | mouse <dx> <dy> <ticks> | click <ms>
 
 // sounds.cpp: loading-screen music
+void InitAudio(HMODULE exe);            // volume curve, movie volume            (audio.cpp)
+void AudioSaveLoaded();                //   config.cpp: the game read its save
+float AudioMusicVolume();              //   0..1, for our own sounds
 void InitSounds();
 void SoundsOnFileOpen(const wchar_t* path);       //   config.cpp: a file the game opens
 void SoundsOnlineLoading(const char* mode, const char* map);  // the lobby's loading screen

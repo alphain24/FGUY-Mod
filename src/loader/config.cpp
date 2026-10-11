@@ -76,6 +76,10 @@ HANDLE WINAPI Hook_CreateFileW(LPCWSTR path, DWORD access, DWORD share, LPSECURI
     }
     HANDLE h = Real_CreateFileW(actual, access, share, sa, disposition, flags, templ);
     if (h != INVALID_HANDLE_VALUE) SoundsOnFileOpen(path);  // a level's package: loading music
+    if (h != INVALID_HANDLE_VALUE && path && !(access & GENERIC_WRITE)) {  // the save: its settings come next
+        size_t n = wcslen(path);
+        if (n > 4 && _wcsicmp(path + n - 4, L".sav") == 0) AudioSaveLoaded();
+    }
     if (path && g_fileLogBudget > 0) {
         --g_fileLogBudget;
         Log(L"Open%s \"%s\"%s", (access & GENERIC_WRITE) ? L"(write)" : L"", path,

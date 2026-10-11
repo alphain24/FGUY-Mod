@@ -204,6 +204,24 @@ def build(data):
     p.fix_top_level_jumps(inner)
     p.replace(size_field, 2, struct.pack('<H', code_end - code_start + p.delta_between(code_start, code_end)))
 
+    # 10. OnSliderHandleInput: left / right move a volume slider by 5% instead of 10% (the loader also gives
+    #     the volumes a curve, so the low end gets much quieter: src/loader/audio.cpp). Same-size edits:
+    #     the two Push doubles -0.1 / 0.1 (SWF doubles are stored high word first).
+    def swf_double(v):
+        raw = struct.pack('<d', v)
+        return raw[4:] + raw[:4]
+    o, total = function_at(data, actions, 'OnSliderHandleInput')
+    code_start, code_end, size_field = function2_code(data, o)
+    steps = 0
+    for q, code, t in parse_actions(data, code_start, code_end):
+        if code != 0x96:
+            continue
+        for r_at, r_len, r_type, r_val in push_records(data, q):
+            if r_type == 6 and r_val in (swf_double(0.1), swf_double(-0.1)):
+                p.replace(r_at + 1, 8, swf_double(0.05 if r_val == swf_double(0.1) else -0.05))
+                steps += 1
+    assert steps == 2, steps
+
     # Fix-ups: top-level jumps across edits, DoAction tag length, file length in the GFX header.
     p.fix_top_level_jumps(actions)
     assert struct.unpack_from('<H', data, tag)[0] & 0x3f == 0x3f, 'expected long DoAction header'

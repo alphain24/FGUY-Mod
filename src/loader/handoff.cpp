@@ -22,7 +22,7 @@
 namespace {
 
 const DWORD kRevealTimeoutMs = 180000;  // from boot
-const DWORD kRevealDelayMs = 1000;      // after the level is running (its fade-in)
+const DWORD kRevealDelayMs = 300;       // after the level is running (into its fade-in)
 
 bool g_on = false;
 HANDLE g_readyEvent = nullptr;
@@ -45,11 +45,11 @@ DWORD WINAPI AudioThread(LPVOID) {
                                    reinterpret_cast<void**>(&sessions))) &&
         SUCCEEDED(sessions->GetSimpleAudioVolume(nullptr, FALSE, &volume))) {
         volume->SetMute(TRUE, nullptr);
-        Log(IsBot() ? L"Handoff: test bot - sound off" : L"Handoff: sound muted until the match shows");
+        Log(StaysMuted() ? L"Handoff: test copy - sound off" : L"Handoff: sound muted until the match shows");
     } else {
         Log(L"Handoff: couldn't mute the sound while hidden");
     }
-    if (IsBot()) return 0;   // the test bot stays muted (and hidden, display.cpp)
+    if (StaysMuted()) return 0;   // the test bot / test copies stay muted
     DWORD r = WaitForSingleObject(g_unmute, kRevealTimeoutMs);
     if (r == WAIT_TIMEOUT) {
         Log(L"Handoff: the match didn't start in time - showing the game anyway");
@@ -78,7 +78,7 @@ DWORD WINAPI RevealLater(LPVOID) {
 void InitHandoff() {
     wchar_t old[16];
     if (!GetEnvironmentVariableW(L"FGUYMOD_HANDOFF", old, 16)) {
-        if (IsBot()) CloseHandle(CreateThread(nullptr, 0, AudioThread, nullptr, 0, nullptr));  // bot: muted
+        if (StaysMuted()) CloseHandle(CreateThread(nullptr, 0, AudioThread, nullptr, 0, nullptr));  // muted
         return;
     }
     SetEnvironmentVariableW(L"FGUYMOD_HANDOFF", nullptr);
@@ -96,6 +96,9 @@ void InitHandoff() {
 bool HandoffHidden() { return g_on && !g_revealed; }
 
 volatile LONG g_hudUp = 0;
+// Booting hidden, before the match runs: nobody watches, so it needn't run at real speed (d3d9.cpp).
+bool HandoffBooting() { return g_on && !g_hudUp; }
+
 bool HandoffHudUp() { return g_hudUp != 0; }
 
 // The level is running (its HUD has laid itself out). Show it a moment later.

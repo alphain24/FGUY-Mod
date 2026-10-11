@@ -231,3 +231,22 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   In KBM mode a level that starts in KBM mode stops at "CLICK ANYWHERE TO START" before its HUD.
 - Online: every player's raw KBM state travels in their inputs; each keyboard player gets their own device fed
   by the game's poll; mode 0xacc4cd turns on once every player's HUD is up (told through the inputs).
+
+## Menu input, volumes, split cover (2026-10-11)
+- **Menus read the keyboard from a controller device**, not from window messages: each movie's input update
+  (`0x5a0280`, thiscall, 1 arg) builds per-controller menu buttons from the slot devices (`0x4254e0(index)`:
+  table `[0xaefacc]`, count `[0xaf35ec]`, enabled `+0x6d0`). In keyboard mode, for the keyboard's controller
+  (`[0xbad7f0]`) it reads the device's key array by key code at `device+0x484` (0x80 = down): Esc, Enter,
+  arrows. Allowed controllers: the movie's mask (`[movie+0x104]`, often `[0xade6a8]`). `0x46fb00` turns
+  buttons into GFx key events with the table at `0xacee88` (Start 36, Back 35, arrows, LB L, A 65...).
+  The game fills the key array from the window's key table (`[0xad39e8]+0xc2`), which is empty whenever the
+  window isn't in front - online the mod writes the synced keys into the array before the update.
+- The window procedure (`0x483920`) only sets the key table on WM_KEYDOWN; WM_KEYUP and mouse button ups /
+  wheel go to its listeners (`0x4c9180(code)`; mouse ups via `0x42f530`, which also shows the cursor).
+- Paused games don't Present and their netplay ticks run unthrottled (~280/s).
+- **Volumes**: sound manager at `0xb59ea8`: `+0x3ac` music, `+0x3b0` effects, `+0x3b4` cinematic, `+0x3b8`
+  dialog (0..1). `0x665d50` applies them to the FMOD categories (`0x64d9f0(index, volume)`), with a 0.6
+  factor (`0x9f3c90`). Movies: `0x4ea2d0` = cinematic x 32768 x `[0xadaa58]` -> `BinkSetVolume`. The menu
+  sliders step by 0.1 per press (`OnSliderHandleInput`), 0.01 while held.
+- **Split-screen cover** (`cover.gfx` in BULK.ho) lays itself out from `SYST_GetNumViewports` and
+  `OPTN_GetSplitScreenOrientation`; side by side (`Viewports2V`) draws a line down the middle.

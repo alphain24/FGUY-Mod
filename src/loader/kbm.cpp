@@ -23,6 +23,9 @@
 #include <cstring>
 #include <cwchar>
 
+void HookMenuInput();
+bool KbmMenuKeys(BYTE keys[32]);
+
 namespace {
 
 bool g_session = false;            // an online session with keyboard players
@@ -36,6 +39,22 @@ const uintptr_t kRawPoll = 0x4b6ad0;        // bool __cdecl RawPoll(): DirectInp
 const unsigned char kRawPollStart[] = {0x55, 0x8b, 0xec, 0x83, 0xec, 0x2c, 0x56, 0x57};
 const uintptr_t kKbmPoll = 0x450930;        // bool __cdecl Poll(state*, int deviceIndex)
 const uintptr_t kWindow = 0xad39e8;         // the game window object; its key table at +0xc2 (256 bytes)
+// Menus (the pause menu...) read the keyboard from the keyboard's controller device: its key array (by key
+// code, device+0x484, "down" = 0x80) for Esc, Enter and the arrows, in each movie's input update
+// (0x5a0280, void __thiscall Update(movie, arg)). The game fills that array from the window's key table,
+// which it also empties whenever the window isn't in front - so in a session we write the keyboard players'
+// keys for this tick into it right before the update (the same on every PC, in front or not).
+const uintptr_t kMenuInputUpdate = 0x5a0280;
+const unsigned char kMenuInputUpdateStart[] = {0x81, 0xec, 0xb0, 0x00, 0x00, 0x00, 0x53, 0x55};  // sub esp,b0; push ebx; push ebp
+const uintptr_t kKeyboardController = 0xbad7f0;   // the keyboard's controller index
+const uintptr_t kControllerTable = 0xaefacc, kControllerCount = 0xaf35ec;
+const int kDeviceKeys = 0x484, kDeviceEnabled = 0x6d0;
+// The window's "released" notice to its listeners, which the window procedure sends for WM_KEYUP (the key
+// code), the mouse button ups (0x100 left, 0x101 right, 0x102 middle) and the wheel (0x104 up, 0x105
+// down). A session keeps those messages from the game window (only this PC would see them - a mouse
+// wheel weapon switch on one PC only), so KbmApply sends them from everyone's input instead.
+const uintptr_t kWindowReleased = 0x4c9180;   // void __thiscall (code)
+const unsigned char kWindowReleasedStart[] = {0x55, 0x8b, 0xec, 0x56, 0x8b, 0xb1, 0xd0, 0x01, 0x00, 0x00};
 const int kWindowKeys = 0xc2;
 const uintptr_t kKbmFlag = 0xacc4cd;        // keyboard / mouse mode
 const uintptr_t kPlayerInputVtable = 0xa1a29c;
@@ -55,9 +74,13 @@ unsigned char* g_device[4];                 // one keyboard / mouse device per k
 
 // ---- the raw poll: ours in sessions --------------------------------------------------------------------
 const KbmRaw* g_feed = nullptr;             // set while we poll a keyboard player's device
+KbmRaw g_menuKeys;                          // every keyboard player's keys this tick (DirectInput keyboard)
+bool g_menuKeysLive = false;
 KbmRaw g_menuFeed;                          // the game's own keyboard slot (menus, "click to start" prompts):
 bool g_menuFeedReady = false;               //   all keyboard players together, from the previous tick
 
+using MenuInputUpdate_t = void(__fastcall*)(void* movie, void* edx, int arg);
+MenuInputUpdate_t g_menuInputOriginal = nullptr;
 bool __cdecl Hook_RawPoll() {
     if (!g_feed && g_menuFeedReady) {       // the game's own slot polls at the start of each tick
         g_feed = &g_menuFeed;
@@ -147,6 +170,7 @@ void KbmSessionStart(const char* session) {
         g_session = false;
         return;
     }
+    HookMenuInput();
     for (int s = 0; s < 4; ++s)
         if (g_kbmSlot[s]) {
             g_device[s] = static_cast<unsigned char*>(VirtualAlloc(nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
@@ -155,6 +179,44 @@ void KbmSessionStart(const char* session) {
         }
     Log(L"Input: keyboard and mouse players: %s%s%s%s(the game's own controls)", g_kbmSlot[0] ? L"1 " : L"",
         g_kbmSlot[1] ? L"2 " : L"", g_kbmSlot[2] ? L"3 " : L"", g_kbmSlot[3] ? L"4 " : L"");
+}
+
+void __fastcall Hook_MenuInputUpdate(void* movie, void* edx, int arg) {
+    BYTE keys[32];
+    int index = *reinterpret_cast<int*>(kKeyboardController);
+    auto table = *reinterpret_cast<unsigned char***>(kControllerTable);
+    if (KbmMenuKeys(keys) && table && index >= 0 && index < *reinterpret_cast<int*>(kControllerCount)) {
+        unsigned char* device = table[index];
+        if (device && *reinterpret_cast<int*>(device + kDeviceEnabled) && !IsBadWritePtr(device + kDeviceKeys, 256))
+            for (int k = 0; k < 256; ++k) device[kDeviceKeys + k] = (keys[k >> 3] >> (k & 7)) & 1 ? 0x80 : 0;
+    }
+    g_menuInputOriginal(movie, edx, arg);
+}
+
+// Session start: the menu input hook (a trampoline with the function's first 8 bytes).
+void HookMenuInput() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    auto at = reinterpret_cast<unsigned char*>(kMenuInputUpdate);
+    if (IsBadReadPtr(at, sizeof(kMenuInputUpdateStart)) || memcmp(at, kMenuInputUpdateStart, sizeof(kMenuInputUpdateStart))) {
+        Log(L"Input: menu input code isn't what we expect - menus won't hear online keyboards");
+        return;
+    }
+    auto t = static_cast<unsigned char*>(VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    memcpy(t, kMenuInputUpdateStart, sizeof(kMenuInputUpdateStart));
+    t[8] = 0xE9;
+    *reinterpret_cast<int*>(t + 9) = (int)((kMenuInputUpdate + 8) - (reinterpret_cast<uintptr_t>(t) + 13));
+    g_menuInputOriginal = reinterpret_cast<MenuInputUpdate_t>(t);
+    PatchJump(kMenuInputUpdate, kMenuInputUpdateStart, sizeof(kMenuInputUpdateStart), (void*)Hook_MenuInputUpdate);
+}
+
+// Every keyboard player's keys for this tick (the same on every PC) - what the menus read in a session.
+// False before keyboard mode is on.
+bool KbmMenuKeys(BYTE keys[32]) {
+    if (!g_session || !g_menuKeysLive) return false;
+    memcpy(keys, g_menuKeys.keys, 32);
+    return true;
 }
 
 bool KbmIsKeyboardSlot(int slot) { return slot >= 0 && slot < 4 && g_kbmSlot[slot]; }
@@ -167,8 +229,10 @@ bool KbmOnMessage(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT* result) {
     if (!NetplayEnabled()) return false;
     // In a session this PC's keys reach the game only through the lockstep (as a keyboard player's input):
     // the game window doesn't see them (Windows still handles Alt+Tab, Alt+F4 and the like).
+    // (Mouse button ups and the wheel too: menus hear them from the window procedure - KbmApply tells them.)
     if (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP || msg == WM_CHAR ||
-        msg == WM_SYSCHAR || msg == WM_DEADCHAR) {
+        msg == WM_SYSCHAR || msg == WM_DEADCHAR || msg == WM_LBUTTONUP || msg == WM_RBUTTONUP ||
+        msg == WM_MBUTTONUP || msg == WM_MOUSEWHEEL) {
         *result = DefWindowProcW(wnd, msg, wp, lp);
         return true;
     }
@@ -316,8 +380,26 @@ void KbmApply(const KbmRaw* bySlot, int players) {
                 *reinterpret_cast<unsigned char**>(input + kInputDevice) = g_device[s];
         }
     }
+    static KbmRaw before = {};   // the window's "released" notices (see kWindowReleased), same tick everywhere
+    static bool canNotify = !IsBadReadPtr((void*)kWindowReleased, sizeof(kWindowReleasedStart)) &&
+        memcmp((void*)kWindowReleased, kWindowReleasedStart, sizeof(kWindowReleasedStart)) == 0;
+    auto window = *reinterpret_cast<void**>(kWindow);
+    if (canNotify && window) {
+        using Released_t = void(__fastcall*)(void* window, void* edx, int code);
+        auto released = reinterpret_cast<Released_t>(kWindowReleased);
+        for (int k = 1; k < 256; ++k)
+            if (((before.keys[k >> 3] >> (k & 7)) & 1) && !((menu.keys[k >> 3] >> (k & 7)) & 1)) released(window, nullptr, k);
+        const int buttonCodes[3] = {0x100, 0x101, 0x102};
+        for (int b = 0; b < 3; ++b)
+            if ((before.buttons >> b & 1) && !(menu.buttons >> b & 1)) released(window, nullptr, buttonCodes[b]);
+        if (menu.dz > 0) released(window, nullptr, 0x104);
+        if (menu.dz < 0) released(window, nullptr, 0x105);
+    }
+    before = menu;
     // the game's own keyboard slot (polled at the start of the next tick): everyone with keyboard together
     g_menuFeed = menu;
     g_menuFeedReady = true;
+    g_menuKeys = menu;
+    g_menuKeysLive = true;
     SetWindowKeys(menu);
 }
