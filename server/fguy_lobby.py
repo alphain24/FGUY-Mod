@@ -22,7 +22,7 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
                                      1 evil; input k = keyboard and mouse, c = controller)
     CONF <mode> <map> <time> <score> <ff> [<rate>]   host: match settings (short codes / list indices;
                                      rate: frames per second, 0 = auto)
-    RATE <hz>                        the most frames per second this player's monitor shows (60 / 120 / 144)
+    RATE <hz>                        the most frames per second this player's monitor shows (60 / 120 / 144 / 165 / 240)
     OWN <list>                       host: what the host's save has (the session plays on it), so everyone
                                      picks from it: <char>:<costume>.<costume>...;<char>:...
     RTT <ms>                         your measured round trip to this server
@@ -80,7 +80,8 @@ LOBBY_KEEP_S = 1800               # a player's place in a lobby waits this long 
 CLIENT_IDLE_S = 60                # drop a lobby connection silent this long (the game pings every 2 s)
 SLOT_MOVE_S = 5                   # a slot's address may change (new NAT port) only after this much silence
 RELAY_MAX_PPS = 2000              # per player address
-RATES = (60, 120, 144)            # online frame rates (everyone in a match runs the same one)
+RATES = (60, 120, 144, 165, 240)  # online frame rates (everyone in a match runs the same one)
+AUTO_MAX = 144                    # auto never picks more (every PC must keep up)
 
 
 def snap_rate(hz):
@@ -351,7 +352,8 @@ class Server:
         # Through the relay a packet takes at most about (slowest player's round trip) to arrive.
         worst = max(m.rtt for m in lobby.members)
         chosen = int(lobby.conf[5]) if len(lobby.conf) > 5 and lobby.conf[5].isdigit() else 0
-        rate = snap_rate(chosen) if chosen else min(m.rate for m in lobby.members)   # auto: everyone's monitor
+        rate = snap_rate(chosen) if chosen else snap_rate(min(AUTO_MAX, min(m.rate for m in lobby.members)))
+        rate = 60   # for now: above 60 the games drift apart after a few seconds of play (the game's own sim)
         tick_ms = 1000 / rate
         delay = max(2, min(40, 1 + math.ceil((worst + 15) / tick_ms)))
         conf = ','.join(lobby.conf)

@@ -14,6 +14,7 @@ function FGUYEventName(name, event) {
     if (!FGUYSessChecked) FGUYSessionInit();
     // after the match (its results, or a quit) the front end comes back: back to the lobby
     if (FGUYSessOn && event == 'Enter' && FGUYSessStage == 'started' && !FGUYSessReturning) FGUYSessionCheckReturn();
+    if (FGUYSessReturning && event == 'Enter' && name != 'OptionsScreen') FGUYSessLastEnter = FGUYSessReturnWaits;
     if (FGUYSessOn && (event == 'Enter' || event == 'PlayerJoined') && _root['OnSess' + name + event] != undefined)
         return 'Sess' + name;
     return name;
@@ -53,23 +54,69 @@ function FGUYSessionCheckReturn() {
     if (flash.external.ExternalInterface.call('FGUYMOD_SessionReturn') != true) return;
     FGUYSessReturning = true;
     FGUYSessLog('the match is over - back to the lobby');
+    FGUYReturnCoverShow();   // the game's own menus pass underneath meanwhile
     FGUYSessReturnWaits = 0;
-    FGUYSessReturnTimer = setInterval(FGUYSessGoOnline, 300);   // once the page has settled
+    FGUYSessLastEnter = 0;
+    FGUYSessReturnTimer = setInterval(FGUYSessGoOnline, 300);   // once the front end has settled
+}
+
+// "Back to the lobby": a full screen cover from the end of the match until the lobby (and its 3D camera)
+// has settled - the game's own front end goes by underneath. FGUYReturnCoverCheck takes it away.
+function FGUYReturnCoverShow() {
+    if (FGUYC == undefined) FGUYColors();
+    var c = _root.createEmptyMovieClip('FGUYReturnCover', 25000);
+    var vr = Stage.visibleRect;
+    var left = 0, width = 960;
+    if (vr) { left = vr.x; width = vr.width; }
+    c._x = left;
+    c._xscale = width / 1600 * 100;
+    c._yscale = 720 / 900 * 100;
+    FGUYTextN = 0;
+    FGUYRect(c, 0, 0, 1600, 900, 0, FGUYC.bg, 100, 0, 0, 0);
+    FGUYTitle(c, 0, 370, 1600, 90, 'BACK TO THE LOBBY', 60, FGUYC.title, 'center');
+    FGUYText(c, 0, 470, 1600, 40, 'One moment...', false, 24, FGUYC.soft, 'center');
+    FGUYReturnCoverSince = FGUYNow();
+    FGUYReturnCoverTimer = setInterval(FGUYReturnCoverCheck, 250);
+}
+
+// Away once we're in the lobby and its 3D camera has arrived (or after 25 s whatever happened).
+function FGUYReturnCoverCheck() {
+    var now = FGUYNow();
+    // (or it won't: the lobby is gone - an error from the server)
+    var arrived = FGUYOnline && FGUYS != undefined && (FGUYS.state == 'lobby' && now - FGUYEnteredAt > 2000 ||
+        (FGUYS.state == 'online' || FGUYS.state == 'failed') && FGUYS.status != '');
+    if (!arrived && now - FGUYReturnCoverSince < 25000) return;
+    clearInterval(FGUYReturnCoverTimer);
+    _root.FGUYReturnCover.removeMovieClip();
 }
 
 function FGUYSessGoOnline() {
-    // a page that's still sliding in has the menu input locked (LockInput); opening ONLINE in the middle of
-    // that leaves it locked for good (UnlockInput restores the "previous" state - locked), so wait for it
+    // Normally the player's own game (waiting hidden since the match started) takes over, back in the lobby,
+    // and this one closes (the loader's hand-back). The lobby opens here only if that game isn't there.
+    if (flash.external.ExternalInterface.call('FGUYMOD_SessionHandBack') > 0) return;
+    // The front end walks back to its own page first (the multiplayer menus): opening ONLINE before it's done
+    // gets ONLINE replaced by that page (its input then goes nowhere). And a page that's still sliding in has
+    // the menu input locked (LockInput) - opening ONLINE then leaves it locked for good (UnlockInput restores
+    // the "previous" state: locked; InputFlags 0 = locked). So: no new page for 1.5 s and the input unlocked
+    // (at most 20 s). Counted in timer calls.
     FGUYSessReturnWaits = FGUYSessReturnWaits + 1;
-    if (InputFlags != 0 && FGUYSessReturnWaits < 20) return;
+    if ((InputFlags == 0 || FGUYSessReturnWaits - FGUYSessLastEnter < 5) && FGUYSessReturnWaits < 66) return;
     clearInterval(FGUYSessReturnTimer);
-    InputFlags = 0;
-    PreviousInputFlags = 0;
     if (FGUYOnline) return;
+    // The session played in the game's keyboard / mouse mode (for keyboard players), which also made the
+    // keyboard the menus' controller: back to this player's own controls, through the game's own switch.
+    var keyboard = flash.external.ExternalInterface.call('FGUYMOD_SessionKeyboard') == true;
+    flash.external.ExternalInterface.call('CTRL_SetKeyboardMouseInputEnabled', keyboard);
+    flash.external.ExternalInterface.call('FGUYMOD_SessionControls', keyboard);
     getURL('FSCommand:CTRL_EnableButtonInput', '');   // the quit turned the buttons off (CTRL_DisableButtonInput)
     getURL('FSCommand:CTRL_ResetInput', '');
     getURL('FSCommand:CTRL_ClearInput', '');
     OnOnlineSelect();
+}
+
+// Real milliseconds: in a match copy getTimer() is off (its clock was the session's fixed one).
+function FGUYNow() {
+    return Number(flash.external.ExternalInterface.call('FGUYMOD_Now'));
 }
 
 function FGUYSessLog(text) {

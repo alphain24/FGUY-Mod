@@ -226,7 +226,8 @@ void HookMenuInput() {
 void KbmLeaveSession() {
     if (!g_session) return;
     g_session = false;
-    if (g_kbmFlagBefore >= 0) *reinterpret_cast<volatile BYTE*>(kKbmFlag) = (BYTE)g_kbmFlagBefore;  // menus: controllers too
+    // (keyboard mode stays as it is: the menus switch it to this player's own controls with the game's
+    // CTRL_SetKeyboardMouseInputEnabled, which also moves the menus' controller over - session.as2js)
     g_menuKeysLive = false;
     g_menuFeedReady = false;
     DWORD old;   // the raw poll's own first bytes back
@@ -255,6 +256,19 @@ bool KbmCursorScreen(POINT* pt) {
 }
 
 bool KbmIsKeyboardSlot(int slot) { return slot >= 0 && slot < 4 && g_kbmSlot[slot]; }
+
+// Back in the lobby after a match (session.as2js, right after the game's own CTRL_SetKeyboardMouseInputEnabled
+// with this player's controls): a controller player whose pad the game didn't find there would stay in
+// keyboard mode - controller mode anyway (what this game ran in before the session).
+void KbmBackInLobby(bool keyboard) {
+    volatile BYTE& flag = *reinterpret_cast<volatile BYTE*>(kKbmFlag);
+    if (!keyboard && flag) {
+        flag = 0;
+        Log(L"Input: back in the lobby - no controller found for the game's switch, controller mode anyway");
+    }
+    Log(L"Input: back in the lobby with %s (keyboard mode %d, menu controllers %#x)",
+        keyboard ? L"keyboard and mouse" : L"a controller", (int)flag, *reinterpret_cast<DWORD*>(0xade6a8));
+}
 
 // display.cpp: the game's main window exists.
 void KbmInit(HWND wnd) { g_wnd = wnd; }

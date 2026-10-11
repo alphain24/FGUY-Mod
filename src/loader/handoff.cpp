@@ -9,6 +9,11 @@
 //
 // The old game passes its process id in FGUYMOD_HANDOFF. Event: Local\FGUYMod_SessionReady_<new pid>.
 // If the match never starts, the new game shows itself anyway after kRevealTimeoutMs.
+//
+// The old game doesn't quit, though: it waits hidden (online.cpp OnlinePark). It's the player's own game -
+// their save, settings and controllers - so after the match the session game hands back to it
+// (HandoffGiveBack): Local\FGUYMod_LobbyReturn_<old pid> tells it to come back (where the session game's window
+// is), and once it shows it sets Local\FGUYMod_LobbyBack_<old pid>; the session game then closes.
 
 #include "common.h"
 
@@ -25,6 +30,8 @@ const DWORD kRevealTimeoutMs = 180000;  // from boot
 const DWORD kRevealDelayMs = 300;       // after the level is running (into its fade-in)
 
 bool g_on = false;
+DWORD g_oldPid = 0;             // the game we took over from (it waits hidden for the match to end)
+volatile LONG g_giveBack = 0;   // HandoffGiveBack: 1 handing back, 2 handed back, 3 it didn't come
 HANDLE g_readyEvent = nullptr;
 HANDLE g_unmute = nullptr;      // set when the window is shown
 volatile LONG g_revealAsked = 0;
@@ -77,6 +84,47 @@ DWORD WINAPI AudioThread(LPVOID arg) {
     return 0;
 }
 
+// Mutes / unmutes this process's sound in Windows (its own thread: COM).
+DWORD WINAPI MuteThread(LPVOID arg) {
+    bool mute = arg != nullptr;
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    ISimpleAudioVolume* volume = nullptr;
+    IMMDeviceEnumerator* devices = nullptr;
+    IMMDevice* device = nullptr;
+    IAudioSessionManager* sessions = nullptr;
+    if (SUCCEEDED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
+                                   reinterpret_cast<void**>(&devices))) &&
+        SUCCEEDED(devices->GetDefaultAudioEndpoint(eRender, eConsole, &device)) &&
+        SUCCEEDED(device->Activate(__uuidof(IAudioSessionManager), CLSCTX_ALL, nullptr,
+                                   reinterpret_cast<void**>(&sessions))) &&
+        SUCCEEDED(sessions->GetSimpleAudioVolume(nullptr, FALSE, &volume)))
+        volume->SetMute(mute ? TRUE : FALSE, nullptr);
+    if (volume) volume->Release();
+    if (sessions) sessions->Release();
+    if (device) device->Release();
+    if (devices) devices->Release();
+    CoUninitialize();
+    return 0;
+}
+
+DWORD WINAPI GiveBackWait(LPVOID arg) {
+    HANDLE back = arg;
+    if (WaitForSingleObject(back, 15000) == WAIT_OBJECT_0) {
+        InterlockedExchange(&g_giveBack, 2);
+        Log(L"Handoff: the lobby game is showing - closing this one");
+        DisplayHideWindow();
+        VideoRequestQuit();
+        Sleep(8000);   // (no frame to quit at: the last resort)
+        Log(L"Handoff: no frame since the quit - exiting");
+        QuitGame();
+    } else {
+        InterlockedExchange(&g_giveBack, 3);
+        Log(L"Handoff: the lobby game didn't come back - the lobby opens here instead");
+    }
+    CloseHandle(back);
+    return 0;
+}
+
 DWORD WINAPI RevealLater(LPVOID) {
     Sleep(kRevealDelayMs);
     DisplayReveal();
@@ -87,7 +135,8 @@ DWORD WINAPI RevealLater(LPVOID) {
 
 void InitHandoff() {
     wchar_t old[16];
-    if (!GetEnvironmentVariableW(L"FGUYMOD_HANDOFF", old, 16)) {
+    if (GetEnvironmentVariableW(L"FGUYMOD_HANDOFF", old, 16)) g_oldPid = wcstoul(old, nullptr, 10);
+    if (!g_oldPid) {
         // a normal start: make sure Windows isn't keeping the game muted (the bot / test copies are silent
         // through the game's own volumes instead, audio.cpp - Windows doesn't remember those)
         if (!StaysMuted()) CloseHandle(CreateThread(nullptr, 0, AudioThread, (LPVOID)1, 0, nullptr));
@@ -137,4 +186,42 @@ void HandoffRevealed() {
     SetEvent(g_unmute);
     if (g_readyEvent) SetEvent(g_readyEvent);
     Log(L"Handoff: window shown - the old game can close");
+}
+
+// The lobby game (old, waiting hidden): its sound off / on in Windows while it waits (the bot and test copies
+// are silent anyway, through the game's volumes).
+void HandoffMute(bool mute) {
+    if (StaysMuted()) return;
+    CloseHandle(CreateThread(nullptr, 0, MuteThread, mute ? (LPVOID)1 : nullptr, 0, nullptr));
+}
+
+// The match is over (netplay.cpp): hand back to the player's own game, waiting hidden since the match started.
+// False if there's none (this game then opens the lobby itself).
+bool HandoffGiveBack() {
+    if (!g_oldPid || g_giveBack) return g_giveBack == 1 || g_giveBack == 2;
+    wchar_t name[64];
+    swprintf_s(name, L"Local\\FGUYMod_LobbyReturn_%lu", g_oldPid);
+    HANDLE ret = OpenEventW(EVENT_MODIFY_STATE, FALSE, name);
+    swprintf_s(name, L"Local\\FGUYMod_LobbyBack_%lu", g_oldPid);
+    HANDLE back = OpenEventW(SYNCHRONIZE, FALSE, name);
+    if (!ret || !back) {
+        if (ret) CloseHandle(ret);
+        if (back) CloseHandle(back);
+        Log(L"Handoff: the lobby game (process %lu) isn't there any more", g_oldPid);
+        g_giveBack = 3;
+        return false;
+    }
+    g_giveBack = 1;
+    AllowSetForegroundWindow(g_oldPid);   // so it can come to the front
+    SetEvent(ret);
+    CloseHandle(ret);
+    Log(L"Handoff: the match is over - handing back to the lobby game (process %lu)", g_oldPid);
+    CloseHandle(CreateThread(nullptr, 0, GiveBackWait, back, 0, nullptr));
+    return true;
+}
+
+// For the menus: 0 no hand-back (this game opens the lobby), 1 handing back, 2 handed back (this game closes).
+int HandoffGiveBackState() {
+    LONG s = g_giveBack;
+    return s == 1 || s == 2 ? (int)s : 0;
 }

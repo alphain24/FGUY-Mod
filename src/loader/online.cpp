@@ -69,6 +69,10 @@ int g_serverPort = 7650;
 std::string g_name;
 std::string g_saveB64;              // the host's save, received before START
 std::string g_rejoin;               // "<code> <token> <slot>": the lobby to go back to after a match
+std::string g_back;                 //   ours while the match runs (this game waits hidden: HandoffWait)
+bool g_returning = false;           // back from a match, on the way into its lobby again
+HANDLE g_returnEvent = nullptr;     // the session game: the match is over, come back (handoff.cpp)
+HANDLE g_backEvent = nullptr;       //   set once we show again
 int g_rtt = 0;
 
 // ---- helpers ----------------------------------------------------------------------------------------
@@ -207,6 +211,7 @@ void SetStatus(State s, const std::string& text) {
     std::lock_guard<std::mutex> lock(g_lock);
     g_state = s;
     g_status = text;
+    if (s == State::Failed) g_returning = false;
 }
 
 void SendPicks() {  // g_lock held
@@ -241,6 +246,7 @@ void HandleLine(const std::string& line) {
         }
     } else if (cmd == "LOBBY" && f.size() > 1) {
         g_state = State::InLobby;
+        g_returning = false;
         g_own.clear();
         g_code = f[1];
         g_private = f.size() > 2 && f[2] == "1";
@@ -271,11 +277,13 @@ void HandleLine(const std::string& line) {
         g_conf = f[1] + "|" + f[2] + "|" + f[3] + "|" + f[4] + "|" + f[5];
         g_confRate = f.size() >= 7 ? CleanToken(f[6]) : "0";
     } else if (cmd == "CLOSED") {
+        g_returning = false;
         g_state = State::Connected;
         g_code.clear();
         g_members.clear();
         g_status = line.size() > 7 ? line.substr(7) : "The lobby was closed";
     } else if (cmd == "ERROR") {
+        g_returning = false;
         g_status = line.size() > 6 ? line.substr(6) : "Error";
     } else if (cmd == "SAVE" && f.size() > 1) {
         g_saveB64 = f[1];
@@ -388,11 +396,45 @@ struct Handoff {
     DWORD pid;
 };
 
+void StartLobbyThread() {
+    if (g_thread) { WaitForSingleObject(g_thread, 3000); CloseHandle(g_thread); }
+    g_wantConnection = true;
+    g_thread = CreateThread(nullptr, 0, LobbyThread, nullptr, 0, nullptr);
+}
+
 DWORD WINAPI HandoffWait(LPVOID arg) {
     auto* h = static_cast<Handoff*>(arg);
     HANDLE both[2] = {h->ready, h->process};
     DWORD r = WaitForMultipleObjects(2, both, FALSE, 240000);
-    if (r == WAIT_OBJECT_0 + 1) {
+    if (r == WAIT_OBJECT_0 && g_returnEvent && g_backEvent && DisplayPark()) {
+        // This game is the player's own (their save, settings and controllers): it waits hidden for the match
+        // to end, and then the session game hands back to it (handoff.cpp HandoffGiveBack).
+        Log(L"Online: the session game is showing the match - this game waits hidden until it's over");
+        g_wantConnection = false;   // (the lobby keeps our place meanwhile: REJOIN after the match)
+        HandoffMute(true);
+        HANDLE wait[2] = {g_returnEvent, h->process};
+        if (WaitForMultipleObjects(2, wait, FALSE, INFINITE) == WAIT_OBJECT_0) {
+            RECT at;
+            bool rect = DisplayWindowRectOf(h->pid, &at);   // (where the match was)
+            {
+                std::lock_guard<std::mutex> lock(g_lock);
+                g_rejoin = g_back;
+                g_returning = true;
+                g_state = State::Off;
+                g_status.clear();
+                g_code.clear();
+                g_members.clear();
+            }
+            Log(L"Online: the match is over - back to its lobby");
+            HandoffMute(false);
+            DisplayUnpark(true, rect ? &at : nullptr, g_backEvent);
+            StartLobbyThread();
+        } else {
+            Log(L"Online: the session game closed without coming back - closing this game too");
+            DisplayUnpark(false, nullptr, nullptr);
+            VideoRequestQuit();
+        }
+    } else if (r == WAIT_OBJECT_0 + 1) {
         DWORD code = 0;
         GetExitCodeProcess(h->process, &code);
         Log(L"Online: the session game (process %lu) closed before the match started (exit code %#lx)", h->pid, code);
@@ -425,6 +467,17 @@ void StartSession(const std::vector<std::string>& f) {
     swprintf_s(dir, L"%s\\%s", g_modDir, dirName);
     CreateDirectoryW(dir, nullptr);
     swprintf_s(save, L"%s\\player0_default.sav", dir);
+    // After the match the session game hands back to this one (HandoffWait): our place in this lobby.
+    g_back = g_code + " " + f[1] + " " + f[2];
+    if (!g_returnEvent) {
+        wchar_t name[64];
+        swprintf_s(name, L"Local\\FGUYMod_LobbyReturn_%lu", GetCurrentProcessId());
+        g_returnEvent = CreateEventW(nullptr, TRUE, FALSE, name);
+        swprintf_s(name, L"Local\\FGUYMod_LobbyBack_%lu", GetCurrentProcessId());
+        g_backEvent = CreateEventW(nullptr, TRUE, FALSE, name);
+    }
+    if (g_returnEvent) ResetEvent(g_returnEvent);
+    if (g_backEvent) ResetEvent(g_backEvent);
     std::vector<unsigned char> data;
     if (g_mySlot == 0) {
         wchar_t mine[MAX_PATH];
@@ -448,11 +501,17 @@ void StartSession(const std::vector<std::string>& f) {
     set(L"FGUYMOD_NET_TOKEN", f[1]);
     set(L"FGUYMOD_NET_LOBBY", g_code);   // to come back to this lobby after the match
     set(L"FGUYMOD_NET_RATE", f.size() >= 10 ? f[9] : std::string("60"));   // frames per second, everyone alike
+    char testRate[8];   // test knob: FGUYMOD_TEST_RATE overrides it (every copy of a test alike)
+    if (GetEnvironmentVariableA("FGUYMOD_TEST_RATE", testRate, sizeof(testRate))) set(L"FGUYMOD_NET_RATE", testRate);
     set(L"FGUYMOD_NET_LANG", f[6]);
     set(L"FGUYMOD_SESSION", f[7] + "|" + f[8]);  // conf: mode,map,time,score,ff | picks: char:costume:team;...
     SetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", dirName);
     set(L"FGUYMOD_PADMODE", "1");  // every player is a controller in a session
     set(L"FGUYMOD_HANDOFF", std::to_string(GetCurrentProcessId()));  // boot hidden, tell us when it shows
+    RECT at;   // and show up exactly where this window is
+    if (DisplayWindowRect(&at))
+        set(L"FGUYMOD_HANDOFF_RECT", std::to_string(at.left) + "," + std::to_string(at.top) + "," +
+                                         std::to_string(at.right) + "," + std::to_string(at.bottom));
     wchar_t exe[MAX_PATH];
     GetModuleFileNameW(nullptr, exe, MAX_PATH);
     std::wstring cmd = GetCommandLineW();
@@ -487,6 +546,8 @@ void StartSession(const std::vector<std::string>& f) {
 std::string g_text;  // returned to the menu (it copies the string)
 
 const char* StateName() {
+    bool between = g_state == State::Off || g_state == State::Connecting || g_state == State::Connected;
+    if (g_returning && between && g_status.empty()) return "returning";   // back from a match, nearly in its lobby
     switch (g_state) {
         case State::Connecting: return "connecting";
         case State::Connected: return "online";
@@ -531,9 +592,7 @@ void OnlineEnter() {
         else if (_wcsicmp(controls, L"controller") == 0) g_mine.input = "c";
         else g_mine.input = VPadRealPadConnected() ? "c" : "k";
     }
-    g_wantConnection = true;
-    if (g_thread) { WaitForSingleObject(g_thread, 3000); CloseHandle(g_thread); }
-    g_thread = CreateThread(nullptr, 0, LobbyThread, nullptr, 0, nullptr);
+    StartLobbyThread();
 }
 
 void OnlineExit() {
@@ -548,7 +607,7 @@ void OnlineExit() {
 
 // Everything the ONLINE screens show, one item per line, fields separated by '|':
 //   S|<state>|<status>|<code>|<my slot>|<private>|<my name>|<server>|<my ping>
-//        state: off, connecting, online, lobby, starting, failed
+//        state: off, connecting, online, lobby, starting, failed, returning (back from a match)
 //   C|<mode>|<map>|<time>|<score>|<ff>                      the lobby's match settings
 //   O|<char>:<costume>.<costume>;...                         what the host's save has (in a lobby)
 //   M|<slot>|<name>|<ready>|<ping>|<character>|<costume>|<team>|<input k/c>   one per player in my lobby

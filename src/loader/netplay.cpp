@@ -50,7 +50,12 @@ namespace {
 // ---- settings ---------------------------------------------------------------------------------------
 bool g_enabled = false;
 int g_slot = 0, g_players = 2, g_delay = 3, g_syncEvery = 60;
-int g_rate = 60;                     // ticks (= frames) per second, the same for everyone (the lobby's frame rate)
+// Ticks (= frames) per second, the same for everyone. A session boots, walks the menus and loads the level at
+// 60 (the game's join screens don't take a press at higher rates), then switches to the lobby's frame rate
+// (g_rateTarget) once everyone is in the level - the same tick on every PC (g_rateFrom).
+int g_rate = 60;
+int g_rateTarget = 60;
+unsigned g_rateFrom = 0;             // the tick the match's rate took over (0: still 60)
 bool g_script = false, g_idleScript = false;
 unsigned g_traceFrom = 0;
 std::vector<sockaddr_in> g_peers;
@@ -110,7 +115,17 @@ timeGetTime_t Real_timeGetTime;
 using srand_t = void(__cdecl*)(unsigned);
 srand_t Real_srand;
 
-bool FixedClock() { return g_phase != Phase::Off && GetCurrentThreadId() == g_mainThread; }
+bool g_allClock = false;   // research: FGUYMOD_TEST_ALLCLOCK - every thread but the render thread on the fixed clock
+bool FixedClock() {
+    if (g_phase == Phase::Off) return false;
+    DWORD me = GetCurrentThreadId();
+    return me == g_mainThread || (g_allClock && me != g_renderThread);
+}
+// The fixed clock's time at a tick, in 1 / `unit` s: 60 per second up to g_rateFrom, g_rate per second after.
+LONGLONG TickTime(unsigned tick, LONGLONG unit) {
+    if (!g_rateFrom || tick < g_rateFrom) return (LONGLONG)tick * unit / 60;
+    return (LONGLONG)g_rateFrom * unit / 60 + (LONGLONG)(tick - g_rateFrom) * unit / g_rate;
+}
 // After leaving a session (back to the lobby): real time again, shifted so the game thread's clock carries on
 // from the fixed one instead of jumping.
 bool g_left = false;
@@ -124,13 +139,20 @@ BOOL WINAPI Hook_QPC(LARGE_INTEGER* out) {
         if (r && out && Shifted()) out->QuadPart += g_qpcOffset;
         return r;
     }
-    // base + tick x 1/60 s, plus one count per call so "wait until time passes" loops still finish.
+    // base + the tick's time, plus one count per call so "wait until time passes" loops still finish (the game
+    // thread's own count: other threads' reads mustn't change what it sees)
+    LONGLONG at = kClockBaseSeconds * g_freq.QuadPart + TickTime(g_tick, g_freq.QuadPart);
+    if (GetCurrentThreadId() != g_mainThread) {
+        static thread_local LONGLONG mine = 0;   // still moving forward for this thread
+        mine = mine < at ? at : mine + 1;
+        out->QuadPart = mine;
+        return TRUE;
+    }
     ++g_statQpcCalls;
-    out->QuadPart = kClockBaseSeconds * g_freq.QuadPart + (LONGLONG)g_tick * g_freq.QuadPart / g_rate +
-                    (++g_callsThisTick);
+    out->QuadPart = at + (++g_callsThisTick);
     return TRUE;
 }
-DWORD FixedMs() { return (DWORD)(kClockBaseSeconds * 1000 + (ULONGLONG)g_tick * 1000 / g_rate); }
+DWORD FixedMs() { return (DWORD)(kClockBaseSeconds * 1000 + TickTime(g_tick, 1000)); }
 DWORD WINAPI Hook_GetTickCount() {
     return FixedClock() ? FixedMs() : (DWORD)(Real_GetTickCount() + (Shifted() ? g_tickCountOffset : 0));
 }
@@ -379,12 +401,16 @@ void LogPlayers(const wchar_t* tag);
 void CompareHash(int slot, unsigned tick, unsigned hash) {
     int k = (tick / g_syncEvery) % 8;
     if (g_myHashTick[k] != tick) return;
+    static bool wasInSync = true;
     if (g_myHash[k] == hash) {
-        if (tick % (g_syncEvery * 10) == 0) Log(L"Netplay: tick %u in sync with peer %d (%08x)", tick, slot, hash);
+        if (tick % (g_syncEvery * 10) == 0 || !wasInSync) Log(L"Netplay: tick %u in sync with peer %d (%08x)", tick, slot, hash);
+        wasInSync = true;
     } else {
         ++g_desyncs;
         Log(L"Netplay: DESYNC at tick %u: mine %08x, peer %d has %08x", tick, g_myHash[k], slot, hash);
-        if (g_desyncs <= 3) {   // what this PC hashed at that tick (compare with the peer's log)
+        bool details = g_desyncs <= 3 || wasInSync;   // the first ones, and each time it goes out of sync
+        wasInSync = false;
+        if (details) {   // what this PC hashed at that tick (compare with the peer's log)
             const Hashed& v = g_hashed[k];
             for (int i = 0; i < v.count; ++i)
                 Log(L"Netplay:   tick %u player %d pos (%.5f, %.5f, %.5f) aim (%.5f, %.5f, %.5f)", tick, v.index[i],
@@ -681,7 +707,10 @@ void TakeSessionPresses() {      // main thread, start of a tick
     LeaveCriticalSection(&g_pressLock);
     for (size_t i = 0; i < g_pressActive.size();) {
         const SessionPress& p = g_pressActive[i];
-        if (g_tick >= p.from + 4) { g_pressActive.erase(g_pressActive.begin() + i); continue; }
+        if (g_tick >= p.from + (unsigned)(4 * g_rate / 60)) {   // held 1/15 s, whatever the frame rate
+            g_pressActive.erase(g_pressActive.begin() + i);
+            continue;
+        }
         if (g_tick >= p.from && p.pad >= 0 && p.pad < 4) g_current[p.pad].buttons |= p.buttons;
         ++i;
     }
@@ -909,6 +938,16 @@ void Tick() {
             kbm[at] = g_current[at].kbm;
         }
     }
+    // everyone's in, and the spawn has settled (players fall into the level a tick apart at first and only come
+    // together again once they've landed - at 60): the match's frame rate
+    if (g_rate != g_rateTarget && g_liveTick && g_tick >= g_liveTick + 600) {
+        const int kViewportCount = 0xb53e60;   // (story co-op: once everyone has dropped in)
+        if (!g_sessionStory || *reinterpret_cast<volatile int*>(kViewportCount) >= g_players) {
+            g_rateFrom = g_tick;   // this tick's time is the same either way: no jump
+            g_rate = g_rateTarget;
+            Log(L"Netplay: %d frames per second from tick %u", g_rate, g_tick);
+        }
+    }
     KbmApply(kbm, g_players);  // keyboard / mouse players' devices, from their raw input (kbm.cpp)
     Real_QPC(&s1);
     WaitForQuiescence();
@@ -996,7 +1035,7 @@ void NetplayLeave(const wchar_t* why) {
         }
         LARGE_INTEGER real;
         Real_QPC(&real);
-        g_qpcOffset = kClockBaseSeconds * g_freq.QuadPart + (LONGLONG)g_tick * g_freq.QuadPart / g_rate +
+        g_qpcOffset = kClockBaseSeconds * g_freq.QuadPart + TickTime(g_tick, g_freq.QuadPart) +
                       (++g_callsThisTick) - real.QuadPart;
         g_tickCountOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_GetTickCount();
         g_timeGetTimeOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_timeGetTime();
@@ -1021,7 +1060,8 @@ bool NetplaySessionReturn() {
     char code[16] = "", token[40] = "";
     GetEnvironmentVariableA("FGUYMOD_NET_LOBBY", code, sizeof(code));
     GetEnvironmentVariableA("FGUYMOD_NET_TOKEN", token, sizeof(token));
-    if (code[0] && token[0]) OnlineRejoin(code, token, g_slot);
+    if (code[0] && token[0]) OnlineRejoin(code, token, g_slot);   // (if the lobby has to open here after all)
+    HandoffGiveBack();   // the player's own game takes over again, back in the lobby
     return true;
 }
 
@@ -1035,7 +1075,9 @@ void NetplaySessionPress(int pad, WORD buttons, int delayTicks) {
     Log(L"Netplay: session press pad %d buttons %04x in %d ticks", pad, buttons, delayTicks);
 }
 int NetplayLocalSlot() { return g_enabled ? g_slot : -1; }
+int NetplaySessionSlot() { return g_slot; }
 unsigned NetplayTick() { return g_tick; }
+int NetplayRate() { return g_rate; }
 void NetplayLogStacks() {
     Log(L"Netplay: game thread %lu:", g_mainThread);
     LogStack(g_mainThread);
@@ -1053,9 +1095,10 @@ void InitNetplay(HMODULE exe) {
     g_script = SettingInt(L"Netplay", L"Script", L"FGUYMOD_NET_SCRIPT", 0) != 0;
     g_idleScript = SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_IDLE", 0) != 0;
     g_traceFrom = (unsigned)SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_TRACE", 0);
-    g_rate = SettingInt(L"Netplay", L"TickRate", L"FGUYMOD_NET_RATE", 60);
-    if (g_rate < 30 || g_rate > 240) g_rate = 60;
-    g_syncEvery = SettingInt(L"Netplay", L"SyncCheckFrames", nullptr, g_rate);
+    g_rateTarget = SettingInt(L"Netplay", L"TickRate", L"FGUYMOD_NET_RATE", 60);
+    if (g_rateTarget < 30 || g_rateTarget > 240) g_rateTarget = 60;
+    g_syncEvery = SettingInt(L"Netplay", L"SyncCheckFrames", L"FGUYMOD_TEST_SYNCEVERY", 60);
+    g_allClock = SettingInt(L"Netplay", L"_", L"FGUYMOD_TEST_ALLCLOCK", 0) != 0;
     for (int s = 0; s < 4; ++s)
         for (int k = 0; k < 8; ++k) g_peerHashTick[s][k] = ~0u;
     for (int k = 0; k < 8; ++k) g_myHashTick[k] = ~0u;
@@ -1110,7 +1153,7 @@ void InitNetplay(HMODULE exe) {
     g_inSession = sessionLen > 0 && sessionLen < sizeof(session);
     KbmSessionStart(g_inSession ? session : nullptr);
     g_phase = Phase::Boot;
-    Log(L"Netplay: %d frames per second", g_rate);
+    Log(L"Netplay: %d frames per second in the match (60 until everyone is in the level)", g_rateTarget);
     Log(L"Netplay: on - slot %d of %d players, %s, input delay %d, %s input", g_slot, g_players,
         g_relay ? L"through the lobby server's relay" : L"direct UDP", g_delay, g_script ? L"scripted" : L"controller");
 

@@ -475,10 +475,10 @@ function FGUYParse(blob) {
 function FGUYPoll() {
     var blob = flash.external.ExternalInterface.call('FGUYMOD_LobbyState');
     if (FGUYScreen == 'loading') {   // animate
-        var step = Math.floor((getTimer() - FGUYLoadStart) / 450);
+        var step = Math.floor((FGUYNow() - FGUYLoadStart) / 450);
         if (step != FGUYLoadStep) { FGUYLoadStep = step; FGUYDraw(); }
     }
-    if (FGUYToastUntil > 0 && getTimer() > FGUYToastUntil) { FGUYToastUntil = 0; FGUYDraw(); }
+    if (FGUYToastUntil > 0 && FGUYNow() > FGUYToastUntil) { FGUYToastUntil = 0; FGUYDraw(); }
     var typed = flash.external.ExternalInterface.call('FGUYMOD_TypedText');
     if (typed != undefined && typed != '' && FGUYScreen == 'hub') { FGUYTyped(String(typed)); FGUYDraw(); }
     if (FGUYBot) FGUYBotStep();
@@ -487,6 +487,20 @@ function FGUYPoll() {
     var was = FGUYS.state, old = FGUYS;
     FGUYS = FGUYParse(blob);
     if (was == 'lobby' && FGUYS.state == 'lobby') FGUYNoticeChanges(old, FGUYS);
+    // The loading screen without a match starting: back from the match (this game waited hidden meanwhile -
+    // or the match didn't start). Covered until we're in the lobby again, and the 3D and music come back.
+    if (FGUYScreen == 'loading' && FGUYS.state != 'starting' && !FGUYBackFromMatch) {
+        FGUYBackFromMatch = true;
+        FGUYReturnCoverShow();
+    }
+    if (FGUYBackFromMatch && FGUYS.state != 'returning') {   // there (or not: its lobby is gone - the hub)
+        FGUYBackFromMatch = false;
+        FGUYScreen = 'hub';
+        FGUYFocus = 0;
+        FGUYEnteredAt = FGUYNow();   // (the cover waits for the 3D camera from here)
+        FGUY3DStart();
+        PlayOptionsSubMenuMusic();   // what the loading screen stopped
+    }
     if (FGUYS.state == 'lobby' && was != 'lobby') {
         FGUYPickInput = FGUYMe().input;
         FGUYScreen = 'lobby';
@@ -497,13 +511,14 @@ function FGUYPoll() {
     if (FGUYS.own != old.own || FGUYS.state != was) FGUYCheckPick();
     if (FGUYS.state == 'starting' && FGUYScreen != 'loading') {
         FGUYScreen = 'loading';
-        FGUYLoadStart = getTimer();
+        FGUYLoadStart = FGUYNow();
         StopMusic();   // the menu music stops: the loading screen has its own sting
         FGUY3DStop();  // and the 3D character (its voice and sounds) goes
         PauseTVSound();
         flash.external.ExternalInterface.call('FGUYMOD_LoadingSound', FGUYS.mode, FGUYS.map);
     }
-    if (FGUYS.state != 'lobby' && FGUYS.state != 'starting' && FGUYScreen != 'hub') FGUYScreen = 'hub';
+    if (FGUYS.state != 'lobby' && FGUYS.state != 'starting' && FGUYS.state != 'returning' && FGUYScreen != 'hub')
+        FGUYScreen = 'hub';
     FGUYDraw();
 }
 
@@ -598,6 +613,7 @@ function OnOnlineEnter() {
     FGUYKeyLog = 0;
     FGUYBot = flash.external.ExternalInterface.call('FGUYMOD_IsBot') == true;
     FGUYBotNext = 0;
+    FGUYEnteredAt = FGUYNow();
     FGUY3DStart();
     FGUYDraw();
     FGUYTimer = setInterval(FGUYPoll, 150);
@@ -728,7 +744,7 @@ function FGUYScreenKey(key) {   // a key, as if pressed (footer hints, mouse)
 
 // The test bot (FGUYMOD_BOT): a hidden copy of the game that joins a lobby and readies up by itself.
 function FGUYBotStep() {
-    var now = getTimer();
+    var now = FGUYNow();
     if (now < FGUYBotNext) return;
     FGUYBotNext = now + 2000;
     if (FGUYS.state == 'online') {
@@ -803,7 +819,7 @@ function FGUYFooter(ui, hints, note, tone) {
         if (hints[i] == 'ARROWS') x = FGUYArrowsHint(ui, x, 850, hints[i + 1]);
         else x = FGUYButtonHint(ui, x, 850, hints[i], hints[i + 1]);
     }
-    if (FGUYToastUntil > getTimer()) { note = FGUYToastText; tone = 'toast'; }
+    if (FGUYToastUntil > FGUYNow()) { note = FGUYToastText; tone = 'toast'; }
     if (note == undefined || note == '') return;
     var fill = FGUYC.chip, line = FGUYC.chipLine, ink = FGUYC.soft;
     if (tone == 'good') { fill = FGUYC.green; line = FGUYC.greenLine; ink = FGUYC.white; }
@@ -816,7 +832,7 @@ function FGUYFooter(ui, hints, note, tone) {
 
 function FGUYToast(text) {
     FGUYToastText = text;
-    FGUYToastUntil = getTimer() + 2800;
+    FGUYToastUntil = FGUYNow() + 2800;
 }
 
 // A left / right arrows hint (the d-pad has no button picture).
@@ -1158,7 +1174,7 @@ function FGUYDrawLoading(ui) {
 // ---- match settings --------------------------------------------------------------------------------------------------
 // Auto frame rate: the lowest of everyone's monitors (the server picks the same at the start).
 function FGUYAutoRate() {
-    var low = 144;
+    var low = 144;   // (auto never goes higher - the host can pick 165 / 240)
     for (var i = 0; i < FGUYS.members.length; i++) {
         var r = FGUYS.members[i].rate;
         if (r > 0 && r < low) low = r;
@@ -1174,7 +1190,7 @@ function FGUYSettingRows() {
         if (mode.score != '') rows.push('score');
         rows.push('ff');
     }
-    rows.push('rate');
+    // (FRAME RATE, 'rate': hidden for now - above 60 the two games drift apart after a few seconds of play)
     return rows;
 }
 
@@ -1194,7 +1210,7 @@ function FGUYSettingHelp(r) {
     if (r == 'map') return mode.code == 'ST' ? 'Which story level you play together.' : "Where you play. You can pick the maps the host's save has unlocked.";
     if (r == 'time') return 'How long a match lasts.';
     if (r == 'score') return mode.score == 'FlagLimit' ? 'The match ends when a team captures this many flags.' : 'The match ends when a team reaches this score.';
-    if (r == 'rate') return 'Everyone plays at the same frame rate. Auto: the best every player\'s screen shows (up to 144). Higher is smoother, but every PC must keep up.';
+    if (r == 'rate') return 'Everyone plays at the same frame rate. Auto: the best every player\'s screen shows, up to 144. 165 and 240: only if every PC keeps up.';
     return 'On: you can hurt your own team. Off: you can only hurt the other team.';
 }
 
@@ -1215,16 +1231,19 @@ function FGUYDrawSettings(ui) {
     FGUYPanel(ui, 48, 130, 940, 690, 28, FGUYC.panel, FGUYC.glow);
     var rows = FGUYSettingRows();
     if (FGUYFocus >= rows.length) FGUYFocus = 0;
+    // the rows share the panel with the help box under them (always 130 high): fewer rows, taller rows
+    var step = Math.min(84, Math.floor(500 / (rows.length + 1))), rh = step - 12;
     for (var i = 0; i < rows.length; i++) {
         var v = FGUYSettingValue(rows[i]);
-        FGUYRow(ui, 76, 160 + i * 84, 884, 70, v[0], v[1], FGUYFocus == i, host, host ? '' : 'Host picks', 'setRow', i);
+        FGUYRow(ui, 76, 160 + i * step, 884, rh, v[0], v[1], FGUYFocus == i, host, host ? '' : 'Host picks', 'setRow', i);
     }
-    var ly = 160 + rows.length * 84;
-    FGUYRow(ui, 76, ly, 884, 70, 'LOBBY', FGUYS.priv ? 'Code only' : 'Anyone can join', false);
+    var ly = 160 + rows.length * step;
+    FGUYRow(ui, 76, ly, 884, rh, 'LOBBY', FGUYS.priv ? 'Code only' : 'Anyone can join', false);
     // what the selected setting does
-    FGUYRect(ui, 76, ly + 96, 884, 820 - ly - 124, 18, FGUYC.deep, 100, FGUYC.rowLine, 100, 2);
-    FGUYText(ui, 100, ly + 110, 836, 24, FGUYSettingValue(rows[FGUYFocus])[0], false, 15, FGUYC.muted, 'left');
-    FGUYWrap(ui, 100, ly + 138, 836, FGUYSettingHelp(rows[FGUYFocus]), 80, 19, FGUYC.soft);
+    var hy = ly + step + 6;
+    FGUYRect(ui, 76, hy, 884, 790 - hy, 18, FGUYC.deep, 100, FGUYC.rowLine, 100, 2);
+    FGUYText(ui, 100, hy + 12, 836, 24, FGUYSettingValue(rows[FGUYFocus])[0], false, 15, FGUYC.muted, 'left');
+    FGUYWrap(ui, 100, hy + 40, 836, FGUYSettingHelp(rows[FGUYFocus]), 80, 19, FGUYC.soft);
     var px = 1020, pw = 532;
     FGUYPanel(ui, px, 130, pw, 470, 28, FGUYC.panel2, FGUYC.glow);
     FGUYMapPicture(ui, FGUYS.map, FGUYS.mode, px + 3, 133, pw - 6, 250, 25);
@@ -1497,7 +1516,7 @@ function FGUYInputSettings(key) {
     if (r == 'mode') FGUYCycleMode(dir);
     else if (r == 'map') FGUYCycleMap(dir);
     else if (r == 'rate') {
-        var rates = [0, 60, 120, 144], at = 0;
+        var rates = [0, 60, 120, 144, 165, 240], at = 0;
         for (var k = 0; k < rates.length; k++) if (rates[k] == FGUYS.rate) at = k;
         FGUYS.rate = rates[(at + dir + rates.length) % rates.length];
         FGUYDo('rate', FGUYS.rate);

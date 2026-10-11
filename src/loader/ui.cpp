@@ -278,12 +278,22 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             static char v[32];
             if (!GetEnvironmentVariableA("FGUYMOD_TEST_AUTOMENU", v, sizeof(v))) v[0] = 0;
             ReturnString(movie, v);
+        } else if (strcmp(fn, "ProfileLoaded") == 0) {   // the main menu opened (menu patch, OnHomeEnter)
+            AudioProfileLoaded();
         } else if (strcmp(fn, "PauseMenu") == 0) {   // the online pause menu (the HUD, every frame)
             ReturnString(movie, OnlinePauseMenu());
         } else if (strcmp(fn, "PauseCursor") == 0) {
             ReturnString(movie, OnlinePauseCursor());
         } else if (strcmp(fn, "PauseQuitDone") == 0) {
             OnlinePauseQuitDone();
+        } else if (strcmp(fn, "Now") == 0) {   // real milliseconds (a match copy's getTimer() is off: the fixed clock)
+            ReturnNumber(movie, (double)GetTickCount64());
+        } else if (strcmp(fn, "SessionHandBack") == 0) {   // 0: the lobby opens here, 1 / 2: the lobby game takes over
+            ReturnNumber(movie, HandoffGiveBackState());
+        } else if (strcmp(fn, "SessionKeyboard") == 0) {   // back from a match: did I play on keyboard / mouse?
+            ReturnBool(movie, KbmIsKeyboardSlot(NetplaySessionSlot()));
+        } else if (strcmp(fn, "SessionControls") == 0) {   // (keyboard?) after the game's own switch to them
+            KbmBackInLobby(ArgNumber(args, argc, 0) != 0);
         } else if (strcmp(fn, "SessionReturn") == 0) {   // a front-end page opened: is the match over?
             ReturnBool(movie, NetplaySessionReturn());
         } else if (strcmp(fn, "SetMovieVolume") == 0) {   // Options > Audio > MOVIES & TITLE

@@ -214,7 +214,8 @@ def build(data):
     at, _ = find_action(inner, 0x96, lambda q, t: texts(q) == ['demoType'])
     button = (A.store(2, A.new_object('Object')) + A.setmember(Reg(2), 'name', 'Online') +
               A.setmember(Reg(2), 'text', 'ONLINE') + A.method(Reg(3), 'push', Reg(2))).assemble()
-    p.replace(code_start, 0, A.setvar('FGUYOnline', False).assemble())
+    p.replace(code_start, 0, (A.setvar('FGUYOnline', False) +   # (and the profile's settings are in: audio.cpp)
+                              A.Code(A.external('FGUYMOD_ProfileLoaded'), A.op('Pop'))).assemble())
     p.replace(at, 0, button)
     p.fix_top_level_jumps(inner)
     p.replace(size_field, 2, struct.pack('<H', code_end - code_start + p.delta_between(code_start, code_end)))
@@ -236,6 +237,24 @@ def build(data):
                 p.replace(r_at + 1, 8, swf_double(0.05 if r_val == swf_double(0.1) else -0.05))
                 steps += 1
     assert steps == 2, steps
+
+    # 10b. UpdateSlider shows a slider's value as round(value x 10) - with 5% steps 0.05 and 0.10 both show
+    #      "1". Show percent instead: the 'Push r2, 10' before the Multiply becomes 100 (same size).
+    o, total = function_at(data, actions, 'UpdateSlider')
+    code_start, code_end, size_field = function2_code(data, o)
+    tens = 0
+    inner = parse_actions(data, code_start, code_end)
+    for k, (q, code, t) in enumerate(inner):
+        if code != 0x96 or k + 1 >= len(inner) or inner[k + 1][1] != 0x0C:   # Push ...; Multiply
+            continue
+        for r_at, r_len, r_type, r_val in push_records(data, q):
+            if r_type == 7 and r_val == 10:
+                p.replace(r_at + 1, 4, struct.pack('<i', 100))
+                tens += 1
+            elif r_type == 6 and r_val == swf_double(10.0):
+                p.replace(r_at + 1, 8, swf_double(100.0))
+                tens += 1
+    assert tens == 1, tens
 
     # 11. Options > Audio gets a MOVIES & TITLE slider (src/loader/audio.cpp: movies, and every sound until the
     #     save has loaded - the intro and the title screen) before Subtitles. The row: one more object pushed

@@ -87,8 +87,8 @@ def main():
         assert 'ready' in line, line
         guest.send('SET Lois 2 1 k')
         assert ',Lois,2,1,k,60' in host.expect('MEMBERS')
-        guest.send('RATE 240')   # a 240 Hz monitor: 144 at most; the host's is 60, so auto picks 60
-        assert ',Lois,2,1,k,144' in host.expect('MEMBERS')
+        guest.send('RATE 240')   # a 240 Hz monitor; the host's is 60, so auto picks 60
+        assert ',Lois,2,1,k,240' in host.expect('MEMBERS')
         host.send('CONF CF AM 1 2 1')
         while guest.expect('CONF') != 'CONF CF AM 1 2 1 0':  # the first one is the defaults, sent on join
             pass
@@ -102,7 +102,7 @@ def main():
         token = bytes.fromhex(start_host[1])
         assert start_guest[1] == start_host[1] and start_host[2] == '0' and start_guest[2] == '1'
         assert start_guest[7] == 'CF,AM,1,2,1,0' and start_guest[8] == 'Peter:0:0:c;Lois:2:1:k', start_guest
-        assert start_guest[9] == '60', start_guest
+        assert start_guest[9] == '60', start_guest   # (always 60 for now)
         print('   input delay for 80 ms:', start_host[4])
 
         # relay: both players say hello, then host -> guest

@@ -57,7 +57,9 @@ bool NetplayEnabled();
 void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
 int NetplayLocalSlot();                //   my player slot, -1 when netplay is off
+int NetplaySessionSlot();              //   my player slot in this game's session (also after leaving it)
 unsigned NetplayTick();                //   the lockstep tick being simulated
+int NetplayRate();                     //   ticks (frames) per second online
 void NetplayLogStacks();               //   research (test pipe "stacks")
 bool NetplayLevelLive();               //   session: every player's level HUD is up (same tick everywhere)
 void NetplaySessionPress(int pad, WORD buttons, int delayTicks);  // session autopilot
@@ -106,8 +108,12 @@ void DisplayMenuApply();
 void DisplayMenuReset();
 bool DisplayOnChangeResolution(int* width, int* height, bool windowed);  // may change the size (borderless)
 void DisplayReveal();                  // show the hidden online-session window
+bool DisplayWindowRect(RECT* r);       // where the game window is (handed to the session game)
 void DisplayShowForQuit();             // test tools' quit: bring the window up so it draws its last frame
 void DisplayHideWindow();              // hide the window (old game handing over to the session)
+bool DisplayPark();                    // the lobby game during its player's match: hidden, held (online.cpp)
+void DisplayUnpark(bool show, const RECT* at, HANDLE shown);   //   go on (shown: at `at`), then set `shown`
+bool DisplayWindowRectOf(DWORD pid, RECT* r);   // another process's game window (the session game's)
 
 // handoff.cpp: the old game shows the loading screen while the session boots hidden
 void InitHandoff();
@@ -116,6 +122,9 @@ void HandoffMatchRunning();            //   the match is running: show it
 void HandoffRevealed();
 bool HandoffHudUp();                   //   this game's level HUD has laid itself out (ui.cpp)
 bool HandoffBooting();                 //   booting hidden, the match not running yet
+void HandoffMute(bool mute);           //   the lobby game waiting hidden: its sound off / on
+bool HandoffGiveBack();                //   the match is over: back to the player's own (lobby) game
+int HandoffGiveBackState();            //   0 none (the lobby opens here), 1 handing back, 2 handed back
 
 // kbm.cpp: the game's own keyboard / mouse controls in online sessions
 #pragma pack(push, 1)
@@ -136,11 +145,12 @@ bool KbmIsKeyboardSlot(int slot);
 bool KbmCursorScreen(POINT* pt);               //   netplay.cpp: the keyboard players' cursor this tick, on screen
 void KbmCapture(KbmRaw* out);                  //   my keyboard and mouse now
 void KbmApply(const KbmRaw* bySlot, int players);  //   every tick: feed the keyboard players' devices
+void KbmBackInLobby(bool keyboard);               //   ui.cpp: back from a match - this player's controls again
 void KbmTestCommand(const char* what, int a, int b, int c);  // test pipe: kbm key <vk> <ms> | mouse <dx> <dy> <ticks> | click <ms>
 
 // sounds.cpp: loading-screen music
 void InitAudio(HMODULE exe);            // volume curve, movie volume            (audio.cpp)
-void AudioSaveLoaded();                //   config.cpp: the game read its save
+void AudioProfileLoaded();             //   the main menu opened: the profile's settings are in
 float AudioMusicVolume();              //   0..1, for our own sounds
 float AudioMovieVolume();              //   Options > Audio > MOVIES & TITLE, 0..1
 void AudioSetMovieVolume(float v);

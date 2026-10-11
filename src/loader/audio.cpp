@@ -10,8 +10,10 @@
 // Movies & title: the mod's own Options > Audio row, MOVIES & TITLE (the menu patch; SNDS_GetMovieVolume /
 // FGUYMOD_SetMovieVolume, kept in FGUYMod\audio.ini). Movies (Bink) play at it instead of the cinematic
 // setting (the game sets their volume when it opens one, 0x4ea2d0 -> BinkSetVolume; they're mixed far
-// louder than the game). And until the save has loaded - the intro and the "press anywhere to start"
-// screen, when the game's own settings are still at their 100% defaults - every sound plays at it too.
+// louder than the game). And until the profile's settings are in - the intro, the "press anywhere to start"
+// screen and the save slots, while the game's own settings are still at their 100% defaults - every sound
+// plays at it too. (The game reads the save file on the save-slot screen already, but applies the profile's
+// settings only once you pick a slot: the main menu opening is the sign - the menu patch tells us.)
 
 #include "common.h"
 
@@ -145,10 +147,12 @@ void AudioSetMovieVolume(float v) {
     WritePrivateProfileStringW(L"Audio", L"MoviesAndTitle", text, g_iniPath);
 }
 
-// config.cpp: the game has read its save (its settings are applied from here on).
-void AudioSaveLoaded() {
-    if (!g_settingsLoaded) Log(L"Audio: the save is loaded - volumes from the game's settings now");
+// The main menu opened (FGUYMOD_ProfileLoaded from the menu patch): the profile's settings are in.
+void AudioProfileLoaded() {
+    if (g_settingsLoaded) return;
     g_settingsLoaded = true;
+    Log(L"Audio: the profile is loaded - volumes from the game's settings now");
+    if (g_applyOriginal) Hook_ApplyVolumes(reinterpret_cast<void*>(kSoundManager), nullptr);   // apply them now
 }
 
 // The volume our own sounds (sounds.cpp) should play at, 0..1: the music setting the same way the game

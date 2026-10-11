@@ -76,7 +76,9 @@ bool OnlinePauseSample(WORD* buttons, SHORT* ly, KbmRaw* kbm, bool keyboardPlaye
     g_keyboard = keyboardPlayer;
     const BYTE* keys = kbm->keys;
     WORD down = *buttons & ~g_lastButtons;
-    auto pressed = [&](int vk) { return keyboardPlayer && Key(keys, vk) && !Key(g_lastKeys, vk); };
+    BYTE before[32];   // last tick's keys (g_lastKeys takes this tick's below)
+    memcpy(before, g_lastKeys, 32);
+    auto pressed = [&](int vk) { return keyboardPlayer && Key(keys, vk) && !Key(before, vk); };
     bool click = keyboardPlayer && (kbm->buttons & 1) && !(g_lastMouse & 1);
     bool stickUp = *ly > 20000 && g_lastLy <= 20000, stickDown = *ly < -20000 && g_lastLy >= -20000;
     g_lastButtons = *buttons;
@@ -141,7 +143,7 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
         g_gamePaused = true;
         g_open = false;
         g_injectSlot = first;
-        g_injectTicks = 4;
+        g_injectTicks = 4 * NetplayRate() / 60;   // held 1/15 s
         Log(L"Pause: everyone has the menu open - pausing the game");
     }
     if (g_injectTicks > 0) {

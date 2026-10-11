@@ -12,6 +12,7 @@ param(
     [string[]]$Controls = @(),  # per copy: keyboard / controller (default: the mod's auto choice)
     [string]$Res = "960x540"     # the copies' render size
 )
+$Controls = @($Controls | ForEach-Object { $_ -split ',' } | Where-Object { $_ })   # ("a,b" from -File comes as one)
 & (Join-Path $PSScriptRoot "stop_tests.ps1") -GameDir $GameDir
 $start = Join-Path $PSScriptRoot "start_test.ps1"
 $names = "Host", "Guest", "Third", "Fourth"

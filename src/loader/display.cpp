@@ -136,7 +136,50 @@ LSTATUS WINAPI Hook_RegSetValueExW(HKEY key, LPCWSTR name, DWORD reserved, DWORD
 const UINT kRestyleMsg = WM_APP + 0x4647;  // wParam = target Mode
 const UINT kRevealMsg = WM_APP + 0x4648;   // show the hidden session window (handoff.cpp)
 const UINT kHideMsg = WM_APP + 0x4649;     // hide the window (the old game, while it closes)
+const UINT kParkMsg = WM_APP + 0x464A;     // hide the window and hold the game until DisplayUnpark (online.cpp)
 void RestyleWindow(Mode to);
+
+// Parked (the lobby game while its player is in a match, online.cpp): the window hidden and the game held in
+// a message loop of ours inside its window procedure - between two of its frames, the way a modal dialog
+// holds a program - until DisplayUnpark.
+HANDLE g_unpark = nullptr;        // set: let the game go on
+bool g_unparkShow = false;        //   and show the window (at g_unparkRect, if it has one)
+bool g_unparkHasRect = false;
+RECT g_unparkRect = {};
+HANDLE g_unparkShown = nullptr;   //   set once that's done
+
+void ParkHere(HWND wnd) {
+    ShowWindow(wnd, SW_HIDE);
+    Log(L"Window: hidden - the game waits here until the match is over");
+    for (;;) {
+        DWORD w = MsgWaitForMultipleObjects(1, &g_unpark, FALSE, INFINITE, QS_ALLINPUT);
+        if (w == WAIT_OBJECT_0) break;
+        MSG m;
+        bool quit = false;
+        while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) {
+            if (m.message == WM_QUIT) {   // (for the game's own loop)
+                PostQuitMessage((int)m.wParam);
+                quit = true;
+                break;
+            }
+            TranslateMessage(&m);
+            DispatchMessageW(&m);
+        }
+        if (quit) break;
+    }
+    if (g_unparkShow && !IsBot()) {   // (the test bot never shows)
+        if (g_mode == Mode::Windowed && g_unparkHasRect)   // exactly where the match's window was
+            SetWindowPos(wnd, nullptr, g_unparkRect.left, g_unparkRect.top, g_unparkRect.right - g_unparkRect.left,
+                         g_unparkRect.bottom - g_unparkRect.top, SWP_NOZORDER | SWP_NOACTIVATE);
+        ShowWindow(wnd, SW_SHOW);
+        SetWindowPos(wnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        if (!StaysMuted()) SetForegroundWindow(wnd);  // (test copies never take the focus from you)
+        Log(L"Window: shown again");
+    } else {
+        Log(L"Window: the game goes on (hidden)");
+    }
+    if (g_unparkShown) SetEvent(g_unparkShown);
+}
 
 LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_KEYDOWN && !NetplayEnabled()) OnlineMenuKey(wnd, wp);  // typing on the ONLINE screens
@@ -150,6 +193,15 @@ LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (IsBot()) { HandoffRevealed(); return 0; }   // the test bot never shows (the old copy can close)
             if (g_hidden) {
                 g_hidden = false;
+                if (g_mode == Mode::Windowed) {   // exactly where the game it takes over from was (online.cpp)
+                    wchar_t at[64];
+                    RECT r;
+                    if (GetEnvironmentVariableW(L"FGUYMOD_HANDOFF_RECT", at, 64) &&
+                        swscanf_s(at, L"%ld,%ld,%ld,%ld", &r.left, &r.top, &r.right, &r.bottom) == 4 &&
+                        r.right > r.left && r.bottom > r.top)
+                        SetWindowPos(wnd, nullptr, r.left, r.top, r.right - r.left, r.bottom - r.top,
+                                     SWP_NOZORDER | SWP_NOACTIVATE);
+                }
                 ShowWindow(wnd, SW_SHOW);
                 SetWindowPos(wnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
                 if (!StaysMuted()) SetForegroundWindow(wnd);  // (test copies never take the focus from you)
@@ -158,6 +210,9 @@ LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         case kHideMsg:
             ShowWindow(wnd, SW_HIDE);
+            return 0;
+        case kParkMsg:
+            ParkHere(wnd);
             return 0;
         case WM_WINDOWPOSCHANGED:
             // In windowed mode the game takes its screen size from the window's client area here
@@ -375,6 +430,9 @@ void DisplayShowForQuit() {
     if (!g_mainWnd || g_hidden) return;
     // (on top of everything: a game window covered by others gets its frames held back by Windows)
     SetWindowPos(g_mainWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    // (and a game that paused itself when it lost the focus draws again once it thinks it has it back)
+    PostMessageW(g_mainWnd, WM_ACTIVATEAPP, TRUE, 0);
+    PostMessageW(g_mainWnd, WM_ACTIVATE, WA_ACTIVE, 0);
 }
 
 // A point in the game window's client area (real pixels) as the game sees it (its render size).
@@ -428,8 +486,44 @@ void DisplayReveal() {
     else g_hidden = false;
 }
 
+// The game window's place on screen (online.cpp hands it to the session game that takes over).
+bool DisplayWindowRect(RECT* r) { return g_mainWnd && Real_GetWindowRect(g_mainWnd, r); }
+
 void DisplayHideWindow() {
     if (g_mainWnd) PostMessageW(g_mainWnd, kHideMsg, 0, 0);
+}
+
+bool DisplayPark() {
+    if (!g_mainWnd) return false;
+    if (!g_unpark) g_unpark = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    ResetEvent(g_unpark);
+    return PostMessageW(g_mainWnd, kParkMsg, 0, 0) != FALSE;
+}
+
+void DisplayUnpark(bool show, const RECT* at, HANDLE shown) {
+    g_unparkShow = show;
+    g_unparkHasRect = at != nullptr;
+    if (at) g_unparkRect = *at;
+    g_unparkShown = shown;
+    if (g_unpark) SetEvent(g_unpark);
+    else if (shown) SetEvent(shown);
+}
+
+// Where another process's game window is (the session game's, to come back exactly there).
+bool DisplayWindowRectOf(DWORD pid, RECT* r) {
+    struct Find { DWORD pid; HWND wnd; } find{pid, nullptr};
+    EnumWindows([](HWND wnd, LPARAM lp) -> BOOL {
+        auto* f = reinterpret_cast<Find*>(lp);
+        DWORD owner = 0;
+        GetWindowThreadProcessId(wnd, &owner);
+        wchar_t cls[64];
+        if (owner == f->pid && IsWindowVisible(wnd) && GetClassNameW(wnd, cls, 64) && IsGameMainWindowClass(cls)) {
+            f->wnd = wnd;
+            return FALSE;
+        }
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&find));
+    return find.wnd && Real_GetWindowRect(find.wnd, r);
 }
 
 // The menu changes the resolution (ui.cpp, before the game does): borderless always uses the monitor's
