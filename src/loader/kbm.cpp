@@ -288,14 +288,7 @@ void KbmApply(const KbmRaw* bySlot, int players) {
     // Keyboard mode starts once every player's level HUD is up - told through the inputs, so it's the same
     // tick on every PC. (Before that the session autopilot drives the menus with controller presses, and the
     // level setup would otherwise stop for a "click anywhere to start".)
-    static bool started = false;
-    if (!started) {
-        bool all = players > 0;
-        for (int s = 0; s < players && s < 4; ++s) all &= (bySlot[s].flags & 1) != 0;
-        if (!all) return;
-        started = true;
-        Log(L"Input: everyone's level is up - keyboard and mouse on");
-    }
+    if (!NetplayLevelLive()) return;
     unsigned char* list[8];
     int n = GamePlayers(list, 8);
     bool inLevel = false;  // a player with a view of their own: the level runs (menus: the session autopilot

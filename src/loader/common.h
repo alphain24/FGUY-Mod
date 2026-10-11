@@ -56,12 +56,23 @@ bool NetplayEnabled();
 void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
 int NetplayLocalSlot();                //   my player slot, -1 when netplay is off
+bool NetplayLevelLive();               //   session: every player's level HUD is up (same tick everywhere)
 void NetplaySessionPress(int pad, WORD buttons, int delayTicks);  // session autopilot
 void NetplaySessionLevel();            //   the menu launched the level
 void InitSplitView();                  // one full-screen view per PC online    (splitview.cpp)
 int SplitViewHudMode(int mode);
 int SplitViewHudViewport(int viewport);
 void SplitViewMenuRect(float left, float top, float right, float bottom);  // lobby: 3D scene inside a panel
+
+// onlinemenu.cpp: keyboard / mouse helpers for the ONLINE screens, and the test bot
+void OnlineMenuOpen(bool open);
+void OnlineMenuKey(HWND wnd, WPARAM vk);    //   display.cpp: a key went down in the game window
+const char* OnlineMenuTyped();
+bool OnlineMenuFromWASD(int key);
+void OnlineMenuTurnPreview(float radians);
+void OnlineMenuFrame();                     //   d3d9.cpp, every frame
+bool IsBot();                               //   this copy is the test bot (FGUYMOD_BOT)
+const char* BotJoinCode();
 
 // online.cpp: lobby + the in-game ONLINE screens
 void OnlineEnter();

@@ -276,6 +276,16 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             static char v[32];
             if (!GetEnvironmentVariableA("FGUYMOD_TEST_AUTOMENU", v, sizeof(v))) v[0] = 0;
             ReturnString(movie, v);
+        } else if (strcmp(fn, "TypedText") == 0) {  // letters / digits / \b typed on the ONLINE screens
+            ReturnString(movie, OnlineMenuTyped());
+        } else if (strcmp(fn, "FromWASD") == 0) {   // (direction key): it came from W A S D
+            ReturnBool(movie, OnlineMenuFromWASD((int)ArgNumber(args, argc, 0)));
+        } else if (strcmp(fn, "TurnPreview") == 0) {  // (radians): turn the 3D character preview
+            OnlineMenuTurnPreview((float)ArgNumber(args, argc, 0));
+        } else if (strcmp(fn, "IsBot") == 0) {
+            ReturnBool(movie, IsBot());
+        } else if (strcmp(fn, "BotJoin") == 0) {
+            ReturnString(movie, BotJoinCode());
         } else if (strcmp(fn, "LoadingSound") == 0) {  // (mode, map): the lobby shows its loading screen
             SoundsOnlineLoading(ArgString(args, argc, 0), ArgString(args, argc, 1));
         } else if (strcmp(fn, "PadPressed") == 0) {  // (button bits): pressed on a controller just now?

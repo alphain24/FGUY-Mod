@@ -478,6 +478,9 @@ function FGUYPoll() {
         if (step != FGUYLoadStep) { FGUYLoadStep = step; FGUYDraw(); }
     }
     if (FGUYToastUntil > 0 && getTimer() > FGUYToastUntil) { FGUYToastUntil = 0; FGUYDraw(); }
+    var typed = flash.external.ExternalInterface.call('FGUYMOD_TypedText');
+    if (typed != undefined && typed != '' && FGUYScreen == 'hub') { FGUYTyped(String(typed)); FGUYDraw(); }
+    if (FGUYBot) FGUYBotStep();
     if (blob == FGUYLastBlob) return;
     FGUYLastBlob = blob;
     var was = FGUYS.state, old = FGUYS;
@@ -588,6 +591,8 @@ function OnOnlineEnter() {
     if (FGUYPickChar == undefined) { FGUYPickChar = 'Peter'; FGUYPickCostume = 0; FGUYPickTeam = 0; }
     FGUYLastBlob = '';
     FGUYS = FGUYParse('');
+    FGUYBot = flash.external.ExternalInterface.call('FGUYMOD_IsBot') == true;
+    FGUYBotNext = 0;
     FGUY3DStart();
     FGUYDraw();
     FGUYTimer = setInterval(FGUYPoll, 150);
@@ -613,6 +618,7 @@ function FGUYHit(x, y, w, h, kind, index) {
 function FGUYMakeHits(ui) {
     for (var i = 0; i < FGUYHits.length; i++) {
         var hit = FGUYHits[i];
+        if (hit.kind == 'stage') { FGUYMakeStage(ui, hit, i); continue; }
         var c = ui.createEmptyMovieClip('hit' + i, ui.getNextHighestDepth());
         c.beginFill(0xFFFFFF, 0);
         c.moveTo(hit.x, hit.y);
@@ -626,6 +632,37 @@ function FGUYMakeHits(ui) {
         c.onRollOver = FGUYHitOver;
         c.onRelease = FGUYHitPress;
     }
+}
+
+// The 3D character's window: press and drag to turn the character (Q / E turn it too, in the loader).
+function FGUYMakeStage(ui, hit, i) {
+    var c = ui.createEmptyMovieClip('hit' + i, ui.getNextHighestDepth());
+    c.beginFill(0xFFFFFF, 0);
+    c.moveTo(hit.x, hit.y);
+    c.lineTo(hit.x + hit.w, hit.y);
+    c.lineTo(hit.x + hit.w, hit.y + hit.h);
+    c.lineTo(hit.x, hit.y + hit.h);
+    c.lineTo(hit.x, hit.y);
+    c.endFill();
+    c.onPress = FGUYStagePress;
+    c.onMouseMove = FGUYStageMove;
+    c.onMouseUp = FGUYStageRelease;
+}
+
+function FGUYStagePress() {
+    FGUYDragging = true;
+    FGUYDragX = _root._xmouse;
+}
+
+function FGUYStageMove() {
+    if (!FGUYDragging) return;
+    var x = _root._xmouse;
+    flash.external.ExternalInterface.call('FGUYMOD_TurnPreview', (x - FGUYDragX) * 0.012);
+    FGUYDragX = x;
+}
+
+function FGUYStageRelease() {
+    FGUYDragging = false;
 }
 
 function FGUYHitOver() {
@@ -682,6 +719,30 @@ function FGUYScreenKey(key) {   // a key, as if pressed (footer hints, mouse)
     else if (FGUYScreen == 'lobby') FGUYInputLobby(key);
     else if (FGUYScreen == 'char') FGUYInputChar(key);
     else if (FGUYScreen == 'settings') FGUYInputSettings(key);
+}
+
+// The test bot (FGUYMOD_BOT): a hidden copy of the game that joins a lobby and readies up by itself.
+function FGUYBotStep() {
+    var now = getTimer();
+    if (now < FGUYBotNext) return;
+    FGUYBotNext = now + 2000;
+    if (FGUYS.state == 'online') {
+        var code = String(flash.external.ExternalInterface.call('FGUYMOD_BotJoin'));
+        if (code != '' && code != 'undefined') FGUYDo('join', code);
+        else if (FGUYS.lobbies.length > 0) FGUYDo('join', FGUYS.lobbies[0].code);
+        FGUYBotPicked = false;
+    } else if (FGUYS.state == 'lobby' && FGUYS.slot > 0) {
+        if (!FGUYBotPicked) {   // someone at random from the host's list
+            FGUYBotPicked = true;
+            FGUYChars = FGUYCharList();
+            FGUYPickChar = FGUYChars[Math.floor(Math.random() * FGUYChars.length)];
+            var list = FGUYCostumeList(FGUYPickChar);
+            FGUYPickCostume = list.length > 0 ? list[Math.floor(Math.random() * list.length)].CostumeIndex : 0;
+            FGUYPickTeam = Math.random() < 0.5 ? 0 : 1;
+            FGUYPickInput = 'c';
+            FGUYSendPick();
+        } else if (!FGUYMe().ready) { FGUYDo('ready'); FGUYBotNext = now + 5000; }   // (it toggles: give it time)
+    }
 }
 
 // ---- drawing: one full redraw per change -------------------------------------------------------------------------
@@ -939,6 +1000,7 @@ function FGUYDrawLobby(ui) {
     FGUYText(ui, cx + 272, 216, cw - 290, 28, rules.slice(0, 2).join(' - '), false, 17, FGUYC.soft, 'left');
     FGUYText(ui, cx + 272, 242, cw - 290, 28, rules.slice(2).join(' - '), false, 17, FGUYC.soft, 'left');
     FGUYStage(ui, cx, 306, cw, 508);
+    FGUYHit(cx + 3, 309, cw - 6, 430, 'stage', 0);
     FGUY3DShow(FGUYPickChar, FGUYPickCostume);
     FGUYStageView(cx + cw / 2, 332, 724);
     FGUYRect(ui, cx + 16, 322, 170, 32, 16, FGUYC.ink, 70, 0, 0, 0);
@@ -1039,6 +1101,7 @@ function FGUYDrawChar(ui) {
     var costumes = FGUYCostumeList(c2);
     if (FGUYCostumeSel >= costumes.length) FGUYCostumeSel = 0;
     FGUYStage(ui, px, 120, pw, 443);
+    FGUYHit(px + 3, 123, pw - 6, 437, 'stage', 0);
     FGUY3DShow(c2, costumes.length > 0 ? costumes[FGUYCostumeSel].CostumeIndex : 0);
     FGUYStageView(px + pw / 2, 156, 528);
     FGUYPanel(ui, px, 578, pw, 242, 24, FGUYC.panel, FGUYC.glow);
@@ -1052,7 +1115,7 @@ function FGUYDrawChar(ui) {
         FGUYHit(tx, 690, 82, 112, 'skin', k);
         FGUYPicture(ui, FGUYEntryPic(c2, costumes[k]), tx + 3, 693, 76, 106, 9, 0.05);
     }
-    FGUYFooter(ui, ['A', 'Confirm', 'B', 'Back', 'LB', 'Skin', 'RB', 'Skin'], 'Hover to look, click to pick');
+    FGUYFooter(ui, ['A', 'Confirm', 'B', 'Back', 'LB', 'Skin', 'RB', 'Skin'], 'Click to pick - drag or Q / E to turn');
 }
 
 // ---- loading: the match is starting (the session game boots hidden and takes over when it's ready) ---------
@@ -1159,6 +1222,7 @@ function FGUYDrawSettings(ui) {
 // 89 Y (112 = F1 on a keyboard), 76 LB, 82 RB; on a keyboard also letters / digits (code entry), 8 backspace.
 function OnOnlineHandleInput(key, controller) {
     if (FGUYScreen == 'loading') return;   // the match is on its way
+    if (key >= 37 && key <= 40 && flash.external.ExternalInterface.call('FGUYMOD_FromWASD', key) == true) return;
     FGUYKeyFromPad = FGUYPadKey(key);
     if (FGUYScreen == 'hub') FGUYInputHub(key);
     else if (FGUYScreen == 'lobby') FGUYInputLobby(key);
@@ -1187,13 +1251,7 @@ function FGUYTyping() {   // the code boxes have the focus: letter keys type
 function FGUYInputHub(key) {
     var online = FGUYS.state == 'online';
     if (key == 27) { FGUYSound('back'); PrevPage(); return; }
-    // keyboard: letters, digits and Backspace go straight into the code (no need to pick the boxes first)
-    if (key >= 96 && key <= 105) key = key - 48;   // the number pad
-    if (!FGUYKeyFromPad && ((key >= 48 && key <= 57) || (key >= 65 && key <= 90) || key == 8)) {
-        if (FGUYHubPanel != 2 || FGUYFocus != 0) { FGUYHubPanel = 2; FGUYFocus = 0; FGUYCodePos = Math.min(FGUYCodeLen, 3); }
-        FGUYInputCode(key, online);
-        return;
-    }
+
     if ((key == 76 || key == 82) && (FGUYKeyFromPad || !FGUYTyping())) {
         FGUYHubPanel = (FGUYHubPanel + (key == 82 ? 1 : 2)) % 3;
         FGUYFocus = 0;
@@ -1244,22 +1302,32 @@ function FGUYInputCode(key, online) {
         else { FGUYHubPanel = 1; FGUYFocus = 0; FGUYSound('nav'); }
     } else if (key == 39) {
         if (FGUYCodePos < 3) { FGUYCodePos++; if (FGUYCodeLen < FGUYCodePos) FGUYCodeLen = FGUYCodePos; FGUYSound('nav'); }
-    } else if (key == 8) {
-        if (FGUYCodeLen > 0) { FGUYCodeLen--; FGUYCodePos = FGUYCodeLen; FGUYSound('back'); }
     } else if (key == 13) {
         if (FGUYCodeLen == 4) { FGUYFocus = 1; FGUYInputCode(13, online); }   // a whole code: join
         else if (FGUYCodePos < 3) { FGUYCodePos++; if (FGUYCodeLen < FGUYCodePos) FGUYCodeLen = FGUYCodePos; FGUYSound('nav'); }
         else { FGUYCodeLen = 4; FGUYFocus = 1; FGUYSound('nav'); }
-    } else {
-        if (FGUYKeyFromPad) return;   // a controller button (A comes again as Enter), not a letter
-        var ch = String.fromCharCode(key).toUpperCase(), at = FGUYCodeChars.indexOf(ch);
-        if (at >= 0 && FGUYCodeLen < 4) {
+    }
+}
+
+// Typed on a keyboard (FGUYMOD_TypedText, from the loader): letters and digits go straight into the code
+// (no need to pick the boxes first), \b deletes. Enter (a menu key) joins once it's complete.
+function FGUYTyped(text) {
+    for (var i = 0; i < text.length; i++) {
+        var ch = text.charAt(i);
+        if (FGUYHubPanel != 2 || FGUYFocus != 0) { FGUYHubPanel = 2; FGUYFocus = 0; }
+        if (ch == '\b') {
+            if (FGUYCodeLen > 0) { FGUYCodeLen--; FGUYSound('back'); }
+            FGUYCodePos = Math.min(FGUYCodeLen, 3);
+            continue;
+        }
+        var at = FGUYCodeChars.indexOf(ch);
+        if (at < 0) { FGUYSound('deny'); continue; }   // I O 0 1 aren't used in codes
+        if (FGUYCodeLen < 4) {
             FGUYCode[FGUYCodeLen] = at;
             FGUYCodeLen++;
-            FGUYCodePos = Math.min(3, FGUYCodeLen);
-            if (FGUYCodeLen == 4) FGUYFocus = 1;
             FGUYSound('scroll');
         }
+        FGUYCodePos = Math.min(FGUYCodeLen, 3);
     }
 }
 

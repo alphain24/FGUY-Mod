@@ -113,6 +113,7 @@ DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
     if (state && NetplayPad(pad, state, Real_XInputGetState))
         return NetplayPadConnected(pad) ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
     DWORD r = Real_XInputGetState(pad, state);
+    if (IsBot() && state && r == ERROR_SUCCESS) ZeroMemory(&state->Gamepad, sizeof(state->Gamepad));  // not your pad
     static LONG calls[4];
     if (pad < 4 && InterlockedIncrement(&calls[pad]) == 1)
         Log(L"VPad: game polls pad %lu (real pad %s)", pad, r == ERROR_SUCCESS ? L"connected" : L"absent");
@@ -220,6 +221,15 @@ void InitVirtualPad(HMODULE exe) {
     };
     InstallHooks(exe, hooks);
     if (!testInput) return;
+    if (IsBot()) {   // "Stop test bot.bat" closes every bot copy through its pipe
+        wchar_t path[MAX_PATH];
+        swprintf_s(path, L"%s\\bot_pids.txt", g_modDir);
+        HANDLE f = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, 0, nullptr);
+        char line[32];
+        int n = sprintf_s(line, "%lu\r\n", GetCurrentProcessId());
+        DWORD put;
+        if (f != INVALID_HANDLE_VALUE) { WriteFile(f, line, n, &put, nullptr); CloseHandle(f); }
+    }
     g_padActive[0] = true;  // plugged in from the start, so the game has noticed it before any press
     CloseHandle(CreateThread(nullptr, 0, PipeThread, nullptr, 0, nullptr));
     Log(L"VPad: test input pipe \\\\.\\pipe\\FGUYMod_%lu ready", GetCurrentProcessId());

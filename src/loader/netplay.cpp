@@ -455,10 +455,33 @@ void SendInputs(unsigned upTo) {
 using XInputGetState_t = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
 XInputGetState_t g_realXInput = nullptr;
 unsigned g_playStartTick = 0;        // test script: first tick with players in the level
+bool g_inSession = false;            // an online session (the lobby started it)
+unsigned g_liveTick = 0;             // session: first tick every player's level HUD was up (in their inputs)
+
+// The test bot in an online session: from a second after everyone's level is up, walk around, look about,
+// jump, shoot in bursts and reload now and then (a different rhythm per slot).
+Pad BotPad(unsigned f) {
+    Pad p{};
+    if (!g_liveTick || f < g_liveTick + 60) return p;
+    f = f - g_liveTick + (unsigned)g_slot * 377;
+    unsigned t = f % 960;
+    if (t < 240) p.ly = 32000;
+    else if (t < 360) { p.ly = 20000; p.lx = 26000; }
+    else if (t < 600) p.ly = -28000;
+    else if (t < 720) p.lx = -30000;
+    else p.ly = 24000;
+    if ((f / 90) % 3 == 1) p.rx = (f / 270) % 2 ? 14000 : -14000;   // look around
+    if (f % 150 < 4) p.buttons |= XINPUT_GAMEPAD_A;                 // jump
+    if (f % 200 < 40) p.rt = 255;                                    // shoot in bursts
+    if (f % 1500 < 4) p.buttons |= XINPUT_GAMEPAD_X;                // reload
+    return p;
+}
 
 Pad ScriptPad(unsigned f) {
-    // A fixed little routine, timed from when the level's players exist: (slot 0) press A to leave the
-    // pause menu the level starts in, (slot 1) press Start to drop in, then walk around and jump/attack.
+    if (g_inSession) return BotPad(f);
+    // Direct netplay tests (no lobby): a fixed little routine, timed from when the level's players exist:
+    // (slot 0) press A to leave the pause menu the level starts in, (slot 1) press Start to drop in, then
+    // walk around and jump/attack.
     Pad p{};
     if (!g_playStartTick || f < g_playStartTick) return p;
     f -= g_playStartTick;
@@ -478,7 +501,11 @@ Pad ScriptPad(unsigned f) {
 }
 
 Pad SampleLocal(unsigned f) {
-    if (g_script) return ScriptPad(f);
+    if (g_script) {
+        Pad sp = ScriptPad(f);
+        if (HandoffHudUp()) sp.kbm.flags |= 1;   // my level's HUD is up (as below)
+        return sp;
+    }
     Pad p{};
     XINPUT_STATE st{};
     if (g_realXInput && g_realXInput(0, &st) == ERROR_SUCCESS) {  // the player's own controller
@@ -796,6 +823,14 @@ void Tick() {
     TakeSessionPresses();
     KbmRaw kbm[4] = {};
     for (int s = 0; s < g_players && s < 4; ++s) kbm[s] = g_current[s].kbm;
+    if (g_inSession && !g_liveTick) {  // every player says their level's HUD is up: the level is live
+        bool all = g_players > 0;
+        for (int s = 0; s < g_players && s < 4; ++s) all &= (kbm[s].flags & 1) != 0;
+        if (all) {
+            g_liveTick = g_tick;
+            Log(L"Netplay: everyone's level is up (tick %u)", g_tick);
+        }
+    }
     KbmApply(kbm, g_players);  // keyboard / mouse players' devices, from their raw input (kbm.cpp)
     Real_QPC(&s1);
     WaitForQuiescence();
@@ -873,6 +908,7 @@ void NetplaySessionPress(int pad, WORD buttons, int delayTicks) {
     Log(L"Netplay: session press pad %d buttons %04x in %d ticks", pad, buttons, delayTicks);
 }
 int NetplayLocalSlot() { return g_enabled ? g_slot : -1; }
+bool NetplayLevelLive() { return g_enabled && g_liveTick && g_tick >= g_liveTick; }
 
 void InitNetplay(HMODULE exe) {
     g_enabled = SettingInt(L"Netplay", L"Enable", L"FGUYMOD_NET", 0) != 0;
@@ -936,7 +972,8 @@ void InitNetplay(HMODULE exe) {
     char session[512];  // (too small a buffer gets nothing copied)
     DWORD sessionLen = GetEnvironmentVariableA("FGUYMOD_SESSION", session, sizeof(session));
     g_sessionStory = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "ST,", 3) == 0;
-    KbmSessionStart(sessionLen > 0 && sessionLen < sizeof(session) ? session : nullptr);
+    g_inSession = sessionLen > 0 && sessionLen < sizeof(session);
+    KbmSessionStart(g_inSession ? session : nullptr);
     g_phase = Phase::Boot;
     Log(L"Netplay: on - slot %d of %d players, %s, input delay %d, %s input", g_slot, g_players,
         g_relay ? L"through the lobby server's relay" : L"direct UDP", g_delay, g_script ? L"scripted" : L"controller");

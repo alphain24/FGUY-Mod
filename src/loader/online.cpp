@@ -481,6 +481,7 @@ const char* StateName() {
 }  // namespace
 
 void OnlineEnter() {
+    OnlineMenuOpen(true);
     if (g_wantConnection) return;
     wchar_t server[256], name[64];
     SettingString(L"Online", L"Server", L"FGUYMOD_ONLINE_SERVER", L"127.0.0.1:7650", server, 256);
@@ -510,6 +511,7 @@ void OnlineEnter() {
 }
 
 void OnlineExit() {
+    OnlineMenuOpen(false);
     {
         std::lock_guard<std::mutex> lock(g_lock);
         if (g_state == State::Starting) return;
@@ -554,6 +556,8 @@ void LobbyDo(const char* command, const char* a, const char* b, const char* c, c
     std::lock_guard<std::mutex> lock(g_lock);
     std::string cmd = command ? command : "";
     g_status.clear();
+    if (cmd == "host" || cmd == "join" || cmd == "ready" || cmd == "start" || cmd == "pick")
+        Log(L"Online: lobby action %S %S %S", cmd.c_str(), a ? a : "", cmd == "pick" && b ? b : "");
     if (cmd == "host" && g_state == State::Connected) {
         SendLine("HOST " + CleanToken(a) + " " + CleanToken(b));
     } else if (cmd == "join" && g_state == State::Connected) {

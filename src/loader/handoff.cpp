@@ -45,10 +45,11 @@ DWORD WINAPI AudioThread(LPVOID) {
                                    reinterpret_cast<void**>(&sessions))) &&
         SUCCEEDED(sessions->GetSimpleAudioVolume(nullptr, FALSE, &volume))) {
         volume->SetMute(TRUE, nullptr);
-        Log(L"Handoff: sound muted until the match shows");
+        Log(IsBot() ? L"Handoff: test bot - sound off" : L"Handoff: sound muted until the match shows");
     } else {
         Log(L"Handoff: couldn't mute the sound while hidden");
     }
+    if (IsBot()) return 0;   // the test bot stays muted (and hidden, display.cpp)
     DWORD r = WaitForSingleObject(g_unmute, kRevealTimeoutMs);
     if (r == WAIT_TIMEOUT) {
         Log(L"Handoff: the match didn't start in time - showing the game anyway");
@@ -76,7 +77,10 @@ DWORD WINAPI RevealLater(LPVOID) {
 
 void InitHandoff() {
     wchar_t old[16];
-    if (!GetEnvironmentVariableW(L"FGUYMOD_HANDOFF", old, 16)) return;
+    if (!GetEnvironmentVariableW(L"FGUYMOD_HANDOFF", old, 16)) {
+        if (IsBot()) CloseHandle(CreateThread(nullptr, 0, AudioThread, nullptr, 0, nullptr));  // bot: muted
+        return;
+    }
     SetEnvironmentVariableW(L"FGUYMOD_HANDOFF", nullptr);
     wchar_t show[8];
     if (GetEnvironmentVariableW(L"FGUYMOD_TEST_SHOWSESSION", show, 8)) return;  // test knob: boot visibly

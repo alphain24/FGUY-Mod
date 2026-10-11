@@ -206,6 +206,7 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, 
     }
     PaceFrame();
     NetplayOnFrame();
+    OnlineMenuFrame();
     static unsigned frame = 0;
     ResearchOnFrame(++frame);
     LARGE_INTEGER now;

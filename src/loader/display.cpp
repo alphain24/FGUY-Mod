@@ -139,6 +139,7 @@ const UINT kHideMsg = WM_APP + 0x4649;     // hide the window (the old game, whi
 void RestyleWindow(Mode to);
 
 LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_KEYDOWN && !NetplayEnabled()) OnlineMenuKey(wnd, wp);  // typing on the ONLINE screens
     LRESULT handled;
     if (KbmOnMessage(wnd, msg, wp, lp, &handled)) return handled;
     switch (msg) {
@@ -146,6 +147,7 @@ LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
             RestyleWindow(static_cast<Mode>(wp));
             return 0;
         case kRevealMsg:
+            if (IsBot()) { HandoffRevealed(); return 0; }   // the test bot never shows (the old copy can close)
             if (g_hidden) {
                 g_hidden = false;
                 ShowWindow(wnd, SW_SHOW);
@@ -485,6 +487,10 @@ void InitDisplay(HMODULE exe) {
     if (g_mode == Mode::Borderless && !g_envRes) {   // borderless: the monitor's own resolution
         g_width = MonitorW();
         g_height = MonitorH();
+    }
+    if (IsBot()) {   // the test bot runs hidden in the background
+        g_hidden = true;
+        g_background = true;
     }
     if (HandoffHidden()) {
         g_hidden = true;

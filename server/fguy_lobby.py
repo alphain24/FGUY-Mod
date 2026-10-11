@@ -350,13 +350,15 @@ class Relay(asyncio.DatagramProtocol):
 
     def connection_made(self, transport):
         sock = transport.get_extra_info('socket')
+        sock = getattr(sock, '_sock', sock)  # asyncio's wrapper has no ioctl: the real socket
         if sock is not None and hasattr(socket, 'SIO_UDP_CONNRESET'):
             # Windows reports "port unreachable" (a player's game has closed) as an error on the next read,
-            # and Python then closes the whole UDP socket - quietly. Ask Windows not to report it.
+            # and Python then stops reading the UDP socket - quietly. Ask Windows not to report it.
             try:
                 sock.ioctl(socket.SIO_UDP_CONNRESET, False)
-            except OSError:
-                pass
+            except (OSError, AttributeError) as e:
+                log.info('relay: cannot turn off port-unreachable errors (%s)', e)
+        self.transport = transport
         self.server.transport = transport
 
     def datagram_received(self, data, addr):
@@ -367,6 +369,8 @@ class Relay(asyncio.DatagramProtocol):
 
     def error_received(self, exc):
         log.info('relay: %s', exc)
+        if isinstance(exc, ConnectionResetError):  # the socket may have stopped reading: reopen it
+            self.transport.close()
 
     def connection_lost(self, exc):
         if not self.closed.done():
