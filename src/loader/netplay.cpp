@@ -50,6 +50,7 @@ namespace {
 // ---- settings ---------------------------------------------------------------------------------------
 bool g_enabled = false;
 int g_slot = 0, g_players = 2, g_delay = 3, g_syncEvery = 60;
+int g_rate = 60;                     // ticks (= frames) per second, the same for everyone (the lobby's frame rate)
 bool g_script = false, g_idleScript = false;
 unsigned g_traceFrom = 0;
 std::vector<sockaddr_in> g_peers;
@@ -125,11 +126,11 @@ BOOL WINAPI Hook_QPC(LARGE_INTEGER* out) {
     }
     // base + tick x 1/60 s, plus one count per call so "wait until time passes" loops still finish.
     ++g_statQpcCalls;
-    out->QuadPart = kClockBaseSeconds * g_freq.QuadPart + (LONGLONG)g_tick * g_freq.QuadPart / 60 +
+    out->QuadPart = kClockBaseSeconds * g_freq.QuadPart + (LONGLONG)g_tick * g_freq.QuadPart / g_rate +
                     (++g_callsThisTick);
     return TRUE;
 }
-DWORD FixedMs() { return (DWORD)(kClockBaseSeconds * 1000 + (ULONGLONG)g_tick * 1000 / 60); }
+DWORD FixedMs() { return (DWORD)(kClockBaseSeconds * 1000 + (ULONGLONG)g_tick * 1000 / g_rate); }
 DWORD WINAPI Hook_GetTickCount() {
     return FixedClock() ? FixedMs() : (DWORD)(Real_GetTickCount() + (Shifted() ? g_tickCountOffset : 0));
 }
@@ -554,6 +555,10 @@ Pad SampleLocal(unsigned f) {
     p.buttons |= VPadButtons(0);  // test tools press this player's buttons through the pipe
     if (KbmIsKeyboardSlot(g_slot)) KbmCapture(&p.kbm);  // keyboard / mouse players: the raw state (kbm.cpp)
     if (HandoffHudUp()) p.kbm.flags |= 1;              // my level's HUD is up (kbm.cpp waits for everyone's)
+    if (g_inSession && OnlinePauseSample(&p.buttons, &p.ly, &p.kbm, KbmIsKeyboardSlot(g_slot))) {
+        p.lt = p.rt = 0;   // my pause menu is open: my character stands still (onlinepause.cpp)
+        p.lx = p.rx = p.ry = 0;
+    }
     static Pad last{};
     static int logged = 0;
     if (memcmp(&p, &last, sizeof(p)) != 0 && logged < 60) {  // the first few changes (input problems)
@@ -684,7 +689,8 @@ void TakeSessionPresses() {      // main thread, start of a tick
     // story co-op: once the level runs, every other player presses Start to drop in, again every 3 s until
     // the game has given them their viewport (the viewport count is game state, the same on every PC)
     const int kViewportCount = 0xb53e60;
-    if (g_sessionStory && g_levelTick && g_tick >= g_levelTick + 600 && (g_tick - g_levelTick - 600) % 180 == 0) {
+    const unsigned wait = 10 * g_rate, every = 3 * g_rate;   // 10 s in, then every 3 s
+    if (g_sessionStory && g_levelTick && g_tick >= g_levelTick + wait && (g_tick - g_levelTick - wait) % every == 0) {
         int views = *reinterpret_cast<volatile int*>(kViewportCount);
         for (int s = 1; s < g_players; ++s)
             if (views < s + 1) {
@@ -798,7 +804,7 @@ void PaceTick() {
     }
     LARGE_INTEGER now;
     Real_QPC(&now);
-    LONGLONG step = g_freq.QuadPart / 60;
+    LONGLONG step = g_freq.QuadPart / g_rate;
     if (!next) next = now.QuadPart;
     if (now.QuadPart < next) {
         LONGLONG ms = (next - now.QuadPart) * 1000 / g_freq.QuadPart;
@@ -888,6 +894,21 @@ void Tick() {
             Log(L"Netplay: everyone's level is up (tick %u)", g_tick);
         }
     }
+    if (g_inSession && NetplayLevelLive()) {  // everyone's pause menu open: pause the game (onlinepause.cpp)
+        BYTE flags[4] = {};
+        bool gone[4] = {};
+        for (int s = 0; s < g_players && s < 4; ++s) {
+            flags[s] = g_current[s].kbm.flags;
+            gone[s] = g_gone[s] || (g_goneFrom[s] && g_tick >= g_goneFrom[s]);
+        }
+        bool keyboard = false;
+        int at = OnlinePauseTick(flags, gone, g_players, &keyboard);
+        if (at >= 0 && at < 4) {
+            if (keyboard) g_current[at].kbm.keys[VK_ESCAPE >> 3] |= (BYTE)(1 << (VK_ESCAPE & 7));
+            else g_current[at].buttons |= XINPUT_GAMEPAD_START;
+            kbm[at] = g_current[at].kbm;
+        }
+    }
     KbmApply(kbm, g_players);  // keyboard / mouse players' devices, from their raw input (kbm.cpp)
     Real_QPC(&s1);
     WaitForQuiescence();
@@ -975,7 +996,7 @@ void NetplayLeave(const wchar_t* why) {
         }
         LARGE_INTEGER real;
         Real_QPC(&real);
-        g_qpcOffset = kClockBaseSeconds * g_freq.QuadPart + (LONGLONG)g_tick * g_freq.QuadPart / 60 +
+        g_qpcOffset = kClockBaseSeconds * g_freq.QuadPart + (LONGLONG)g_tick * g_freq.QuadPart / g_rate +
                       (++g_callsThisTick) - real.QuadPart;
         g_tickCountOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_GetTickCount();
         g_timeGetTimeOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_timeGetTime();
@@ -1006,13 +1027,20 @@ bool NetplaySessionReturn() {
 
 void NetplaySessionPress(int pad, WORD buttons, int delayTicks) {
     if (!g_enabled) return;
+    if (delayTicks < 0) delayTicks = 0;
+    delayTicks = delayTicks * g_rate / 60;   // the menus' delays are in 1/60 s
     EnterCriticalSection(&g_pressLock);
-    g_pressQueue.push_back({pad, buttons, delayTicks < 0 ? 0 : delayTicks, 0});
+    g_pressQueue.push_back({pad, buttons, delayTicks, 0});
     LeaveCriticalSection(&g_pressLock);
     Log(L"Netplay: session press pad %d buttons %04x in %d ticks", pad, buttons, delayTicks);
 }
 int NetplayLocalSlot() { return g_enabled ? g_slot : -1; }
 unsigned NetplayTick() { return g_tick; }
+void NetplayLogStacks() {
+    Log(L"Netplay: game thread %lu:", g_mainThread);
+    LogStack(g_mainThread);
+    if (g_renderThread) { Log(L"Netplay: render thread %lu:", g_renderThread); LogStack(g_renderThread); }
+}
 bool NetplayLevelLive() { return g_enabled && g_liveTick && g_tick >= g_liveTick; }
 
 void InitNetplay(HMODULE exe) {
@@ -1025,7 +1053,9 @@ void InitNetplay(HMODULE exe) {
     g_script = SettingInt(L"Netplay", L"Script", L"FGUYMOD_NET_SCRIPT", 0) != 0;
     g_idleScript = SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_IDLE", 0) != 0;
     g_traceFrom = (unsigned)SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_TRACE", 0);
-    g_syncEvery = SettingInt(L"Netplay", L"SyncCheckFrames", nullptr, 60);
+    g_rate = SettingInt(L"Netplay", L"TickRate", L"FGUYMOD_NET_RATE", 60);
+    if (g_rate < 30 || g_rate > 240) g_rate = 60;
+    g_syncEvery = SettingInt(L"Netplay", L"SyncCheckFrames", nullptr, g_rate);
     for (int s = 0; s < 4; ++s)
         for (int k = 0; k < 8; ++k) g_peerHashTick[s][k] = ~0u;
     for (int k = 0; k < 8; ++k) g_myHashTick[k] = ~0u;
@@ -1080,6 +1110,7 @@ void InitNetplay(HMODULE exe) {
     g_inSession = sessionLen > 0 && sessionLen < sizeof(session);
     KbmSessionStart(g_inSession ? session : nullptr);
     g_phase = Phase::Boot;
+    Log(L"Netplay: %d frames per second", g_rate);
     Log(L"Netplay: on - slot %d of %d players, %s, input delay %d, %s input", g_slot, g_players,
         g_relay ? L"through the lobby server's relay" : L"direct UDP", g_delay, g_script ? L"scripted" : L"controller");
 

@@ -278,6 +278,12 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             static char v[32];
             if (!GetEnvironmentVariableA("FGUYMOD_TEST_AUTOMENU", v, sizeof(v))) v[0] = 0;
             ReturnString(movie, v);
+        } else if (strcmp(fn, "PauseMenu") == 0) {   // the online pause menu (the HUD, every frame)
+            ReturnString(movie, OnlinePauseMenu());
+        } else if (strcmp(fn, "PauseCursor") == 0) {
+            ReturnString(movie, OnlinePauseCursor());
+        } else if (strcmp(fn, "PauseQuitDone") == 0) {
+            OnlinePauseQuitDone();
         } else if (strcmp(fn, "SessionReturn") == 0) {   // a front-end page opened: is the match over?
             ReturnBool(movie, NetplaySessionReturn());
         } else if (strcmp(fn, "SetMovieVolume") == 0) {   // Options > Audio > MOVIES & TITLE
@@ -351,6 +357,7 @@ void __fastcall Hook_Command(void* self, void* edx, void* movie, const char* com
         }
     }
     Real_Command(self, edx, movie, command, args);
+    OnlinePauseCommand(command);
 }
 
 // ---- vtable patching -------------------------------------------------------------------------------

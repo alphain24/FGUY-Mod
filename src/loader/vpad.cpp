@@ -166,6 +166,10 @@ void HandleCommand(char* line) {
         }, nullptr, 0, nullptr));
         return;
     }
+    if (cmd && _stricmp(cmd, "stacks") == 0) {  // research: what the game's threads are doing
+        NetplayLogStacks();
+        return;
+    }
     if (cmd && _stricmp(cmd, "kbm") == 0) {  // test keyboard / mouse (online keyboard players, kbm.cpp)
         char* what = strtok_s(nullptr, " \t\r\n", &ctx);
         char* a = strtok_s(nullptr, " \t\r\n", &ctx);

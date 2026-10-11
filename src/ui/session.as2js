@@ -53,11 +53,18 @@ function FGUYSessionCheckReturn() {
     if (flash.external.ExternalInterface.call('FGUYMOD_SessionReturn') != true) return;
     FGUYSessReturning = true;
     FGUYSessLog('the match is over - back to the lobby');
-    FGUYSessReturnTimer = setInterval(FGUYSessGoOnline, 600);   // once the page has settled
+    FGUYSessReturnWaits = 0;
+    FGUYSessReturnTimer = setInterval(FGUYSessGoOnline, 300);   // once the page has settled
 }
 
 function FGUYSessGoOnline() {
+    // a page that's still sliding in has the menu input locked (LockInput); opening ONLINE in the middle of
+    // that leaves it locked for good (UnlockInput restores the "previous" state - locked), so wait for it
+    FGUYSessReturnWaits = FGUYSessReturnWaits + 1;
+    if (InputFlags != 0 && FGUYSessReturnWaits < 20) return;
     clearInterval(FGUYSessReturnTimer);
+    InputFlags = 0;
+    PreviousInputFlags = 0;
     if (FGUYOnline) return;
     getURL('FSCommand:CTRL_EnableButtonInput', '');   // the quit turned the buttons off (CTRL_DisableButtonInput)
     getURL('FSCommand:CTRL_ResetInput', '');

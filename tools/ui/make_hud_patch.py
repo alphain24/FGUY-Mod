@@ -21,10 +21,12 @@ import zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gfxpatch import Patch, Reg, function_at, parse_actions, root_doaction_containing  # noqa: E402
 import as2asm as A  # noqa: E402
+import as2c  # noqa: E402
 from make_menu_patch import function2_code  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
+PAUSE_SOURCE = os.path.join(HERE, '..', '..', 'src', 'ui', 'pause.as2js')   # the online pause menu
 
 
 def param_registers(data, o):
@@ -65,7 +67,11 @@ def build(data):
         vp = r['ViewportIndex']
         return A.store(vp, A.Code(A.external('FGUYMOD_HudViewport', Reg(vp)), A.op('ToNumber')))
 
-    insert_at_start(p, data, actions, 'SetSplitScreenModeInternal', split_mode)
+    # (the online pause menu starts with the HUD's first layout; offline its poll finds nothing to do)
+    insert_at_start(p, data, actions, 'SetSplitScreenModeInternal',
+                    lambda r: split_mode(r) + A.Code(A.call('FGUYPauseStart')))
+    o, _ = function_at(data, actions, 'SetSplitScreenModeInternal')
+    p.replace(o, 0, as2c.compile_source(open(PAUSE_SOURCE, encoding='utf-8').read()))
     # The game hands the HUD real viewport numbers in many places (and the HUD stores them), so they
     # stay real everywhere; only the three helpers that turn a viewport into HUD objects translate
     # (each is always called with a real number, so every path translates exactly once).

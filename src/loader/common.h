@@ -58,6 +58,7 @@ void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
 int NetplayLocalSlot();                //   my player slot, -1 when netplay is off
 unsigned NetplayTick();                //   the lockstep tick being simulated
+void NetplayLogStacks();               //   research (test pipe "stacks")
 bool NetplayLevelLive();               //   session: every player's level HUD is up (same tick everywhere)
 void NetplaySessionPress(int pad, WORD buttons, int delayTicks);  // session autopilot
 void NetplaySessionLevel();            //   the menu launched the level
@@ -78,6 +79,15 @@ void OnlineMenuFrame();                     //   d3d9.cpp, every frame
 bool IsBot();                               //   this copy is the test bot (FGUYMOD_BOT)
 bool StaysMuted();                          //   the bot / test copies: no sound
 const char* BotJoinCode();
+
+// onlinepause.cpp: the online pause menu (the match keeps running; the game pauses once everyone has it open)
+struct KbmRaw;
+bool OnlinePauseSample(WORD* buttons, SHORT* ly, KbmRaw* kbm, bool keyboardPlayer);  // netplay: my input
+int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyboard); //   everyone's
+void OnlinePauseCommand(const char* command);  //   ui.cpp: a menu command ran
+const char* OnlinePauseMenu();                 //   FGUYMOD_PauseMenu (the HUD)
+const char* OnlinePauseCursor();
+void OnlinePauseQuitDone();
 
 // online.cpp: lobby + the in-game ONLINE screens
 void OnlineEnter();

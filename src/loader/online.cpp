@@ -38,6 +38,7 @@ struct Member {
     std::string name, character = "Peter", costume = "0", team = "0", input = "c";  // input: k keyboard, c controller
     bool ready = false;
     bool away = false;   // still in the last match (the lobby keeps their place)
+    std::string rate = "60"; // the most frames per second their monitor shows
     int rtt = 0;
 };
 struct LobbyInfo {
@@ -55,6 +56,7 @@ int g_mySlot = -1;
 std::vector<Member> g_members;
 std::vector<LobbyInfo> g_lobbies;
 std::string g_conf = "DM|FR|0|0|0";  // mode|map|time|score|ff, as the menu uses it
+std::string g_confRate = "0";        // the match's frames per second (0 = auto: the lowest monitor among us)
 std::string g_own;                  // the host's characters and costumes: Peter:0.1.3;Lois:0.2 (the session
                                     // plays on the host's save, so everyone picks from it)
 bool g_ready = false;
@@ -221,6 +223,11 @@ void HandleLine(const std::string& line) {
     if (cmd == "WELCOME") {
         g_state = State::Connected;
         g_status.clear();
+        DEVMODEW mode = {};   // the most frames per second this PC's monitor shows (the lobby's "auto" rate)
+        mode.dmSize = sizeof(mode);
+        int hz = EnumDisplaySettingsW(nullptr, ENUM_CURRENT_SETTINGS, &mode) && mode.dmDisplayFrequency > 1
+                     ? (int)mode.dmDisplayFrequency : 60;
+        SendLine("RATE " + std::to_string(hz));
         if (!g_rejoin.empty()) {   // back from a match: our place in its lobby
             SendLine("REJOIN " + g_rejoin);
             Log(L"Online: back from the match - rejoining lobby %S", g_rejoin.c_str());
@@ -255,12 +262,14 @@ void HandleLine(const std::string& line) {
             m.costume = e[5];
             m.team = e[6];
             if (e.size() > 7) m.input = e[7] == "k" ? "k" : "c";
+            if (e.size() > 8) m.rate = CleanToken(e[8]);
             g_members.push_back(m);
         }
     } else if (cmd == "OWN" && f.size() > 1) {
         g_own = CleanList(f[1]);
     } else if (cmd == "CONF" && f.size() >= 6) {
         g_conf = f[1] + "|" + f[2] + "|" + f[3] + "|" + f[4] + "|" + f[5];
+        g_confRate = f.size() >= 7 ? CleanToken(f[6]) : "0";
     } else if (cmd == "CLOSED") {
         g_state = State::Connected;
         g_code.clear();
@@ -438,6 +447,7 @@ void StartSession(const std::vector<std::string>& f) {
     set(L"FGUYMOD_NET_RELAY", g_serverHost + ":" + f[5]);
     set(L"FGUYMOD_NET_TOKEN", f[1]);
     set(L"FGUYMOD_NET_LOBBY", g_code);   // to come back to this lobby after the match
+    set(L"FGUYMOD_NET_RATE", f.size() >= 10 ? f[9] : std::string("60"));   // frames per second, everyone alike
     set(L"FGUYMOD_NET_LANG", f[6]);
     set(L"FGUYMOD_SESSION", f[7] + "|" + f[8]);  // conf: mode,map,time,score,ff | picks: char:costume:team;...
     SetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", dirName);
@@ -549,14 +559,14 @@ const char* LobbyState() {
     g_text = "S|" + std::string(StateName()) + "|" + Field(g_status) + "|" + g_code + "|" + std::to_string(g_mySlot) +
              "|" + (g_private ? "1" : "0") + "|" + Field(g_name) + "|" + Field(g_serverHost) + "|" +
              std::to_string(g_rtt) + "\n";
-    g_text += "C|" + g_conf + "\n";
+    g_text += "C|" + g_conf + "|" + g_confRate + "\n";
     if (inLobby && !g_own.empty()) g_text += "O|" + g_own + "\n";
     if (inLobby) {
         for (size_t i = 0; i < g_members.size(); ++i) {
             const Member& m = g_members[i];
             g_text += "M|" + std::to_string(i) + "|" + Field(m.name) + "|" + (m.away ? "2" : m.ready ? "1" : "0") + "|" +
                       std::to_string(m.rtt) + "|" + Field(m.character) + "|" + Field(m.costume) + "|" + Field(m.team) +
-                      "|" + m.input + "\n";
+                      "|" + m.input + "|" + m.rate + "\n";
         }
     } else {
         for (const LobbyInfo& l : g_lobbies)
@@ -617,7 +627,12 @@ void LobbyDo(const char* command, const char* a, const char* b, const char* c, c
     } else if (cmd == "conf" && g_state == State::InLobby && g_mySlot == 0) {
         g_conf = CleanToken(a) + "|" + CleanToken(b) + "|" + CleanToken(c) + "|" + CleanToken(d) + "|" + CleanToken(e);
         SendLine("CONF " + CleanToken(a) + " " + CleanToken(b) + " " + CleanToken(c) + " " + CleanToken(d) + " " +
-                 CleanToken(e));
+                 CleanToken(e) + " " + g_confRate);
+    } else if (cmd == "rate" && g_state == State::InLobby && g_mySlot == 0) {   // the match's frame rate (0 auto)
+        g_confRate = CleanToken(a);
+        std::string line = "CONF";
+        for (auto& v : Split(g_conf, '|')) line += " " + v;
+        SendLine(line + " " + g_confRate);
     }
 }
 

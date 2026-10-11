@@ -1,0 +1,117 @@
+// The online pause menu, drawn by the in-game HUD movie (hud.gfx, patched by tools/ui/make_hud_patch.py).
+// The loader runs it (src/loader/onlinepause.cpp: input, choices, pausing once everyone has it open); this
+// only draws what FGUYMOD_PauseMenu says, every frame, and quits the level when told to.
+//   FGUYMOD_PauseMenu   -> "open|selected|host|open count|players|quit"
+//   FGUYMOD_PauseCursor -> "x|y|show"   (x, y in 1/10000 of the screen)
+// Item boxes are fractions of the screen - the loader hit-tests the mouse with the same numbers.
+
+function FGUYPauseStart() {
+    if (_root.FGUYPauseRunning) return;
+    _root.FGUYPauseRunning = true;
+    FGUYPauseLast = '';
+    FGUYPauseQuitting = false;
+    FGUYPauseTimer = setInterval(FGUYPausePoll, 33);
+}
+
+function FGUYPausePoll() {
+    var s = flash.external.ExternalInterface.call('FGUYMOD_PauseMenu');
+    if (s == undefined) return;   // not the loader we know (or offline): nothing to do
+    s = String(s);
+    var f = s.split('|');
+    if (f[5] == '1' && !FGUYPauseQuitting) {   // back to the lobby: leave the level
+        FGUYPauseQuitting = true;
+        getURL('FSCommand:CTRL_DisableButtonInput', '');
+        getURL('FSCommand:GAME_Quit', '');
+        flash.external.ExternalInterface.call('FGUYMOD_PauseQuitDone');
+    }
+    if (s != FGUYPauseLast) {
+        FGUYPauseLast = s;
+        FGUYPauseDraw(f);
+    }
+    var c = String(flash.external.ExternalInterface.call('FGUYMOD_PauseCursor')).split('|');
+    var ui = _root.FGUYPauseUI;
+    if (ui != undefined && ui.pointer != undefined) {
+        var r = FGUYPauseRect();
+        ui.pointer._visible = c[2] == '1';
+        ui.pointer._x = r.x + Number(c[0]) / 10000 * r.w;
+        ui.pointer._y = r.y + Number(c[1]) / 10000 * r.h;
+    }
+}
+
+function FGUYPauseRect() {   // the visible screen in stage units
+    var vr = Stage.visibleRect;
+    if (vr) return {x: vr.x, y: vr.y, w: vr.width, h: vr.height};
+    return {x: 0, y: 0, w: 960, h: 720};
+}
+
+function FGUYPauseBox(mc, x, y, w, h, r, fill, alpha, line, lineAlpha, thick) {
+    if (thick > 0) mc.lineStyle(thick, line, lineAlpha);
+    else mc.lineStyle(undefined);
+    mc.beginFill(fill, alpha);
+    mc.moveTo(x + r, y);
+    mc.lineTo(x + w - r, y);
+    mc.curveTo(x + w, y, x + w, y + r);
+    mc.lineTo(x + w, y + h - r);
+    mc.curveTo(x + w, y + h, x + w - r, y + h);
+    mc.lineTo(x + r, y + h);
+    mc.curveTo(x, y + h, x, y + h - r);
+    mc.lineTo(x, y + r);
+    mc.curveTo(x, y, x + r, y);
+    mc.endFill();
+}
+
+function FGUYPauseText(mc, x, y, w, h, str, display, size, color, align) {
+    FGUYPauseN = FGUYPauseN + 1;
+    var name = 't' + FGUYPauseN;
+    mc.createTextField(name, mc.getNextHighestDepth(), x, y, w, h);
+    var t = mc[name];
+    t.embedFonts = true;
+    t.selectable = false;
+    var fmt = new TextFormat();
+    fmt.font = display ? '$font_displayText' : '$font_bodyText';
+    fmt.size = size;
+    fmt.color = color;
+    fmt.align = align;
+    t.setNewTextFormat(fmt);
+    t.text = str;
+    t.setTextFormat(fmt);
+    return t;
+}
+
+function FGUYPauseDraw(f) {
+    _root.FGUYPauseUI.removeMovieClip();
+    if (f[0] != '1') return;
+    var ui = _root.createEmptyMovieClip('FGUYPauseUI', 30000);
+    FGUYPauseN = 0;
+    var r = FGUYPauseRect();
+    var sel = Number(f[1]), host = f[2] == '1', open = Number(f[3]), players = Number(f[4]);
+    var items = host ? ['RESUME', 'QUIT TO LOBBY', 'QUIT WITH PARTY'] : ['RESUME', 'QUIT TO LOBBY'];
+    var bg = ui.createEmptyMovieClip('bg', 1);
+    FGUYPauseBox(bg, r.x, r.y, r.w, r.h, 0, 0x000000, 45, 0, 0, 0);
+    var px = r.x + r.w * 0.32, pw = r.w * 0.36, py = r.y + r.h * 0.26, ph = r.h * (0.24 + items.length * 0.085);
+    FGUYPauseBox(bg, px, py, pw, ph, 18, 0x13213C, 95, 0x2E5C9A, 100, 3);
+    var size = r.h / 720;
+    FGUYPauseText(ui, px, py + r.h * 0.03, pw, 50 * size, 'PAUSED', true, 38 * size, 0xF5D33A, 'center');
+    FGUYPauseText(ui, px, py + r.h * 0.095, pw, 30 * size, 'The match goes on for the others', false, 15 * size, 0xBFD0EA, 'center');
+    for (var i = 0; i < items.length; i++) {
+        var iy = r.y + r.h * (0.43 + i * 0.085), ix = r.x + r.w * 0.36, iw = r.w * 0.28, ih = r.h * 0.07;
+        if (i == sel) FGUYPauseBox(bg, ix, iy, iw, ih, 12, 0xF5D33A, 100, 0xFFFFFF, 100, 2);
+        else FGUYPauseBox(bg, ix, iy, iw, ih, 12, 0x1C3156, 100, 0x2E5C9A, 100, 2);
+        FGUYPauseText(ui, ix, iy + ih * 0.18, iw, ih, items[i], true, 22 * size, i == sel ? 0x1A1A1A : 0xFFFFFF, 'center');
+    }
+    var note = players > 1 ? 'The match pauses when everyone has this menu open (' + open + ' of ' + players + ')' : '';
+    FGUYPauseText(ui, px, r.y + r.h * (0.45 + items.length * 0.085), pw, 26 * size, note, false, 13 * size, 0x9FB4D6, 'center');
+    var p = ui.createEmptyMovieClip('pointer', 100);   // keyboard / mouse players: a pointer
+    p.lineStyle(1.5, 0x000000, 100);
+    p.beginFill(0xFFFFFF, 100);
+    p.moveTo(0, 0);
+    p.lineTo(0, 18 * size);
+    p.lineTo(5 * size, 13 * size);
+    p.lineTo(9 * size, 21 * size);
+    p.lineTo(12 * size, 19 * size);
+    p.lineTo(8 * size, 12 * size);
+    p.lineTo(14 * size, 12 * size);
+    p.lineTo(0, 0);
+    p.endFill();
+    p._visible = false;
+}

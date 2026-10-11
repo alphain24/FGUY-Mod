@@ -373,7 +373,8 @@ void SaveMode(Mode m) {
 // Test tools' quit: the window on top (not active), so a covered game draws its next frame (and quits there).
 void DisplayShowForQuit() {
     if (!g_mainWnd || g_hidden) return;
-    SetWindowPos(g_mainWnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    // (on top of everything: a game window covered by others gets its frames held back by Windows)
+    SetWindowPos(g_mainWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
 // A point in the game window's client area (real pixels) as the game sees it (its render size).

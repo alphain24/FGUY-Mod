@@ -459,11 +459,12 @@ function FGUYParse(blob) {
             st.name = f[6]; st.server = f[7]; st.ping = Number(f[8]);
         } else if (f[0] == 'C') {
             st.mode = f[1]; st.map = f[2]; st.time = Number(f[3]); st.score = Number(f[4]); st.ff = Number(f[5]);
+            st.rate = Number(f[6]);
         } else if (f[0] == 'O') {
             st.own = f[1];
         } else if (f[0] == 'M') {
             st.members.push({slot: Number(f[1]), name: f[2], ready: f[3] == '1', away: f[3] == '2', ping: Number(f[4]), character: f[5],
-                             costume: f[6], team: Number(f[7]), input: f[8] == 'k' ? 'k' : 'c'});
+                             costume: f[6], team: Number(f[7]), input: f[8] == 'k' ? 'k' : 'c', rate: Number(f[9])});
         } else if (f[0] == 'L') {
             st.lobbies.push({code: f[1], host: f[2], players: Number(f[3]), max: Number(f[4]), mode: f[5], map: f[6]});
         }
@@ -1155,6 +1156,16 @@ function FGUYDrawLoading(ui) {
 }
 
 // ---- match settings --------------------------------------------------------------------------------------------------
+// Auto frame rate: the lowest of everyone's monitors (the server picks the same at the start).
+function FGUYAutoRate() {
+    var low = 144;
+    for (var i = 0; i < FGUYS.members.length; i++) {
+        var r = FGUYS.members[i].rate;
+        if (r > 0 && r < low) low = r;
+    }
+    return low;
+}
+
 function FGUYSettingRows() {
     var mode = FGUYMode(FGUYS.mode);
     var rows = ['mode', 'map'];
@@ -1163,6 +1174,7 @@ function FGUYSettingRows() {
         if (mode.score != '') rows.push('score');
         rows.push('ff');
     }
+    rows.push('rate');
     return rows;
 }
 
@@ -1172,6 +1184,7 @@ function FGUYSettingValue(r) {
     if (r == 'map') return [mode.code == 'ST' ? 'LEVEL' : 'MAP', FGUYMapName(FGUYS.map, FGUYS.mode)];
     if (r == 'time') return ['TIME LIMIT', FGUYRules.TimeLimit[FGUYS.time]];
     if (r == 'score') return [mode.score == 'FlagLimit' ? 'FLAG LIMIT' : 'WINNING SCORE', FGUYRules[mode.score][FGUYS.score]];
+    if (r == 'rate') return ['FRAME RATE', FGUYS.rate > 0 ? FGUYS.rate + ' FPS' : 'Auto (' + FGUYAutoRate() + ' FPS)'];
     return ['FRIENDLY FIRE', FGUYRules.FriendlyFire[FGUYS.ff]];
 }
 
@@ -1181,6 +1194,7 @@ function FGUYSettingHelp(r) {
     if (r == 'map') return mode.code == 'ST' ? 'Which story level you play together.' : "Where you play. You can pick the maps the host's save has unlocked.";
     if (r == 'time') return 'How long a match lasts.';
     if (r == 'score') return mode.score == 'FlagLimit' ? 'The match ends when a team captures this many flags.' : 'The match ends when a team reaches this score.';
+    if (r == 'rate') return 'Everyone plays at the same frame rate. Auto: the best every player\'s screen shows (up to 144). Higher is smoother, but every PC must keep up.';
     return 'On: you can hurt your own team. Off: you can only hurt the other team.';
 }
 
@@ -1482,7 +1496,14 @@ function FGUYInputSettings(key) {
     }
     if (r == 'mode') FGUYCycleMode(dir);
     else if (r == 'map') FGUYCycleMap(dir);
-    else {
+    else if (r == 'rate') {
+        var rates = [0, 60, 120, 144], at = 0;
+        for (var k = 0; k < rates.length; k++) if (rates[k] == FGUYS.rate) at = k;
+        FGUYS.rate = rates[(at + dir + rates.length) % rates.length];
+        FGUYDo('rate', FGUYS.rate);
+        var rv = FGUYSettingValue('rate');
+        FGUYToast('Frame rate: ' + rv[1]);
+    } else {
         var list = r == 'time' ? FGUYRules.TimeLimit : (r == 'score' ? FGUYRules[mode.score] : FGUYRules.FriendlyFire);
         var field = r == 'time' ? 'time' : (r == 'score' ? 'score' : 'ff');
         FGUYS[field] = (FGUYS[field] + dir + list.length) % list.length;

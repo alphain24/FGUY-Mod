@@ -1,9 +1,10 @@
-# Back-to-the-lobby test on one PC: a match (keyboard host, controller guest), the host pauses and picks
-# Quit Game -> Yes; both games should come back to the same lobby; then the guest readies up and the host
-# starts a second match from it.
+# Back-to-the-lobby test on one PC: a match (keyboard host, controller guest); the host opens the online pause
+# menu and picks QUIT WITH PARTY; both games should come back to the same lobby and keep running there; then
+# the guest readies up and the host starts a second match from it.
 #   test_return.ps1        (needs a lobby server: python server\fguy_lobby.py)
 param([string]$GameDir = "A:\Games\Activision\Family Guy Back to the Multiverse")
 $P = Split-Path $PSScriptRoot -Parent
+$shots = Join-Path $P "build\shots"
 function Log([int]$id) { Join-Path $GameDir "FGUYMod\FGUYMod_$id.log" }
 function Has([int]$id, [string]$text) { (Test-Path (Log $id)) -and (Select-String -Path (Log $id) -Pattern $text -SimpleMatch -Quiet) }
 function WaitFor([int]$id, [string]$text, [int]$seconds) {
@@ -13,6 +14,12 @@ function WaitFor([int]$id, [string]$text, [int]$seconds) {
 }
 function Step([string]$what, [bool]$ok) {
     if ($ok) { Write-Output "ok:   $what" } else { Write-Output "FAIL: $what"; exit 1 }
+}
+function Pipe([int]$id, [string]$line) {
+    $pipe = New-Object System.IO.Pipes.NamedPipeClientStream(".", "FGUYMod_$id", [System.IO.Pipes.PipeDirection]::Out)
+    $pipe.Connect(3000)
+    $w = New-Object System.IO.StreamWriter($pipe)
+    $w.WriteLine($line); $w.Flush(); $w.Dispose()
 }
 
 & "$PSScriptRoot\stop_tests.ps1" -GameDir $GameDir
@@ -26,10 +33,21 @@ $h = $sess | Where-Object { Has $_ "slot 0 of 2 players" } | Select-Object -Last
 $c = $sess | Where-Object { Has $_ "slot 1 of 2 players" } | Select-Object -Last 1
 Step "the match runs (host $h, guest $c)" ([bool]($h -and $c))
 
-& "$PSScriptRoot\kbm_test.ps1" -Id $h "key 27 150" "wait 1500" "key 40 150" "wait 500" "key 40 150" "wait 500" "key 40 150" "wait 500" "key 13 150" "wait 1500" "key 37 150" "wait 600" "key 13 150" | Out-Null
+# the online pause menu: Esc opens it (the match goes on), down twice = QUIT WITH PARTY (host only), Enter
+& "$PSScriptRoot\kbm_test.ps1" -Id $h "key 27 150" "wait 1200" | Out-Null
+& "$PSScriptRoot\window_shot.ps1" -Id $h -Out (Join-Path $shots "pause_menu.png")
+Step "the online pause menu opens" (WaitFor $h "Pause: menu open" 5)
+& "$PSScriptRoot\kbm_test.ps1" -Id $h "key 40 150" "wait 400" "key 40 150" "wait 400" "key 13 150" | Out-Null
 Step "host back in the lobby" (WaitFor $h "rejoining lobby" 60)
 Step "guest back in the lobby" (WaitFor $c "rejoining lobby" 30)
 Start-Sleep 6
+& "$PSScriptRoot\window_shot.ps1" -Id $c -Out (Join-Path $shots "returned_lobby.png")
+Start-Sleep 50   # the returned lobby must keep drawing (a frame-rate line every 10 s)
+foreach ($id in $h, $c) {
+    $fps = Select-String -Path (Log $id) -Pattern "D3D: .* fps" | Select-Object -Last 1
+    Write-Output "      $id last frame-rate line: $($fps.Line)"
+    Pipe $id "stacks"
+}
 & "$PSScriptRoot\pad.ps1" -Id $c x | Out-Null
 Step "guest readies up in the lobby" (WaitFor $c "lobby action ready" 10)
 & "$PSScriptRoot\pad.ps1" -Id $h x | Out-Null

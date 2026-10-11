@@ -20,7 +20,9 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     READY <0|1>
     SET <character> <costume> <team> [<input>]   your picks (character name, costume index, team 0 good /
                                      1 evil; input k = keyboard and mouse, c = controller)
-    CONF <mode> <map> <time> <score> <ff>   host: match settings (short codes / list indices)
+    CONF <mode> <map> <time> <score> <ff> [<rate>]   host: match settings (short codes / list indices;
+                                     rate: frames per second, 0 = auto)
+    RATE <hz>                        the most frames per second this player's monitor shows (60 / 120 / 144)
     OWN <list>                       host: what the host's save has (the session plays on it), so everyone
                                      picks from it: <char>:<costume>.<costume>...;<char>:...
     RTT <ms>                         your measured round trip to this server
@@ -35,12 +37,12 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     WELCOME <proto>
     LIST [<code>,<host>,<players>,<max>,<mode>,<map> ...]     (public lobbies)
     LOBBY <code> <private>
-    MEMBERS <your slot> [<slot>,<name>,<ready>,<rtt>,<character>,<costume>,<team>,<input> ...]
+    MEMBERS <your slot> [<slot>,<name>,<ready>,<rtt>,<character>,<costume>,<team>,<input>,<rate> ...]
                                      ready: 0 / 1, or 2 = still in the match
     CONF <mode> <map> <time> <score> <ff>
     OWN <list>                       the host's characters and costumes (also sent on joining)
     SAVE <base64>                    sent right before START when the host shared a save
-    START <token> <slot> <players> <input delay> <udp port> <lang> <conf> <picks>
+    START <token> <slot> <players> <input delay> <udp port> <lang> <conf> <picks> <rate>
                                      conf = mode,map,time,score,ff; picks = char:costume:team:input;... by slot
                                      (a snapshot, so every player starts from exactly the same choices)
     CLOSED <reason...>               the lobby is gone (host left)
@@ -78,7 +80,12 @@ LOBBY_KEEP_S = 1800               # a player's place in a lobby waits this long 
 CLIENT_IDLE_S = 60                # drop a lobby connection silent this long (the game pings every 2 s)
 SLOT_MOVE_S = 5                   # a slot's address may change (new NAT port) only after this much silence
 RELAY_MAX_PPS = 2000              # per player address
-TICK_MS = 1000 / 60
+RATES = (60, 120, 144)            # online frame rates (everyone in a match runs the same one)
+
+
+def snap_rate(hz):
+    """The highest online frame rate not above hz (60 at least)."""
+    return max([r for r in RATES if r <= hz] or [60])
 
 log = logging.getLogger('fguy')
 
@@ -93,6 +100,7 @@ class Client:
         self.ready = False
         self.rtt = 0
         self.char, self.costume, self.team, self.input = 'Peter', '0', '0', 'c'
+        self.rate = 60        # the most frames per second their monitor shows
         self.away = False     # in a match (the lobby keeps the place for REJOIN)
         self.gone_at = None   # when an away player's lobby connection closed
         self.match_slot = -1  # their slot in that match
@@ -114,7 +122,7 @@ class Lobby:
         self.members = [host]
         self.save = None
         self.lang = '-'
-        self.conf = ['DM', 'FR', '0', '0', '0']  # mode, map, time, score, friendly fire
+        self.conf = ['DM', 'FR', '0', '0', '0', '0']  # mode, map, time, score, friendly fire, rate (0 auto)
         self.own = None                           # the host's characters and costumes
         self.token = None                         # the running match's session token (hex)
         self.playing = False                      # its match runs and the host isn't back yet
@@ -124,8 +132,8 @@ class Lobby:
         return self.members[0]
 
     def broadcast_members(self):
-        entries = ' '.join(f'{i},{c.name},{2 if c.away else int(c.ready)},{c.rtt},{c.char},{c.costume},{c.team},{c.input}'
-                           for i, c in enumerate(self.members))
+        entries = ' '.join(f'{i},{c.name},{2 if c.away else int(c.ready)},{c.rtt},{c.char},{c.costume},{c.team},{c.input},'
+                           f'{c.rate}' for i, c in enumerate(self.members))
         for c in self.members:
             if not c.away:
                 c.send(f'MEMBERS {c.slot} {entries}'.rstrip())
@@ -252,13 +260,17 @@ class Server:
                 c.input = 'k' if len(args) == 4 and args[3] == 'k' else 'c'
                 c.lobby.broadcast_members()
         elif cmd == 'CONF' and c.lobby and c is c.lobby.host:
-            if len(args) == 5 and all(TOKEN_RE.match(a) for a in args):
-                c.lobby.conf = list(args)
+            if len(args) in (5, 6) and all(TOKEN_RE.match(a) for a in args):
+                c.lobby.conf = list(args) + (['0'] if len(args) == 5 else [])
                 c.lobby.broadcast_conf()
         elif cmd == 'OWN' and c.lobby and c is c.lobby.host:
             if len(args) == 1 and OWN_RE.match(args[0]):
                 c.lobby.own = args[0]
                 c.lobby.broadcast_conf()
+        elif cmd == 'RATE':
+            c.rate = snap_rate(int(args[0])) if args and args[0].isdigit() else 60
+            if c.lobby:
+                c.lobby.broadcast_members()
         elif cmd == 'RTT':
             c.rtt = max(0, min(2000, int(args[0]))) if args and args[0].isdigit() else 0
             if c.lobby:
@@ -338,16 +350,19 @@ class Server:
         # Inputs for tick T are sent when tick T-delay+1 starts and must arrive before tick T starts.
         # Through the relay a packet takes at most about (slowest player's round trip) to arrive.
         worst = max(m.rtt for m in lobby.members)
-        delay = max(2, min(15, 1 + math.ceil((worst + 15) / TICK_MS)))
+        chosen = int(lobby.conf[5]) if len(lobby.conf) > 5 and lobby.conf[5].isdigit() else 0
+        rate = snap_rate(chosen) if chosen else min(m.rate for m in lobby.members)   # auto: everyone's monitor
+        tick_ms = 1000 / rate
+        delay = max(2, min(40, 1 + math.ceil((worst + 15) / tick_ms)))
         conf = ','.join(lobby.conf)
         picks = ';'.join(f'{m.char}:{m.costume}:{m.team}:{m.input}' for m in lobby.members)
         for i, m in enumerate(lobby.members):
             if lobby.save and i > 0:
                 m.send('SAVE ' + lobby.save)
-            m.send(f'START {token.hex()} {i} {n} {delay} {self.port} {lobby.lang} {conf} {picks}')
+            m.send(f'START {token.hex()} {i} {n} {delay} {self.port} {lobby.lang} {conf} {picks} {rate}')
             m.away, m.gone_at, m.ready, m.match_slot = True, None, False, i
         lobby.token, lobby.playing = token.hex(), True   # the lobby waits for its players to come back
-        log.info('lobby %s started: %d players, input delay %d (worst rtt %d ms)', lobby.code, n, delay, worst)
+        log.info('lobby %s started: %d players, %d fps, input delay %d (worst rtt %d ms)', lobby.code, n, rate, delay, worst)
 
     # ---- relay (UDP) -------------------------------------------------------------------------------
     def datagram(self, data, addr):
