@@ -404,9 +404,10 @@ void LogPlayers(const wchar_t* tag);
 void NoteMismatch(unsigned tick);
 
 // The players' names, by slot (FGUYMOD_NET_NAMES from the lobby: "Host|Guest|..."), for the notices.
-std::wstring PlayerName(int slot) {
-    static wchar_t names[4][40];
+wchar_t g_names[4][40];
+void ReadNames() {
     static bool read = false;
+    wchar_t (&names)[4][40] = g_names;
     if (!read) {
         read = true;
         char env[200];
@@ -422,8 +423,12 @@ std::wstring PlayerName(int slot) {
             }
         }
     }
+}
+
+std::wstring PlayerName(int slot) {
+    ReadNames();
     if (slot < 0 || slot >= 4) return L"";
-    if (names[slot][0]) return names[slot];
+    if (g_names[slot][0]) return g_names[slot];
     wchar_t n[16];
     swprintf_s(n, L"Player %d", slot + 1);
     return n;
@@ -1143,6 +1148,10 @@ void NetplaySessionPress(int pad, WORD buttons, int delayTicks) {
     Log(L"Netplay: session press pad %d buttons %04x in %d ticks", pad, buttons, delayTicks);
 }
 int NetplayLocalSlot() { return g_enabled ? g_slot : -1; }
+const wchar_t* NetplayLobbyName(int slot) {   // a player's lobby name, or "" (no lobby: a LAN / test session)
+    ReadNames();
+    return slot >= 0 && slot < 4 ? g_names[slot] : L"";
+}
 void NetplayTestStall(DWORD ms) {
     g_testStallUntil = GetTickCount64() + ms;
     Log(L"Netplay: test - sending nothing for %lu ms", ms);

@@ -60,6 +60,7 @@ bool NetplayEnabled();
 void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
 int NetplayLocalSlot();                //   my player slot, -1 when netplay is off
+const wchar_t* NetplayLobbyName(int slot);   // a player's name in the lobby, or ""
 void NetplayTestStall(DWORD ms);       //   test pipe: this PC goes quiet (a dropped connection)
 int NetplaySessionSlot();              //   my player slot in this game's session (also after leaving it)
 unsigned NetplayTick();                //   the lockstep tick being simulated

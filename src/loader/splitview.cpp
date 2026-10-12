@@ -298,6 +298,22 @@ bool PatchJumpPadded(uintptr_t at, const unsigned char* expected, size_t n, void
     return true;
 }
 
+// ---- players' names ------------------------------------------------------------------------------------------
+// On PC players have no gamertags (0x5549b0 "has a name" is a stub that says no), so the game names them
+// sprintf(buf, "=MNU_PLAYER%d", player + 1) - "PLAYER 2" over their heads and in the results. Online those two
+// calls write the player's lobby name instead (player index = slot online).
+const uintptr_t kNameCall1 = 0x5a70ea, kNameCall2 = 0x5baca9, kSprintf = 0x9c34d6;
+using Sprintf_t = int(__cdecl*)(char* buf, const char* fmt, ...);
+
+int __cdecl PlayerNameText(char* buf, const char* fmt, int number) {
+    const wchar_t* name = NetplayLobbyName(number - 1);
+    if (name && name[0]) {
+        int n = WideCharToMultiByte(CP_UTF8, 0, name, -1, buf, 40, nullptr, nullptr);
+        if (n > 0) return n - 1;
+    }
+    return reinterpret_cast<Sprintf_t>(kSprintf)(buf, fmt, number);
+}
+
 }  // namespace
 
 // The HUD (tools/ui/make_hud_patch.py) asks these before laying itself out.
@@ -331,6 +347,8 @@ void InitSplitView() {
         PatchBytes(kIsVerticalSplit, kIsVerticalSplitStart, sizeof(kIsVerticalSplitStart), no, sizeof(no));
         PatchCall(kMarkerCountCall, kGetViewportCount, (void*)MarkerViewportCount);
         PatchCall(kMarkerToHudCall, kMarkerToHud, (void*)Hook_MarkerToHud);
+        PatchCall(kNameCall1, kSprintf, (void*)PlayerNameText);   // players' names: their lobby names
+        PatchCall(kNameCall2, kSprintf, (void*)PlayerNameText);
         g_active = true;
         Log(L"SplitView: on - one full-screen view per PC%s", g_forced >= 0 ? L" (test: forced viewport)" : L"");
         if (SettingInt(L"Netplay", L"DrawOtherViews", nullptr, 0) == 0 &&
