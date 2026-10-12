@@ -16,7 +16,9 @@ function Log([int]$id) { Join-Path $GameDir "FGUYMod\FGUYMod_$id.log" }
 function Has([int]$id, [string]$text) { (Test-Path (Log $id)) -and (Select-String -Path (Log $id) -Pattern $text -SimpleMatch -Quiet) }
 
 $botFile = Join-Path $GameDir "FGUYMod\bot_pids.txt"
-Remove-Item $botFile -ErrorAction SilentlyContinue
+# bots from earlier runs (their lobby games come back after a match and would join this one too): closed first
+& (Join-Path $GameDir "FGUYMod\Stop test bot.bat") | Out-Null
+Start-Sleep 3
 $ids = & (Join-Path $PSScriptRoot "test_online.ps1") -GameDir $GameDir -Players 1 -Controls $Controls -Res $HostRes
 $hostId = $ids[-1]
 Write-Output "host copy $hostId"

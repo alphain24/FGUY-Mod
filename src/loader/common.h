@@ -162,7 +162,7 @@ struct KbmRaw {            // one player's raw keyboard and mouse for one tick (
     SHORT cursorX, cursorY; //   mouse cursor in the window, 0..32767 across / down (every PC's window differs)
     BYTE flags;            //   bit 0: this player's level HUD is up (every player's: keyboard mode starts)
     BYTE aim;              //   this player's aim sensitivity, 0..100 (onlinesettings.cpp)
-    BYTE opts;             //   bit 0 invert look, bit 1 reticles, bit 7: aim / opts are set
+    BYTE opts;             //   bit 0 invert look, bit 1 reticles, bit 6 my PC can't keep up, bit 7: aim / opts set
 };
 #pragma pack(pop)
 void KbmInit(HWND wnd);

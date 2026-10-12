@@ -362,7 +362,6 @@ class Server:
             worst += int((self.sim.lag + self.sim.jitter) * 1000)
         chosen = int(lobby.conf[5]) if len(lobby.conf) > 5 and lobby.conf[5].isdigit() else 0
         rate = snap_rate(chosen) if chosen else snap_rate(min(AUTO_MAX, min(m.rate for m in lobby.members)))
-        rate = 60   # for now: above 60 the games drift apart after a few seconds of play (the game's own sim)
         tick_ms = 1000 / rate
         delay = max(2, min(40, 1 + math.ceil((worst + 15) / tick_ms)))
         conf = ','.join(lobby.conf)

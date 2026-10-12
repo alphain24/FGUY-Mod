@@ -52,10 +52,15 @@ bool g_enabled = false;
 int g_slot = 0, g_players = 2, g_delay = 3, g_syncEvery = 60;
 // Ticks (= frames) per second, the same for everyone. A session boots, walks the menus and loads the level at
 // 60 (the game's join screens don't take a press at higher rates), then switches to the lobby's frame rate
-// (g_rateTarget) once everyone is in the level - the same tick on every PC (g_rateFrom).
+// (g_rateTarget) once everyone is in the level - the same tick on every PC. And if a PC can't keep up with it,
+// everyone goes a step down together (also at the same tick). g_segs: from which tick which rate.
 int g_rate = 60;
 int g_rateTarget = 60;
-unsigned g_rateFrom = 0;             // the tick the match's rate took over (0: still 60)
+struct RateSeg { unsigned from; int rate; };
+RateSeg g_segs[8] = {{0, 60}};
+int g_segCount = 1;
+bool g_slowHere = false;             // this PC needed more than the ticks' time for the last second of them
+int g_slowRun = 0;                   // ticks in a row some player's PC said it's slow
 bool g_script = false, g_idleScript = false;
 unsigned g_traceFrom = 0;
 std::vector<sockaddr_in> g_peers;
@@ -121,10 +126,20 @@ bool FixedClock() {
     DWORD me = GetCurrentThreadId();
     return me == g_mainThread || (g_allClock && me != g_renderThread);
 }
-// The fixed clock's time at a tick, in 1 / `unit` s: 60 per second up to g_rateFrom, g_rate per second after.
+// The fixed clock's time at a tick, in 1 / `unit` s: each stretch of ticks at its own rate (g_segs).
 LONGLONG TickTime(unsigned tick, LONGLONG unit) {
-    if (!g_rateFrom || tick < g_rateFrom) return (LONGLONG)tick * unit / 60;
-    return (LONGLONG)g_rateFrom * unit / 60 + (LONGLONG)(tick - g_rateFrom) * unit / g_rate;
+    LONGLONG t = 0;
+    for (int i = 0; i < g_segCount; ++i) {
+        unsigned from = g_segs[i].from, to = i + 1 < g_segCount ? g_segs[i + 1].from : 0xffffffffu;
+        if (tick <= from) break;
+        t += (LONGLONG)((tick < to ? tick : to) - from) * unit / g_segs[i].rate;
+    }
+    return t;
+}
+// From this tick on, `rate` ticks per second (this tick's time stays what it was: no jump).
+void SwitchRate(unsigned tick, int rate) {
+    if (g_segCount < 8) g_segs[g_segCount++] = {tick, rate};
+    g_rate = rate;
 }
 // After leaving a session (back to the lobby): real time again, shifted so the game thread's clock carries on
 // from the fixed one instead of jumping.
@@ -638,6 +653,7 @@ Pad SampleLocal(unsigned f) {
         p.lx = p.rx = p.ry = 0;
     }
     if (g_inSession) OnlineSettingsStamp(&p.kbm);   // my aim settings go with my input (onlinesettings.cpp)
+    if (g_inSession && g_slowHere) p.kbm.opts |= 0x40;   // and whether this PC keeps up with the frame rate
     static Pad last{};
     static int logged = 0;
     if (memcmp(&p, &last, sizeof(p)) != 0 && logged < 60) {  // the first few changes (input problems)
@@ -702,10 +718,15 @@ int GamePlayers(unsigned char** out, int max) {
 
 namespace {
 
+// The match's players only: the game also keeps spare player objects (index >= the player count), whose aim holds
+// leftovers that differ from PC to PC - they're in no one's match.
 unsigned HashPlayers(Hashed* keep) {
     unsigned h = 2166136261u;
+    unsigned char* all[8];
     unsigned char* players[8];
-    int n = GamePlayers(players, 8);
+    int found = GamePlayers(all, 8), n = 0;
+    for (int i = 0; i < found; ++i)
+        if (*reinterpret_cast<int*>(all[i] + 0xdf8) < g_players) players[n++] = all[i];
     keep->count = n;
     for (int i = 0; i < n; ++i) {
         auto self = players[i];
@@ -1012,17 +1033,53 @@ void Tick() {
     }
     // everyone's in, and the spawn has settled (players fall into the level a tick apart at first and only come
     // together again once they've landed - at 60): the match's frame rate
-    if (g_rate != g_rateTarget && g_liveTick && g_tick >= g_liveTick + 600) {
+    if (g_segCount == 1 && g_rate != g_rateTarget && g_liveTick && g_tick >= g_liveTick + 600) {
         const int kViewportCount = 0xb53e60;   // (story co-op: once everyone has dropped in)
         if (!g_sessionStory || *reinterpret_cast<volatile int*>(kViewportCount) >= g_players) {
-            g_rateFrom = g_tick;   // this tick's time is the same either way: no jump
-            g_rate = g_rateTarget;
+            SwitchRate(g_tick, g_rateTarget);
             Log(L"Netplay: %d frames per second from tick %u", g_rate, g_tick);
+        }
+    }
+    // A player's PC that can't keep up (it says so in its input) for 2 s: everyone a step down, the same tick on
+    // every PC (the match otherwise runs at that PC's pace - slow motion for everyone).
+    if (g_inSession && g_segCount > 1 && g_rate > 60) {
+        bool slow = false;
+        for (int s = 0; s < g_players && s < 4; ++s)
+            if (!g_gone[s] && !(g_goneFrom[s] && g_tick >= g_goneFrom[s]) && (g_current[s].kbm.opts & 0x40)) slow = true;
+        g_slowRun = slow ? g_slowRun + 1 : 0;
+        if (g_slowRun >= 2 * g_rate) {
+            const int steps[] = {240, 165, 144, 120, 60};
+            int lower = 60;
+            for (int step : steps) if (step < g_rate) { lower = step; break; }
+            SwitchRate(g_tick, lower);
+            g_slowRun = 0;
+            Log(L"Netplay: a PC can't keep up - %d frames per second from tick %u", g_rate, g_tick);
+            wchar_t text[96];
+            swprintf_s(text, L"A PC couldn't keep up - the match runs at %d frames per second now", g_rate);
+            OverlayShow(text, 5000);
         }
     }
     if (g_inSession) OnlineSettingsApply(kbm, g_players);   // everyone's own aim settings (onlinesettings.cpp)
     KbmApply(kbm, g_players);  // keyboard / mouse players' devices, from their raw input (kbm.cpp)
     Real_QPC(&s1);
+    {   // this PC's own pace: a second's worth of ticks, minus the waiting for the others' inputs
+        static LARGE_INTEGER windowStart{};
+        static LONGLONG windowWait = 0;
+        static int windowTicks = 0;
+        if (!windowStart.QuadPart) windowStart = s0;
+        windowWait += s1.QuadPart - s0.QuadPart;
+        if (++windowTicks >= g_rate) {
+            LONGLONG work = s1.QuadPart - windowStart.QuadPart - windowWait;
+            bool slow = work > g_freq.QuadPart * 104 / 100;
+            if (slow != g_slowHere && g_inSession)
+                Log(L"Netplay: this PC %s (%.2f s of work for 1 s of ticks)", slow ? L"can't keep up" : L"keeps up again",
+                    (double)work / g_freq.QuadPart);
+            g_slowHere = slow;
+            windowStart = s1;
+            windowWait = 0;
+            windowTicks = 0;
+        }
+    }
     WaitForQuiescence();
     Real_QPC(&s2);
     g_statPeer += s1.QuadPart - s0.QuadPart;
