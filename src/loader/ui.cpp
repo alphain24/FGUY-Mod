@@ -295,6 +295,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             OnlinePauseQuitDone();
         } else if (strcmp(fn, "Now") == 0) {   // real milliseconds (a match copy's getTimer() is off: the fixed clock)
             ReturnNumber(movie, (double)GetTickCount64());
+        } else if (strcmp(fn, "OnlineMatch") == 0) {   // the game's pause menu (pause patch): an online match?
+            ReturnBool(movie, NetplayEnabled());
         } else if (strcmp(fn, "SessionHandBack") == 0) {   // 0: the lobby opens here, 1 / 2: the lobby game takes over
             ReturnNumber(movie, HandoffGiveBackState());
         } else if (strcmp(fn, "SessionKeyboard") == 0) {   // back from a match: did I play on keyboard / mouse?
