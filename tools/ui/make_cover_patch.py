@@ -24,7 +24,7 @@ SOURCE = r'''
 function GetNumViewports() {
     var mine = flash.external.ExternalInterface.call('FGUYMOD_CoverViewports');
     if (mine != undefined && mine != '') return Number(mine);
-    if (!_root.gfxPlayer) return 2;
+    if (_root.gfxPlayer) return 2;   // (as the original: only outside the game, in the Flash tools)
     return Number(flash.external.ExternalInterface.call('SYST_GetNumViewports'));
 }
 '''

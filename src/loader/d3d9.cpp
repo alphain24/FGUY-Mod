@@ -224,8 +224,63 @@ void QuitGame() {
 
 namespace {
 
+// Test tools' screenshot (VideoRequestShot): the frame about to be shown, copied out of the back buffer and
+// written as a 24-bit .bmp at half size. (Reading the window from outside - PrintWindow - could leave the game
+// not drawing any more.)
+CRITICAL_SECTION g_shotLock;
+bool g_shotInit = false;
+wchar_t g_shotPath[MAX_PATH] = L"";
+
+void SaveShot(IDirect3DDevice9* dev, const wchar_t* path) {
+    IDirect3DSurface9 *back = nullptr, *copy = nullptr;
+    D3DSURFACE_DESC d;
+    bool ok = false;
+    if (SUCCEEDED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &back)) && SUCCEEDED(back->GetDesc(&d)) &&
+        (d.Format == D3DFMT_X8R8G8B8 || d.Format == D3DFMT_A8R8G8B8) &&
+        SUCCEEDED(dev->CreateOffscreenPlainSurface(d.Width, d.Height, d.Format, D3DPOOL_SYSTEMMEM, &copy, nullptr)) &&
+        SUCCEEDED(dev->GetRenderTargetData(back, copy))) {
+        D3DLOCKED_RECT lr;
+        if (SUCCEEDED(copy->LockRect(&lr, nullptr, D3DLOCK_READONLY))) {
+            int w = (int)d.Width / 2, h = (int)d.Height / 2, row = (w * 3 + 3) & ~3;
+            std::vector<unsigned char> img(54 + (size_t)row * h, 0);
+            unsigned char* hd = img.data();
+            hd[0] = 'B'; hd[1] = 'M';
+            *reinterpret_cast<DWORD*>(hd + 2) = (DWORD)img.size();
+            *reinterpret_cast<DWORD*>(hd + 10) = 54;
+            *reinterpret_cast<DWORD*>(hd + 14) = 40;
+            *reinterpret_cast<LONG*>(hd + 18) = w;
+            *reinterpret_cast<LONG*>(hd + 22) = h;
+            *reinterpret_cast<WORD*>(hd + 26) = 1;
+            *reinterpret_cast<WORD*>(hd + 28) = 24;
+            for (int y = 0; y < h; ++y) {
+                const unsigned char* src = static_cast<const unsigned char*>(lr.pBits) + (size_t)(y * 2) * lr.Pitch;
+                unsigned char* dst = hd + 54 + (size_t)(h - 1 - y) * row;
+                for (int x = 0; x < w; ++x) memcpy(dst + x * 3, src + x * 8, 3);   // B, G, R of every other pixel
+            }
+            copy->UnlockRect();
+            HANDLE f = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+            DWORD put = 0;
+            if (f != INVALID_HANDLE_VALUE) {
+                ok = WriteFile(f, img.data(), (DWORD)img.size(), &put, nullptr) && put == img.size();
+                CloseHandle(f);
+            }
+        }
+    }
+    if (copy) copy->Release();
+    if (back) back->Release();
+    Log(L"D3D: screenshot %s %s", ok ? L"saved to" : L"failed:", path);
+}
+
 HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, const RECT* dst, HWND wnd,
                                        const RGNDATA* dirty) {
+    if (g_shotInit && g_shotPath[0]) {
+        wchar_t path[MAX_PATH];
+        EnterCriticalSection(&g_shotLock);
+        wcscpy_s(path, g_shotPath);
+        g_shotPath[0] = 0;
+        LeaveCriticalSection(&g_shotLock);
+        if (path[0]) SaveShot(self, path);
+    }
     HRESULT hr = Real_Present(self, src, dst, wnd, dirty);
     if (g_quitRequested) {
         // Exiting from the render thread between frames lets Direct3D and the driver clean up in this
@@ -353,6 +408,12 @@ void SaveFrameRate() {
 }  // namespace
 
 void VideoRequestQuit() { g_quitRequested = true; }
+void VideoRequestShot(const wchar_t* path) {
+    if (!g_shotInit) { InitializeCriticalSection(&g_shotLock); g_shotInit = true; }
+    EnterCriticalSection(&g_shotLock);
+    wcscpy_s(g_shotPath, path);
+    LeaveCriticalSection(&g_shotLock);
+}
 
 // In-game Options > Screen > Frame Rate (see ui.cpp).
 int VideoFrameRateIndex() { return g_frameRate; }

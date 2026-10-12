@@ -75,7 +75,6 @@ unsigned char* g_device[4];                 // one keyboard / mouse device per k
 // ---- the raw poll: ours in sessions --------------------------------------------------------------------
 const KbmRaw* g_feed = nullptr;             // set while we poll a keyboard player's device
 KbmRaw g_menuKeys;                          // every keyboard player's keys this tick (DirectInput keyboard)
-int g_kbmFlagBefore = -1;                   // the game's keyboard / mouse mode before the session turned it on
 bool g_menuKeysLive = false;
 KbmRaw g_menuFeed;                          // the game's own keyboard slot (menus, "click to start" prompts):
 bool g_menuFeedReady = false;               //   all keyboard players together, from the previous tick
@@ -411,7 +410,6 @@ void KbmApply(const KbmRaw* bySlot, int players) {
     for (int i = 0; i < n; ++i)   // drives them with controller presses)
         if (*reinterpret_cast<int*>(list[i] + 0xdfc) >= 0) inLevel = true;
     if (!inLevel) return;
-    if (g_kbmFlagBefore < 0) g_kbmFlagBefore = *reinterpret_cast<volatile BYTE*>(kKbmFlag);
     *reinterpret_cast<volatile BYTE*>(kKbmFlag) = 1;  // the game's keyboard / mouse mode (same tick on every PC)
     KbmRaw menu = {};
     bool first = true;

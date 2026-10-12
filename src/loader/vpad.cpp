@@ -166,6 +166,16 @@ void HandleCommand(char* line) {
         }, nullptr, 0, nullptr));
         return;
     }
+    if (cmd && _stricmp(cmd, "shot") == 0) {   // test tools: shot <file.bmp> - the next frame (d3d9.cpp)
+        char* path = strtok_s(nullptr, "\r\n", &ctx);
+        while (path && *path == ' ') ++path;
+        if (path && *path) {
+            wchar_t w[MAX_PATH];
+            MultiByteToWideChar(CP_UTF8, 0, path, -1, w, MAX_PATH);
+            VideoRequestShot(w);
+        }
+        return;
+    }
     if (cmd && _stricmp(cmd, "stacks") == 0) {  // research: what the game's threads are doing
         NetplayLogStacks();
         return;

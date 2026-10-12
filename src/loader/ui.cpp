@@ -278,6 +278,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             static char v[32];
             if (!GetEnvironmentVariableA("FGUYMOD_TEST_AUTOMENU", v, sizeof(v))) v[0] = 0;
             ReturnString(movie, v);
+        } else if (strcmp(fn, "TitleScreen") == 0) {   // the title screen shows (start patch)
+            AudioTitleScreen();
         } else if (strcmp(fn, "ProfileLoaded") == 0) {   // the main menu opened (menu patch, OnHomeEnter)
             AudioProfileLoaded();
         } else if (strcmp(fn, "PauseMenu") == 0) {   // the online pause menu (the HUD, every frame)

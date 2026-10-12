@@ -4,6 +4,9 @@ In an online session (src/ui/session.as2js) every player's game must get from bo
 own and in step: when the title screen has animated in (AnimateInDone), it asks the loader to press
 Start and then A (the PC's autosave notice) on the host's controller - on every PC alike.
 
+And whenever the title screen shows (Init, StartMenu, AnimateInDone - also back from the main menu, when the
+movie isn't loaded again) it tells the loader (FGUYMOD_TitleScreen): movies & title volume until the main menu.
+
 Usage: make_start_patch.py <game folder>
 """
 import os
@@ -22,6 +25,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
 
 SOURCE = r'''
+function FGUYTitleShown() {
+    flash.external.ExternalInterface.call('FGUYMOD_TitleScreen');
+}
+
 function FGUYTitleSession() {
     if (FGUYTitleDone) return;
     var cfg = flash.external.ExternalInterface.call('FGUYMOD_SessionConfig');
@@ -41,10 +48,16 @@ def build(data):
     actions = parse_actions(data, start, end)
     o, total = function_at(data, actions, 'AnimateInDone')
     code_start, code_end, size_field = function2_code(data, o)
-    call = A.call('FGUYTitleSession').assemble()
+    call = (A.call('FGUYTitleShown') + A.call('FGUYTitleSession')).assemble()
     p.replace(code_start, 0, call)
     p.replace(size_field, 2, struct.pack('<H', code_end - code_start + len(call)))
-    p.replace(o, 0, as2c.compile_source(SOURCE))  # our function, defined just before AnimateInDone
+    p.replace(o, 0, as2c.compile_source(SOURCE))  # our functions, defined just before AnimateInDone
+    for name in ('Init', 'StartMenu'):
+        f, _ = function_at(data, actions, name)
+        cs, ce, sf = function2_code(data, f)
+        shown = A.call('FGUYTitleShown').assemble()
+        p.replace(cs, 0, shown)
+        p.replace(sf, 2, struct.pack('<H', ce - cs + len(shown)))
     p.fix_top_level_jumps(actions)
     assert struct.unpack_from('<H', data, tag)[0] & 0x3f == 0x3f, 'expected long DoAction header'
     p.fix_length_u32(tag + 2, start, end)

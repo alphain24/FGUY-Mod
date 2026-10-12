@@ -13,7 +13,8 @@
 // louder than the game). And until the profile's settings are in - the intro, the "press anywhere to start"
 // screen and the save slots, while the game's own settings are still at their 100% defaults - every sound
 // plays at it too. (The game reads the save file on the save-slot screen already, but applies the profile's
-// settings only once you pick a slot: the main menu opening is the sign - the menu patch tells us.)
+// settings only once you pick a slot: the main menu opening is the sign - the menu patch tells us.) Back
+// to the title screen later (the start patch tells us), the same holds until the main menu is back.
 
 #include "common.h"
 
@@ -153,6 +154,14 @@ void AudioProfileLoaded() {
     g_settingsLoaded = true;
     Log(L"Audio: the profile is loaded - volumes from the game's settings now");
     if (g_applyOriginal) Hook_ApplyVolumes(reinterpret_cast<void*>(kSoundManager), nullptr);   // apply them now
+}
+
+// The title screen shows (FGUYMOD_TitleScreen, the start patch): MOVIES & TITLE again until the main menu.
+void AudioTitleScreen() {
+    if (!g_settingsLoaded) return;
+    g_settingsLoaded = false;
+    Log(L"Audio: back at the title screen - movies & title volume until the main menu");
+    if (g_applyOriginal) Hook_ApplyVolumes(reinterpret_cast<void*>(kSoundManager), nullptr);
 }
 
 // The volume our own sounds (sounds.cpp) should play at, 0..1: the music setting the same way the game

@@ -610,7 +610,6 @@ function OnOnlineEnter() {
     if (FGUYPickChar == undefined) { FGUYPickChar = 'Peter'; FGUYPickCostume = 0; FGUYPickTeam = 0; }
     FGUYLastBlob = '';
     FGUYS = FGUYParse('');
-    FGUYKeyLog = 0;
     FGUYBot = flash.external.ExternalInterface.call('FGUYMOD_IsBot') == true;
     FGUYBotNext = 0;
     FGUYEnteredAt = FGUYNow();
@@ -1260,7 +1259,6 @@ function FGUYDrawSettings(ui) {
 // Keys from the menu: 38 up, 40 down, 37 left, 39 right, 13 A (after 65), 27 B, 36 Start (then 32), 88 X,
 // 89 Y (112 = F1 on a keyboard), 76 LB, 82 RB; on a keyboard also letters / digits (code entry), 8 backspace.
 function OnOnlineHandleInput(key, controller) {
-    if (FGUYKeyLog < 30) { FGUYKeyLog = FGUYKeyLog + 1; flash.external.ExternalInterface.call('FGUYMOD_SessionLog', 'online key ' + key + ' from ' + controller); }
     if (FGUYScreen == 'loading') return;   // the match is on its way
     if (key >= 37 && key <= 40 && flash.external.ExternalInterface.call('FGUYMOD_FromWASD', key) == true) return;
     FGUYKeyFromPad = FGUYPadKey(key);

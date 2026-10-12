@@ -45,6 +45,7 @@ void InitD3D9(HMODULE exe);            // resolutions, frame rate, crash fix   (
 int VideoFrameRateIndex();             //   Options > Screen > Frame Rate support
 void VideoSetFrameRate(int index);
 void VideoRequestQuit();               //   exit cleanly at the end of the next frame (test tools)
+void VideoRequestShot(const wchar_t* path);   // test tools: save the next frame as a .bmp
 void QuitGame();                       //   exit now (the game's own exit-time crash is skipped)
 void InitUi();                         // menu movie patches + menu calls      (ui.cpp)
 void InitResearch();                   // optional research hooks              (research.cpp)
@@ -151,6 +152,7 @@ void KbmTestCommand(const char* what, int a, int b, int c);  // test pipe: kbm k
 // sounds.cpp: loading-screen music
 void InitAudio(HMODULE exe);            // volume curve, movie volume            (audio.cpp)
 void AudioProfileLoaded();             //   the main menu opened: the profile's settings are in
+void AudioTitleScreen();               //   back at the title screen: movies & title volume again
 float AudioMusicVolume();              //   0..1, for our own sounds
 float AudioMovieVolume();              //   Options > Audio > MOVIES & TITLE, 0..1
 void AudioSetMovieVolume(float v);
