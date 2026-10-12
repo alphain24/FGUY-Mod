@@ -156,6 +156,18 @@ void AudioProfileLoaded() {
     if (g_applyOriginal) Hook_ApplyVolumes(reinterpret_cast<void*>(kSoundManager), nullptr);   // apply them now
 }
 
+// The game's own volume settings, 0..1 (0 music, 1 sound effects, 2 dialog, 3 cinematics) - as Options > Audio.
+float AudioGameVolume(int which) {
+    const int offs[4] = {kMusic, kEffects, kDialog, kCinematic};
+    return which >= 0 && which < 4 ? Setting(offs[which]) : 0;
+}
+void AudioSetGameVolume(int which, float v) {
+    const int offs[4] = {kMusic, kEffects, kDialog, kCinematic};
+    if (which < 0 || which >= 4) return;
+    Setting(offs[which]) = v < 0 ? 0 : (v > 1 ? 1 : v);
+    if (g_applyOriginal) Hook_ApplyVolumes(reinterpret_cast<void*>(kSoundManager), nullptr);
+}
+
 // The title screen shows (FGUYMOD_TitleScreen, the start patch): MOVIES & TITLE again until the main menu.
 void AudioTitleScreen() {
     if (!g_settingsLoaded) return;

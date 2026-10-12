@@ -45,11 +45,11 @@ Step "the players' own games wait hidden" ((Has $hOwn "this game waits hidden") 
 $cpu0 = (Cpu $hOwn) + (Cpu $cOwn); Start-Sleep 5; $cpu1 = (Cpu $hOwn) + (Cpu $cOwn)
 Write-Output ("      waiting games' CPU over 5 s: {0:N2} s" -f ($cpu1 - $cpu0))
 
-# the online pause menu: Esc opens it (the match goes on), down twice = QUIT WITH PARTY (host only), Enter
+# the online pause menu: Esc opens it (the match goes on), down x3 = QUIT WITH PARTY (host only), Enter
 & "$PSScriptRoot\kbm_test.ps1" -Id $h "key 27 150" "wait 1200" | Out-Null
 & "$PSScriptRoot\window_shot.ps1" -Id $h -Out (Join-Path $shots "pause_menu.png")
 Step "the online pause menu opens" (WaitFor $h "Pause: menu open" 5)
-& "$PSScriptRoot\kbm_test.ps1" -Id $h "key 40 150" "wait 400" "key 40 150" "wait 400" "key 13 150" | Out-Null
+& "$PSScriptRoot\kbm_test.ps1" -Id $h "key 40 150" "wait 400" "key 40 150" "wait 400" "key 40 150" "wait 400" "key 13 150" | Out-Null
 Step "host's own game back in the lobby" (WaitFor $hOwn "rejoining lobby" 60)
 Step "guest's own game back in the lobby" (WaitFor $cOwn "rejoining lobby" 30)
 Step "both show again" ((WaitFor $hOwn "Window: shown again" 5) -and (WaitFor $cOwn "Window: shown again" 5))

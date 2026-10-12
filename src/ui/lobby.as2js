@@ -500,6 +500,8 @@ function FGUYPoll() {
         FGUYEnteredAt = FGUYNow();   // (the cover waits for the 3D camera from here)
         FGUY3DStart();
         PlayOptionsSubMenuMusic();   // what the loading screen stopped
+        FGUYApplySettingsBack();     // and my settings as I left them in the match
+        FGUYReportSettings();
     }
     if (FGUYS.state == 'lobby' && was != 'lobby') {
         FGUYPickInput = FGUYMe().input;
@@ -591,8 +593,43 @@ function OnOnlineSelect() {
     GotoPage('OptionsScreen');
 }
 
+// My own settings - read with the game's own getters - for the next match: the session game plays on the host's
+// save, so it takes mine from here (src/loader/onlinesettings.cpp).
+function FGUYReportSettings() {
+    var X = flash.external.ExternalInterface;
+    var s = 'aim=' + Math.round(Number(X.call('OPTN_GetAimSensitivity')) * 100) +
+            ';inv=' + (X.call('OPTN_GetInvertYAxis') == true ? 1 : 0) +
+            ';ret=' + (X.call('OPTN_GetReticlesEnabled') == true ? 1 : 0) +
+            ';sub=' + (X.call('MENU_IsSubtitlesEnabled') == true ? 1 : 0) +
+            ';mus=' + Number(X.call('SNDS_GetMusicVolume')) + ';sfx=' + Number(X.call('SNDS_GetSoundFXVolume')) +
+            ';dlg=' + Number(X.call('SNDS_GetDialogVolume')) + ';cin=' + Number(X.call('SNDS_GetCinematicVolume'));
+    X.call('FGUYMOD_MySettings', s);
+}
+
+// Back from a match: what I changed there, through the game's own setters (as Options would - and the save
+// keeps them).
+function FGUYApplySettingsBack() {
+    var X = flash.external.ExternalInterface;
+    var back = X.call('FGUYMOD_SettingsBack');
+    if (back == undefined || String(back) == '') return;
+    var m = {}, f = String(back).split(';');
+    for (var i = 0; i < f.length; i++) {
+        var kv = f[i].split('=');
+        m[kv[0]] = kv[1];
+    }
+    X.call('OPTN_SetAimSensitivity', Number(m.aim) / 100);
+    if ((X.call('OPTN_GetInvertYAxis') == true) != (m.inv == '1')) X.call('OPTN_ToggleInvertYAxis');
+    if ((X.call('OPTN_GetReticlesEnabled') == true) != (m.ret == '1')) X.call('OPTN_ToggleReticlesEnabled');
+    getURL('FSCommand:MENU_SetSubtitlesEnabled', m.sub == '1' ? 'true' : 'false');
+    getURL('FSCommand:SNDS_SetMusicVolume', Number(m.mus));
+    getURL('FSCommand:SNDS_SetSoundFXVolume', Number(m.sfx));
+    getURL('FSCommand:SNDS_SetDialogVolume', Number(m.dlg));
+    getURL('FSCommand:SNDS_SetCinematicVolume', Number(m.cin));
+}
+
 function OnOnlineEnter() {
     flash.external.ExternalInterface.call('FGUYMOD_OnlineEnter');
+    FGUYReportSettings();
     _root.subMenu._visible = false;
     Selection.setFocus(null);   // a menu button left with focus would swallow A / Enter
     FGUYColors();

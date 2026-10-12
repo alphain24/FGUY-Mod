@@ -39,6 +39,8 @@ DWORD g_packet = 1;
 
 using XInputGetState_t = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
 XInputGetState_t Real_XInputGetState;
+using XInputSetState_t = DWORD(WINAPI*)(DWORD, XINPUT_VIBRATION*);
+XInputSetState_t Real_XInputSetState;
 
 // When each button (bit) last went down, on any pad.
 volatile ULONGLONG g_downAt[16];
@@ -133,6 +135,15 @@ DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
     state->dwPacketNumber += g_packet;
     NoteButtons(pad, state->Gamepad.wButtons);
     return ERROR_SUCCESS;
+}
+
+// Rumble. In an online match every player's controller is a pad of the game's (pad n = player slot n): only my
+// slot's rumble is for my controller here (the first real pad), and only if I want it ([Online] Vibration).
+DWORD WINAPI Hook_XInputSetState(DWORD pad, XINPUT_VIBRATION* v) {
+    if (!NetplayEnabled()) return Real_XInputSetState(pad, v);
+    if ((int)pad != NetplayLocalSlot() || StaysMuted()) return ERROR_SUCCESS;   // (the test bot: never yours)
+    XINPUT_VIBRATION none = {};
+    return Real_XInputSetState(0, OnlineVibration() && v ? v : &none);
 }
 
 WORD ButtonFromName(const char* n) {
@@ -243,6 +254,7 @@ void InitVirtualPad(HMODULE exe) {
     bool testInput = SettingInt(L"Debug", L"TestInput", L"FGUYMOD_TESTINPUT", 0) != 0;
     HookSpec hooks[] = {
         {"xinput1_3.dll", MAKEINTRESOURCEA(2), (void*)Hook_XInputGetState, (void**)&Real_XInputGetState},
+        {"xinput1_3.dll", MAKEINTRESOURCEA(3), (void*)Hook_XInputSetState, (void**)&Real_XInputSetState},
     };
     InstallHooks(exe, hooks);
     if (!testInput) return;

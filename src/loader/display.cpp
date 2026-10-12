@@ -443,6 +443,7 @@ void DisplayClientToGame(POINT* pt) {
 }
 
 bool DisplayIsWindowed() { Mode m = EffectiveMode(); return m == Mode::Windowed || m == Mode::Borderless; }
+void DisplayRenderSize(int* w, int* h) { *w = g_gameWidth; *h = g_gameHeight; }
 
 // ---- Options > Screen > Display Mode (called from the patched menu, see ui.cpp) -----------------
 

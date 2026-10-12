@@ -3,6 +3,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <string>
+
 extern wchar_t g_gameDir[MAX_PATH];  // folder containing FGUY.exe
 extern wchar_t g_modDir[MAX_PATH];   // <game>\FGUYMod
 
@@ -83,9 +85,25 @@ bool IsBot();                               //   this copy is the test bot (FGUY
 bool StaysMuted();                          //   the bot / test copies: no sound
 const char* BotJoinCode();
 
+// onlinesettings.cpp: every player's own settings in an online match
+struct KbmRaw;
+void OnlineSettingsInit();                      // session game: what the player's own game had (env)
+void OnlineSettingsStamp(KbmRaw* mine);         // netplay: my aim / invert / reticles go with my input
+void OnlineSettingsApply(const KbmRaw* bySlot, int players);   // netplay, every tick: everyone's, per player
+void OnlineSettingsProfileLoaded();             // session game: my sound / subtitles over the host's save
+void OnlineSettingsReport(const char* s);        // lobby game: FGUYMOD_MySettings (the game's own getters)
+std::string OnlineSettingsCapture();            // lobby game, starting a match: mine, for the session game
+void OnlineSettingsWriteBack(DWORD lobbyPid);   // session game, handing back: mine as they are now
+const char* OnlineSettingsBack();               // lobby game, back from a match: the menu applies these
+bool OnlineVibration();                         // my controller may rumble ([Online] Vibration)
+// The SETTINGS page of the online pause menu (onlinepause.cpp draws / drives it)
+struct SettingsRow { const char* label; std::string value; char kind; };   // kind: h header, s slider,
+int OnlineSettingsRows(SettingsRow* out, int max);                         //   t toggle, c choice, i info, b back
+void OnlineSettingsChange(int row, int delta);  //   left / right (delta -1 / +1), A (0)
+
 // onlinepause.cpp: the online pause menu (the match keeps running; the game pauses once everyone has it open)
 struct KbmRaw;
-bool OnlinePauseSample(WORD* buttons, SHORT* ly, KbmRaw* kbm, bool keyboardPlayer);  // netplay: my input
+bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool keyboardPlayer);  // netplay: my input
 int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyboard); //   everyone's
 void OnlinePauseCommand(const char* command);  //   ui.cpp: a menu command ran
 const char* OnlinePauseMenu();                 //   FGUYMOD_PauseMenu (the HUD)
@@ -102,6 +120,7 @@ const char* SessionConfig();
 
 // display.cpp
 bool DisplayIsWindowed();              // windowed or borderless right now
+void DisplayRenderSize(int* w, int* h); // the game's render size
 void DisplayClientToGame(POINT* pt);   // window client pixels -> the game's (borderless render size)
 int DisplayMenuIndex();                // Options > Screen > Display Mode support
 bool DisplayMenuSelect(int index);     //   returns the game's own "windowed" flag for that choice
@@ -135,6 +154,8 @@ struct KbmRaw {            // one player's raw keyboard and mouse for one tick (
     BYTE buttons;          //   mouse buttons (bit 0 left, 1 right, 2 middle, 3/4 side)
     SHORT cursorX, cursorY; //   mouse cursor in the window, 0..32767 across / down (every PC's window differs)
     BYTE flags;            //   bit 0: this player's level HUD is up (every player's: keyboard mode starts)
+    BYTE aim;              //   this player's aim sensitivity, 0..100 (onlinesettings.cpp)
+    BYTE opts;             //   bit 0 invert look, bit 1 reticles, bit 7: aim / opts are set
 };
 #pragma pack(pop)
 void KbmInit(HWND wnd);
@@ -153,6 +174,8 @@ void KbmTestCommand(const char* what, int a, int b, int c);  // test pipe: kbm k
 void InitAudio(HMODULE exe);            // volume curve, movie volume            (audio.cpp)
 void AudioProfileLoaded();             //   the main menu opened: the profile's settings are in
 void AudioTitleScreen();               //   back at the title screen: movies & title volume again
+float AudioGameVolume(int which);      //   Options > Audio: 0 music, 1 effects, 2 dialog, 3 cinematics (0..1)
+void AudioSetGameVolume(int which, float v);
 float AudioMusicVolume();              //   0..1, for our own sounds
 float AudioMovieVolume();              //   Options > Audio > MOVIES & TITLE, 0..1
 void AudioSetMovieVolume(float v);

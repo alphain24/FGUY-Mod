@@ -581,10 +581,11 @@ Pad SampleLocal(unsigned f) {
     p.buttons |= VPadButtons(0);  // test tools press this player's buttons through the pipe
     if (KbmIsKeyboardSlot(g_slot)) KbmCapture(&p.kbm);  // keyboard / mouse players: the raw state (kbm.cpp)
     if (HandoffHudUp()) p.kbm.flags |= 1;              // my level's HUD is up (kbm.cpp waits for everyone's)
-    if (g_inSession && OnlinePauseSample(&p.buttons, &p.ly, &p.kbm, KbmIsKeyboardSlot(g_slot))) {
+    if (g_inSession && OnlinePauseSample(&p.buttons, &p.lx, &p.ly, &p.kbm, KbmIsKeyboardSlot(g_slot))) {
         p.lt = p.rt = 0;   // my pause menu is open: my character stands still (onlinepause.cpp)
         p.lx = p.rx = p.ry = 0;
     }
+    if (g_inSession) OnlineSettingsStamp(&p.kbm);   // my aim settings go with my input (onlinesettings.cpp)
     static Pad last{};
     static int logged = 0;
     if (memcmp(&p, &last, sizeof(p)) != 0 && logged < 60) {  // the first few changes (input problems)
@@ -948,6 +949,7 @@ void Tick() {
             Log(L"Netplay: %d frames per second from tick %u", g_rate, g_tick);
         }
     }
+    if (g_inSession) OnlineSettingsApply(kbm, g_players);   // everyone's own aim settings (onlinesettings.cpp)
     KbmApply(kbm, g_players);  // keyboard / mouse players' devices, from their raw input (kbm.cpp)
     Real_QPC(&s1);
     WaitForQuiescence();
@@ -1152,6 +1154,7 @@ void InitNetplay(HMODULE exe) {
     g_sessionStory = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "ST,", 3) == 0;
     g_inSession = sessionLen > 0 && sessionLen < sizeof(session);
     KbmSessionStart(g_inSession ? session : nullptr);
+    if (g_inSession) OnlineSettingsInit();   // my own settings (onlinesettings.cpp)
     g_phase = Phase::Boot;
     Log(L"Netplay: %d frames per second in the match (60 until everyone is in the level)", g_rateTarget);
     Log(L"Netplay: on - slot %d of %d players, %s, input delay %d, %s input", g_slot, g_players,

@@ -282,6 +282,11 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             AudioTitleScreen();
         } else if (strcmp(fn, "ProfileLoaded") == 0) {   // the main menu opened (menu patch, OnHomeEnter)
             AudioProfileLoaded();
+            OnlineSettingsProfileLoaded();   // (a session game: my own sound over the host's save)
+        } else if (strcmp(fn, "MySettings") == 0) {      // (the lobby: the game's own values) for the next match
+            OnlineSettingsReport(ArgString(args, argc, 0));
+        } else if (strcmp(fn, "SettingsBack") == 0) {    // back from a match: what changed there, for the setters
+            ReturnString(movie, OnlineSettingsBack());
         } else if (strcmp(fn, "PauseMenu") == 0) {   // the online pause menu (the HUD, every frame)
             ReturnString(movie, OnlinePauseMenu());
         } else if (strcmp(fn, "PauseCursor") == 0) {

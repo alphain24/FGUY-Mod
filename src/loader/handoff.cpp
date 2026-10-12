@@ -212,6 +212,7 @@ bool HandoffGiveBack() {
         return false;
     }
     g_giveBack = 1;
+    OnlineSettingsWriteBack(g_oldPid);    // my settings as they are now (changed in the match or not)
     AllowSetForegroundWindow(g_oldPid);   // so it can come to the front
     SetEvent(ret);
     CloseHandle(ret);
