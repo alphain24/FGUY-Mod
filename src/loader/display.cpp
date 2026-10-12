@@ -490,6 +490,16 @@ void DisplayReveal() {
 // The game window's place on screen (online.cpp hands it to the session game that takes over).
 bool DisplayWindowRect(RECT* r) { return g_mainWnd && Real_GetWindowRect(g_mainWnd, r); }
 
+// After a Direct3D Reset (d3d9.cpp): leaving fullscreen, Direct3D puts back the window style it kept from
+// before - title bar and all, past our hooks. Borderless: take them off again.
+void DisplayAfterReset() {
+    if (g_mode != Mode::Borderless || !g_mainWnd) return;
+    LONG style = GetWindowLongW(g_mainWnd, GWL_STYLE);
+    if (!(style & kBorderStyles)) return;
+    Log(L"Window: a title bar / frame came back (%08x) - borderless again", style);
+    PostMessageW(g_mainWnd, kRestyleMsg, static_cast<WPARAM>(Mode::Borderless), 0);
+}
+
 void DisplayHideWindow() {
     if (g_mainWnd) PostMessageW(g_mainWnd, kHideMsg, 0, 0);
 }

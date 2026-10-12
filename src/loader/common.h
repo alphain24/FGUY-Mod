@@ -138,6 +138,7 @@ void DisplayReveal();                  // show the hidden online-session window
 bool DisplayWindowRect(RECT* r);       // where the game window is (handed to the session game)
 void DisplayShowForQuit();             // test tools' quit: bring the window up so it draws its last frame
 void DisplayHideWindow();              // hide the window (old game handing over to the session)
+void DisplayAfterReset();              // d3d9.cpp: borderless again if a Reset brought the frame back
 bool DisplayPark();                    // the lobby game during its player's match: hidden, held (online.cpp)
 void DisplayUnpark(bool show, const RECT* at, HANDLE shown);   //   go on (shown: at `at`), then set `shown`
 bool DisplayWindowRectOf(DWORD pid, RECT* r);   // another process's game window (the session game's)

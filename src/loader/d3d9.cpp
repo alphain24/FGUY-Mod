@@ -69,6 +69,38 @@ void BuildModeList() {
     Log(L"D3D: resolutions offered to the game:%s", list);
 }
 
+// The game's list of sizes for Options > Screen (and for checking the saved one): 0x4c2b40(out, max, &count,
+// windowed, filtered) keeps only the monitor's sizes that are also on a built-in list of nine, up to 1920 x 1080 -
+// no 2560 x 1440, no 3840 x 2160. Ours: every size the monitor has (from 1024 x 720 up), the largest if there are
+// more than fit, and windowed only those that fit on the screen. Entries: width, height, widescreen.
+void __cdecl ValidDisplayModes(void* out, unsigned max, unsigned* count, char windowed, char) {
+    BuildModeList();
+    std::vector<Res> fit;
+    int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN);
+    for (auto& r : g_modes)
+        if (!windowed || ((int)r.w <= sw && (int)r.h <= sh)) fit.push_back(r);
+    size_t first = fit.size() > max ? fit.size() - max : 0;
+    unsigned n = 0;
+    for (size_t i = first; i < fit.size(); ++i, ++n) {
+        UINT* e = reinterpret_cast<UINT*>(static_cast<char*>(out) + n * 12);
+        e[0] = fit[i].w;
+        e[1] = fit[i].h;
+        e[2] = fit[i].w * 10 >= fit[i].h * 14 ? 1 : 0;
+    }
+    *count = n;
+}
+
+bool PatchCallTo(uintptr_t at, uintptr_t expected, void* to) {
+    auto b = reinterpret_cast<unsigned char*>(at);
+    if (IsBadReadPtr(b, 5) || b[0] != 0xE8 || at + 5 + *reinterpret_cast<int*>(b + 1) != expected) return false;
+    DWORD old;
+    VirtualProtect(b, 5, PAGE_EXECUTE_READWRITE, &old);
+    *reinterpret_cast<int*>(b + 1) = (int)(reinterpret_cast<uintptr_t>(to) - (at + 5));
+    VirtualProtect(b, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), b, 5);
+    return true;
+}
+
 BOOL WINAPI Hook_EnumDisplaySettingsW(LPCWSTR device, DWORD mode, DEVMODEW* dm) {
     if (device || mode == ENUM_CURRENT_SETTINGS || mode == ENUM_REGISTRY_SETTINGS || !dm)
         return Real_EnumDisplaySettingsW(device, mode, dm);
@@ -164,6 +196,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* self, D3DPRESENT_PARAMETE
     } else {
         *pp = mine;
     }
+    DisplayAfterReset();
     return hr;
 }
 
@@ -437,6 +470,11 @@ void InitD3D9(HMODULE exe) {
     QueryPerformanceCounter(&g_lastFrame);
     g_statStart = g_lastFrame;
     timeBeginPeriod(1);  // precise Sleep for the frame limiter
+    const uintptr_t kModesFn = 0x4c2b40, kModesCalls[] = {0x5a577d, 0x4bba10};   // (Options > Screen; the saved size)
+    int patched = 0;
+    for (uintptr_t at : kModesCalls) patched += PatchCallTo(at, kModesFn, (void*)ValidDisplayModes);
+    Log(L"D3D: %s", patched == 2 ? L"every size the monitor has is offered (not only the game's nine)"
+                                 : L"size list code isn't what we expect - the game's own list");
     if (HMODULE dwm = LoadLibraryW(L"dwmapi.dll")) g_dwmFlush = (DwmFlush_t)GetProcAddress(dwm, "DwmFlush");
 
     HookSpec hooks[] = {
