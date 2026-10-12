@@ -31,8 +31,19 @@ Step "everyone's menu open: the game pauses" ((WaitFor $h "pausing the game" 5) 
 Start-Sleep 3
 & "$PSScriptRoot\window_shot.ps1" -Id $h -Out (Join-Path $shots "pause_all_host.png")
 & "$PSScriptRoot\window_shot.ps1" -Id $c -Out (Join-Path $shots "pause_all_guest.png")
-if ($Click) {   # a mouse click on RESUME instead of Enter
-    Keys $h @("cursor 8200 7900", "wait 400", "mouse 1 0 2", "wait 300")
+if ($Click) {   # a mouse click on RESUME instead of Enter: the game's pointer there (a mouse move sent to that
+    # window only - the real mouse stays put), the synced cursor too, then the click
+    Add-Type -Name W -Namespace T -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+[DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
+public struct RECT { public int L, T, R, B; }
+'@
+    $wnd = (Get-Process -Id $h).MainWindowHandle
+    $rc = New-Object T.W+RECT
+    [T.W]::GetClientRect($wnd, [ref]$rc) | Out-Null
+    $x = [int](($rc.R - $rc.L) * 8200 / 32767); $y = [int](($rc.B - $rc.T) * 7900 / 32767)
+    [T.W]::PostMessage($wnd, 0x200, [IntPtr]::Zero, [IntPtr](($y -shl 16) -bor $x)) | Out-Null   # WM_MOUSEMOVE
+    Keys $h @("cursor 8200 7900", "wait 400")
     & "$PSScriptRoot\window_shot.ps1" -Id $h -Out (Join-Path $shots "pause_all_hover.png")
     Keys $h @("click 150", "wait 1500")
 } else {
