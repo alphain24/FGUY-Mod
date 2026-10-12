@@ -55,9 +55,11 @@ slot's address from its packets and forwards every packet unchanged to the sessi
 import argparse
 import asyncio
 import base64
+import heapq
 import logging
 import math
 import os
+import random
 import re
 import secrets
 import socket
@@ -160,6 +162,7 @@ class Server:
         self.lobbies = {}
         self.sessions = {}
         self.sock = None
+        self.sim = None   # test knob: a simulated bad connection (NetSim)
         self.rate = {}  # addr -> [window start, count]
 
     # ---- lobby (TCP) -------------------------------------------------------------------------------
@@ -351,8 +354,12 @@ class Server:
         n = len(lobby.members)
         self.sessions[token] = Session(n)
         # Inputs for tick T are sent when tick T-delay+1 starts and must arrive before tick T starts.
-        # Through the relay a packet takes at most about (slowest player's round trip) to arrive.
-        worst = max(m.rtt for m in lobby.members)
+        # Through the relay a packet from A to B takes about half A's round trip plus half B's: the two slowest
+        # players' round trips decide (the delay below adds a margin for jitter).
+        rtts = sorted((m.rtt for m in lobby.members), reverse=True)
+        worst = (rtts[0] + rtts[1]) // 2 if len(rtts) > 1 else rtts[0]
+        if self.sim:   # (test: the lobby's own pings don't go through the simulated connection)
+            worst += int((self.sim.lag + self.sim.jitter) * 1000)
         chosen = int(lobby.conf[5]) if len(lobby.conf) > 5 and lobby.conf[5].isdigit() else 0
         rate = snap_rate(chosen) if chosen else snap_rate(min(AUTO_MAX, min(m.rate for m in lobby.members)))
         rate = 60   # for now: above 60 the games drift apart after a few seconds of play (the game's own sim)
@@ -393,6 +400,9 @@ class Server:
         s.last = now
         for i, a in enumerate(s.addrs):
             if a and i != slot:
+                if self.sim:
+                    self.sim.forward(self.sock, data, a)
+                    continue
                 try:
                     self.sock.sendto(data, a)
                 except OSError:
@@ -418,6 +428,37 @@ class Server:
                     if l.playing and not l.members[0].away:
                         l.playing = False
                     l.broadcast_members()
+
+
+class NetSim:
+    """Test knob (--sim-lag / --sim-jitter / --sim-loss): the relay holds every packet back for lag +- jitter ms
+    and loses some, like a far-away or bad connection. Packets can arrive out of order, as on the internet."""
+
+    def __init__(self, lag_ms, jitter_ms, loss_pct):
+        self.lag, self.jitter, self.loss = lag_ms / 1000, jitter_ms / 1000, loss_pct / 100
+        self.queue, self.cv, self.n = [], threading.Condition(), 0
+        threading.Thread(target=self.run, daemon=True).start()
+        log.info('relay: simulating %d ms lag, +-%d ms jitter, %.1f%% loss (each way)', lag_ms, jitter_ms, loss_pct)
+
+    def forward(self, sock, data, addr):
+        if random.random() < self.loss:
+            return
+        at = time.monotonic() + max(0.0, self.lag + random.uniform(-self.jitter, self.jitter))
+        with self.cv:
+            self.n += 1
+            heapq.heappush(self.queue, (at, self.n, sock, data, addr))
+            self.cv.notify()
+
+    def run(self):
+        while True:
+            with self.cv:
+                while not self.queue or self.queue[0][0] > time.monotonic():
+                    self.cv.wait(None if not self.queue else max(0.0, self.queue[0][0] - time.monotonic()))
+                _, _, sock, data, addr = heapq.heappop(self.queue)
+            try:
+                sock.sendto(data, addr)
+            except OSError:
+                pass
 
 
 def relay_thread(server, host, port):
@@ -461,9 +502,14 @@ async def main():
     ap = argparse.ArgumentParser(description='FGUY Mod lobby + relay server')
     ap.add_argument('--port', type=int, default=int(os.environ.get('FGUY_PORT', 7650)))
     ap.add_argument('--host', default='0.0.0.0')
+    ap.add_argument('--sim-lag', type=int, default=0, help='test: hold relayed packets back this many ms')
+    ap.add_argument('--sim-jitter', type=int, default=0, help='test: +- this many ms on top')
+    ap.add_argument('--sim-loss', type=float, default=0, help='test: lose this %% of relayed packets')
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
     server = Server(a.port)
+    if a.sim_lag or a.sim_jitter or a.sim_loss:
+        server.sim = NetSim(a.sim_lag, a.sim_jitter, a.sim_loss)
     tcp = await asyncio.start_server(server.handle, a.host, a.port, limit=MAX_LINE)
     asyncio.ensure_future(server.cleanup())
     threading.Thread(target=relay_thread, args=(server, a.host, a.port), daemon=True).start()

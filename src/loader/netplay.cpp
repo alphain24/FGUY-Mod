@@ -372,7 +372,10 @@ struct PktLeave { PktHeader h; unsigned last; };
 bool g_relay = false;
 unsigned char g_token[8];
 
+volatile ULONGLONG g_testStallUntil = 0;   // test pipe "netstall <ms>": this PC sends nothing until then
+
 void SendAll(const void* data, int len) {
+    if (g_testStallUntil && GetTickCount64() < g_testStallUntil) return;
     if (g_relay) {
         char buf[1500];
         if (len > (int)sizeof(buf) - 11) return;
@@ -398,10 +401,39 @@ Hashed g_hashed[8];
 
 void LogPlayers(const wchar_t* tag);
 
+void NoteMismatch(unsigned tick);
+
+// The players' names, by slot (FGUYMOD_NET_NAMES from the lobby: "Host|Guest|..."), for the notices.
+std::wstring PlayerName(int slot) {
+    static wchar_t names[4][40];
+    static bool read = false;
+    if (!read) {
+        read = true;
+        char env[200];
+        if (GetEnvironmentVariableA("FGUYMOD_NET_NAMES", env, sizeof(env))) {
+            int s = 0;
+            for (char* p = env; s < 4;) {
+                char* bar = strchr(p, '|');
+                if (bar) *bar = 0;
+                MultiByteToWideChar(CP_UTF8, 0, p, -1, names[s], 40);
+                ++s;
+                if (!bar) break;
+                p = bar + 1;
+            }
+        }
+    }
+    if (slot < 0 || slot >= 4) return L"";
+    if (names[slot][0]) return names[slot];
+    wchar_t n[16];
+    swprintf_s(n, L"Player %d", slot + 1);
+    return n;
+}
+
 void CompareHash(int slot, unsigned tick, unsigned hash) {
     int k = (tick / g_syncEvery) % 8;
     if (g_myHashTick[k] != tick) return;
     static bool wasInSync = true;
+    if (g_myHash[k] != hash) NoteMismatch(tick);
     if (g_myHash[k] == hash) {
         if (tick % (g_syncEvery * 10) == 0 || !wasInSync) Log(L"Netplay: tick %u in sync with peer %d (%08x)", tick, slot, hash);
         wasInSync = true;
@@ -536,6 +568,21 @@ Pad BotPad(unsigned f) {
     if (f % 200 < 40) p.rt = 255;                                    // shoot in bursts
     if (f % 1500 < 4) p.buttons |= XINPUT_GAMEPAD_X;                // reload
     return p;
+}
+
+// Out of sync for good (3 checks running, once the level has settled - a mismatch while everyone drops in fixes
+// itself): each PC sees it at the same checks, says so and takes everyone back to the lobby.
+void NoteMismatch(unsigned tick) {
+    static unsigned lastBadTick = 0;
+    static int badRun = 0;
+    if (!g_inSession || !g_liveTick || tick <= g_liveTick + 600 || tick == lastBadTick) return;
+    badRun = lastBadTick && tick - lastBadTick <= (unsigned)g_syncEvery ? badRun + 1 : 1;
+    lastBadTick = tick;
+    if (badRun == 3) {
+        Log(L"Netplay: out of sync since tick %u - back to the lobby", tick - 2 * g_syncEvery);
+        OverlayShow(L"The match went out of sync - back to the lobby", 6000);
+        OnlinePauseForceQuit();
+    }
 }
 
 Pad ScriptPad(unsigned f) {
@@ -877,8 +924,9 @@ void Tick() {
             g_myHashTick[k] = g_tick;
             PktHash p{{'H', (BYTE)g_slot}, g_tick, h};
             SendAll(&p, sizeof(p));
-            for (int s = 0; s < g_players; ++s)
-                if (s != g_slot && g_peerHashTick[s][k] == g_tick) CompareHash(s, g_tick, g_peerHash[s][k]);
+            for (int s = 0; s < g_players; ++s)   // (not with a player who has left: they're idle here from then)
+                if (s != g_slot && !g_gone[s] && !g_goneFrom[s] && g_peerHashTick[s][k] == g_tick)
+                    CompareHash(s, g_tick, g_peerHash[s][k]);
             if (g_tick % (g_syncEvery * 10) == 0) LogPlayers(L"check");
         }
         ++g_tick;
@@ -895,23 +943,41 @@ void Tick() {
 
     LARGE_INTEGER s0, s1, s2;
     Real_QPC(&s0);
-    ULONGLONG until = GetTickCount64() + 10000;
+    ULONGLONG waitFrom = GetTickCount64(), until = waitFrom + 10000, nextNotice = waitFrom + 400;
     ULONGLONG nextResend = GetTickCount64() + 5;
+    bool noticed = false;
     while (!HaveAll(g_tick)) {
         Receive();
-        if (GetTickCount64() >= nextResend) { SendInputs(future); nextResend = GetTickCount64() + 5; }
-        if (GetTickCount64() > until) {  // they've left (or their connection is gone): play on without them
+        ULONGLONG now = GetTickCount64();
+        if (now >= nextResend) { SendInputs(future); nextResend = now + 5; }
+        if (g_inSession && now >= nextNotice) {   // held up: say who we're waiting for (the game draws nothing now)
+            nextNotice = now + 250;
+            noticed = true;
+            std::wstring who;
+            int q = g_tick % kRing;
+            for (int s = 0; s < g_players; ++s)
+                if (s != g_slot && !g_gone[s] && (!g_have[q][s] || g_haveTick[q][s] != g_tick))
+                    who += (who.empty() ? L"" : L", ") + PlayerName(s);
+            wchar_t text[160];
+            swprintf_s(text, L"Waiting for %s... (%d s)", who.empty() ? L"the others" : who.c_str(),
+                       (int)((until - now + 999) / 1000));
+            OverlayShow(text, 0);
+        }
+        if (now > until) {  // they've left (or their connection is gone): play on without them
             int q = g_tick % kRing;
             for (int s = 0; s < g_players; ++s)
                 if (!g_have[q][s] || g_haveTick[q][s] != g_tick) {
                     g_gone[s] = true;
                     Log(L"Netplay: no input from player %d for 10 s at tick %u - they left; their character stays idle", s, g_tick);
+                    if (g_inSession) OverlayShow((PlayerName(s) + L" left the match").c_str(), 5000);
                 }
             HaveAll(g_tick);
+            noticed = false;
             break;
         }
         Real_Sleep(0);
     }
+    if (noticed) OverlayHide();
     for (int s = 0; s < g_players; ++s) g_current[s] = g_inputs[g_tick % kRing][s];
     TakeSessionPresses();
     KbmRaw kbm[4] = {};
@@ -1077,6 +1143,10 @@ void NetplaySessionPress(int pad, WORD buttons, int delayTicks) {
     Log(L"Netplay: session press pad %d buttons %04x in %d ticks", pad, buttons, delayTicks);
 }
 int NetplayLocalSlot() { return g_enabled ? g_slot : -1; }
+void NetplayTestStall(DWORD ms) {
+    g_testStallUntil = GetTickCount64() + ms;
+    Log(L"Netplay: test - sending nothing for %lu ms", ms);
+}
 int NetplaySessionSlot() { return g_slot; }
 unsigned NetplayTick() { return g_tick; }
 int NetplayRate() { return g_rate; }

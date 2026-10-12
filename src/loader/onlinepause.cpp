@@ -277,5 +277,11 @@ const char* OnlinePauseCursor() {
     return buf;
 }
 
+// Out of sync (netplay.cpp, the same check on every PC): leave the match - back to the lobby.
+void OnlinePauseForceQuit() {
+    g_open = false;
+    InterlockedExchange(&g_leave, 1);   // (the HUD's next poll leaves the session and quits the level)
+}
+
 // FGUYMOD_PauseQuitDone: the HUD has quit the level.
 void OnlinePauseQuitDone() { InterlockedExchange(&g_quit, 2); }

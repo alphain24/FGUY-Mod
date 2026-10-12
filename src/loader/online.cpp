@@ -507,6 +507,9 @@ void StartSession(const std::vector<std::string>& f) {
     set(L"FGUYMOD_SESSION", f[7] + "|" + f[8]);  // conf: mode,map,time,score,ff | picks: char:costume:team;...
     SetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", dirName);
     set(L"FGUYMOD_MY_SETTINGS", OnlineSettingsCapture());   // my own settings, not the host's save's
+    std::string names;   // everyone's name by slot, for the match's notices ("Waiting for ...")
+    for (size_t i = 0; i < g_members.size(); ++i) names += (i ? "|" : "") + g_members[i].name;
+    set(L"FGUYMOD_NET_NAMES", names);
     set(L"FGUYMOD_PADMODE", "1");  // every player is a controller in a session
     set(L"FGUYMOD_HANDOFF", std::to_string(GetCurrentProcessId()));  // boot hidden, tell us when it shows
     RECT at;   // and show up exactly where this window is

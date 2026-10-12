@@ -187,6 +187,11 @@ void HandleCommand(char* line) {
         }
         return;
     }
+    if (cmd && _stricmp(cmd, "netstall") == 0) {   // test tools: netstall <ms> - this PC goes quiet for a while
+        char* ms = strtok_s(nullptr, " \t\r\n", &ctx);
+        NetplayTestStall(ms ? (DWORD)atoi(ms) : 5000);
+        return;
+    }
     if (cmd && _stricmp(cmd, "stacks") == 0) {  // research: what the game's threads are doing
         NetplayLogStacks();
         return;

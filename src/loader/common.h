@@ -60,6 +60,7 @@ bool NetplayEnabled();
 void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
 int NetplayLocalSlot();                //   my player slot, -1 when netplay is off
+void NetplayTestStall(DWORD ms);       //   test pipe: this PC goes quiet (a dropped connection)
 int NetplaySessionSlot();              //   my player slot in this game's session (also after leaving it)
 unsigned NetplayTick();                //   the lockstep tick being simulated
 int NetplayRate();                     //   ticks (frames) per second online
@@ -101,6 +102,10 @@ struct SettingsRow { const char* label; std::string value; char kind; };   // ki
 int OnlineSettingsRows(SettingsRow* out, int max);                         //   t toggle, c choice, i info, b back
 void OnlineSettingsChange(int row, int delta);  //   left / right (delta -1 / +1), A (0)
 
+// overlay.cpp: a notice over the game window (online: waiting for a player, out of sync)
+void OverlayShow(const wchar_t* text, DWORD ms);   // ms 0: until OverlayHide
+void OverlayHide();
+
 // onlinepause.cpp: the online pause menu (the match keeps running; the game pauses once everyone has it open)
 struct KbmRaw;
 bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool keyboardPlayer);  // netplay: my input
@@ -109,6 +114,7 @@ void OnlinePauseCommand(const char* command);  //   ui.cpp: a menu command ran
 const char* OnlinePauseMenu();                 //   FGUYMOD_PauseMenu (the HUD)
 const char* OnlinePauseCursor();
 void OnlinePauseQuitDone();
+void OnlinePauseForceQuit();                    //   netplay: out of sync - everyone back to the lobby
 
 // online.cpp: lobby + the in-game ONLINE screens
 void OnlineEnter();
