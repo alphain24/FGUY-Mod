@@ -209,8 +209,10 @@ class Server:
             c.send('ERROR say HELLO first')
             return
         if cmd == 'LIST':
+            # (only lobbies with their host in them: not one whose host left while the others were in a match)
             open_ = [l for l in self.lobbies.values()
-                     if l.host.gamekey == c.gamekey and len(l.members) < l.max and not l.private and not l.playing]
+                     if l.host.gamekey == c.gamekey and len(l.members) < l.max and not l.private and not l.playing
+                     and l.host in l.members and not l.host.away]
             c.send(' '.join(['LIST'] + [f'{l.code},{l.host.name},{len(l.members)},{l.max},{l.conf[0]},{l.conf[1]}'
                                         for l in open_[:50]]))
         elif cmd == 'HOST':
