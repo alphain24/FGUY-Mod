@@ -500,6 +500,29 @@ void DisplayAfterReset() {
     PostMessageW(g_mainWnd, kRestyleMsg, static_cast<WPARAM>(Mode::Borderless), 0);
 }
 
+// d3d9.cpp: Direct3D refused exclusive fullscreen - borderless instead (looks the same, and saved, so the
+// next start doesn't try again).
+void DisplayFullscreenFailed() {
+    Log(L"Display: fullscreen refused by Direct3D - switching to borderless");
+    g_mode = Mode::Borderless;
+    SaveMode(Mode::Borderless);
+    if (g_mainWnd) PostMessageW(g_mainWnd, kRestyleMsg, static_cast<WPARAM>(Mode::Borderless), 0);
+}
+
+// d3d9.cpp, every frame: borderless and a title bar / frame is back (a mode switch that went wrong, Direct3D
+// putting back a style it kept, ...) - take it off again. Looked at twice a second.
+void DisplayCheckStyle() {
+    static int frames = 0;
+    if (++frames < 30) return;
+    frames = 0;
+    if (g_mode != Mode::Borderless || !g_mainWnd || g_hidden || !IsWindowVisible(g_mainWnd) || IsIconic(g_mainWnd))
+        return;
+    LONG style = GetWindowLongW(g_mainWnd, GWL_STYLE);
+    if (!(style & kBorderStyles)) return;
+    Log(L"Window: borderless, but with a title bar / frame (%08x) - taking it off", style);
+    PostMessageW(g_mainWnd, kRestyleMsg, static_cast<WPARAM>(Mode::Borderless), 0);
+}
+
 void DisplayHideWindow() {
     if (g_mainWnd) PostMessageW(g_mainWnd, kHideMsg, 0, 0);
 }

@@ -196,6 +196,35 @@ void HandleCommand(char* line) {
         NetplayTestNudge();
         return;
     }
+    if (cmd && _stricmp(cmd, "peek") == 0) {   // research: peek <hex address> [dwords] [pointers to follow first]
+        char* a = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* n = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* deref = strtok_s(nullptr, " \t\r\n", &ctx);
+        DWORD at = a ? strtoul(a, nullptr, 16) : 0;
+        for (int d = deref ? atoi(deref) : 0; d > 0 && !IsBadReadPtr((void*)at, 4); --d) {
+            Log(L"Peek: [%#lx] = %#lx", at, *reinterpret_cast<DWORD*>(at));
+            at = *reinterpret_cast<DWORD*>(at);
+        }
+        int count = n ? atoi(n) : 8;
+        wchar_t text[1024];
+        int len = swprintf_s(text, L"Peek %#lx:", at);
+        for (int i = 0; i < count && i < 64 && len < 1000; ++i) {
+            const DWORD* p = reinterpret_cast<const DWORD*>(at) + i;
+            len += IsBadReadPtr(p, 4) ? swprintf_s(text + len, 1024 - len, L" ?") : swprintf_s(text + len, 1024 - len, L" %08lx", *p);
+        }
+        Log(L"%s", text);
+        return;
+    }
+    if (cmd && _stricmp(cmd, "watch") == 0) {   // research: which code writes there (up to 4 hex addresses)
+        while (char* p = strtok_s(nullptr, " \t\r\n", &ctx))
+            WatchAddress(reinterpret_cast<void*>(strtoul(p, nullptr, 16)), L"the watched address");
+        return;
+    }
+    if (cmd && _stricmp(cmd, "watchaim") == 0) {   // research: which code writes a player's aim point
+        char* p = strtok_s(nullptr, " \t\r\n", &ctx);
+        NetplayWatchAim(p ? atoi(p) : 0);
+        return;
+    }
     if (cmd && _stricmp(cmd, "stacks") == 0) {  // research: what the game's threads are doing
         NetplayLogStacks();
         return;

@@ -129,6 +129,7 @@ GetAdapterModeCount_t Real_GetAdapterModeCount;
 EnumAdapterModes_t Real_EnumAdapterModes;
 CreateDevice_t Real_CreateDevice;
 IDirect3D9* g_d3d = nullptr;
+UINT g_adapter = D3DADAPTER_DEFAULT;   // the adapter the game's device is on
 
 UINT STDMETHODCALLTYPE Hook_GetAdapterModeCount(IDirect3D9* self, UINT adapter, D3DFORMAT format) {
     if (adapter != D3DADAPTER_DEFAULT || format != D3DFMT_X8R8G8B8)
@@ -153,10 +154,10 @@ HRESULT STDMETHODCALLTYPE Hook_EnumAdapterModes(IDirect3D9* self, UINT adapter, 
 // Best refresh rate the monitor really has at this size (prefers 60, else the highest).
 UINT RealRefreshRate(UINT w, UINT h) {
     if (!g_d3d) return 0;
-    UINT best = 0, count = Real_GetAdapterModeCount(g_d3d, D3DADAPTER_DEFAULT, D3DFMT_X8R8G8B8);
+    UINT best = 0, count = Real_GetAdapterModeCount(g_d3d, g_adapter, D3DFMT_X8R8G8B8);
     for (UINT i = 0; i < count; ++i) {
         D3DDISPLAYMODE m;
-        if (FAILED(Real_EnumAdapterModes(g_d3d, D3DADAPTER_DEFAULT, D3DFMT_X8R8G8B8, i, &m))) continue;
+        if (FAILED(Real_EnumAdapterModes(g_d3d, g_adapter, D3DFMT_X8R8G8B8, i, &m))) continue;
         if (m.Width != w || m.Height != h) continue;
         if (m.RefreshRate == 60) return 60;
         if (m.RefreshRate > best) best = m.RefreshRate;
@@ -200,6 +201,31 @@ HRESULT STDMETHODCALLTYPE Hook_CreateTexture(IDirect3DDevice9* self, UINT w, UIN
     return hr;
 }
 
+// Why exclusive fullscreen might be refused: what was asked, and the modes the device's adapter has at that size.
+void LogFullscreenTrouble(IDirect3DDevice9* dev, const D3DPRESENT_PARAMETERS& pp) {
+    D3DDEVICE_CREATION_PARAMETERS cp = {};
+    dev->GetCreationParameters(&cp);
+    Log(L"D3D:   fullscreen %ux%u format %d, %u back buffers, multisample %d, swap %d, window %p, adapter %u",
+        pp.BackBufferWidth, pp.BackBufferHeight, pp.BackBufferFormat, pp.BackBufferCount, pp.MultiSampleType,
+        pp.SwapEffect, pp.hDeviceWindow, cp.AdapterOrdinal);
+    IDirect3D9* d3d = nullptr;
+    if (FAILED(dev->GetDirect3D(&d3d)) || !d3d) return;
+    UINT count = Real_GetAdapterModeCount(d3d, cp.AdapterOrdinal, D3DFMT_X8R8G8B8);
+    wchar_t line[1024];
+    int len = swprintf_s(line, L"D3D:   adapter %u has %u modes; at %ux%u:", cp.AdapterOrdinal, count,
+                         pp.BackBufferWidth, pp.BackBufferHeight);
+    UINT maxW = 0, maxH = 0;
+    for (UINT i = 0; i < count && len < 960; ++i) {
+        D3DDISPLAYMODE m;
+        if (FAILED(Real_EnumAdapterModes(d3d, cp.AdapterOrdinal, D3DFMT_X8R8G8B8, i, &m))) continue;
+        if (m.Width * m.Height > maxW * maxH) { maxW = m.Width; maxH = m.Height; }
+        if (m.Width == pp.BackBufferWidth && m.Height == pp.BackBufferHeight)
+            len += swprintf_s(line + len, 1024 - len, L" %uHz", m.RefreshRate);
+    }
+    Log(L"%s (largest mode %ux%u)", line, maxW, maxH);
+    d3d->Release();
+}
+
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* self, D3DPRESENT_PARAMETERS* pp) {
     D3DPRESENT_PARAMETERS original = *pp, mine = *pp;
     FixPresentParameters(&mine);
@@ -213,6 +239,21 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* self, D3DPRESENT_PARAMETE
             original.PresentationInterval, original.FullScreen_RefreshRateInHz, hr);
     } else {
         *pp = mine;
+    }
+    if (FAILED(hr) && !original.Windowed) {
+        LogFullscreenTrouble(self, original);
+        D3DPRESENT_PARAMETERS win = original;
+        win.Windowed = TRUE;
+        win.FullScreen_RefreshRateInHz = 0;
+        win.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+        DisplayFullscreenFailed();   // borderless from here on: the window covers the screen, no title bar
+        hr = Real_Reset(self, &win);
+        Log(L"D3D: fullscreen refused - borderless at %ux%u instead -> %#lx", win.BackBufferWidth,
+            win.BackBufferHeight, hr);
+        if (SUCCEEDED(hr)) {
+            *pp = win;
+            g_fullscreen = false;
+        }
     }
     DisplayAfterReset();
     return hr;
@@ -341,6 +382,7 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, 
         QuitGame();
     }
     PaceFrame();
+    DisplayCheckStyle();
     NetplayOnFrame();
     OnlineMenuFrame();
     static unsigned frame = 0;
@@ -433,6 +475,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DD
         Sleep(attempt < 20 ? 250 : 1000);
     }
     if (SUCCEEDED(hr) && out && *out) {
+        g_adapter = adapter;
         if (void* o = PatchVtable(*out, 16, (void*)Hook_Reset)) Real_Reset = (Reset_t)o;
         if (void* o = PatchVtable(*out, 17, (void*)Hook_Present)) Real_Present = (Present_t)o;
         if (void* o = PatchVtable(*out, 23, (void*)Hook_CreateTexture)) Real_CreateTexture = (CreateTexture_t)o;

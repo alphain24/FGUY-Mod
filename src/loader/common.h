@@ -72,6 +72,12 @@ void NetplaySessionPress(int pad, WORD buttons, int delayTicks);  // session aut
 void NetplaySessionLevel();            //   the menu launched the level
 void NetplayLeave(const wchar_t* why); //   leave the session (back to the lobby): run on our own
 bool NetplaySessionReturn();           //   the menus: the match is over - back to the lobby (leaves the session)
+void InitLoadSync();                   // online: level start-up the same tick on every PC (loadsync.cpp)
+DWORD NetplayGameThread();             //   the game logic thread (netplay.cpp)
+void InitRngTrace();
+void CamDump(unsigned tick);           // research: players' cameras every tick (rngtrace.cpp)
+void WatchAddress(const void* addr, const wchar_t* what);   // research: who writes there   (watch.cpp)
+void NetplayWatchAim(int player);      //   research: who writes a player's aim point (test pipe "watchaim")                   // research: the game's random numbers   (rngtrace.cpp)
 void InitSplitView();                  // one full-screen view per PC online    (splitview.cpp)
 int SplitViewHudMode(int mode);
 int SplitViewHudViewport(int viewport);
@@ -139,6 +145,8 @@ void DisplayReveal();                  // show the hidden online-session window
 bool DisplayWindowRect(RECT* r);       // where the game window is (handed to the session game)
 void DisplayShowForQuit();             // test tools' quit: bring the window up so it draws its last frame
 void DisplayHideWindow();              // hide the window (old game handing over to the session)
+void DisplayFullscreenFailed();        // d3d9.cpp: Direct3D refused exclusive fullscreen - borderless instead
+void DisplayCheckStyle();              // d3d9.cpp, every frame: no title bar while borderless
 void DisplayAfterReset();              // d3d9.cpp: borderless again if a Reset brought the frame back
 bool DisplayPark();                    // the lobby game during its player's match: hidden, held (online.cpp)
 void DisplayUnpark(bool show, const RECT* at, HANDLE shown);   //   go on (shown: at `at`), then set `shown`

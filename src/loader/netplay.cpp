@@ -1065,6 +1065,13 @@ void Tick() {
         }
     }
     if (g_inSession) OnlineSettingsApply(kbm, g_players);   // everyone's own aim settings (onlinesettings.cpp)
+    if (g_inSession) CamDump(g_tick);   // research (FGUYMOD_CAMDUMP, rngtrace.cpp)
+    if (g_inSession) {   // (the level's start-up must reach this the same tick on every PC - loadsync.cpp)
+        static bool viewsOn = false;
+        bool on = *reinterpret_cast<volatile DWORD*>(0xb5e468) != 0;   // viewport 0's camera has its controller
+        if (on != viewsOn) Log(L"Netplay: the players' views %s at tick %u", on ? L"start" : L"stop", g_tick);
+        viewsOn = on;
+    }
     if (InterlockedExchange(&g_testNudge, 0)) {   // (test: this PC's game differs from the others' from here)
         unsigned char* list[8];
         int n = GamePlayers(list, 8);
@@ -1238,6 +1245,21 @@ void NetplayTestStall(DWORD ms) {
     Log(L"Netplay: test - sending nothing for %lu ms", ms);
 }
 int NetplaySessionSlot() { return g_slot; }
+DWORD NetplayGameThread() { return g_mainThread; }
+void NetplayWatchAim(int player) {
+    unsigned char* players[8];
+    int n = GamePlayers(players, 8);
+    for (int i = 0; i < n; ++i)
+        if (*reinterpret_cast<int*>(players[i] + 0xdf8) == player) {
+            if (const float* aim = PlayerAim(players[i])) {
+                wchar_t what[64];
+                swprintf_s(what, L"player %d's aim height", player);
+                WatchAddress(aim + 1, what);
+            }
+            return;
+        }
+    Log(L"Watch: no player %d", player);
+}
 unsigned NetplayTick() { return g_tick; }
 int NetplayRate() { return g_rate; }
 void NetplayLogStacks() {

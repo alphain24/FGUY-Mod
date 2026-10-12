@@ -12,11 +12,12 @@ function WaitFor([int]$id, [string]$text, [int]$seconds) {
     return $false
 }
 function Step([string]$what, [bool]$ok) { if ($ok) { Write-Output "ok:   $what" } else { Write-Output "FAIL: $what"; exit 1 } }
+$started = Get-Date
 if ($Rate) { $env:FGUYMOD_TEST_RATE = "$Rate" }
 $out = powershell -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\test_bot.ps1" -Seconds 3 -Controls keyboard -HostRes 1600x900
 $env:FGUYMOD_TEST_RATE = $null
 $hostLobby = [int](($out | Where-Object { $_ -match "^host copy (\d+)" } | Select-Object -First 1) -replace "^host copy ", "")
-$logs = Get-ChildItem (Join-Path $GameDir "FGUYMod\FGUYMod_*.log") | Sort-Object LastWriteTime -Descending | Select-Object -First 5
+$logs = Get-ChildItem (Join-Path $GameDir "FGUYMod\FGUYMod_*.log") | Where-Object { $_.LastWriteTime -gt $started } | Sort-Object LastWriteTime -Descending | Select-Object -First 5
 $sess = @($logs | Where-Object { Select-String $_ -Pattern "frames per second in the match" -Quiet } | ForEach-Object { [int]($_.BaseName -replace 'FGUYMod_', '') })
 $h = $sess | Where-Object { Has $_ "slot 0 of 2 players" } | Select-Object -First 1
 $b = $sess | Where-Object { Has $_ "slot 1 of 2 players" } | Select-Object -First 1

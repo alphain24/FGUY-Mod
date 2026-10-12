@@ -18,7 +18,16 @@ public class Decompile extends GhidraScript {
         for (int i = 1; i < args.length; i++) {
             Address a = toAddr(Long.parseLong(args[i].replace("0x", ""), 16));
             Function f = getFunctionContaining(a);
-            if (f == null) { out.println("// " + args[i] + ": no function"); continue; }
+            if (f == null) {   // not found by the analysis: start it after the padding (int3s) before it
+                Address p = a;
+                for (int k = 0; k < 0x8000; k++, p = p.subtract(1)) {
+                    if ((p.getOffset() & 0xf) == 0 && (getByte(p.subtract(1)) & 0xff) == 0xcc) break;
+                }
+                disassemble(p);
+                f = createFunction(p, null);
+                if (f == null) f = getFunctionContaining(a);
+                if (f == null) { out.println("// " + args[i] + ": no function (tried " + p + ")"); continue; }
+            }
             DecompileResults r = d.decompileFunction(f, 120, monitor);
             out.println("// ===== " + f.getName() + " @ " + f.getEntryPoint() + " (asked: " + args[i] + ")");
             out.println(r.decompileCompleted() ? r.getDecompiledFunction().getC() : "// failed: " + r.getErrorMessage());

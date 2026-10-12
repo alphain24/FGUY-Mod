@@ -90,6 +90,8 @@ void Init() {
     InitUi();
     InitResearch();
     InitSplitView();
+    InitRngTrace();
+    InitLoadSync();
 }
 
 }  // namespace
