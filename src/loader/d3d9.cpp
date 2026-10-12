@@ -18,6 +18,7 @@
 #include "common.h"
 
 #include <d3d9.h>
+#include <intrin.h>
 #include <mmsystem.h>
 
 #include <algorithm>
@@ -181,6 +182,23 @@ using Reset_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, D3DPRESENT_PARAME
 using Present_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, const RECT*, const RECT*, HWND, const RGNDATA*);
 Reset_t Real_Reset;
 Present_t Real_Present;
+using CreateTexture_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, UINT, UINT, UINT, DWORD, D3DFORMAT, D3DPOOL,
+                                                    IDirect3DTexture9**, HANDLE*);
+CreateTexture_t Real_CreateTexture;
+
+// Only watches: a texture the game can't get goes into the log (the game doesn't check - it crashes after).
+HRESULT STDMETHODCALLTYPE Hook_CreateTexture(IDirect3DDevice9* self, UINT w, UINT h, UINT levels, DWORD usage,
+                                             D3DFORMAT format, D3DPOOL pool, IDirect3DTexture9** out, HANDLE* share) {
+    HRESULT hr = Real_CreateTexture(self, w, h, levels, usage, format, pool, out, share);
+    if (FAILED(hr)) {
+        static volatile LONG count = 0;
+        if (InterlockedIncrement(&count) <= 10)
+            Log(L"D3D: CreateTexture %ux%u levels %u usage %#lx format %u pool %u -> %#lx (called from %p; game's "
+                L"screen %dx%d)", w, h, levels, usage, (unsigned)format, (unsigned)pool, hr, _ReturnAddress(),
+                *reinterpret_cast<int*>(0xaf2fbc), *reinterpret_cast<int*>(0xaf2fb8));
+    }
+    return hr;
+}
 
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* self, D3DPRESENT_PARAMETERS* pp) {
     D3DPRESENT_PARAMETERS original = *pp, mine = *pp;
@@ -262,7 +280,7 @@ namespace {
 // not drawing any more.)
 CRITICAL_SECTION g_shotLock;
 bool g_shotInit = false;
-wchar_t g_shotPath[MAX_PATH] = L"";
+wchar_t g_shotPath[1024] = L"";
 
 void SaveShot(IDirect3DDevice9* dev, const wchar_t* path) {
     IDirect3DSurface9 *back = nullptr, *copy = nullptr;
@@ -307,7 +325,7 @@ void SaveShot(IDirect3DDevice9* dev, const wchar_t* path) {
 HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, const RECT* dst, HWND wnd,
                                        const RGNDATA* dirty) {
     if (g_shotInit && g_shotPath[0]) {
-        wchar_t path[MAX_PATH];
+        wchar_t path[1024];
         EnterCriticalSection(&g_shotLock);
         wcscpy_s(path, g_shotPath);
         g_shotPath[0] = 0;
@@ -417,6 +435,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DD
     if (SUCCEEDED(hr) && out && *out) {
         if (void* o = PatchVtable(*out, 16, (void*)Hook_Reset)) Real_Reset = (Reset_t)o;
         if (void* o = PatchVtable(*out, 17, (void*)Hook_Present)) Real_Present = (Present_t)o;
+        if (void* o = PatchVtable(*out, 23, (void*)Hook_CreateTexture)) Real_CreateTexture = (CreateTexture_t)o;
     }
     return hr;
 }
@@ -444,7 +463,7 @@ void VideoRequestQuit() { g_quitRequested = true; }
 void VideoRequestShot(const wchar_t* path) {
     if (!g_shotInit) { InitializeCriticalSection(&g_shotLock); g_shotInit = true; }
     EnterCriticalSection(&g_shotLock);
-    wcscpy_s(g_shotPath, path);
+    if (wcslen(path) < _countof(g_shotPath)) wcscpy_s(g_shotPath, path);
     LeaveCriticalSection(&g_shotLock);
 }
 

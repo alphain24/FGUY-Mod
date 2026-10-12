@@ -88,12 +88,21 @@ int MyViewport() {
 
 // The other players' views: their cameras keep running (the game updates a player's camera - and with it
 // where they aim - only while that view is on, so switching them off made each PC play them differently).
-// They're just drawn into a single pixel in the screen's corner, under my view's HUD.
+// They get exactly one pixel in the screen's corner, under my view's HUD (and normally aren't drawn at all -
+// DrawSkip). Not more: a fixed 0.1% of the screen came out 2x1 at 1600x900 and 1920x1080, and the game's
+// after-effects then asked for a 1x0 texture and crashed. And not the whole screen: not drawn or not, each
+// camera still clears its part of the screen - mine would be black. One pixel also means the same camera shape
+// on every PC, whatever its window size. (0.75 of a pixel, rounded up by the game to one.)
+void OtherRect(void* camera) {
+    int w = *reinterpret_cast<volatile int*>(0xaf2fbc), h = *reinterpret_cast<volatile int*>(0xaf2fb8);   // screen
+    if (w < 16 || h < 16) w = h = 1000;
+    Real_Rect(camera, 1.0f - 0.75f / w, 1.0f - 0.75f / h, 1.0f, 1.0f);
+}
 void SqueezeOthers(int mine) {
     int count = Count();
     for (int v = 0; v < count && v < kMaxViewports; ++v)
         if (v != mine)
-            for (int k = 0; k < 2; ++k) Real_Rect(Camera(v, k), 0.999f, 0.999f, 1.0f, 1.0f);
+            for (int k = 0; k < 2; ++k) OtherRect(Camera(v, k));
 }
 
 void __fastcall Hook_Rect(void* camera, void*, float x, float y, float w, float h) {
@@ -108,7 +117,7 @@ void __fastcall Hook_Rect(void* camera, void*, float x, float y, float w, float 
         Log(L"SplitView: %d viewports - showing viewport %d full screen", Count(), mine);
     }
     if (v == mine) Real_Rect(camera, 0, 0, 1, 1);
-    else Real_Rect(camera, 0.999f, 0.999f, 1.0f, 1.0f);
+    else OtherRect(camera);
     SqueezeOthers(mine);
 }
 

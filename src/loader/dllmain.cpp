@@ -40,6 +40,31 @@ bool LoadRealDinput() {
     return Real_DirectInput8Create != nullptr;
 }
 
+// A crash in the game's code: where, and the game addresses on the stack (its callers) - into the log, for
+// finding out why. Only writes the log (the first few times); the crash goes on as it would.
+LONG CALLBACK CrashLogHandler(EXCEPTION_POINTERS* e) {
+    static volatile LONG count = 0;
+    if (!e || !e->ExceptionRecord || e->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION) return EXCEPTION_CONTINUE_SEARCH;
+    const DWORD kCodeStart = 0x401000, kCodeEnd = 0x9f0000;
+    const CONTEXT* c = e->ContextRecord;
+    if (c->Eip < kCodeStart || c->Eip >= kCodeEnd || InterlockedIncrement(&count) > 3) return EXCEPTION_CONTINUE_SEARCH;
+    Log(L"CRASH at %#lx (%s %#lx) eax=%#lx ebx=%#lx ecx=%#lx edx=%#lx esi=%#lx edi=%#lx ebp=%#lx esp=%#lx thread %lu",
+        c->Eip, e->ExceptionRecord->ExceptionInformation[0] ? L"writing" : L"reading",
+        (DWORD)e->ExceptionRecord->ExceptionInformation[1], c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi, c->Ebp,
+        c->Esp, GetCurrentThreadId());
+    const DWORD* sp = reinterpret_cast<const DWORD*>(c->Esp);
+    const DWORD* top = reinterpret_cast<const DWORD*>(reinterpret_cast<NT_TIB*>(NtCurrentTeb())->StackBase);
+    wchar_t line[1024];
+    int len = 0, found = 0;
+    for (; sp < top && sp < reinterpret_cast<const DWORD*>(c->Esp) + 1024 && found < 40; ++sp)
+        if (*sp >= kCodeStart && *sp < kCodeEnd) {
+            len += swprintf_s(line + len, 1024 - len, L" %#lx", *sp);
+            ++found;
+        }
+    Log(L"CRASH stack (game addresses):%s", line);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 void Init() {
     GetModuleFileNameW(nullptr, g_gameDir, MAX_PATH);
     if (wchar_t* slash = wcsrchr(g_gameDir, L'\\')) *slash = 0;
@@ -49,6 +74,7 @@ void Init() {
     OpenLog();
     Log(L"FGUY Mod Loader starting (main thread %lu). Game folder: %s", GetCurrentThreadId(), g_gameDir);
     if (!LoadRealDinput()) Log(L"ERROR: could not load the system dinput8.dll");
+    AddVectoredExceptionHandler(0, CrashLogHandler);
 
     HMODULE exe = GetModuleHandleW(nullptr);
     InitNetplay(exe);

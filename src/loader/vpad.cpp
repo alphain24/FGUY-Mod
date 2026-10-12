@@ -181,15 +181,19 @@ void HandleCommand(char* line) {
         char* path = strtok_s(nullptr, "\r\n", &ctx);
         while (path && *path == ' ') ++path;
         if (path && *path) {
-            wchar_t w[MAX_PATH];
-            MultiByteToWideChar(CP_UTF8, 0, path, -1, w, MAX_PATH);
-            VideoRequestShot(w);
+            wchar_t w[1024];
+            if (MultiByteToWideChar(CP_UTF8, 0, path, -1, w, 1024)) VideoRequestShot(w);
+            else Log(L"VPad: shot - the path is too long");
         }
         return;
     }
     if (cmd && _stricmp(cmd, "netstall") == 0) {   // test tools: netstall <ms> - this PC goes quiet for a while
         char* ms = strtok_s(nullptr, " \t\r\n", &ctx);
         NetplayTestStall(ms ? (DWORD)atoi(ms) : 5000);
+        return;
+    }
+    if (cmd && _stricmp(cmd, "nudge") == 0) {   // test tools: this PC's game goes out of sync with the others
+        NetplayTestNudge();
         return;
     }
     if (cmd && _stricmp(cmd, "stacks") == 0) {  // research: what the game's threads are doing

@@ -164,7 +164,11 @@ BOOL WINAPI Hook_QPC(LARGE_INTEGER* out) {
         return TRUE;
     }
     ++g_statQpcCalls;
-    out->QuadPart = at + (++g_callsThisTick);
+    // The tick's exact time - the same on every PC however often this PC's game reads it (that differs: ~80 a
+    // tick). Only a loop waiting for time to pass reads it this often: from then on it moves, so the loop ends.
+    const LONGLONG kExactReads = 1000;
+    LONGLONG n = ++g_callsThisTick;
+    out->QuadPart = at + (n > kExactReads ? n - kExactReads : 0);
     return TRUE;
 }
 DWORD FixedMs() { return (DWORD)(kClockBaseSeconds * 1000 + TickTime(g_tick, 1000)); }
@@ -387,6 +391,7 @@ struct PktLeave { PktHeader h; unsigned last; };
 bool g_relay = false;
 unsigned char g_token[8];
 
+volatile LONG g_testNudge = 0;   // test pipe "nudge": move my player a little on this PC only (out of sync)
 volatile ULONGLONG g_testStallUntil = 0;   // test pipe "netstall <ms>": this PC sends nothing until then
 
 void SendAll(const void* data, int len) {
@@ -1060,6 +1065,15 @@ void Tick() {
         }
     }
     if (g_inSession) OnlineSettingsApply(kbm, g_players);   // everyone's own aim settings (onlinesettings.cpp)
+    if (InterlockedExchange(&g_testNudge, 0)) {   // (test: this PC's game differs from the others' from here)
+        unsigned char* list[8];
+        int n = GamePlayers(list, 8);
+        for (int i = 0; i < n; ++i)
+            if (*reinterpret_cast<int*>(list[i] + 0xdf8) == g_slot) {
+                float* pos = const_cast<float*>(PlayerPos(list[i]));
+                if (pos) pos[0] += 2.0f;
+            }
+    }
     KbmApply(kbm, g_players);  // keyboard / mouse players' devices, from their raw input (kbm.cpp)
     Real_QPC(&s1);
     {   // this PC's own pace: a second's worth of ticks, minus the waiting for the others' inputs
@@ -1070,10 +1084,12 @@ void Tick() {
         windowWait += s1.QuadPart - s0.QuadPart;
         if (++windowTicks >= g_rate) {
             LONGLONG work = s1.QuadPart - windowStart.QuadPart - windowWait;
-            bool slow = work > g_freq.QuadPart * 104 / 100;
+            static double load = 1.0;   // seconds of work per second of ticks, smoothed over a few seconds
+            load = load * 0.6 + (double)work / g_freq.QuadPart * 0.4;
+            bool slow = g_slowHere ? load > 1.01 : load > 1.04;
             if (slow != g_slowHere && g_inSession)
                 Log(L"Netplay: this PC %s (%.2f s of work for 1 s of ticks)", slow ? L"can't keep up" : L"keeps up again",
-                    (double)work / g_freq.QuadPart);
+                    load);
             g_slowHere = slow;
             windowStart = s1;
             windowWait = 0;
@@ -1105,7 +1121,14 @@ void Tick() {
 
 // Called by vpad.cpp's XInputGetState hook. Returns true if netplay supplies this pad's state.
 bool NetplayPad(DWORD pad, XINPUT_STATE* state, DWORD(WINAPI* real)(DWORD, XINPUT_STATE*)) {
-    if (!g_enabled) return false;
+    if (!g_enabled) {
+        // Left the session (back to the lobby): its players' controllers still read as plugged in - idle - so
+        // the game doesn't stop for "reconnect the controller" (it did, mid-quit). Mine: the real one if there.
+        if (!g_left || pad >= 4 || (int)pad >= g_players) return false;
+        if (pad == 0 && real && real(0, state) == ERROR_SUCCESS) return false;
+        ZeroMemory(state, sizeof(*state));
+        return true;
+    }
     g_realXInput = real;
     Trace(6, pad);
     if (pad == 0 && GetCurrentThreadId() == g_mainThread) Tick();  // a new game tick starts
@@ -1128,7 +1151,7 @@ bool NetplayPad(DWORD pad, XINPUT_STATE* state, DWORD(WINAPI* real)(DWORD, XINPU
     state->Gamepad.sThumbRY = p.ry;
     return true;
 }
-bool NetplayPadConnected(DWORD pad) { return g_enabled && pad < 4 && (int)pad < g_players; }
+bool NetplayPadConnected(DWORD pad) { return (g_enabled || g_left) && pad < 4 && (int)pad < g_players; }
 
 // Called at the end of every Present on the render thread. Netplay itself is driven by the main
 // thread's ticks; here we only learn which thread renders (it's excluded from quiescence).
@@ -1209,6 +1232,7 @@ const wchar_t* NetplayLobbyName(int slot) {   // a player's lobby name, or "" (n
     ReadNames();
     return slot >= 0 && slot < 4 ? g_names[slot] : L"";
 }
+void NetplayTestNudge() { InterlockedExchange(&g_testNudge, 1); Log(L"Netplay: test - nudging my player on this PC"); }
 void NetplayTestStall(DWORD ms) {
     g_testStallUntil = GetTickCount64() + ms;
     Log(L"Netplay: test - sending nothing for %lu ms", ms);
