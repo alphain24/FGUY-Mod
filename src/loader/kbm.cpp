@@ -20,6 +20,7 @@
 
 #include "common.h"
 
+#include <cstdlib>
 #include <cstring>
 #include <cwchar>
 
@@ -29,6 +30,17 @@ bool KbmMenuKeys(BYTE keys[32]);
 namespace {
 
 bool g_session = false;            // an online session with keyboard players
+
+// Key bindings. The game keeps one key per action (0xadc294 + action * 8; Options > Controls > key bindings,
+// saved in the registry - every PC its own) and reads every keyboard player's keys through it. Online every PC
+// must read them the same way, so in a session every PC uses the game's default bindings (copied from its
+// table before it loads the registry's), and each keyboard player's keys go out already turned into the
+// defaults' (KbmTranslate): their own bindings, the same match on every PC.
+const uintptr_t kKeyTable = 0xadc294;
+const int kActions = 64;
+DWORD g_defaultKeys[kActions];
+DWORD g_myKeys[kActions];
+bool g_translate = false;          // my bindings differ from the defaults
 bool g_kbmSlot[4] = {};
 HWND g_wnd = nullptr;
 volatile LONG g_dx = 0, g_dy = 0, g_dz = 0;   // raw mouse movement / wheel since the last capture
@@ -155,6 +167,84 @@ void UpdateDevice(unsigned char* device, const KbmRaw& raw) {
 }  // namespace
 
 // netplay.cpp, before the first tick: does this session have keyboard players? (picks char:costume:team:input)
+// Session start (before the game loads its settings): the defaults, and my own bindings from the registry.
+void LoadKeyBindings() {
+    for (int a = 0; a < kActions; ++a) g_myKeys[a] = g_defaultKeys[a] = *reinterpret_cast<DWORD*>(kKeyTable + a * 8);
+    BYTE data[0x100];
+    DWORD size = sizeof(data), type = 0;
+    HKEY key;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Heavy Iron Studios Inc.\\Family Guy\\Settings", 0, KEY_READ, &key) == 0) {
+        if (RegQueryValueExW(key, L"KeyConfig", nullptr, &type, data, &size) == 0 && type == REG_BINARY)
+            for (DWORD i = 0; i + 8 <= size; i += 8) {
+                DWORD action = *reinterpret_cast<DWORD*>(data + i), code = *reinterpret_cast<DWORD*>(data + i + 4);
+                if (action < kActions) g_myKeys[action] = code;
+            }
+        RegCloseKey(key);
+    }
+    char test[128];   // test knob: FGUYMOD_TEST_KEYCONFIG="<action>=<code>,..." (copies on one PC share the registry)
+    if (GetEnvironmentVariableA("FGUYMOD_TEST_KEYCONFIG", test, sizeof(test)))
+        for (char* p = test; *p;) {
+            unsigned a = strtoul(p, &p, 10), c = *p == '=' ? strtoul(p + 1, &p, 0) : 0;
+            if (a < kActions && c) g_myKeys[a] = c;
+            while (*p == ',' || *p == ' ') ++p;
+            if (*p && (*p < '0' || *p > '9')) break;
+        }
+    int differ = 0;
+    for (int a = 0; a < kActions; ++a) differ += g_myKeys[a] != g_defaultKeys[a];
+    g_translate = differ > 0;
+    Log(L"Input: my key bindings differ from the defaults for %d actions%s", differ,
+        differ ? L" - my keys go out as the defaults' (every PC reads them alike)" : L"");
+}
+
+// Every tick in a session: the defaults in the game's table (it loaded this PC's own from the registry).
+void UseDefaultBindings() {
+    for (int a = 0; a < kActions; ++a) *reinterpret_cast<DWORD*>(kKeyTable + a * 8) = g_defaultKeys[a];
+    *reinterpret_cast<DWORD*>(0xaf35ac) = g_defaultKeys[15];   // (the movement keys' copies, as the game's own load)
+    *reinterpret_cast<DWORD*>(0xaf35b0) = g_defaultKeys[16];
+    *reinterpret_cast<DWORD*>(0xaf35b4) = g_defaultKeys[17];
+    *reinterpret_cast<DWORD*>(0xaf35b8) = g_defaultKeys[18];
+}
+
+// My keys / mouse as the default bindings would have them: what I pressed for each action, on its default key.
+// Codes: Windows key codes, 0x100 / 0x101 / 0x102 left / right / middle mouse button, 0x104 / 0x105 the wheel.
+void KbmTranslate(KbmRaw* k) {
+    if (!g_translate) return;
+    auto down = [&](DWORD c) -> bool {
+        if (c > 0 && c < 256) return (k->keys[c >> 3] >> (c & 7)) & 1;
+        if (c == 0x100) return (k->buttons & 1) != 0;
+        if (c == 0x101) return (k->buttons & 2) != 0;
+        if (c == 0x102) return (k->buttons & 4) != 0;
+        if (c == 0x104) return k->dz > 0;
+        if (c == 0x105) return k->dz < 0;
+        return false;
+    };
+    bool pressed[kActions];
+    for (int a = 0; a < kActions; ++a) pressed[a] = g_myKeys[a] && down(g_myKeys[a]);
+    KbmRaw out = *k;
+    auto clear = [&](DWORD c) {
+        if (c > 0 && c < 256) out.keys[c >> 3] &= (BYTE)~(1 << (c & 7));
+        else if (c >= 0x100 && c <= 0x102) out.buttons &= (BYTE)~(1 << (c - 0x100));
+        else if (c == 0x104 || c == 0x105) out.dz = 0;
+    };
+    auto set = [&](DWORD c) {
+        if (c > 0 && c < 256) out.keys[c >> 3] |= (BYTE)(1 << (c & 7));
+        else if (c >= 0x100 && c <= 0x102) out.buttons |= (BYTE)(1 << (c - 0x100));
+        else if (c == 0x104) out.dz = 120;
+        else if (c == 0x105) out.dz = -120;
+    };
+    for (int a = 0; a < kActions; ++a) { clear(g_myKeys[a]); clear(g_defaultKeys[a]); }
+    static bool logged[kActions];
+    for (int a = 0; a < kActions; ++a) {
+        if (!pressed[a]) continue;
+        set(g_defaultKeys[a]);
+        if (g_myKeys[a] != g_defaultKeys[a] && !logged[a]) {
+            logged[a] = true;
+            Log(L"Input: action %d: my key %#x goes out as its default %#x", a, g_myKeys[a], g_defaultKeys[a]);
+        }
+    }
+    *k = out;
+}
+
 void KbmSessionStart(const char* session) {
     char test[32];
     if (GetEnvironmentVariableA("FGUYMOD_TEST_KBMSLOTS", test, sizeof(test))) {
@@ -176,6 +266,7 @@ void KbmSessionStart(const char* session) {
     }
     for (int s = 0; s < 4; ++s) g_session |= g_kbmSlot[s];
     if (!g_session) return;
+    LoadKeyBindings();
     if (!PatchJump(kRawPoll, kRawPollStart, sizeof(kRawPollStart), (void*)Hook_RawPoll)) {
         g_session = false;
         return;
@@ -349,7 +440,13 @@ void KbmTestCommand(const char* what, int a, int b, int c) {
 }
 
 // netplay.cpp, once per tick (for the tick being sent): my keyboard and mouse right now.
+void KbmCaptureRaw(KbmRaw* out);
 void KbmCapture(KbmRaw* out) {
+    KbmCaptureRaw(out);
+    KbmTranslate(out);   // my own key bindings, as the defaults'
+}
+
+void KbmCaptureRaw(KbmRaw* out) {
     memset(out, 0, sizeof(*out));
     LONG dx = InterlockedExchange(&g_dx, 0), dy = InterlockedExchange(&g_dy, 0), dz = InterlockedExchange(&g_dz, 0);
     static ULONGLONG lastClaim = 0;
@@ -411,6 +508,7 @@ void KbmApply(const KbmRaw* bySlot, int players) {
         if (*reinterpret_cast<int*>(list[i] + 0xdfc) >= 0) inLevel = true;
     if (!inLevel) return;
     *reinterpret_cast<volatile BYTE*>(kKbmFlag) = 1;  // the game's keyboard / mouse mode (same tick on every PC)
+    UseDefaultBindings();                             // (everyone's keys come as the defaults')
     KbmRaw menu = {};
     bool first = true;
     for (int s = 0; s < players && s < 4; ++s) {
