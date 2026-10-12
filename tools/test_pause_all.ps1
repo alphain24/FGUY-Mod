@@ -1,7 +1,7 @@
 # Everyone opens the online pause menu -> the game pauses for real and its own pause menu shows - online only
 # RESUME and QUIT GAME (the pause patch). Its RESUME unpauses everyone; the match stays in sync.
 #   test_pause_all.ps1        (needs a lobby server)
-param([string]$GameDir = "A:\Games\Activision\Family Guy Back to the Multiverse")
+param([string]$GameDir = "A:\Games\Activision\Family Guy Back to the Multiverse", [switch]$Click)
 $P = Split-Path $PSScriptRoot -Parent
 $shots = Join-Path $P "build\shots"
 function Log([int]$id) { Join-Path $GameDir "FGUYMod\FGUYMod_$id.log" }
@@ -31,7 +31,13 @@ Step "everyone's menu open: the game pauses" ((WaitFor $h "pausing the game" 5) 
 Start-Sleep 3
 & "$PSScriptRoot\window_shot.ps1" -Id $h -Out (Join-Path $shots "pause_all_host.png")
 & "$PSScriptRoot\window_shot.ps1" -Id $c -Out (Join-Path $shots "pause_all_guest.png")
-Keys $h @("key 13 150", "wait 1500")   # RESUME (the first button; the host's keyboard drives this menu)
+if ($Click) {   # a mouse click on RESUME instead of Enter
+    Keys $h @("cursor 8200 7900", "wait 400", "mouse 1 0 2", "wait 300")
+    & "$PSScriptRoot\window_shot.ps1" -Id $h -Out (Join-Path $shots "pause_all_hover.png")
+    Keys $h @("click 150", "wait 1500")
+} else {
+    Keys $h @("key 13 150", "wait 1500")   # RESUME (the first button; the host's keyboard drives this menu)
+}
 Step "its RESUME unpauses everyone" ((WaitFor $h "Pause: the game resumed" 5) -and (WaitFor $c "Pause: the game resumed" 5))
 $before = (Count $h "DESYNC") + (Count $c "DESYNC")
 Start-Sleep 15
