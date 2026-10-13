@@ -52,6 +52,30 @@ def scale_ratios(data):
     return out
 
 
+# How each element goes from my 4-way quarter to its single-player place (measured in the game: an offline
+# one-player match's layout next to an online one's, at 16:9). Most have the same inner layout in both, so their
+# single-player anchor and scale is it: the movie's single-player placement, plus the HUD's own widescreen shift
+# (ShiftWideScreenElements: 128 to the left / right for the elements in its WideScreenLeftList / RightList -
+# done in pause.as2js, it knows the screen). These differ inside:
+WHOLE_SCREEN = {'Icon_Scope', 'Icon_Curtain', 'Icon_Screen', 'Icon_TextBox1', 'Icon_TextBox6'}   # zoom alone
+DAMAGE_FRAME = 'Icon_DamageFx'                      # fitted to the screen by FGUYFitDamageFx
+OUTLINE = {'Icon_MultiplayerStats': (49, -555)}     # placed by what it draws: its top left from its anchor
+
+
+def layout_table(data):
+    """{name: [scale x, scale y, single-player x, y, kind, outline dx, dy]} (kind 0 anchor, 1 outline, 2 zoom
+    alone, 3 the damage frame): online my 4-way elements go where, and at the size, the single-player HUD has
+    them (src/ui/pause.as2js FGUYHudZoom)."""
+    p = root_placements(data)
+    out = {}
+    for name, (rx, ry) in scale_ratios(data).items():
+        m0 = p[name + '_0_0']
+        kind = 3 if name == DAMAGE_FRAME else 2 if name in WHOLE_SCREEN else 1 if name in OUTLINE else 0
+        dx, dy = OUTLINE.get(name, (0, 0))
+        out[name] = [rx, ry, round(m0[2], 2), round(m0[3], 2), kind, dx, dy]
+    return out
+
+
 if __name__ == '__main__':
     r = scale_ratios(open(sys.argv[1], 'rb').read())
     for k in sorted(r):

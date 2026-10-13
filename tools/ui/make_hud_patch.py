@@ -23,7 +23,7 @@ from gfxpatch import Patch, Reg, function_at, parse_actions, root_doaction_conta
 import as2asm as A  # noqa: E402
 import as2c  # noqa: E402
 from make_menu_patch import function2_code  # noqa: E402
-from hudscale import scale_ratios  # noqa: E402
+from hudscale import layout_table  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
@@ -73,8 +73,9 @@ def build(data):
     insert_at_start(p, data, actions, 'SetSplitScreenModeInternal',
                     lambda r: split_mode(r) + A.Code(A.call('FGUYPauseStart')) + A.Code(A.call('FGUYFitDamageFx')))
     o, _ = function_at(data, actions, 'SetSplitScreenModeInternal')
-    # (the HUD's single-player / 4-way scale of each element, from this movie: see FGUYHudZoom)
-    table = ', '.join(f"'{k}': [{v[0]}, {v[1]}]" for k, v in sorted(scale_ratios(data).items()))
+    # (where and how big each element is in the single-player HUD and in each 4-way quarter, from this movie:
+    #  see FGUYHudZoom)
+    table = ', '.join(f"'{k}': [{', '.join(str(x) for x in v)}]" for k, v in sorted(layout_table(data).items()))
     source = open(PAUSE_SOURCE, encoding='utf-8').read().replace('FGUY_HUD_SCALES', '{' + table + '}')
     p.replace(o, 0, as2c.compile_source(source))
     # Online the HUD's menus (death menu, character / weapon screens) take no mouse clicks: a click lands on

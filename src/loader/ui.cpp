@@ -253,10 +253,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             Log(L"UI: script: %S", ArgString(args, argc, 0));
         } else if (strcmp(fn, "HudDebug") == 0) {  // research: make_hud_patch.py --debug
             static std::set<std::string> seen;
-            char line[256];
-            sprintf_s(line, "%s: %g %g %g", ArgString(args, argc, 0), ArgNumber(args, argc, 1), ArgNumber(args, argc, 2),
-                      ArgNumber(args, argc, 3));
-            if (seen.size() < 80 && seen.insert(line).second) Log(L"UI: HUD %S", line);
+            char line[512];
+            int len = sprintf_s(line, "%s:", ArgString(args, argc, 0));
+            for (int i = 1; i < (int)argc && i < 10 && len < 480; ++i) len += sprintf_s(line + len, 512 - len, " %g", ArgNumber(args, argc, i));
+            if (seen.size() < 600 && seen.insert(line).second) Log(L"UI: HUD %S", line);
         } else if (strcmp(fn, "HudSplitMode") == 0) {  // the level's HUD lays itself out: the level runs
             HandoffMatchRunning();
             Log(L"UI: HUD split mode %d -> %d", (int)ArgNumber(args, argc, 0), SplitViewHudMode((int)ArgNumber(args, argc, 0)));
@@ -308,6 +308,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnString(movie, OnlinePauseCursor());
         } else if (strcmp(fn, "PauseQuitDone") == 0) {
             OnlinePauseQuitDone();
+        } else if (strcmp(fn, "TestHudDump") == 0) {   // research: the HUD logs where its elements are (pause.as2js)
+            ReturnBool(movie, SettingInt(L"Debug", L"HudDump", L"FGUYMOD_TEST_HUDDUMP", 0) != 0);
         } else if (strcmp(fn, "TestShowDamageFx") == 0) {   // test tools: the HUD shows its damage frame (screenshots)
             ReturnBool(movie, SettingInt(L"Debug", L"ShowDamageFx", L"FGUYMOD_TEST_DAMAGEFX", 0) != 0);
         } else if (strcmp(fn, "Now") == 0) {   // real milliseconds (a match copy's getTimer() is off: the fixed clock)

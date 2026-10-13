@@ -17,8 +17,10 @@ function FGUYPauseStart() {
 // Online the HUD is the 4-way split screen's on every PC (every player's menus run everywhere, as they must:
 // src/loader/splitview.cpp); this PC shows only its own quarter, zoomed to the whole screen (a quarter has the
 // screen's shape) - a hair more than 2x, so the split screen's dividing lines on the quarter's edges stay just
-// outside. My elements are then scaled back to their single-player size (the 4-way HUD draws them smaller:
-// FGUYHudScaleTable, single-player scale / 4-way scale per element, from the movie - tools/ui/hudscale.py).
+// outside. My elements then go where the single-player HUD has them, at its size (zoomed, the quarter's layout
+// sat too far in and too small, the money counter at the bar's other end): FGUYHudScaleTable, per element
+// [single-player scale / 4-way scale x, y, single-player x, y, how, outline offset x, y], from the movie's own
+// placements and measured in the game (tools/ui/hudscale.py), plus the HUD's widescreen shift (FGUYHudShift).
 // The other players' elements aren't drawn here (what reached over the edge of their quarter showed on mine).
 // Our own pause menu is zoomed back (it's drawn in whole-screen units).
 function FGUYHudScaleTable() {
@@ -38,6 +40,14 @@ function FGUYHudRescale(c, sx, sy, qcx, qcy) {
     else c._x += b.xMax - a.xMax;
     if ((b.yMin + b.yMax) / 2 < qcy) c._y += b.yMin - a.yMin;
     else c._y += b.yMax - a.yMax;
+}
+
+// The HUD's own widescreen shift of an element in the single-player layout (ShiftWideScreenElements).
+function FGUYHudShift(name) {
+    if (!IsWidescreen()) return 0;
+    for (var i = 0; i < WideScreenLeftList.length; i++) if (WideScreenLeftList[i] == name) return -ShiftAmount;
+    for (var j = 0; j < WideScreenRightList.length; j++) if (WideScreenRightList[j] == name) return ShiftAmount;
+    return 0;
 }
 
 function FGUYHudZoom() {
@@ -78,7 +88,24 @@ function FGUYHudZoom() {
                         if (c._visible) c._visible = false;
                     } else if (c.fguyScaled == undefined) {   // (once: the HUD may animate it afterwards)
                         c.fguyScaled = true;
-                        if (ratio != undefined) FGUYHudRescale(c, ratio[0] / z, ratio[1] / z, qcx, qcy);
+                        if (ratio == undefined) continue;
+                        var kind = ratio[4];
+                        if (kind == 3) {   // (the whole-screen frame: FGUYFitDamageFx fits it)
+                            FGUYHudRescale(c, ratio[0] / z, ratio[1] / z, qcx, qcy);
+                            continue;
+                        }
+                        if (kind == 2) continue;   // whole-screen pieces: the zoom alone makes them so
+                        var tx = ratio[2] + FGUYHudShift(names[i]);
+                        c._xscale = c._xscale * ratio[0] / z;
+                        c._yscale = c._yscale * ratio[1] / z;
+                        if (kind == 1) {   // by what it draws (its inner layout differs)
+                            var b = c.getBounds(_root);
+                            c._x += (tx + ratio[5] - _root._x) / z - b.xMin;
+                            c._y += (ratio[3] + ratio[6] - _root._y) / z - b.yMin;
+                        } else {
+                            c._x = (tx - _root._x) / z;
+                            c._y = (ratio[3] - _root._y) / z;
+                        }
                     }
                 }
             }
@@ -93,7 +120,28 @@ function FGUYHudZoom() {
     }
 }
 
+// Research (FGUYMOD_TEST_HUDDUMP=1): where the HUD's own layout has put every element, a second into the level.
+function FGUYHudDump() {
+    if (FGUYHudDumped != undefined || ++FGUYHudDumpWait < 30) return;
+    FGUYHudDumped = true;
+    if (flash.external.ExternalInterface.call('FGUYMOD_TestHudDump') != true) return;
+    var dn = StageElementsList, dl = [0, 4];
+    for (var di = 0; dn != undefined && di < dn.length; di++)
+        for (var dv = 0; dv < 4; dv++)
+            for (var dk = 0; dk < 2; dk++)
+                for (var dp = 0; dp < 4; dp++) {
+                    var k = dn[di] + '_' + dv + '_' + dl[dk] + '_' + dp;
+                    var m = _root[k];
+                    if (m == undefined) continue;
+                    var b = m.getBounds(_root);
+                    flash.external.ExternalInterface.call('FGUYMOD_HudDebug', 'clip ' + k + ' x/y/xs/ys/vis/bx/by/bx2/by2',
+                        m._x, m._y, m._xscale, m._yscale, m._visible, b.xMin, b.yMin, b.xMax, b.yMax);
+                }
+}
+
 function FGUYPausePoll() {
+    if (FGUYHudDumpWait == undefined) FGUYHudDumpWait = 0;
+    FGUYHudDump();
     FGUYHudZoom();
     if (++FGUYFitCount >= 15) {   // (twice a second: the HUD may have moved the damage frame again)
         FGUYFitCount = 0;
