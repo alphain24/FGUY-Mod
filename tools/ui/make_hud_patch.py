@@ -77,6 +77,13 @@ def build(data):
     table = ', '.join(f"'{k}': [{v[0]}, {v[1]}]" for k, v in sorted(scale_ratios(data).items()))
     source = open(PAUSE_SOURCE, encoding='utf-8').read().replace('FGUY_HUD_SCALES', '{' + table + '}')
     p.replace(o, 0, as2c.compile_source(source))
+    # Online the HUD's menus (death menu, character / weapon screens) take no mouse clicks: a click lands on
+    # the button on this PC's screen only (each PC shows its own quarter of the 4-way HUD), so a player's
+    # menu went on on their own PC and nowhere else - out of sync. Keys / buttons go through the match's
+    # input on every PC alike (Enter: continue, X: character, Y: customize).
+    no_mouse = (A.Code(A.external('FGUYMOD_OnlineMatch'), A.pushes(True), A.op('Equals2'), A.op('Not')).if_true('offline') +
+                A.Code(A.pushes(False), A.op('Return')).label('offline'))
+    insert_at_start(p, data, actions, 'NeedMouseControls', lambda r: no_mouse)
     # The game hands the HUD real viewport numbers in many places (and the HUD stores them), so they
     # stay real everywhere; only the three helpers that turn a viewport into HUD objects translate
     # (each is always called with a real number, so every path translates exactly once).
