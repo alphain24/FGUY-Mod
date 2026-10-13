@@ -1,4 +1,4 @@
-// Netplay core: lockstep input sync.
+﻿// Netplay core: lockstep input sync.
 //
 // Every peer runs the same game. Each peer owns one player slot (= one virtual XInput pad). Every game
 // tick, each peer sends its pad state for (tick + InputDelay) to the others and waits until it has every
@@ -38,6 +38,7 @@
 
 #include <intrin.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -744,6 +745,12 @@ unsigned HashPlayers(Hashed* keep) {
         int index = *reinterpret_cast<int*>(self + 0xdf8);
         h = (h ^ (unsigned)index) * 16777619u;
         for (int k = 0; k < 12; ++k) h = (h ^ pos[k]) * 16777619u;
+        // (an aim that isn't a place in a level - leftover memory between a match and the menus: millions - is
+        // left out: it made false "out of sync" alarms)
+        const float* a = reinterpret_cast<const float*>(aim);
+        if (aim && (std::fabs(a[0]) > 1e5f || std::fabs(a[1]) > 1e5f || std::fabs(a[2]) > 1e5f || a[0] != a[0] ||
+                    a[1] != a[1] || a[2] != a[2]))
+            aim = nullptr;
         for (int k = 0; aim && k < 12; ++k) h = (h ^ aim[k]) * 16777619u;
     }
     return h;

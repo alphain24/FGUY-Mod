@@ -147,6 +147,29 @@ bool PatchStart(uintptr_t at, const unsigned char* expected, size_t n, void* to)
     return true;
 }
 
+// 0x4217b0: is any of the loader's jobs ([0xaef408]'s list) still running (state 3 / 4)? The boot (0x9a8643)
+// and the level load (0x67d2a7) go on only once it says no. Still running: wait for it (same safety as above).
+using Busy_t = bool(__cdecl*)();
+const uintptr_t kLoaderBusy = 0x4217b0;
+bool g_busyWaitBroken = false;
+
+bool __cdecl LoaderBusy() {
+    bool busy = reinterpret_cast<Busy_t>(kLoaderBusy)();
+    if (!busy || g_busyWaitBroken || !Online()) return busy;
+    ULONGLONG from = GetTickCount64(), until = from + 5000;
+    while (busy && GetTickCount64() < until) {
+        Sleep(1);
+        busy = reinterpret_cast<Busy_t>(kLoaderBusy)();
+    }
+    if (busy) {
+        g_busyWaitBroken = true;
+        Log(L"Online: tick %u - the loader stayed busy 5 s while waiting - not waiting for it any more", NetplayTick());
+    } else {
+        Log(L"Online: tick %u - waited %llu ms for the loader", NetplayTick(), GetTickCount64() - from);
+    }
+    return busy;
+}
+
 }  // namespace
 
 // netplay.cpp, the start of every session tick (game thread).
@@ -169,6 +192,7 @@ void InitLoadSync() {
              PatchCall(0x6a66e9, kSoundBanksReady, (void*)SoundBanksReady) +
              PatchCall(0x583021, kLoadState, (void*)LoadState) + PatchCall(0x6085f1, kLoadState, (void*)LoadState) +
              PatchCall(0x608680, kLoadState, (void*)LoadState) + PatchCall(0x6a66d6, kStartFlags, (void*)StartFlags) +
-             PatchCall(0x6a670d, kStartFlags, (void*)StartFlags);
-    Log(L"Online: level start-up waits for its loading in sessions (%d of 7 checks)", ok);
+             PatchCall(0x6a670d, kStartFlags, (void*)StartFlags) + PatchCall(0x67d2a7, kLoaderBusy, (void*)LoaderBusy) +
+             PatchCall(0x9a8643, kLoaderBusy, (void*)LoaderBusy);
+    Log(L"Online: level start-up waits for its loading in sessions (%d of 9 checks)", ok);
 }
