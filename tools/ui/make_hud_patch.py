@@ -23,6 +23,7 @@ from gfxpatch import Patch, Reg, function_at, parse_actions, root_doaction_conta
 import as2asm as A  # noqa: E402
 import as2c  # noqa: E402
 from make_menu_patch import function2_code  # noqa: E402
+from hudscale import scale_ratios  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
@@ -72,7 +73,10 @@ def build(data):
     insert_at_start(p, data, actions, 'SetSplitScreenModeInternal',
                     lambda r: split_mode(r) + A.Code(A.call('FGUYPauseStart')) + A.Code(A.call('FGUYFitDamageFx')))
     o, _ = function_at(data, actions, 'SetSplitScreenModeInternal')
-    p.replace(o, 0, as2c.compile_source(open(PAUSE_SOURCE, encoding='utf-8').read()))
+    # (the HUD's single-player / 4-way scale of each element, from this movie: see FGUYHudZoom)
+    table = ', '.join(f"'{k}': [{v[0]}, {v[1]}]" for k, v in sorted(scale_ratios(data).items()))
+    source = open(PAUSE_SOURCE, encoding='utf-8').read().replace('FGUY_HUD_SCALES', '{' + table + '}')
+    p.replace(o, 0, as2c.compile_source(source))
     # The game hands the HUD real viewport numbers in many places (and the HUD stores them), so they
     # stay real everywhere; only the three helpers that turn a viewport into HUD objects translate
     # (each is always called with a real number, so every path translates exactly once).

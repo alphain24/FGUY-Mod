@@ -16,7 +16,30 @@ function FGUYPauseStart() {
 
 // Online the HUD is the 4-way split screen's on every PC (every player's menus run everywhere, as they must:
 // src/loader/splitview.cpp); this PC shows only its own quarter, zoomed to the whole screen (a quarter has the
-// screen's shape). Our own pause menu is zoomed back (it's drawn in whole-screen units).
+// screen's shape) - a hair more than 2x, so the split screen's dividing lines on the quarter's edges stay just
+// outside. My elements are then scaled back to their single-player size (the 4-way HUD draws them smaller:
+// FGUYHudScaleTable, single-player scale / 4-way scale per element, from the movie - tools/ui/hudscale.py).
+// The other players' elements aren't drawn here (what reached over the edge of their quarter showed on mine).
+// Our own pause menu is zoomed back (it's drawn in whole-screen units).
+function FGUYHudScaleTable() {
+    return FGUY_HUD_SCALES;
+}
+
+// Scales an element by sx, sy keeping the edge of what it draws that's nearest my quarter's corner in place (an
+// element's own anchor can be far from what it draws: the score bar's is way below it). Nothing drawn (yet):
+// around its anchor.
+function FGUYHudRescale(c, sx, sy, qcx, qcy) {
+    var b = c.getBounds(_root);
+    c._xscale = c._xscale * sx;
+    c._yscale = c._yscale * sy;
+    if (b == undefined || b.xMax < b.xMin || b.yMax < b.yMin || b.xMax - b.xMin > 100000) return;
+    var a = c.getBounds(_root);
+    if ((b.xMin + b.xMax) / 2 < qcx) c._x += b.xMin - a.xMin;
+    else c._x += b.xMax - a.xMax;
+    if ((b.yMin + b.yMax) / 2 < qcy) c._y += b.yMin - a.yMin;
+    else c._y += b.yMax - a.yMax;
+}
+
 function FGUYHudZoom() {
     var q = flash.external.ExternalInterface.call('FGUYMOD_HudZoom');
     if (q == undefined) return;   // (not our loader)
@@ -31,34 +54,42 @@ function FGUYHudZoom() {
         }
         return;
     }
+    var z = 2.03;
     var r = FGUYPauseRect();
     var col = q % 2;
     var row = (q - col) / 2;
-    _root._xscale = 200;
-    _root._yscale = 200;
-    _root._x = r.x - 2 * (r.x + col * r.w / 2);
-    _root._y = r.y - 2 * (r.y + row * r.h / 2);
+    var qcx = r.x + (col + 0.5) * r.w / 2;   // my quarter's centre
+    var qcy = r.y + (row + 0.5) * r.h / 2;
+    _root._xscale = 100 * z;
+    _root._yscale = 100 * z;
+    _root._x = r.x + r.w / 2 - z * qcx;
+    _root._y = r.y + r.h / 2 - z * qcy;
     FGUYZoomed = true;
-    // The other players' HUD (still running - its menus are part of the game) isn't drawn here: what reached
-    // over the edge of their quarter (a death effect, say) showed on mine.
+    if (FGUYHudScales == undefined) FGUYHudScales = FGUYHudScaleTable();
     var names = StageElementsList;
     if (names != undefined) {
         for (var i = 0; i < names.length; i++) {
+            var ratio = FGUYHudScales[names[i]];
             for (var v = 0; v < 4; v++) {
-                if (v == q) continue;
                 for (var p = 0; p < 4; p++) {
                     var c = _root[names[i] + '_' + v + '_4_' + p];
-                    if (c != undefined && c._visible) c._visible = false;
+                    if (c == undefined) continue;
+                    if (v != q) {
+                        if (c._visible) c._visible = false;
+                    } else if (c.fguyScaled == undefined) {   // (once: the HUD may animate it afterwards)
+                        c.fguyScaled = true;
+                        if (ratio != undefined) FGUYHudRescale(c, ratio[0] / z, ratio[1] / z, qcx, qcy);
+                    }
                 }
             }
         }
     }
     var ui = _root.FGUYPauseUI;
     if (ui != undefined) {
-        ui._xscale = 50;
-        ui._yscale = 50;
-        ui._x = -_root._x / 2;
-        ui._y = -_root._y / 2;
+        ui._xscale = 100 / z;
+        ui._yscale = 100 / z;
+        ui._x = -_root._x / z;
+        ui._y = -_root._y / z;
     }
 }
 
