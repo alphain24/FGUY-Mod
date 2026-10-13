@@ -484,8 +484,8 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DD
 
 // Direct3D 9 on Direct3D 12: Microsoft's mapping layer, part of Windows 10 / 11 (d3d9.dll's
 // Direct3DCreate9On12 - nothing extra installed). The game keeps talking Direct3D 9; underneath it's Direct3D 12
-// with modern presentation, no "lost device" and none of D3D9's refused resets. [Display] Renderer=d3d9 (or
-// FGUYMOD_RENDERER=d3d9) goes back to plain Direct3D 9; so does a Windows without the layer.
+// with modern presentation. Off by default: on the user's PC it showed nothing until the first reset.
+// [Display] Renderer=d3d12 (or FGUYMOD_RENDERER=d3d12) turns it on; a Windows without the layer stays on 9.
 struct D3D9On12Args {
     BOOL Enable9On12;
     IUnknown* pD3D12Device;
@@ -496,12 +496,95 @@ struct D3D9On12Args {
 using Create9On12_t = IDirect3D9*(WINAPI*)(UINT sdk, D3D9On12Args* args, UINT count);
 bool g_on12 = false;
 
+// DXVK (FGUYMod\dxvk\dxvk_d3d9.dll - DXVK 3.1.1's own 32-bit d3d9.dll, zlib license): Direct3D 9 on Vulkan,
+// the translation Valve's Proton uses. It doesn't go through Windows' Direct3D 9 at all. Its log and settings
+// file (dxvk.conf) are in that folder. The default ([Display] Renderer=dxvk); a PC without a GPU it can use (it
+// needs Vulkan 1.3) gets plain Direct3D 9 by itself, and Renderer=d3d9 always does.
+// Some PCs have a GPU whose driver installed its Vulkan files but didn't register them (seen: an NVIDIA laptop
+// GPU with only "Vulkan SC" registered) - Vulkan programs then don't see that GPU at all. For this process only,
+// each display adapter's driver folder is checked for a 32-bit Vulkan driver file that isn't registered, and
+// it's added (VK_ADD_DRIVER_FILES; nothing on the system changes).
+void AddUnregisteredVulkanDrivers() {
+    wchar_t have[8];
+    if (GetEnvironmentVariableW(L"VK_ADD_DRIVER_FILES", have, 8) || GetEnvironmentVariableW(L"VK_DRIVER_FILES", have, 8)) return;
+    HKEY cls;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}", 0,
+                      KEY_READ, &cls) != ERROR_SUCCESS)
+        return;
+    std::wstring add;
+    wchar_t sub[64];
+    for (DWORD i = 0; RegEnumKeyW(cls, i, sub, 64) == ERROR_SUCCESS; ++i) {
+        HKEY k;
+        if (RegOpenKeyExW(cls, sub, 0, KEY_READ, &k) != ERROR_SUCCESS) continue;
+        wchar_t umd[MAX_PATH * 2] = L"", vk[MAX_PATH * 2] = L"";
+        DWORD n = sizeof(umd), type = 0;
+        bool hasUmd = RegQueryValueExW(k, L"UserModeDriverName", nullptr, &type, (BYTE*)umd, &n) == ERROR_SUCCESS && umd[0];
+        n = sizeof(vk);
+        bool hasVk = RegQueryValueExW(k, L"VulkanDriverNameWow", nullptr, &type, (BYTE*)vk, &n) == ERROR_SUCCESS && vk[0];
+        RegCloseKey(k);
+        if (!hasUmd || hasVk) continue;
+        std::wstring dir(umd);
+        dir = dir.substr(0, dir.find_last_of(L'\\'));
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW((dir + L"\\*vk32.json").c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) continue;
+        do {
+            if (wcsstr(fd.cFileName, L"vksc")) continue;   // (Vulkan SC: not for games)
+            if (!add.empty()) add += L";";
+            add += dir + L"\\" + fd.cFileName;
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    RegCloseKey(cls);
+    if (add.empty()) return;
+    SetEnvironmentVariableW(L"VK_ADD_DRIVER_FILES", add.c_str());
+    Log(L"D3D: Vulkan driver(s) installed but not registered - added for the game: %s", add.c_str());
+}
+
+IDirect3D9* CreateDxvk(UINT sdk) {
+    static HMODULE dll = nullptr;
+    if (!dll) {
+        wchar_t dir[MAX_PATH], path[MAX_PATH], conf[MAX_PATH], env[8];
+        swprintf_s(dir, L"%s\\dxvk", g_modDir);
+        swprintf_s(path, L"%s\\dxvk_d3d9.dll", dir);
+        swprintf_s(conf, L"%s\\dxvk.conf", dir);
+        if (!GetEnvironmentVariableW(L"DXVK_LOG_PATH", env, 8)) SetEnvironmentVariableW(L"DXVK_LOG_PATH", dir);
+        if (!GetEnvironmentVariableW(L"DXVK_CONFIG_FILE", env, 8)) SetEnvironmentVariableW(L"DXVK_CONFIG_FILE", conf);
+        AddUnregisteredVulkanDrivers();
+        dll = LoadLibraryW(path);
+        if (!dll) {
+            Log(L"D3D: DXVK not found or not loadable (%s, error %lu)", path, GetLastError());
+            return nullptr;
+        }
+    }
+    auto create = reinterpret_cast<Direct3DCreate9_t>(GetProcAddress(dll, "Direct3DCreate9"));
+    IDirect3D9* d3d = create ? create(sdk) : nullptr;
+    if (d3d && d3d->GetAdapterCount() == 0) {   // no GPU it can use (too old a Vulkan): not this one
+        d3d->Release();
+        d3d = nullptr;
+    }
+    static bool logged = false;
+    if (!logged) {
+        logged = true;
+        D3DADAPTER_IDENTIFIER9 id = {};
+        if (d3d) d3d->GetAdapterIdentifier(D3DADAPTER_DEFAULT, 0, &id);
+        if (d3d) Log(L"D3D: DXVK - Direct3D 9 on Vulkan, on %S", id.Description);
+        else Log(L"D3D: DXVK found no GPU it can use (needs Vulkan 1.3: see FGUYMod\\dxvk\\FGUY_d3d9.log)");
+    }
+    return d3d;
+}
+
 IDirect3D9* CreateD3D(UINT sdk) {
-    static int renderer = -1;   // 1: Direct3D 12 underneath, 0: plain Direct3D 9
+    static int renderer = -1;   // 2: DXVK (Vulkan), 1: Direct3D 12 underneath, 0: plain Direct3D 9
     if (renderer < 0) {
         wchar_t r[16];
-        SettingString(L"Display", L"Renderer", L"FGUYMOD_RENDERER", L"d3d12", r, 16);
-        renderer = _wcsicmp(r, L"d3d9") == 0 ? 0 : 1;
+        SettingString(L"Display", L"Renderer", L"FGUYMOD_RENDERER", L"dxvk", r, 16);
+        renderer = _wcsicmp(r, L"dxvk") == 0 ? 2 : _wcsicmp(r, L"d3d12") == 0 ? 1 : 0;
+    }
+    if (renderer == 2) {
+        if (IDirect3D9* d3d = CreateDxvk(sdk)) return d3d;
+        Log(L"D3D: DXVK isn't available here - plain Direct3D 9");
+        renderer = 0;
     }
     if (renderer == 1) {
         auto create = reinterpret_cast<Create9On12_t>(GetProcAddress(GetModuleHandleW(L"d3d9.dll"), "Direct3DCreate9On12"));
