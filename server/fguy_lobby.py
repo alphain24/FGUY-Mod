@@ -83,7 +83,7 @@ CLIENT_IDLE_S = 60                # drop a lobby connection silent this long (th
 SLOT_MOVE_S = 5                   # a slot's address may change (new NAT port) only after this much silence
 RELAY_MAX_PPS = 2000              # per player address
 RATES = (60, 120, 144, 165, 240)  # online frame rates (everyone in a match runs the same one)
-AUTO_MAX = 144                    # auto never picks more (every PC must keep up)
+AUTO_MAX = 240                    # auto never picks more (a slower PC: the match follows it, netplay.cpp)
 
 
 def snap_rate(hz):

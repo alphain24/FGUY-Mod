@@ -1210,7 +1210,7 @@ function FGUYDrawLoading(ui) {
 // ---- match settings --------------------------------------------------------------------------------------------------
 // Auto frame rate: the lowest of everyone's monitors (the server picks the same at the start).
 function FGUYAutoRate() {
-    var low = 144;   // (auto never goes higher - the host can pick 165 / 240)
+    var low = 240;   // (the highest online rate)
     for (var i = 0; i < FGUYS.members.length; i++) {
         var r = FGUYS.members[i].rate;
         if (r > 0 && r < low) low = r;
@@ -1246,7 +1246,7 @@ function FGUYSettingHelp(r) {
     if (r == 'map') return mode.code == 'ST' ? 'Which story level you play together.' : "Where you play. You can pick the maps the host's save has unlocked.";
     if (r == 'time') return 'How long a match lasts.';
     if (r == 'score') return mode.score == 'FlagLimit' ? 'The match ends when a team captures this many flags.' : 'The match ends when a team reaches this score.';
-    if (r == 'rate') return 'Everyone plays at the same frame rate. Auto: the best every player\'s screen shows, up to 144. If a PC can\'t keep up, the match follows it: fewer frames for a while, never slow motion.';
+    if (r == 'rate') return 'Everyone plays at the same frame rate. Auto: the best every player\'s screen shows (up to 240). If a PC can\'t keep up, the match follows it: fewer frames for a while, never slow motion.';
     return 'On: you can hurt your own team. Off: you can only hurt the other team.';
 }
 
