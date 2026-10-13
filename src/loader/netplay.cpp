@@ -1128,11 +1128,40 @@ void Tick() {
     g_mainBlocksThisTick = 0;
     g_callsThisTick = 0;  // the clock reads exactly base + tick x 1/60 s from here
 
-    unsigned future = g_tick + g_delay - 1;
-    int r = future % kRing;
-    g_inputs[r][g_slot] = SampleLocal(future);
-    g_have[r][g_slot] = true;
-    g_haveTick[r][g_slot] = future;
+    // My input goes out for a tick a little ahead (the input delay), so it's everywhere in time. The lobby picks
+    // the delay as ticks at the match's top rate; once the rate follows the PCs it's kept as that much time
+    // instead (at 100 fps the same 5 ticks were twice as long: the mouse felt slow). Only my own inputs depend on
+    // it: a longer delay fills the ticks between with the same input (the mouse's movement counted once), a
+    // shorter one samples nothing new until the ticks catch up (the movement waits for the next sample).
+    static unsigned sampledUpTo = 0;
+    if (!sampledUpTo) sampledUpTo = (unsigned)g_delay - 1;   // (the first ticks: everyone idle, see Barrier)
+    int delayNow = g_delay;
+    if (g_rateFollows && g_rateTarget > 0) {
+        delayNow = (int)std::ceil(g_delay * (double)g_rate / g_rateTarget - 1e-6);
+        if (delayNow < 2) delayNow = 2;
+        if (delayNow > 40) delayNow = 40;
+        static int lastD = 0, logged = 0;
+        if (delayNow != lastD && ++logged <= 20)
+            Log(L"Netplay: tick %u - my input delay %d ticks (%.0f ms)", g_tick, delayNow, delayNow * 1000.0 / g_rate);
+        lastD = delayNow;
+    }
+    unsigned future = g_tick + delayNow - 1;
+    if (future > sampledUpTo) {
+        Pad p = SampleLocal(future);
+        for (unsigned f = sampledUpTo + 1; f <= future; ++f) {
+            Pad q = p;
+            if (f != future) {   // (a tick in between: the same keys and buttons, the mouse's movement once)
+                q.kbm.dx = q.kbm.dy = q.kbm.dz = 0;
+                q.kbm.sync = 0;
+            }
+            int r = f % kRing;
+            g_inputs[r][g_slot] = q;
+            g_have[r][g_slot] = true;
+            g_haveTick[r][g_slot] = f;
+        }
+        sampledUpTo = future;
+    }
+    future = sampledUpTo;
     SendInputs(future);
 
     LARGE_INTEGER s0, s1, s2;
