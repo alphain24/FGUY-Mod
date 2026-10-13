@@ -409,6 +409,8 @@ void* PatchVtable(void* object, int slot, void* hook) {
     return original;
 }
 
+IDirect3D9* CreateD3D(UINT sdk);
+
 HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DDEVTYPE type, HWND focus,
                                             DWORD flags, D3DPRESENT_PARAMETERS* pp, IDirect3DDevice9** out) {
     D3DPRESENT_PARAMETERS original = *pp;  // CreateDevice may modify it; retry with what the game asked
@@ -423,9 +425,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DD
                 original.Windowed ? L"windowed" : L"fullscreen", hr, attempt > 1 ? L" (retry)" : L"");
         if (SUCCEEDED(hr)) break;
         if (attempt >= 4 && attempt % 2 == 0) {   // a fresh Direct3D object
-            using Create9_t = IDirect3D9*(WINAPI*)(UINT);
-            static Create9_t create9 = reinterpret_cast<Create9_t>(GetProcAddress(GetModuleHandleW(L"d3d9.dll"), "Direct3DCreate9"));
-            if (IDirect3D9* fresh = create9 ? create9(D3D_SDK_VERSION) : nullptr) {
+            if (IDirect3D9* fresh = CreateD3D(D3D_SDK_VERSION)) {
                 *pp = original;
                 FixPresentParameters(pp);
                 hr = Real_CreateDevice(fresh, adapter, type, focus, flags, pp, out);
@@ -482,8 +482,47 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DD
     return hr;
 }
 
+// Direct3D 9 on Direct3D 12: Microsoft's mapping layer, part of Windows 10 / 11 (d3d9.dll's
+// Direct3DCreate9On12 - nothing extra installed). The game keeps talking Direct3D 9; underneath it's Direct3D 12
+// with modern presentation, no "lost device" and none of D3D9's refused resets. [Display] Renderer=d3d9 (or
+// FGUYMOD_RENDERER=d3d9) goes back to plain Direct3D 9; so does a Windows without the layer.
+struct D3D9On12Args {
+    BOOL Enable9On12;
+    IUnknown* pD3D12Device;
+    IUnknown* ppD3D12Queues[2];
+    UINT NumQueues;
+    UINT NodeMask;
+};
+using Create9On12_t = IDirect3D9*(WINAPI*)(UINT sdk, D3D9On12Args* args, UINT count);
+bool g_on12 = false;
+
+IDirect3D9* CreateD3D(UINT sdk) {
+    static int renderer = -1;   // 1: Direct3D 12 underneath, 0: plain Direct3D 9
+    if (renderer < 0) {
+        wchar_t r[16];
+        SettingString(L"Display", L"Renderer", L"FGUYMOD_RENDERER", L"d3d12", r, 16);
+        renderer = _wcsicmp(r, L"d3d9") == 0 ? 0 : 1;
+    }
+    if (renderer == 1) {
+        auto create = reinterpret_cast<Create9On12_t>(GetProcAddress(GetModuleHandleW(L"d3d9.dll"), "Direct3DCreate9On12"));
+        if (create) {
+            D3D9On12Args args = {};
+            args.Enable9On12 = TRUE;
+            if (IDirect3D9* d3d = create(sdk, &args, 1)) {
+                static bool logged = false;
+                if (!logged) { logged = true; Log(L"D3D: Direct3D 9 on Direct3D 12 (Windows' own layer)"); }
+                g_on12 = true;
+                return d3d;
+            }
+        }
+        Log(L"D3D: Direct3D 12 underneath isn't available here - plain Direct3D 9");
+        renderer = 0;
+    }
+    return Real_Direct3DCreate9(sdk);
+}
+
 IDirect3D9* WINAPI Hook_Direct3DCreate9(UINT sdk) {
-    IDirect3D9* d3d = Real_Direct3DCreate9(sdk);
+    IDirect3D9* d3d = CreateD3D(sdk);
     if (d3d) {
         g_d3d = d3d;
         if (void* o = PatchVtable(d3d, 6, (void*)Hook_GetAdapterModeCount)) Real_GetAdapterModeCount = (GetAdapterModeCount_t)o;

@@ -192,6 +192,12 @@ void HandleCommand(char* line) {
         NetplayTestStall(ms ? (DWORD)atoi(ms) : 5000);
         return;
     }
+    if (cmd && _stricmp(cmd, "resolution") == 0) {   // test tools: resolution <w> <h> - as Options > Screen does
+        char* w = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* h = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (w && h) NetplayTestResolution(atoi(w), atoi(h));
+        return;
+    }
     if (cmd && _stricmp(cmd, "nudge") == 0) {   // test tools: this PC's game goes out of sync with the others
         NetplayTestNudge();
         return;

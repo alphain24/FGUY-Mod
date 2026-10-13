@@ -391,7 +391,8 @@ struct PktLeave { PktHeader h; unsigned last; };
 bool g_relay = false;
 unsigned char g_token[8];
 
-volatile LONG g_testNudge = 0;   // test pipe "nudge": move my player a little on this PC only (out of sync)
+volatile LONG g_testNudge = 0;
+volatile LONG g_testResW = 0, g_testResH = 0;   // test pipe "resolution <w> <h>": the game changes resolution   // test pipe "nudge": move my player a little on this PC only (out of sync)
 volatile ULONGLONG g_testStallUntil = 0;   // test pipe "netstall <ms>": this PC sends nothing until then
 
 void SendAll(const void* data, int len) {
@@ -1073,6 +1074,12 @@ void Tick() {
         if (on != viewsOn) Log(L"Netplay: the players' views %s at tick %u", on ? L"start" : L"stop", g_tick);
         viewsOn = on;
     }
+    if (LONG w = InterlockedExchange(&g_testResW, 0)) {   // (test: what Options > Screen does, on the game thread)
+        using ChangeRes_t = void(__cdecl*)(int renderer, int w, int h, int windowed, void* revert);
+        Log(L"Netplay: test - changing the resolution to %ldx%ld at tick %u", w, (LONG)g_testResH, g_tick);
+        reinterpret_cast<ChangeRes_t>(0x44f920)(*reinterpret_cast<int*>(0xad39e8), w, g_testResH, 1,
+                                                reinterpret_cast<void*>(0x4cac40));
+    }
     if (InterlockedExchange(&g_testNudge, 0)) {   // (test: this PC's game differs from the others' from here)
         unsigned char* list[8];
         int n = GamePlayers(list, 8);
@@ -1266,6 +1273,7 @@ const wchar_t* NetplayLobbyName(int slot) {   // a player's lobby name, or "" (n
     ReadNames();
     return slot >= 0 && slot < 4 ? g_names[slot] : L"";
 }
+void NetplayTestResolution(int w, int h) { InterlockedExchange(&g_testResH, h); InterlockedExchange(&g_testResW, w); }
 void NetplayTestNudge() { InterlockedExchange(&g_testNudge, 1); Log(L"Netplay: test - nudging my player on this PC"); }
 void NetplayTestStall(DWORD ms) {
     g_testStallUntil = GetTickCount64() + ms;
