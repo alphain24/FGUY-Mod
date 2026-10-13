@@ -220,6 +220,7 @@ void SendPicks() {  // g_lock held
 }
 
 void StartSession(const std::vector<std::string>& f);
+volatile bool g_startingMatch = false;   // the loading screen shows while the match's game boots hidden
 
 void HandleLine(const std::string& line) {
     auto f = Split(line, ' ');
@@ -426,6 +427,8 @@ DWORD WINAPI HandoffWait(LPVOID arg) {
                 g_members.clear();
             }
             Log(L"Online: the match is over - back to its lobby");
+            AudioSilenceGame(false);
+            g_startingMatch = false;
             HandoffMute(false);
             DisplayUnpark(true, rect ? &at : nullptr, g_backEvent);
             StartLobbyThread();
@@ -438,6 +441,8 @@ DWORD WINAPI HandoffWait(LPVOID arg) {
         DWORD code = 0;
         GetExitCodeProcess(h->process, &code);
         Log(L"Online: the session game (process %lu) closed before the match started (exit code %#lx)", h->pid, code);
+        AudioSilenceGame(false);
+        g_startingMatch = false;
         SetStatus(State::Failed, "The match couldn't start - please try again");
         g_wantConnection = false;
     } else {
@@ -549,6 +554,8 @@ void StartSession(const std::vector<std::string>& f) {
             if (h != INVALID_HANDLE_VALUE) { WriteFile(h, line, n, &put, nullptr); CloseHandle(h); }
         }
         CloseHandle(pi.hThread);
+        AudioSilenceGame(true);   // our menus' music / sounds don't play on under the loading screen
+        g_startingMatch = true;   // (and this game shows only that, at 60 fps: the GPU for the booting game)
         AllowSetForegroundWindow(pi.dwProcessId);  // so it can come to the front when it shows
         wchar_t name[64];
         swprintf_s(name, L"Local\\FGUYMod_SessionReady_%lu", pi.dwProcessId);
@@ -711,6 +718,9 @@ void LobbyDo(const char* command, const char* a, const char* b, const char* c, c
         SendLine(line + " " + g_confRate);
     }
 }
+
+// This (lobby) game shows the online loading screen while the match's game boots hidden (d3d9.cpp: 60 fps then).
+bool OnlineStartingMatch() { return g_startingMatch; }
 
 // In a session: the snapshot of everyone's choices ("mode,map,time,score,ff|char:costume:team;..."), else "".
 const char* SessionConfig() {

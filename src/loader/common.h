@@ -135,6 +135,7 @@ void OnlineExit();
 const char* LobbyState();
 void LobbyDo(const char* command, const char* a, const char* b, const char* c, const char* d, const char* e);
 const char* SessionConfig();
+bool OnlineStartingMatch();   // the online loading screen shows while the match's game boots hidden
 
 // display.cpp
 bool DisplayIsWindowed();              // windowed or borderless right now
@@ -196,6 +197,8 @@ void KbmTestCommand(const char* what, int a, int b, int c);  // test pipe: kbm k
 void InitAudio(HMODULE exe);            // volume curve, movie volume            (audio.cpp)
 void AudioProfileLoaded();             //   the main menu opened: the profile's settings are in
 void AudioTitleScreen();               //   back at the title screen: movies & title volume again
+void AudioSilenceGame(bool on);        //   online loading screen: the game's own sound off (online.cpp)
+void AudioTick();                      //   the game thread, every tick (vpad.cpp)
 float AudioGameVolume(int which);      //   Options > Audio: 0 music, 1 effects, 2 dialog, 3 cinematics (0..1)
 void AudioSetGameVolume(int which, float v);
 float AudioMusicVolume();              //   0..1, for our own sounds

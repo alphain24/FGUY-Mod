@@ -256,6 +256,10 @@ const unsigned char kEffectsPassStart[] = {0x8b, 0xfa, 0x83, 0xbf, 0x8c, 0x00, 0
 bool __cdecl DrawSkip(void* camera) {
     int v = ViewportOf(camera);
     if (v < 0) return false;
+    // Booting hidden (title, menus, the level loading - until its HUD is up): nobody sees these views, so no 3D
+    // at all - the menus' movies still draw (they load while drawn). The same ticks on every PC (the HUD comes up
+    // at the same tick everywhere), and drawing doesn't change the game anyway.
+    if (HandoffBooting()) return true;
     int mine = MyViewport();
     return mine >= 0 && v != mine;
 }

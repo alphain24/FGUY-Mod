@@ -112,6 +112,7 @@ void VPadPressLater(DWORD pad, WORD buttons, DWORD ms) {
 namespace {
 
 DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
+    if (pad == 0) AudioTick();
     if (state && NetplayPad(pad, state, Real_XInputGetState))
         return NetplayPadConnected(pad) ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
     DWORD r = Real_XInputGetState(pad, state);

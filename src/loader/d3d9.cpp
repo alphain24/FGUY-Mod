@@ -273,6 +273,8 @@ void PaceFrame() {
     }
     int fps = NetplayEnabled() ? 60 : kFrameRates[g_frameRate].fps;
     if (fps < 0) fps = 500;  // "uncapped": see the top of this file
+    if (OnlineStartingMatch() && (fps <= 0 || fps > 60)) fps = 60;   // only the loading screen: leave the GPU to
+                                                                    // the match's game, booting meanwhile
     if (fps == 0 && !g_fullscreen && g_dwmFlush) {
         g_dwmFlush();  // vsync in windowed modes: wait for the compositor's next frame
     } else if (fps > 0) {

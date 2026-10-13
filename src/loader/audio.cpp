@@ -38,6 +38,8 @@ float g_savedMusic = 1.0f;
 float g_movie = kMovieDefault;              // MOVIES & TITLE, 0..1
 bool g_settingsLoaded = false;              // the save's settings have been applied once
 bool g_testRun = false;                     // test copies don't write audio.ini
+volatile LONG g_silent = 0;                 // AudioSilenceGame: the game's own sound off (its settings stay)
+volatile LONG g_silentPending = 0;          //   to apply on the game thread (AudioTick)
 using Apply_t = void(__fastcall*)(void* self, void* edx);
 Apply_t g_applyOriginal = nullptr;
 
@@ -68,7 +70,7 @@ void __fastcall Hook_ApplyVolumes(void* self, void* edx) {
     }
     if (g_settingsLoaded) Remember(L"Music", real[0], g_savedMusic);
     for (int i = 0; i < 4; ++i)   // bot / test copies: silent; before the save: everything at MOVIES & TITLE
-        Setting(offs[i]) = StaysMuted() ? 0.0f : Curve(g_settingsLoaded ? real[i] : g_movie);
+        Setting(offs[i]) = StaysMuted() || g_silent ? 0.0f : Curve(g_settingsLoaded ? real[i] : g_movie);
     g_applyOriginal(self, edx);
     for (int i = 0; i < 4; ++i) Setting(offs[i]) = real[i];
 }
@@ -80,7 +82,7 @@ void __stdcall Hook_BinkSetVolume(void* bink, unsigned track, int volume) {
     // The game passed cinematic * 32768 * (something); keep its "something", use MOVIES & TITLE instead.
     float now = Setting(kCinematic);
     double base = now > 0.001f ? volume / now : volume;
-    int out = StaysMuted() ? 0 : (int)(base * Curve(g_movie) * kMovieScale);
+    int out = StaysMuted() || g_silent ? 0 : (int)(base * Curve(g_movie) * kMovieScale);
     if (out < 0) out = 0;
     static int logged = 0;
     if (logged < 8) {
@@ -208,6 +210,20 @@ void AudioTitleScreen() {
     g_settingsLoaded = false;
     Log(L"Audio: back at the title screen - movies & title volume until the main menu");
     if (g_applyOriginal) Hook_ApplyVolumes(reinterpret_cast<void*>(kSoundManager), nullptr);
+}
+
+// Online, starting a match: this (the lobby) game shows the loading screen while the match's game boots hidden -
+// its own menu music and sounds would play on underneath (the loading music is ours, sounds.cpp: not affected).
+// Off until it comes back from the match (or the start fails). The settings themselves don't change.
+void AudioSilenceGame(bool on) {
+    if (InterlockedExchange(&g_silent, on ? 1 : 0) == (on ? 1 : 0)) return;
+    InterlockedExchange(&g_silentPending, 1);
+    Log(L"Audio: the game's own sound %s", on ? L"off (the online loading screen)" : L"on again");
+}
+// vpad.cpp, the game thread's controller poll (every tick).
+void AudioTick() {
+    if (g_silentPending && InterlockedExchange(&g_silentPending, 0) && g_applyOriginal)
+        Hook_ApplyVolumes(reinterpret_cast<void*>(kSoundManager), nullptr);
 }
 
 // The volume our own sounds (sounds.cpp) should play at, 0..1: the music setting the same way the game
