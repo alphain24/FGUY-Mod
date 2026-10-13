@@ -408,7 +408,7 @@ unsigned g_peerHashTick[4][8];
 unsigned g_myHash[8], g_myHashTick[8];
 int g_desyncs = 0;
 // What each check hashed, kept so a mismatch can show the exact values of that tick (both PCs log the same tick).
-struct Hashed { int count; int index[8]; float pos[8][3], aim[8][3]; };
+struct Hashed { int count; int index[8]; float pos[8][3], aim[8][3]; unsigned rng; int rngLeft; };
 Hashed g_hashed[8];
 
 
@@ -465,6 +465,7 @@ void CompareHash(int slot, unsigned tick, unsigned hash) {
             for (int i = 0; i < v.count; ++i)
                 Log(L"Netplay:   tick %u player %d pos (%.5f, %.5f, %.5f) aim (%.5f, %.5f, %.5f)", tick, v.index[i],
                     v.pos[i][0], v.pos[i][1], v.pos[i][2], v.aim[i][0], v.aim[i][1], v.aim[i][2]);
+            Log(L"Netplay:   tick %u random numbers %08x (%d left before the next refill)", tick, v.rng, v.rngLeft);
         }
     }
 }
@@ -745,7 +746,18 @@ unsigned HashPlayers(Hashed* keep) {
             aim = nullptr;
         for (int k = 0; aim && k < 12; ++k) h = (h ^ aim[k]) * 16777619u;
     }
-    return h;
+    // The game's random numbers (one Mersenne Twister, rngtrace.cpp: 624 words at 0xb09360, the next one's address
+    // at 0xb09358, words left at 0xada67c): every PC must have drawn the same ones. Hashed on its own as well, so a
+    // mismatch says whether the players or the random numbers went apart first.
+    const unsigned* mt = reinterpret_cast<const unsigned*>(0xb09360);
+    unsigned r = 2166136261u;
+    for (int i = 0; i < 624; ++i) r = (r ^ mt[i]) * 16777619u;
+    int left = *reinterpret_cast<const int*>(0xada67c);
+    unsigned next = *reinterpret_cast<const unsigned*>(0xb09358) - 0xb09360u;
+    r = ((r ^ (unsigned)left) * 16777619u ^ next) * 16777619u;
+    keep->rng = r;
+    keep->rngLeft = left;
+    return (h ^ r) * 16777619u;
 }
 
 void LogPlayers(const wchar_t* tag) {
@@ -997,7 +1009,10 @@ void Tick() {
             for (int s = 0; s < g_players; ++s)   // (not with a player who has left: they're idle here from then)
                 if (s != g_slot && !g_gone[s] && !g_goneFrom[s] && g_peerHashTick[s][k] == g_tick)
                     CompareHash(s, g_tick, g_peerHash[s][k]);
-            if (g_tick % (g_syncEvery * 10) == 0) LogPlayers(L"check");
+            if (g_tick % (g_syncEvery * 10) == 0) {
+                LogPlayers(L"check");
+                Log(L"Netplay: check tick %u random numbers %08x", g_tick, g_hashed[k].rng);
+            }
         }
         g_clockNs += 1000000000LL / g_rate;   // the tick that just ended took 1 / its rate
         ++g_tick;
