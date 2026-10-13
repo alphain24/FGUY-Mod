@@ -261,6 +261,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             HandoffMatchRunning();
             Log(L"UI: HUD split mode %d -> %d", (int)ArgNumber(args, argc, 0), SplitViewHudMode((int)ArgNumber(args, argc, 0)));
             ReturnNumber(movie, SplitViewHudMode((int)ArgNumber(args, argc, 0)));
+        } else if (strcmp(fn, "HudZoom") == 0) {   // online: which quarter of the 4-way HUD is mine (-1: none)
+            ReturnNumber(movie, SplitViewHudZoomViewport());
         } else if (strcmp(fn, "HudViewport") == 0) {
             int v = SplitViewHudViewport((int)ArgNumber(args, argc, 0));
             static std::set<int> hudSeen;

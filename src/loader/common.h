@@ -82,6 +82,7 @@ void NetplayWatchAim(int player);      //   research: who writes a player's aim 
 void InitSplitView();                  // one full-screen view per PC online    (splitview.cpp)
 int SplitViewHudMode(int mode);
 int SplitViewHudViewport(int viewport);
+int SplitViewHudZoomViewport();        //   online: the HUD quarter to show full screen (-1: none)
 void SplitViewMenuRect(float left, float top, float right, float bottom);  // lobby: 3D scene inside a panel
 
 // onlinemenu.cpp: keyboard / mouse helpers for the ONLINE screens, and the test bot

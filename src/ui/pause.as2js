@@ -14,7 +14,56 @@ function FGUYPauseStart() {
     FGUYPauseTimer = setInterval(FGUYPausePoll, 33);
 }
 
+// Online the HUD is the 4-way split screen's on every PC (every player's menus run everywhere, as they must:
+// src/loader/splitview.cpp); this PC shows only its own quarter, zoomed to the whole screen (a quarter has the
+// screen's shape). Our own pause menu is zoomed back (it's drawn in whole-screen units).
+function FGUYHudZoom() {
+    var q = flash.external.ExternalInterface.call('FGUYMOD_HudZoom');
+    if (q == undefined) return;   // (not our loader)
+    q = Number(q);
+    if (q < 0 || q > 3) {
+        if (FGUYZoomed) {
+            _root._x = 0;
+            _root._y = 0;
+            _root._xscale = 100;
+            _root._yscale = 100;
+            FGUYZoomed = false;
+        }
+        return;
+    }
+    var r = FGUYPauseRect();
+    var col = q % 2;
+    var row = (q - col) / 2;
+    _root._xscale = 200;
+    _root._yscale = 200;
+    _root._x = r.x - 2 * (r.x + col * r.w / 2);
+    _root._y = r.y - 2 * (r.y + row * r.h / 2);
+    FGUYZoomed = true;
+    // The other players' HUD (still running - its menus are part of the game) isn't drawn here: what reached
+    // over the edge of their quarter (a death effect, say) showed on mine.
+    var names = StageElementsList;
+    if (names != undefined) {
+        for (var i = 0; i < names.length; i++) {
+            for (var v = 0; v < 4; v++) {
+                if (v == q) continue;
+                for (var p = 0; p < 4; p++) {
+                    var c = _root[names[i] + '_' + v + '_4_' + p];
+                    if (c != undefined && c._visible) c._visible = false;
+                }
+            }
+        }
+    }
+    var ui = _root.FGUYPauseUI;
+    if (ui != undefined) {
+        ui._xscale = 50;
+        ui._yscale = 50;
+        ui._x = -_root._x / 2;
+        ui._y = -_root._y / 2;
+    }
+}
+
 function FGUYPausePoll() {
+    FGUYHudZoom();
     if (++FGUYFitCount >= 15) {   // (twice a second: the HUD may have moved the damage frame again)
         FGUYFitCount = 0;
         FGUYFitDamageFx();

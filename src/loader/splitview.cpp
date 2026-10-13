@@ -131,9 +131,10 @@ void __fastcall Hook_Enable(void* camera, void*, int on) {
 //   slot < 0:        "_root.Icon_%s_%d_%d_%d"    name, viewport, layout ([hud+0x70]), player
 //   name id 0:       "_root.Icon_%d_%d"          slot, player
 //   otherwise:       "_root.Icon_%s%d_%d_%d_%d"  name, slot, viewport, layout, player
-// (name = hud->vtable[0x78/4](nameId)). Ours writes viewport 0 / layout 0 for my player, and no path for
-// the others (their HUD isn't shown).
+// (name = hud->vtable[0x78/4](nameId)). Online the HUD is the 4-way split screen's on every PC (see
+// SplitViewHudMode), so ours writes every player's own objects - their real viewport, layout 4.
 const uintptr_t kIconPath = 0x97b360;
+const int kHudLayout4Way = 4;   // the HUD's SPLIT_SCREEN_MODE_4WAY
 const unsigned char kIconPathStart[] = {0x53, 0x56, 0x8b, 0x35, 0x88, 0xd9, 0xba, 0x00};  // push ebx; push esi; mov esi,[0xbad988]
 int SplitViewHudViewportImpl(int viewport);
 
@@ -151,7 +152,7 @@ bool __fastcall Hook_IconPath(void* hud, void*, int nameId, int player, char* ou
     if (vp < 0) return false;
     vp = SplitViewHudViewportImpl(vp);
     if (vp < 0) return false;
-    int layout = 0;
+    int layout = kHudLayout4Way;
     using Name_t = const char*(__thiscall*)(void* hud, int id);
     auto name = [&] { return reinterpret_cast<Name_t>((*reinterpret_cast<void***>(hud))[0x78 / 4])(hud, nameId); };
     if (slot < 0) sprintf_s(out, 128, "_root.Icon_%s_%d_%d_%d", name(), vp, layout, player);
@@ -182,10 +183,10 @@ const uintptr_t kIsVerticalSplit = 0x6261c0;
 const unsigned char kIsVerticalSplitStart[] = {0x83, 0x3d, 0x60, 0x3e, 0xb5, 0x00, 0x02};  // cmp [0xb53e60], 2
 
 // HUD markers (objective arrows, "PLAYER 2" tags): 0x97b880 turns a viewport position into HUD
-// coordinates with an offset/scale per split layout, from the viewport count. Full screen = one viewport,
-// so its count call answers 1 (display only).
+// coordinates with an offset/scale per split layout, from the viewport count. Online the HUD is the 4-way
+// one (zoomed into my quarter), so its count call answers 4 (display only).
 const uintptr_t kMarkerCountCall = 0x97b885, kGetViewportCount = 0x625fe0;
-int __cdecl MarkerViewportCount() { return MyViewport() >= 0 ? 1 : Count(); }
+int __cdecl MarkerViewportCount() { return MyViewport() >= 0 ? 4 : Count(); }
 
 // The game makes those markers per viewing player (0x9909a0: find the viewer, project the point with their
 // viewport's camera, then 0x97b880 maps it into HUD space). Full screen, the other viewers' markers would
@@ -325,17 +326,19 @@ int __cdecl PlayerNameText(char* buf, const char* fmt, int number) {
 
 }  // namespace
 
-// The HUD (tools/ui/make_hud_patch.py) asks these before laying itself out.
-int SplitViewHudMode(int mode) { return g_active ? 0 : mode; }
+// The HUD (tools/ui/make_hud_patch.py) asks these before laying itself out. Online it's the 4-way split
+// screen's HUD on every PC, with every player's real viewport: each player's menus (death menu: continue /
+// change character / weapons -> respawn) and screens run on every PC, as in split screen - they're part of
+// the game (shown only on the player's own PC, they made the match go out of sync). Each PC then shows only
+// its own quarter, zoomed to the whole screen (a quarter of the screen has the screen's shape:
+// SplitViewHudZoomViewport, pause.as2js).
+int SplitViewHudMode(int mode) { return g_active ? 4 : mode; }
 namespace {
 int SplitViewHudViewportImpl(int viewport) { return SplitViewHudViewport(viewport); }
 }
-int SplitViewHudViewport(int viewport) {
-    if (!g_active || viewport < 0) return viewport;
-    int mine = MyPlayerViewport();
-    if (mine < 0) return viewport;
-    return viewport == mine ? 0 : -1;
-}
+int SplitViewHudViewport(int viewport) { return viewport; }
+// The quarter of the HUD to show full screen (my viewport), -1: the HUD as it is.
+int SplitViewHudZoomViewport() { return g_active ? MyPlayerViewport() : -1; }
 
 // The online lobby shows the menu scene's 3D character (the Store's model) inside its centre panel: it
 // draws viewport 0 into that part of the screen (the camera's rectangle is left, top, right, bottom as
