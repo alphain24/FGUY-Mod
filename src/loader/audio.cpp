@@ -121,6 +121,36 @@ float ReadSaved(const wchar_t* key, const wchar_t* def = L"1") {
 
 }  // namespace
 
+// Online every PC shows only its own player, but the game still tells FMOD about every viewport's listener
+// (split screen: you hear what's near any of the players). There: one listener, mine (its viewport's
+// position goes in as listener 0, the others' are dropped). Only the mix changes; the game doesn't read it.
+//   FMOD::System::set3DNumListeners(int)                                   (fmodex.dll, __stdcall member)
+//   FMOD::System::set3DListenerAttributes(int, pos, vel, forward, up)
+using SetNumListeners_t = int(__stdcall*)(void* system, int count);
+using SetListener_t = int(__stdcall*)(void* system, int listener, const void* pos, const void* vel,
+                                      const void* forward, const void* up);
+SetNumListeners_t Real_SetNumListeners = nullptr;
+SetListener_t Real_SetListener = nullptr;
+
+int __stdcall Hook_SetNumListeners(void* system, int count) {
+    if (SplitViewHudZoomViewport() >= 0 && count > 1) count = 1;
+    return Real_SetNumListeners(system, count);
+}
+
+int __stdcall Hook_SetListener(void* system, int listener, const void* pos, const void* vel, const void* forward,
+                               const void* up) {
+    int mine = SplitViewHudZoomViewport();
+    static bool one = false;   // (the count may have been set before the level's views were known)
+    if (mine >= 0) {
+        if (!one) { one = true; Real_SetNumListeners(system, 1); Log(L"Audio: online - one 3D listener, viewport %d's", mine); }
+        if (listener != mine) return 0;   // FMOD_OK: someone else's view
+        listener = 0;
+    } else {
+        one = false;
+    }
+    return Real_SetListener(system, listener, pos, vel, forward, up);
+}
+
 void InitAudio(HMODULE exe) {
     swprintf_s(g_iniPath, L"%s\\audio.ini", g_modDir);
     g_savedMusic = ReadSaved(L"Music");
@@ -130,6 +160,10 @@ void InitAudio(HMODULE exe) {
     bool curve = MakeTrampoline();
     HookSpec hooks[] = {
         {"binkw32.dll", "_BinkSetVolume@12", (void*)Hook_BinkSetVolume, (void**)&Real_BinkSetVolume},
+        {"fmodex.dll", "?set3DNumListeners@System@FMOD@@QAG?AW4FMOD_RESULT@@H@Z", (void*)Hook_SetNumListeners,
+         (void**)&Real_SetNumListeners},
+        {"fmodex.dll", "?set3DListenerAttributes@System@FMOD@@QAG?AW4FMOD_RESULT@@HPBUFMOD_VECTOR@@000@Z",
+         (void*)Hook_SetListener, (void**)&Real_SetListener},
     };
     InstallHooks(exe, hooks);
     Log(L"Audio: volume curve %s; movies & title %.2f", curve ? L"on" : L"off", g_movie);
