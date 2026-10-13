@@ -84,6 +84,14 @@ float* PreviewYaw(unsigned char** player) {
     return reinterpret_cast<float*>(body + 0x78);
 }
 
+// Test pipe "yaw": the preview's facing into the log.
+void OnlineMenuLogYaw() {
+    unsigned char* p;
+    float* yaw = PreviewYaw(&p);
+    Log(L"Online: preview player %p, facing %s%.4f, screens %s", p, yaw ? L"" : L"(none) ", yaw ? *yaw : 0.0f,
+        g_open ? L"open" : L"closed");
+}
+
 // FGUYMOD_TurnPreview(radians): turn the 3D character preview.
 void OnlineMenuTurnPreview(float radians) {
     unsigned char* p;
@@ -115,12 +123,38 @@ void HoldPreview() {
         g_yaw = *yaw;
         return;
     }
+    static int undone = 0;
+    // its place too: A / D (the left stick) can walk it as well
+    auto xform = *reinterpret_cast<unsigned char**>(p + 0x38);
+    float* pos = xform && !IsBadWritePtr(xform + 0x30, 12) ? reinterpret_cast<float*>(xform + 0x30) : nullptr;
+    static float held[3];
+    static unsigned char* heldFor = nullptr;
+    if (pos) {
+        if (heldFor != p) {
+            heldFor = p;
+            held[0] = pos[0]; held[1] = pos[1]; held[2] = pos[2];
+        } else {
+            float dx = pos[0] - held[0], dz = pos[2] - held[2];
+            if (dx * dx + dz * dz < 1.0f) {   // walked a little: back (more: placed somewhere new - fine)
+                if ((dx != 0 || dz != 0) && ++undone <= 10)
+                    Log(L"Online: the preview walked (%.3f, %.3f) - put back", dx, dz);
+                pos[0] = held[0];
+                pos[2] = held[2];
+            } else {
+                held[0] = pos[0]; held[1] = pos[1]; held[2] = pos[2];
+            }
+        }
+    }
     if (*yaw == g_yaw) return;
     float d = std::fmod(*yaw - g_yaw, 6.2831853f);
     if (d > 3.14159265f) d -= 6.2831853f;
     if (d < -3.14159265f) d += 6.2831853f;
-    if (std::fabs(d) < 0.35f) *yaw = g_yaw;  // the Store turning it: no
-    else g_yaw = *yaw;                       // a new character / reset: fine
+    if (std::fabs(d) < 0.35f) {   // the Store turning it: no
+        if (++undone <= 10) Log(L"Online: the preview turned %.3f - put back", d);
+        *yaw = g_yaw;
+    } else {
+        g_yaw = *yaw;             // a new character / reset: fine
+    }
 }
 
 }  // namespace

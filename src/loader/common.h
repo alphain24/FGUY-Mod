@@ -63,6 +63,7 @@ int NetplayLocalSlot();                //   my player slot, -1 when netplay is o
 const wchar_t* NetplayLobbyName(int slot);   // a player's name in the lobby, or ""
 void NetplayTestStall(DWORD ms);       //   test pipe: this PC goes quiet (a dropped connection)
 void NetplayTestNudge();
+void OnlineMenuLogYaw();               //   test pipe "yaw": the lobby preview's facing (onlinemenu.cpp)
 void NetplayTestResolution(int w, int h);   //   test pipe: the game changes resolution (Options > Screen)               //   test pipe: my player moves a little here only (out of sync)
 int NetplaySessionSlot();              //   my player slot in this game's session (also after leaving it)
 unsigned NetplayTick();                //   the lockstep tick being simulated

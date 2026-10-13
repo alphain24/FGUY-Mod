@@ -198,6 +198,10 @@ void HandleCommand(char* line) {
         if (w && h) NetplayTestResolution(atoi(w), atoi(h));
         return;
     }
+    if (cmd && _stricmp(cmd, "yaw") == 0) {   // test tools: the lobby's 3D preview facing, into the log
+        OnlineMenuLogYaw();
+        return;
+    }
     if (cmd && _stricmp(cmd, "nudge") == 0) {   // test tools: this PC's game goes out of sync with the others
         NetplayTestNudge();
         return;
