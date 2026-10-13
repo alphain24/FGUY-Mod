@@ -1,11 +1,11 @@
 # Frame rate test: a bot match at a given rate (FGUYMOD_TEST_RATE) where the keyboard host also plays - runs,
 # turns with the mouse, shoots, jumps - for a while; then whether the games stayed in sync after the level start.
-#   test_rate.ps1 -Rate 144 [-Seconds 60]       (needs a lobby server)
-param([string]$GameDir = "A:\Games\Activision\Family Guy Back to the Multiverse", [int]$Rate = 144, [int]$Seconds = 60)
+#   test_rate.ps1 -Rate 144 [-Seconds 60] [-HostRes 3840x2160]       (needs a lobby server)
+param([string]$GameDir = "A:\Games\Activision\Family Guy Back to the Multiverse", [int]$Rate = 144, [int]$Seconds = 60, [string]$HostRes = "960x540")
 $P = Split-Path $PSScriptRoot -Parent
 function Log([int]$id) { Join-Path $GameDir "FGUYMod\FGUYMod_$id.log" }
 $env:FGUYMOD_TEST_RATE = "$Rate"
-powershell -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\test_bot.ps1" -Seconds 3 -Controls keyboard | Out-Null
+powershell -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\test_bot.ps1" -Seconds 3 -Controls keyboard -HostRes $HostRes | Out-Null
 $env:FGUYMOD_TEST_RATE = $null
 $logs = Get-ChildItem (Join-Path $GameDir "FGUYMod\FGUYMod_*.log") | Sort-Object LastWriteTime -Descending | Select-Object -First 4
 $sess = @($logs | Where-Object { Select-String $_ -Pattern "frames per second in the match" -Quiet } | ForEach-Object { [int]($_.BaseName -replace 'FGUYMod_', '') })
@@ -23,6 +23,6 @@ foreach ($id in $sess) {
     $late = @(Select-String (Log $id) -Pattern "DESYNC at tick ([0-9]+)" | Where-Object { [int]$_.Matches[0].Groups[1].Value -gt 1800 })
     $ok = @(Select-String (Log $id) -Pattern "in sync with").Count
     $tps = (Select-String (Log $id) -Pattern "ticks/s" | Select-Object -Last 1).Line
-    Write-Output "${id}: $ok in sync, $($late.Count) mismatches after the switch; $($tps.Substring(15, 64))"
+    Write-Output "${id}: $ok in sync, $($late.Count) mismatches after the switch; $($tps.Substring(15, 100))"
     $late | Select-Object -First 3 | ForEach-Object { "   " + $_.Line.Substring(15) }
 }

@@ -71,7 +71,7 @@ LONG CALLBACK WatchHandler(EXCEPTION_POINTERS* e) {
 
 }  // namespace
 
-void WatchAddress(const void* addr, const wchar_t* what) {
+void WatchAddress(const void* addr, const wchar_t* what, bool reads) {
     if (!g_handler) { AddVectoredExceptionHandler(1, WatchHandler); g_handler = true; }
     if (g_slots >= 4) { Log(L"Watch: all four watchpoints are in use"); return; }
     int slot = g_slots++;
@@ -88,9 +88,9 @@ void WatchAddress(const void* addr, const wchar_t* what) {
             c.ContextFlags = CONTEXT_DEBUG_REGISTERS;
             if (GetThreadContext(h, &c)) {
                 (&c.Dr0)[slot] = g_addr[slot];
-                // this slot on, on writes (01), 4 bytes (11)
+                // this slot on, on writes (01) or reads and writes (11), 4 bytes (11)
                 c.Dr7 = (c.Dr7 & ~((3u << (slot * 2)) | (0xfu << (16 + slot * 4)))) | (1u << (slot * 2)) |
-                        (0xdu << (16 + slot * 4));
+                        ((reads ? 0xfu : 0xdu) << (16 + slot * 4));
                 if (SetThreadContext(h, &c)) ++set;
             }
             ResumeThread(h);
@@ -98,5 +98,5 @@ void WatchAddress(const void* addr, const wchar_t* what) {
         CloseHandle(h);
     }
     CloseHandle(snap);
-    Log(L"Watch: %s at %p (watchpoint %d) - on %d threads", what, addr, slot, set);
+    Log(L"Watch: %s at %p (watchpoint %d%s) - on %d threads", what, addr, slot, reads ? L", reads too" : L"", set);
 }

@@ -51,17 +51,18 @@ namespace {
 // ---- settings ---------------------------------------------------------------------------------------
 bool g_enabled = false;
 int g_slot = 0, g_players = 2, g_delay = 3, g_syncEvery = 60;
-// Ticks (= frames) per second, the same for everyone. A session boots, walks the menus and loads the level at
-// 60 (the game's join screens don't take a press at higher rates), then switches to the lobby's frame rate
-// (g_rateTarget) once everyone is in the level - the same tick on every PC. And if a PC can't keep up with it,
-// everyone goes a step down together (also at the same tick). g_segs: from which tick which rate.
+// Ticks (= frames) per second, the same for everyone at every tick. A session boots, walks the menus and loads
+// the level at 60 (the game's join screens don't take a press at higher rates). Once everyone is in the level the
+// match follows the PCs: each PC says in its inputs how many frames a second it manages right now (g_paceMine,
+// from its own work per tick - not the waiting for the others), and every tick runs at the slowest of those, up
+// to the lobby's frame rate (g_rateTarget). Every PC has the same inputs for a tick, so every PC picks the same
+// rate for it - and each tick's time step is 1 / that rate, so the game always runs at real speed: a slow PC means
+// fewer frames for everyone, never slow motion. g_clockNs: the fixed clock at the start of g_tick.
 int g_rate = 60;
 int g_rateTarget = 60;
-struct RateSeg { unsigned from; int rate; };
-RateSeg g_segs[8] = {{0, 60}};
-int g_segCount = 1;
-bool g_slowHere = false;             // this PC needed more than the ticks' time for the last second of them
-int g_slowRun = 0;                   // ticks in a row some player's PC said it's slow
+bool g_rateFollows = false;          // the match's rate follows the PCs (from 10 s after everyone's level is up)
+int g_paceMine = 0;                  // frames per second this PC manages (0: not measured yet)
+LONGLONG g_clockNs = 0;
 bool g_script = false, g_idleScript = false;
 unsigned g_traceFrom = 0;
 std::vector<sockaddr_in> g_peers;
@@ -127,20 +128,10 @@ bool FixedClock() {
     DWORD me = GetCurrentThreadId();
     return me == g_mainThread || (g_allClock && me != g_renderThread);
 }
-// The fixed clock's time at a tick, in 1 / `unit` s: each stretch of ticks at its own rate (g_segs).
-LONGLONG TickTime(unsigned tick, LONGLONG unit) {
-    LONGLONG t = 0;
-    for (int i = 0; i < g_segCount; ++i) {
-        unsigned from = g_segs[i].from, to = i + 1 < g_segCount ? g_segs[i + 1].from : 0xffffffffu;
-        if (tick <= from) break;
-        t += (LONGLONG)((tick < to ? tick : to) - from) * unit / g_segs[i].rate;
-    }
-    return t;
-}
-// From this tick on, `rate` ticks per second (this tick's time stays what it was: no jump).
-void SwitchRate(unsigned tick, int rate) {
-    if (g_segCount < 8) g_segs[g_segCount++] = {tick, rate};
-    g_rate = rate;
+// The fixed clock's time at the start of the current tick, in 1 / `unit` s (exact integers: the same on every PC).
+LONGLONG TickTime(LONGLONG unit) {
+    const LONGLONG kNs = 1000000000;
+    return g_clockNs / kNs * unit + g_clockNs % kNs * unit / kNs;
 }
 // After leaving a session (back to the lobby): real time again, shifted so the game thread's clock carries on
 // from the fixed one instead of jumping.
@@ -157,7 +148,7 @@ BOOL WINAPI Hook_QPC(LARGE_INTEGER* out) {
     }
     // base + the tick's time, plus one count per call so "wait until time passes" loops still finish (the game
     // thread's own count: other threads' reads mustn't change what it sees)
-    LONGLONG at = kClockBaseSeconds * g_freq.QuadPart + TickTime(g_tick, g_freq.QuadPart);
+    LONGLONG at = kClockBaseSeconds * g_freq.QuadPart + TickTime(g_freq.QuadPart);
     if (GetCurrentThreadId() != g_mainThread) {
         static thread_local LONGLONG mine = 0;   // still moving forward for this thread
         mine = mine < at ? at : mine + 1;
@@ -172,7 +163,7 @@ BOOL WINAPI Hook_QPC(LARGE_INTEGER* out) {
     out->QuadPart = at + (n > kExactReads ? n - kExactReads : 0);
     return TRUE;
 }
-DWORD FixedMs() { return (DWORD)(kClockBaseSeconds * 1000 + TickTime(g_tick, 1000)); }
+DWORD FixedMs() { return (DWORD)(kClockBaseSeconds * 1000 + TickTime(1000)); }
 DWORD WINAPI Hook_GetTickCount() {
     return FixedClock() ? FixedMs() : (DWORD)(Real_GetTickCount() + (Shifted() ? g_tickCountOffset : 0));
 }
@@ -639,6 +630,7 @@ Pad SampleLocal(unsigned f) {
     if (g_script) {
         Pad sp = ScriptPad(f);
         if (HandoffHudUp()) sp.kbm.flags |= 1;   // my level's HUD is up (as below)
+        if (g_inSession) sp.kbm.pace = (BYTE)g_paceMine;
         return sp;
     }
     Pad p{};
@@ -660,7 +652,7 @@ Pad SampleLocal(unsigned f) {
         p.lx = p.rx = p.ry = 0;
     }
     if (g_inSession) OnlineSettingsStamp(&p.kbm);   // my aim settings go with my input (onlinesettings.cpp)
-    if (g_inSession && g_slowHere) p.kbm.opts |= 0x40;   // and whether this PC keeps up with the frame rate
+    if (g_inSession) p.kbm.pace = (BYTE)g_paceMine;   // and how many frames a second this PC manages
     static Pad last{};
     static int logged = 0;
     if (memcmp(&p, &last, sizeof(p)) != 0 && logged < 60) {  // the first few changes (input problems)
@@ -909,17 +901,19 @@ WORD ScenePad() {
     return scene && now < g_skipPressUntil ? XINPUT_GAMEPAD_A : 0;
 }
 
-// Real time keeps step with the fixed 1/60 s clock: each tick starts no sooner than 1/60 s after the last.
+// Real time keeps step with the fixed clock: each tick starts no sooner than its time step after the last.
 // (Here rather than at Present: a paused game, or one whose window can't be seen, stops presenting, and
 // then ran the match several times too fast.) Not while an online session boots hidden: that runs flat out.
-void PaceTick() {
+// Returns how long it waited (QPC counts) - not work this PC had to do.
+LONGLONG PaceTick() {
     static LONGLONG next = 0;
     if (g_phase != Phase::Running || HandoffBooting()) {
         next = 0;
-        return;
+        return 0;
     }
-    LARGE_INTEGER now;
+    LARGE_INTEGER now, from;
     Real_QPC(&now);
+    from = now;
     LONGLONG step = g_freq.QuadPart / g_rate;
     if (!next) next = now.QuadPart;
     if (now.QuadPart < next) {
@@ -929,11 +923,48 @@ void PaceTick() {
     }
     next += step;
     if (now.QuadPart - next > g_freq.QuadPart / 4) next = now.QuadPart;  // far behind: don't race to catch up
+    return now.QuadPart - from.QuadPart;
+}
+
+// The frame rates a match steps through (each PC says the highest of these it manages, with some room spare).
+const int kPaceSteps[] = {240, 200, 165, 144, 120, 100, 90, 80, 72, 60, 50, 45, 40, 36, 30};
+
+// This PC's pace from its last stretch of ticks: `perSecond` = ticks it could do a second, by its own work.
+// Down at once when it can't keep up. Up only one step at a time, with room spare, after 2 s at the same rate -
+// and not back to a rate it just couldn't hold (for 20 s): a slower rate leaves the graphics card idle time, so
+// the PC looks quicker there than it is at the higher rate (it went 144 -> 100 -> 144 -> 100 ... before).
+void NotePace(double perSecond) {
+    static double smooth = 0;
+    static ULONGLONG since = 0, ceilingUntil = 0;
+    static int ceiling = 0;
+    if (!g_rateFollows) return;   // (loading the level says nothing about the match: from the top once it runs)
+    smooth = smooth ? smooth * 0.5 + perSecond * 0.5 : perSecond;
+    ULONGLONG nowMs = GetTickCount64();
+    int cap = g_rateTarget, now = g_paceMine ? g_paceMine : cap, want = kPaceSteps[_countof(kPaceSteps) - 1];
+    for (int s : kPaceSteps)
+        if (s <= cap && smooth * 0.93 >= s) { want = s; break; }
+    if (want > now) {   // up: the next step only
+        int next = now;
+        for (int s : kPaceSteps)
+            if (s <= cap && s > now) next = s;
+        bool held = nowMs >= since + 2000, blocked = nowMs < ceilingUntil && next >= ceiling;
+        want = held && !blocked && smooth * 0.85 >= next ? next : now;
+    }
+    if (want == now && g_paceMine) return;
+    if (want < now && g_paceMine) {   // this rate didn't hold: don't come back to it for a while
+        ceiling = now;
+        ceilingUntil = nowMs + 20000;
+    }
+    static int logged = 0;
+    if (g_inSession && g_rateFollows && ++logged <= 40)
+        Log(L"Netplay: tick %u - this PC manages %d frames per second (%.0f with no room spare)", g_tick, want, smooth);
+    g_paceMine = want;
+    since = nowMs;
 }
 
 // Called on the main thread at the start of every game tick (its first controller poll).
 void Tick() {
-    PaceTick();
+    LONGLONG paced = PaceTick();
     static ULONGLONG lastStart = 0;
     ULONGLONG nowMs = GetTickCount64();
     if (lastStart && nowMs - lastStart > 1000)
@@ -968,6 +999,7 @@ void Tick() {
                     CompareHash(s, g_tick, g_peerHash[s][k]);
             if (g_tick % (g_syncEvery * 10) == 0) LogPlayers(L"check");
         }
+        g_clockNs += 1000000000LL / g_rate;   // the tick that just ended took 1 / its rate
         ++g_tick;
     }
     g_mainBlocksThisTick = 0;
@@ -1045,31 +1077,25 @@ void Tick() {
         }
     }
     // everyone's in, and the spawn has settled (players fall into the level a tick apart at first and only come
-    // together again once they've landed - at 60): the match's frame rate
-    if (g_segCount == 1 && g_rate != g_rateTarget && g_liveTick && g_tick >= g_liveTick + 600) {
+    // together again once they've landed - at 60): from here the match's frame rate follows the PCs
+    if (!g_rateFollows && g_inSession && g_liveTick && g_tick >= g_liveTick + 600) {
         const int kViewportCount = 0xb53e60;   // (story co-op: once everyone has dropped in)
         if (!g_sessionStory || *reinterpret_cast<volatile int*>(kViewportCount) >= g_players) {
-            SwitchRate(g_tick, g_rateTarget);
-            Log(L"Netplay: %d frames per second from tick %u", g_rate, g_tick);
+            g_rateFollows = true;
+            Log(L"Netplay: from tick %u the match runs at up to %d frames per second - as fast as the slowest PC "
+                L"manages", g_tick, g_rateTarget);
         }
     }
-    // A player's PC that can't keep up (it says so in its input) for 2 s: everyone a step down, the same tick on
-    // every PC (the match otherwise runs at that PC's pace - slow motion for everyone).
-    if (g_inSession && g_segCount > 1 && g_rate > 60) {
-        bool slow = false;
+    if (g_rateFollows) {   // this tick's rate: the slowest PC's (from this tick's inputs - the same on every PC)
+        int rate = g_rateTarget;
         for (int s = 0; s < g_players && s < 4; ++s)
-            if (!g_gone[s] && !(g_goneFrom[s] && g_tick >= g_goneFrom[s]) && (g_current[s].kbm.opts & 0x40)) slow = true;
-        g_slowRun = slow ? g_slowRun + 1 : 0;
-        if (g_slowRun >= 2 * g_rate) {
-            const int steps[] = {240, 165, 144, 120, 60};
-            int lower = 60;
-            for (int step : steps) if (step < g_rate) { lower = step; break; }
-            SwitchRate(g_tick, lower);
-            g_slowRun = 0;
-            Log(L"Netplay: a PC can't keep up - %d frames per second from tick %u", g_rate, g_tick);
-            wchar_t text[96];
-            swprintf_s(text, L"A PC couldn't keep up - the match runs at %d frames per second now", g_rate);
-            OverlayShow(text, 5000);
+            if (!g_gone[s] && !(g_goneFrom[s] && g_tick >= g_goneFrom[s]) && g_current[s].kbm.pace >= 30 &&
+                g_current[s].kbm.pace < rate)
+                rate = g_current[s].kbm.pace;
+        if (rate != g_rate) {
+            static int logged = 0;
+            if (++logged <= 60) Log(L"Netplay: tick %u - %d frames per second", g_tick, rate);
+            g_rate = rate;
         }
     }
     if (g_inSession) OnlineSettingsApply(kbm, g_players);   // everyone's own aim settings (onlinesettings.cpp)
@@ -1118,27 +1144,22 @@ void Tick() {
                     if (*reinterpret_cast<int*>(list[i] + 0xdf8) == dropPlayer[d]) {
                         float* pos = const_cast<float*>(PlayerPos(list[i]));
                         if (pos) pos[1] -= 3000.0f;
-                        Log(L"Netplay: test - player %d dropped out of the level at tick %u", dropPlayer[d], g_tick);
+                        Log(L"Netplay: test - player %d dropped out of the level at tick %u (position at %p)", dropPlayer[d], g_tick, pos);
                     }
             }
     }
     KbmApply(kbm, g_players);  // keyboard / mouse players' devices, from their raw input (kbm.cpp)
     Real_QPC(&s1);
-    {   // this PC's own pace: a second's worth of ticks, minus the waiting for the others' inputs
+    {   // this PC's own pace: a quarter second's worth of ticks, minus the waiting (for the others' inputs, and
+        // for the tick's time to come round)
         static LARGE_INTEGER windowStart{};
         static LONGLONG windowWait = 0;
         static int windowTicks = 0;
         if (!windowStart.QuadPart) windowStart = s0;
-        windowWait += s1.QuadPart - s0.QuadPart;
-        if (++windowTicks >= g_rate) {
+        windowWait += s1.QuadPart - s0.QuadPart + paced;
+        if (++windowTicks >= (g_rate >= 60 ? g_rate / 4 : 15)) {
             LONGLONG work = s1.QuadPart - windowStart.QuadPart - windowWait;
-            static double load = 1.0;   // seconds of work per second of ticks, smoothed over a few seconds
-            load = load * 0.6 + (double)work / g_freq.QuadPart * 0.4;
-            bool slow = g_slowHere ? load > 1.01 : load > 1.04;
-            if (slow != g_slowHere && g_inSession)
-                Log(L"Netplay: this PC %s (%.2f s of work for 1 s of ticks)", slow ? L"can't keep up" : L"keeps up again",
-                    load);
-            g_slowHere = slow;
+            if (work > 0) NotePace((double)windowTicks * g_freq.QuadPart / work);
             windowStart = s1;
             windowWait = 0;
             windowTicks = 0;
@@ -1154,12 +1175,15 @@ void Tick() {
     Trace(8, g_tick);
     if (g_tick % 600 == 0) {
         static ULONGLONG last = GetTickCount64();
+        static LONGLONG lastGame = 0;
         ULONGLONG now = GetTickCount64();
-        Log(L"Netplay: tick %u (%.1f ticks/s over the last 600; per tick: %.2f ms waiting for peers, %.2f ms for "
-            L"threads, %d timeouts, %lld clock reads)", g_tick, 600000.0 / (now - last + 1),
-            g_statPeer * 1000.0 / g_freq.QuadPart / 600, g_statQuiet * 1000.0 / g_freq.QuadPart / 600, g_statTimeouts,
-            g_statQpcCalls / 600);
+        LONGLONG game = TickTime(1000);
+        Log(L"Netplay: tick %u (%.1f ticks/s over the last 600; game time %.2f s in %.2f s; per tick: %.2f ms waiting "
+            L"for peers, %.2f ms for threads, %d timeouts, %lld clock reads)", g_tick, 600000.0 / (now - last + 1),
+            (game - lastGame) / 1000.0, (now - last) / 1000.0, g_statPeer * 1000.0 / g_freq.QuadPart / 600,
+            g_statQuiet * 1000.0 / g_freq.QuadPart / 600, g_statTimeouts, g_statQpcCalls / 600);
         last = now;
+        lastGame = game;
         g_statPeer = g_statQuiet = g_statQpcCalls = 0;
         g_statTimeouts = 0;
     }
@@ -1236,7 +1260,7 @@ void NetplayLeave(const wchar_t* why) {
         }
         LARGE_INTEGER real;
         Real_QPC(&real);
-        g_qpcOffset = kClockBaseSeconds * g_freq.QuadPart + TickTime(g_tick, g_freq.QuadPart) +
+        g_qpcOffset = kClockBaseSeconds * g_freq.QuadPart + TickTime(g_freq.QuadPart) +
                       (++g_callsThisTick) - real.QuadPart;
         g_tickCountOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_GetTickCount();
         g_timeGetTimeOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_timeGetTime();
@@ -1380,7 +1404,7 @@ void InitNetplay(HMODULE exe) {
     KbmSessionStart(g_inSession ? session : nullptr);
     if (g_inSession) OnlineSettingsInit();   // my own settings (onlinesettings.cpp)
     g_phase = Phase::Boot;
-    Log(L"Netplay: %d frames per second in the match (60 until everyone is in the level)", g_rateTarget);
+    Log(L"Netplay: up to %d frames per second in the match (60 until everyone is in the level)", g_rateTarget);
     Log(L"Netplay: on - slot %d of %d players, %s, input delay %d, %s input", g_slot, g_players,
         g_relay ? L"through the lobby server's relay" : L"direct UDP", g_delay, g_script ? L"scripted" : L"controller");
 

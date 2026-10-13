@@ -1246,7 +1246,7 @@ function FGUYSettingHelp(r) {
     if (r == 'map') return mode.code == 'ST' ? 'Which story level you play together.' : "Where you play. You can pick the maps the host's save has unlocked.";
     if (r == 'time') return 'How long a match lasts.';
     if (r == 'score') return mode.score == 'FlagLimit' ? 'The match ends when a team captures this many flags.' : 'The match ends when a team reaches this score.';
-    if (r == 'rate') return 'Everyone plays at the same frame rate. Auto: the best every player\'s screen shows, up to 144. If a PC can\'t keep up, everyone steps down together.';
+    if (r == 'rate') return 'Everyone plays at the same frame rate. Auto: the best every player\'s screen shows, up to 144. If a PC can\'t keep up, the match follows it: fewer frames for a while, never slow motion.';
     return 'On: you can hurt your own team. Off: you can only hurt the other team.';
 }
 
