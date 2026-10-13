@@ -26,7 +26,7 @@
 //
 // Settings ([Netplay] in FGUYMod.ini, env overrides for tests):
 //   Enable=1  Slot=0..3  Players=2  Port=7600  Peers=127.0.0.1:7601,...  InputDelay=3
-//   Script=1 (scripted test inputs instead of the real pad)  SyncCheckFrames=60
+//   Script=1 (scripted test inputs instead of the real pad)  SyncCheckFrames=30
 // Research knobs (env only): FGUYMOD_NET_IDLE=1 (script only leaves the start pause),
 //   FGUYMOD_NET_TRACE=<tick> (timeline of thread handoffs for 4 ticks).
 
@@ -368,12 +368,16 @@ void WaitForQuiescence() {
 
 // ---- packets ------------------------------------------------------------------------------------------
 // All little-endian. 'R' ready: slot. 'I' inputs: slot, first tick, count, Pad[count]. 'H' hash: slot,
-// tick, hash. 'S' skip the scene that's holding the game: slot, sequence number. 'L' left the match (back to
+// tick, hash (and its two parts: the players, the random numbers). 'M' the host's random numbers for a tick, in
+// three parts; 'Q' asks the host for them again. 'S' skip the scene that's holding the game: slot, sequence number. 'L' left the match (back to
 // the lobby): slot, the last tick with their input - from the next one on they're idle on every PC.
 #pragma pack(push, 1)
 struct PktHeader { char type; BYTE slot; };
 struct PktInputs { PktHeader h; unsigned first; BYTE count; Pad pads[16]; };
-struct PktHash { PktHeader h; unsigned tick; unsigned hash; };
+struct PktHash { PktHeader h; unsigned tick; unsigned hash; unsigned players, rng; };
+const int kRngWords = 624, kRngPart = 208;
+struct PktRng { PktHeader h; unsigned tick; BYTE part; int next, left; unsigned words[kRngPart]; };
+struct PktRngAsk { PktHeader h; unsigned tick; };
 struct PktSkip { PktHeader h; unsigned seq; };
 struct PktLeave { PktHeader h; unsigned last; };
 #pragma pack(pop)
@@ -404,17 +408,22 @@ void SendAll(const void* data, int len) {
 }
 
 unsigned g_peerHash[4][8];           // recent hashes from peers, by (tick / syncEvery) % 8
+unsigned g_peerPlayers[4][8], g_peerRng[4][8];
 unsigned g_peerHashTick[4][8];
 unsigned g_myHash[8], g_myHashTick[8];
 int g_desyncs = 0;
 // What each check hashed, kept so a mismatch can show the exact values of that tick (both PCs log the same tick).
-struct Hashed { int count; int index[8]; float pos[8][3], aim[8][3]; unsigned rng; int rngLeft; };
+struct Hashed { int count; int index[8]; float pos[8][3], aim[8][3]; unsigned players, rng; int rngLeft; };
 Hashed g_hashed[8];
 
 
 void LogPlayers(const wchar_t* tag);
 
 void NoteMismatch(unsigned tick);
+void RngDrift(unsigned tick);
+struct PktRng;
+void RngReceive(const PktRng* p);
+void RngAsked(unsigned tick);
 
 // The players' names, by slot (FGUYMOD_NET_NAMES from the lobby: "Host|Guest|..."), for the notices.
 wchar_t g_names[4][40];
@@ -447,17 +456,24 @@ std::wstring PlayerName(int slot) {
     return n;
 }
 
-void CompareHash(int slot, unsigned tick, unsigned hash) {
+void CompareHash(int slot, unsigned tick, unsigned hash, unsigned players, unsigned rng) {
     int k = (tick / g_syncEvery) % 8;
     if (g_myHashTick[k] != tick) return;
     static bool wasInSync = true;
-    if (g_myHash[k] != hash) NoteMismatch(tick);
+    // Only the random numbers went apart (something on one PC only took one - the players are still the same):
+    // everyone takes the host's (RngDrift) and the match goes on. Anything else: out of sync.
+    bool onlyRng = g_myHash[k] != hash && players == g_hashed[k].players && rng != g_hashed[k].rng;
+    if (g_myHash[k] != hash) {
+        if (onlyRng) RngDrift(tick);
+        else NoteMismatch(tick);
+    }
     if (g_myHash[k] == hash) {
         if (tick % (g_syncEvery * 10) == 0 || !wasInSync) Log(L"Netplay: tick %u in sync with peer %d (%08x)", tick, slot, hash);
         wasInSync = true;
     } else {
         ++g_desyncs;
-        Log(L"Netplay: DESYNC at tick %u: mine %08x, peer %d has %08x", tick, g_myHash[k], slot, hash);
+        Log(L"Netplay: DESYNC at tick %u: mine %08x, peer %d has %08x%s", tick, g_myHash[k], slot, hash,
+            onlyRng ? L" - only the random numbers (the players match)" : L"");
         bool details = g_desyncs <= 3 || wasInSync;   // the first ones, and each time it goes out of sync
         wasInSync = false;
         if (details) {   // what this PC hashed at that tick (compare with the peer's log)
@@ -512,8 +528,14 @@ void Receive() {
             auto p = reinterpret_cast<PktHash*>(buf);
             int k = (p->tick / g_syncEvery) % 8;
             g_peerHash[slot][k] = p->hash;
+            g_peerPlayers[slot][k] = p->players;
+            g_peerRng[slot][k] = p->rng;
             g_peerHashTick[slot][k] = p->tick;
-            CompareHash(slot, p->tick, p->hash);
+            CompareHash(slot, p->tick, p->hash, p->players, p->rng);
+        } else if (h->type == 'M' && n >= (int)sizeof(PktRng)) {
+            RngReceive(reinterpret_cast<PktRng*>(buf));
+        } else if (h->type == 'Q' && n >= (int)sizeof(PktRngAsk)) {
+            RngAsked(reinterpret_cast<PktRngAsk*>(buf)->tick);
         } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
             auto p = reinterpret_cast<PktLeave*>(buf);
             if (!g_goneFrom[slot] || p->last + 1 < g_goneFrom[slot]) {
@@ -591,6 +613,85 @@ Pad BotPad(unsigned f) {
 
 // Out of sync for good (3 checks running, once the level has settled - a mismatch while everyone drops in fixes
 // itself): each PC sees it at the same checks, says so and takes everyone back to the lobby.
+// ---- the random numbers' safety net -------------------------------------------------------------------------
+// The host sees the random numbers went apart (the players still match): its input a few ticks on says "take
+// mine" (Pad.kbm.sync), so every PC reaches that tick with the same instruction. There the host sends its random
+// numbers as they stand at the start of the tick, and every other PC waits for them and takes them over.
+bool g_rngWanted = false;            // host: put the instruction in my next input
+unsigned g_rngDriftTick = 0;         // host: the check that asked for it (once per check)
+unsigned g_rngSnapTick = 0;          // host: the tick of the numbers sent (to send again if asked)
+PktRng g_rngSnap[3];
+unsigned g_rngWaitTick = 0;          // others: the tick we're waiting for the host's numbers at
+bool g_rngHave[3];
+PktRng g_rngIn[3];
+
+void RngDrift(unsigned tick) {
+    if (g_slot != 0 || !g_inSession || tick == g_rngDriftTick) return;
+    g_rngDriftTick = tick;
+    g_rngWanted = true;
+    Log(L"Netplay: tick %u - the random numbers went apart (the players match) - everyone takes the host's", tick);
+}
+
+void RngSendSnap() {
+    for (auto& p : g_rngSnap) SendAll(&p, sizeof(p));
+}
+
+void RngAsked(unsigned tick) {
+    if (g_slot == 0 && tick == g_rngSnapTick) RngSendSnap();
+}
+
+void RngReceive(const PktRng* p) {
+    if (g_slot == 0 || p->tick != g_rngWaitTick || p->part > 2) return;
+    g_rngIn[p->part] = *p;
+    g_rngHave[p->part] = true;
+}
+
+// At the start of a tick whose host input says so (every PC, the same tick).
+void RngResync() {
+    unsigned* mt = reinterpret_cast<unsigned*>(0xb09360);
+    unsigned& next = *reinterpret_cast<unsigned*>(0xb09358);
+    int& left = *reinterpret_cast<int*>(0xada67c);
+    if (g_slot == 0) {
+        for (int part = 0; part < 3; ++part) {
+            PktRng& p = g_rngSnap[part];
+            p.h = {'M', (BYTE)g_slot};
+            p.tick = g_tick;
+            p.part = (BYTE)part;
+            p.next = (int)(next - 0xb09360u);
+            p.left = left;
+            memcpy(p.words, mt + part * kRngPart, sizeof(p.words));
+        }
+        g_rngSnapTick = g_tick;
+        RngSendSnap();
+        Log(L"Netplay: tick %u - sent my random numbers to everyone", g_tick);
+        return;
+    }
+    g_rngWaitTick = g_tick;
+    ULONGLONG from = GetTickCount64(), nextAsk = from + 40;
+    for (;;) {
+        Receive();
+        if (g_rngHave[0] && g_rngHave[1] && g_rngHave[2]) break;
+        ULONGLONG now = GetTickCount64();
+        if (now - from > 5000) {
+            Log(L"Netplay: tick %u - the host's random numbers didn't come", g_tick);
+            g_rngWaitTick = 0;
+            return;
+        }
+        if (now >= nextAsk) {
+            PktRngAsk q{{'Q', (BYTE)g_slot}, g_tick};
+            SendAll(&q, sizeof(q));
+            nextAsk = now + 40;
+        }
+        Real_Sleep(1);
+    }
+    for (int part = 0; part < 3; ++part) memcpy(mt + part * kRngPart, g_rngIn[part].words, sizeof(g_rngIn[part].words));
+    next = 0xb09360u + (unsigned)g_rngIn[0].next;
+    left = g_rngIn[0].left;
+    g_rngHave[0] = g_rngHave[1] = g_rngHave[2] = false;
+    g_rngWaitTick = 0;
+    Log(L"Netplay: tick %u - took the host's random numbers (waited %llu ms)", g_tick, GetTickCount64() - from);
+}
+
 void NoteMismatch(unsigned tick) {
     static unsigned lastBadTick = 0;
     static int badRun = 0;
@@ -632,6 +733,7 @@ Pad SampleLocal(unsigned f) {
         Pad sp = ScriptPad(f);
         if (HandoffHudUp()) sp.kbm.flags |= 1;   // my level's HUD is up (as below)
         if (g_inSession) sp.kbm.pace = (BYTE)g_paceMine;
+        if (g_rngWanted && g_slot == 0) { sp.kbm.sync = 1; g_rngWanted = false; }
         return sp;
     }
     Pad p{};
@@ -654,6 +756,11 @@ Pad SampleLocal(unsigned f) {
     }
     if (g_inSession) OnlineSettingsStamp(&p.kbm);   // my aim settings go with my input (onlinesettings.cpp)
     if (g_inSession) p.kbm.pace = (BYTE)g_paceMine;   // and how many frames a second this PC manages
+    if (g_rngWanted && g_slot == 0) {   // (the random numbers' safety net: everyone takes mine at that tick)
+        p.kbm.sync = 1;
+        g_rngWanted = false;
+        Log(L"Netplay: everyone takes my random numbers at tick %u", f);
+    }
     static Pad last{};
     static int logged = 0;
     if (memcmp(&p, &last, sizeof(p)) != 0 && logged < 60) {  // the first few changes (input problems)
@@ -755,6 +862,7 @@ unsigned HashPlayers(Hashed* keep) {
     int left = *reinterpret_cast<const int*>(0xada67c);
     unsigned next = *reinterpret_cast<const unsigned*>(0xb09358) - 0xb09360u;
     r = ((r ^ (unsigned)left) * 16777619u ^ next) * 16777619u;
+    keep->players = h;
     keep->rng = r;
     keep->rngLeft = left;
     return (h ^ r) * 16777619u;
@@ -1004,11 +1112,11 @@ void Tick() {
             unsigned h = HashPlayers(&g_hashed[k]);
             g_myHash[k] = h;
             g_myHashTick[k] = g_tick;
-            PktHash p{{'H', (BYTE)g_slot}, g_tick, h};
+            PktHash p{{'H', (BYTE)g_slot}, g_tick, h, g_hashed[k].players, g_hashed[k].rng};
             SendAll(&p, sizeof(p));
             for (int s = 0; s < g_players; ++s)   // (not with a player who has left: they're idle here from then)
                 if (s != g_slot && !g_gone[s] && !g_goneFrom[s] && g_peerHashTick[s][k] == g_tick)
-                    CompareHash(s, g_tick, g_peerHash[s][k]);
+                    CompareHash(s, g_tick, g_peerHash[s][k], g_peerPlayers[s][k], g_peerRng[s][k]);
             if (g_tick % (g_syncEvery * 10) == 0) {
                 LogPlayers(L"check");
                 Log(L"Netplay: check tick %u random numbers %08x", g_tick, g_hashed[k].rng);
@@ -1113,6 +1221,7 @@ void Tick() {
             g_rate = rate;
         }
     }
+    if (g_inSession && g_current[0].kbm.sync == 1) RngResync();   // the host's random numbers, everyone
     if (g_inSession) OnlineSettingsApply(kbm, g_players);   // everyone's own aim settings (onlinesettings.cpp)
     if (g_inSession) LoadSyncTickStart();   // menus' movies loaded the same tick everywhere (loadsync.cpp)
     if (g_inSession) CamDump(g_tick);   // research (FGUYMOD_CAMDUMP, rngtrace.cpp)
@@ -1162,6 +1271,18 @@ void Tick() {
                         Log(L"Netplay: test - player %d dropped out of the level at tick %u (position at %p)", dropPlayer[d], g_tick, pos);
                     }
             }
+    }
+    {   // test: FGUYMOD_TEST_RNGDRIFT=<tick> - there the guest (slot 1) takes one random number more than the others
+        // (what a look or effect on one PC only did): the safety net must bring everyone back together
+        static int driftAt = -1;
+        if (driftAt < 0) {
+            char env[16];
+            driftAt = GetEnvironmentVariableA("FGUYMOD_TEST_RNGDRIFT", env, sizeof(env)) ? atoi(env) : 0;
+        }
+        if (driftAt > 0 && g_inSession && g_slot == 1 && g_tick == (unsigned)driftAt) {
+            reinterpret_cast<float(__cdecl*)()>(0x4f69a0)();
+            Log(L"Netplay: test - took one random number more than the others at tick %u", g_tick);
+        }
     }
     KbmApply(kbm, g_players);  // keyboard / mouse players' devices, from their raw input (kbm.cpp)
     Real_QPC(&s1);
@@ -1362,7 +1483,7 @@ void InitNetplay(HMODULE exe) {
     g_traceFrom = (unsigned)SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_TRACE", 0);
     g_rateTarget = SettingInt(L"Netplay", L"TickRate", L"FGUYMOD_NET_RATE", 60);
     if (g_rateTarget < 30 || g_rateTarget > 240) g_rateTarget = 60;
-    g_syncEvery = SettingInt(L"Netplay", L"SyncCheckFrames", L"FGUYMOD_TEST_SYNCEVERY", 60);
+    g_syncEvery = SettingInt(L"Netplay", L"SyncCheckFrames", L"FGUYMOD_TEST_SYNCEVERY", 30);
     g_allClock = SettingInt(L"Netplay", L"_", L"FGUYMOD_TEST_ALLCLOCK", 0) != 0;
     for (int s = 0; s < 4; ++s)
         for (int k = 0; k < 8; ++k) g_peerHashTick[s][k] = ~0u;

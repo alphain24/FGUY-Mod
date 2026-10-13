@@ -179,6 +179,7 @@ struct KbmRaw {            // one player's raw keyboard and mouse for one tick (
     BYTE aim;              //   this player's aim sensitivity, 0..100 (onlinesettings.cpp)
     BYTE opts;             //   bit 0 invert look, bit 1 reticles, bit 7: aim / opts set
     BYTE pace;             //   frames per second this player's PC manages right now (0: not known) - netplay.cpp
+    BYTE sync;             //   (the host) 1: everyone takes the host's random numbers at this tick - netplay.cpp
 };
 #pragma pack(pop)
 void KbmInit(HWND wnd);

@@ -170,6 +170,23 @@ bool __cdecl LoaderBusy() {
     return busy;
 }
 
+// A player's look (0x6a71f0, every tick): if their model's materials have a certain flag (0x62c170 - looked up
+// once per model, from the materials as the render side has them: one PC can say yes where another says no, it
+// depends how far each PC's graphics had got), the game picks a random variation every so often for the model
+// (player +0x20f0 -> its node's +0x130, used nowhere else). That took one of the game's random numbers on one PC
+// only - every random thing after it came out different (a match went out of sync at a kill, the respawn spot
+// differed). Online that pick takes its own numbers instead; it's only looks.
+using Random01_t = float(__cdecl*)();
+const uintptr_t kRandom01 = 0x4f69a0;
+float __cdecl LookRandom() {
+    if (!Online()) return reinterpret_cast<Random01_t>(kRandom01)();
+    static unsigned s = 0x9e3779b9u ^ GetCurrentProcessId();
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    return (s >> 8) * (1.0f / 16777216.0f);
+}
+
 }  // namespace
 
 // netplay.cpp, the start of every session tick (game thread).
@@ -195,4 +212,6 @@ void InitLoadSync() {
              PatchCall(0x6a670d, kStartFlags, (void*)StartFlags) + PatchCall(0x67d2a7, kLoaderBusy, (void*)LoaderBusy) +
              PatchCall(0x9a8643, kLoaderBusy, (void*)LoaderBusy);
     Log(L"Online: level start-up waits for its loading in sessions (%d of 9 checks)", ok);
+    if (!PatchCall(0x6a724d, kRandom01, (void*)LookRandom))
+        Log(L"Online: the player look's random pick isn't what we expect - left as it is");
 }
