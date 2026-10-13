@@ -151,7 +151,7 @@ HRESULT STDMETHODCALLTYPE Hook_EnumAdapterModes(IDirect3D9* self, UINT adapter, 
     return D3D_OK;
 }
 
-// Best refresh rate the monitor really has at this size (prefers 60, else the highest).
+// The highest refresh rate the monitor really has at this size.
 UINT RealRefreshRate(UINT w, UINT h) {
     if (!g_d3d) return 0;
     UINT best = 0, count = Real_GetAdapterModeCount(g_d3d, g_adapter, D3DFMT_X8R8G8B8);
@@ -159,7 +159,6 @@ UINT RealRefreshRate(UINT w, UINT h) {
         D3DDISPLAYMODE m;
         if (FAILED(Real_EnumAdapterModes(g_d3d, g_adapter, D3DFMT_X8R8G8B8, i, &m))) continue;
         if (m.Width != w || m.Height != h) continue;
-        if (m.RefreshRate == 60) return 60;
         if (m.RefreshRate > best) best = m.RefreshRate;
     }
     return best;

@@ -69,6 +69,13 @@ Mode EffectiveMode() {
     return g_gameWindowed == 1 ? Mode::Windowed : Mode::Fullscreen;
 }
 
+// The window covers the monitor without a frame: borderless, and fullscreen too. Fullscreen is no longer
+// Direct3D's exclusive mode: that's refused on some PCs (and a refused switch left the device unusable), and
+// it ran at 60 frames (its vsync). Same look and speed as exclusive on Windows 10 / 11, instant alt-tab. The
+// difference: borderless renders at the monitor's own resolution, fullscreen at the one picked in Options
+// (stretched to the screen).
+bool Covering() { return g_mode == Mode::Borderless || g_mode == Mode::Fullscreen; }
+
 bool IsGameMainWindowClass(LPCWSTR cls) {
     return cls && !IS_INTRESOURCE(cls) && wcsstr(cls, L"GameWindow") != nullptr;
 }
@@ -100,7 +107,11 @@ LSTATUS WINAPI Hook_RegQueryValueExW(HKEY key, LPCWSTR name, LPDWORD reserved, L
             if (!g_envRes) { g_width = MonitorW(); g_height = MonitorH(); }
             Log(L"Display: online session - borderless instead of fullscreen");
         }
-        if (g_mode != Mode::Default) value = g_mode == Mode::Fullscreen ? 0 : 1;
+        if (g_mode == Mode::Default && !stored) {   // the game's own setting is fullscreen: ours
+            g_mode = Mode::Fullscreen;
+            Log(L"Display: the game's setting is fullscreen - a borderless window over the monitor");
+        }
+        if (g_mode != Mode::Default) value = 1;   // (always windowed for Direct3D, see Covering)
     } else if (_wcsicmp(name, L"ScreenWidth") == 0) {
         g_gameWidth = sizeOverride ? g_width : stored;
         if (sizeOverride) value = g_width;
@@ -222,7 +233,7 @@ LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
             // Otherwise it thinks the resolution changed, and its "keep this resolution?" timer
             // later reverts to the monitor size. Applies to SWP_NOSIZE messages too: they still
             // carry the current size, and the game reads it regardless of the flag.
-            if (g_mode == Mode::Borderless && lp && g_gameWidth > 0 && g_gameHeight > 0) {
+            if (Covering() && lp && g_gameWidth > 0 && g_gameHeight > 0) {
                 WINDOWPOS copy = *reinterpret_cast<WINDOWPOS*>(lp);
                 copy.cx = g_gameWidth;
                 copy.cy = g_gameHeight;
@@ -249,7 +260,7 @@ LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
 // cursor reads and cursor clipping are translated between the two: positions it reads are scaled to its
 // size, rectangles it clips the cursor to are scaled back up to the screen.
 bool CursorScaled() {
-    return g_mode == Mode::Borderless && g_gameWidth > 0 && g_gameHeight > 0 &&
+    return Covering() && g_gameWidth > 0 && g_gameHeight > 0 &&
            (g_gameWidth != MonitorW() || g_gameHeight != MonitorH());
 }
 
@@ -302,7 +313,7 @@ HWND WINAPI Hook_CreateWindowExW(DWORD ex, LPCWSTR cls, LPCWSTR title, DWORD sty
     bool main = !(style & WS_CHILD) && IsGameMainWindowClass(cls);
     if (main && (style & WS_CAPTION)) g_windowedStyle = (LONG)style;
     if (main && g_hidden) style &= ~WS_VISIBLE;
-    if (main && g_mode == Mode::Borderless) {
+    if (main && Covering()) {
         style = (style & ~kBorderStyles) | WS_POPUP;
         ex &= ~kBorderExStyles;
         x = g_monitor.left;
@@ -327,7 +338,7 @@ LONG WINAPI Hook_SetWindowLongW(HWND wnd, int index, LONG value) {
     if (wnd && wnd == g_mainWnd && (index == GWL_STYLE || index == GWL_EXSTYLE))
         Log(L"Window: game sets %s %08x (mode %s)", index == GWL_STYLE ? L"style" : L"exstyle", value,
             ModeName(g_mode));
-    if (g_mode == Mode::Borderless && wnd && wnd == g_mainWnd) {
+    if (Covering() && wnd && wnd == g_mainWnd) {
         if (index == GWL_STYLE) value = (value & ~kBorderStyles) | WS_POPUP;
         if (index == GWL_EXSTYLE) value &= ~kBorderExStyles;
     }
@@ -346,7 +357,7 @@ BOOL WINAPI Hook_SetWindowPos(HWND wnd, HWND after, int x, int y, int cx, int cy
     if (wnd && wnd == g_mainWnd)
         Log(L"Window: game moves window to %d,%d %dx%d flags %#x (mode %s)", x, y, cx, cy, flags, ModeName(g_mode));
     if (g_hidden && wnd && wnd == g_mainWnd) flags &= ~SWP_SHOWWINDOW;
-    if (g_mode == Mode::Borderless && wnd && wnd == g_mainWnd) {
+    if (Covering() && wnd && wnd == g_mainWnd) {
         x = g_monitor.left;
         y = g_monitor.top;
         cx = MonitorW();
@@ -362,7 +373,7 @@ decltype(&GetClientRect) Real_GetClientRect;
 
 BOOL WINAPI Hook_GetClientRect(HWND wnd, LPRECT rect) {
     // Borderless: the game sizes its rendering from this; keep it at the render size (see WM_SIZE).
-    if (g_mode == Mode::Borderless && wnd && wnd == g_mainWnd && rect && g_gameWidth > 0 && g_gameHeight > 0) {
+    if (Covering() && wnd && wnd == g_mainWnd && rect && g_gameWidth > 0 && g_gameHeight > 0) {
         SetRect(rect, 0, 0, g_gameWidth, g_gameHeight);
         return TRUE;
     }
@@ -371,12 +382,12 @@ BOOL WINAPI Hook_GetClientRect(HWND wnd, LPRECT rect) {
 
 BOOL WINAPI Hook_AdjustWindowRect(LPRECT rect, DWORD style, BOOL menu) {
     // The game uses this to grow its window for the border; borderless has none.
-    if (g_mode == Mode::Borderless) return TRUE;
+    if (Covering()) return TRUE;
     return Real_AdjustWindowRect(rect, style, menu);
 }
 
 LONG WINAPI Hook_ChangeDisplaySettingsW(DEVMODEW* mode, DWORD flags) {
-    if (g_mode == Mode::Borderless) {
+    if (Covering()) {
         Log(L"Display: blocked a display mode change (%s)", mode ? L"set mode" : L"restore");
         return DISP_CHANGE_SUCCESSFUL;
     }
@@ -398,7 +409,7 @@ void MakeDpiAware() {
 // flag doesn't change, so it won't do anything itself).
 void RestyleWindow(Mode to) {
     if (!g_mainWnd) return;
-    if (to == Mode::Borderless) {
+    if (to == Mode::Borderless || to == Mode::Fullscreen) {
         LONG style = (GetWindowLongW(g_mainWnd, GWL_STYLE) & ~kBorderStyles) | WS_POPUP | WS_VISIBLE;
         SetWindowLongW(g_mainWnd, GWL_STYLE, style);
         SetWindowLongW(g_mainWnd, GWL_EXSTYLE, GetWindowLongW(g_mainWnd, GWL_EXSTYLE) & ~kBorderExStyles);
@@ -462,7 +473,7 @@ bool DisplayMenuSelect(int index) {
                  : index == kMenuWindowed   ? Mode::Windowed
                                             : Mode::Fullscreen;
     Log(L"Display: menu choice %d (%s)", index, ModeName(g_menuChoice));
-    return g_menuChoice != Mode::Fullscreen;  // the game's own "windowed" flag
+    return true;  // the game's own "windowed" flag: always (fullscreen is ours too, see Covering)
 }
 
 void DisplayMenuApply() {
@@ -472,11 +483,9 @@ void DisplayMenuApply() {
     Log(L"Display: switching %s -> %s", ModeName(from), ModeName(to));
     g_mode = to;
     SaveMode(to);
-    // Windowed <-> borderless: same windowed flag for the game, so we restyle the window ourselves.
-    // Anything involving fullscreen: the menu goes on to call GRFX_ChangeResolution, and the game
-    // switches itself (with our hooks shaping the window if the target is borderless).
-    if (from != Mode::Fullscreen && to != Mode::Fullscreen && g_mainWnd)
-        PostMessageW(g_mainWnd, kRestyleMsg, static_cast<WPARAM>(to), 0);
+    // The game's windowed flag never changes (always windowed), so we restyle the window ourselves; the
+    // menu then calls GRFX_ChangeResolution for the size (borderless: the monitor's own).
+    if (g_mainWnd) PostMessageW(g_mainWnd, kRestyleMsg, static_cast<WPARAM>(to), 0);
 }
 
 void DisplayMenuReset() { g_menuChoice = Mode::Default; }
@@ -493,7 +502,7 @@ bool DisplayWindowRect(RECT* r) { return g_mainWnd && Real_GetWindowRect(g_mainW
 // After a Direct3D Reset (d3d9.cpp): leaving fullscreen, Direct3D puts back the window style it kept from
 // before - title bar and all, past our hooks. Borderless: take them off again.
 void DisplayAfterReset() {
-    if (g_mode != Mode::Borderless || !g_mainWnd) return;
+    if (!Covering() || !g_mainWnd) return;
     LONG style = GetWindowLongW(g_mainWnd, GWL_STYLE);
     if (!(style & kBorderStyles)) return;
     Log(L"Window: a title bar / frame came back (%08x) - borderless again", style);
@@ -515,12 +524,12 @@ void DisplayCheckStyle() {
     static int frames = 0;
     if (++frames < 30) return;
     frames = 0;
-    if (g_mode != Mode::Borderless || !g_mainWnd || g_hidden || !IsWindowVisible(g_mainWnd) || IsIconic(g_mainWnd))
+    if (!Covering() || !g_mainWnd || g_hidden || !IsWindowVisible(g_mainWnd) || IsIconic(g_mainWnd))
         return;
     LONG style = GetWindowLongW(g_mainWnd, GWL_STYLE);
     if (!(style & kBorderStyles)) return;
     Log(L"Window: borderless, but with a title bar / frame (%08x) - taking it off", style);
-    PostMessageW(g_mainWnd, kRestyleMsg, static_cast<WPARAM>(Mode::Borderless), 0);
+    PostMessageW(g_mainWnd, kRestyleMsg, static_cast<WPARAM>(g_mode), 0);
 }
 
 void DisplayHideWindow() {

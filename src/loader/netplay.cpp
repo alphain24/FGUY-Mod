@@ -1082,6 +1082,32 @@ void Tick() {
                 if (pos) pos[0] += 2.0f;
             }
     }
+    {   // test: FGUYMOD_TEST_DROP=<tick>:<player>,... - at that tick, on every PC, that player is dropped far below
+        // the level (falls out, dies, respawns: the respawn must come out the same everywhere)
+        static int drops = -1;
+        static unsigned dropTick[8];
+        static int dropPlayer[8];
+        if (drops < 0) {
+            drops = 0;
+            char env[128];
+            if (GetEnvironmentVariableA("FGUYMOD_TEST_DROP", env, sizeof(env))) {
+                char* ctx = nullptr;
+                for (char* t = strtok_s(env, ",", &ctx); t && drops < 8; t = strtok_s(nullptr, ",", &ctx))
+                    if (sscanf_s(t, "%u:%d", &dropTick[drops], &dropPlayer[drops]) == 2) ++drops;
+            }
+        }
+        for (int d = 0; d < drops; ++d)
+            if (g_inSession && g_tick == dropTick[d]) {
+                unsigned char* list[8];
+                int n = GamePlayers(list, 8);
+                for (int i = 0; i < n; ++i)
+                    if (*reinterpret_cast<int*>(list[i] + 0xdf8) == dropPlayer[d]) {
+                        float* pos = const_cast<float*>(PlayerPos(list[i]));
+                        if (pos) pos[1] -= 3000.0f;
+                        Log(L"Netplay: test - player %d dropped out of the level at tick %u", dropPlayer[d], g_tick);
+                    }
+            }
+    }
     KbmApply(kbm, g_players);  // keyboard / mouse players' devices, from their raw input (kbm.cpp)
     Real_QPC(&s1);
     {   // this PC's own pace: a second's worth of ticks, minus the waiting for the others' inputs

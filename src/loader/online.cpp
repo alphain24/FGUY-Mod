@@ -490,7 +490,19 @@ void StartSession(const std::vector<std::string>& f) {
     else WriteWholeFile(save, data);
 
     // Restart the game with the session's settings in its environment (netplay.cpp and the menu read them).
-    auto set = [](const wchar_t* k, const std::string& v) {
+    // They go into this game's own environment only for the start (the new process inherits it) and are put
+    // back right after: this game isn't the session - left there, its menus later took it for one (the
+    // session autopilot ran in the lobby game after an offline match, among others).
+    struct Saved { std::wstring name, value; bool had; };
+    std::vector<Saved> saved;
+    auto keep = [&saved](const wchar_t* k) {
+        for (auto& x : saved) if (x.name == k) return;
+        wchar_t old[4096];
+        DWORD n = GetEnvironmentVariableW(k, old, 4096);
+        saved.push_back({k, n && n < 4096 ? std::wstring(old, n) : std::wstring(), n > 0 && n < 4096});
+    };
+    auto set = [&keep](const wchar_t* k, const std::string& v) {
+        keep(k);
         SetEnvironmentVariableW(k, std::wstring(v.begin(), v.end()).c_str());
     };
     set(L"FGUYMOD_NET", "1");
@@ -505,6 +517,7 @@ void StartSession(const std::vector<std::string>& f) {
     if (GetEnvironmentVariableA("FGUYMOD_TEST_RATE", testRate, sizeof(testRate))) set(L"FGUYMOD_NET_RATE", testRate);
     set(L"FGUYMOD_NET_LANG", f[6]);
     set(L"FGUYMOD_SESSION", f[7] + "|" + f[8]);  // conf: mode,map,time,score,ff | picks: char:costume:team;...
+    keep(L"FGUYMOD_SAVEDIR");
     SetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", dirName);
     set(L"FGUYMOD_MY_SETTINGS", OnlineSettingsCapture());   // my own settings, not the host's save's
     std::string names;   // everyone's name by slot, for the match's notices ("Waiting for ...")
@@ -522,7 +535,7 @@ void StartSession(const std::vector<std::string>& f) {
     STARTUPINFOW si{sizeof(si)};
     PROCESS_INFORMATION pi{};
     BOOL started = CreateProcessW(exe, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, g_gameDir, &si, &pi);
-    SetEnvironmentVariableW(L"FGUYMOD_HANDOFF", nullptr);
+    for (auto& x : saved) SetEnvironmentVariableW(x.name.c_str(), x.had ? x.value.c_str() : nullptr);
     if (started) {
         Log(L"Online: session %S, slot %S of %S, input delay %S, %S %S - starting it hidden (new process %lu)",
             f[1].c_str(), f[2].c_str(), f[3].c_str(), f[4].c_str(), f[7].c_str(), f[8].c_str(), pi.dwProcessId);
