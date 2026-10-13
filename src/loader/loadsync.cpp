@@ -39,9 +39,30 @@ bool __cdecl SoundPreloadDone() {
     return reinterpret_cast<Check_t>(kSoundPreloadDone)();
 }
 
+// (research: the tick each check turns "yes" - every PC must log the same ticks)
+void NoteCheck(const wchar_t* what, bool now, bool* last) {
+    if (now && !*last && NetplayEnabled()) Log(L"Online: tick %u - %s: yes", NetplayTick(), what);
+    *last = now;
+}
+
+// 0x97fcd0 (this = 0xbadd60): both start-up flags at +0x402 / +0x403 (the second: the loading screen said
+// SetReadyForTermination). Only watched.
+using Flags_t = bool(__thiscall*)(void*);
+const uintptr_t kStartFlags = 0x97fcd0;
+bool __fastcall StartFlags(void* self, void*) {
+    static bool last = false;
+    bool r = reinterpret_cast<Flags_t>(kStartFlags)(self);
+    NoteCheck(L"start-up flags", r, &last);
+    return r;
+}
+
 bool __cdecl SoundBanksReady() {
+    static bool last = false;
     bool ready = reinterpret_cast<Check_t>(kSoundBanksReady)();
-    if (ready || !Online()) return ready;
+    if (ready || !Online()) {
+        NoteCheck(L"sound banks", ready, &last);
+        return ready;
+    }
     ULONGLONG from = GetTickCount64(), until = from + 5000;
     while (!ready && GetTickCount64() < until) {
         Sleep(1);
@@ -49,13 +70,105 @@ bool __cdecl SoundBanksReady() {
     }
     Log(L"Online: tick %u - waited %llu ms for the sound banks%s", NetplayTick(), GetTickCount64() - from,
         ready ? L"" : L" - NOT ready (gave up)");
+    NoteCheck(L"sound banks", ready, &last);
     return ready;
+}
+
+// The game's file reads: 0x484be0(handle) -> 0 none, 1 queued, 2 reading, 3 done, 4 failed (from the loader's
+// slots, 0x4d88d0). Asked by the package loading progress (0x582ff0) and two more. Still queued / reading: wait
+// for it (the reads are done by the loader's own thread). Should a wait ever not end, the reads need this thread
+// after all - no more waiting this match (it would only stall).
+using LoadState_t = int(__cdecl*)(DWORD handle);
+const uintptr_t kLoadState = 0x484be0;
+bool g_loadWaitBroken = false;
+
+int __cdecl LoadState(DWORD handle) {
+    int state = reinterpret_cast<LoadState_t>(kLoadState)(handle);
+    if ((state != 1 && state != 2) || g_loadWaitBroken || !Online()) return state;
+    ULONGLONG from = GetTickCount64(), until = from + 5000;
+    while ((state == 1 || state == 2) && GetTickCount64() < until) {
+        Sleep(1);
+        state = reinterpret_cast<LoadState_t>(kLoadState)(handle);
+    }
+    static int logged = 0;
+    if (state == 1 || state == 2) {
+        g_loadWaitBroken = true;
+        Log(L"Online: tick %u - a file read didn't finish in 5 s while waiting - not waiting for reads any more",
+            NetplayTick());
+    } else if (++logged <= 20) {
+        Log(L"Online: tick %u - waited %llu ms for a file read", NetplayTick(), GetTickCount64() - from);
+    }
+    return state;
+}
+
+// The menus' movies: the game thread's UI manager (0x416220, each tick) hands each new movie to the render thread
+// to load (flags +0x18: bit 0 loading, bit 1 loaded; done in 0x443fc0 while that frame is drawn). The game then
+// starts the movie the first tick it sees it loaded - one tick or the next, depending on how quick the render
+// thread is. So at the start of each session tick: a movie still loading is waited for (the render thread is on
+// the previous tick's frame then, on its own).
+void* volatile g_uiManager = nullptr;
+extern "C" void __stdcall NoteUiManager(void* m) { g_uiManager = m; }
+
+__declspec(naked) void UiManagerStub() {
+    __asm {
+        pushad
+        push ecx
+        call NoteUiManager
+        popad
+        push ebp
+        mov ebp, esp
+        sub esp, 8
+        push 0x416226
+        ret
+    }
+}
+
+bool MovieLoading(unsigned char* manager) {
+    auto head = manager + 0xc;
+    int guard = 0;
+    for (auto node = *reinterpret_cast<unsigned char**>(manager + 0x10); node && node != head && guard < 256;
+         node = *reinterpret_cast<unsigned char**>(node + 4), ++guard) {
+        auto entry = *reinterpret_cast<unsigned char**>(node + 8);
+        if (entry && (*reinterpret_cast<volatile unsigned char*>(entry + 0x18) & 3) == 1) return true;
+    }
+    return false;
+}
+
+bool PatchStart(uintptr_t at, const unsigned char* expected, size_t n, void* to) {
+    auto b = reinterpret_cast<unsigned char*>(at);
+    if (memcmp(b, expected, n) != 0) return false;
+    DWORD old;
+    VirtualProtect(b, n, PAGE_EXECUTE_READWRITE, &old);
+    b[0] = 0xE9;
+    *reinterpret_cast<int*>(b + 1) = (int)(reinterpret_cast<uintptr_t>(to) - (at + 5));
+    for (size_t i = 5; i < n; ++i) b[i] = 0x90;
+    VirtualProtect(b, n, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), b, n);
+    return true;
 }
 
 }  // namespace
 
+// netplay.cpp, the start of every session tick (game thread).
+void LoadSyncTickStart() {
+    auto manager = static_cast<unsigned char*>(g_uiManager);
+    if (!manager || !MovieLoading(manager)) return;
+    ULONGLONG from = GetTickCount64(), until = from + 3000;
+    while (MovieLoading(manager) && GetTickCount64() < until) Sleep(1);
+    static int logged = 0;
+    if (++logged <= 30)
+        Log(L"Online: tick %u - waited %llu ms for a menu movie to load%s", NetplayTick(), GetTickCount64() - from,
+            MovieLoading(manager) ? L" - still loading (gave up)" : L"");
+}
+
 void InitLoadSync() {
+    static const unsigned char kUiManagerStart[] = {0x55, 0x8b, 0xec, 0x83, 0xec, 0x08};
+    if (!PatchStart(0x416220, kUiManagerStart, sizeof(kUiManagerStart), (void*)UiManagerStub))
+        Log(L"Online: the UI manager isn't what we expect - menu movies not waited for");
     int ok = PatchCall(0x6a66ac, kSoundPreloadDone, (void*)SoundPreloadDone) +
-             PatchCall(0x6a66e9, kSoundBanksReady, (void*)SoundBanksReady);
-    Log(L"Online: level start-up waits for its loading in sessions (%d of 2 checks)", ok);
+             PatchCall(0x6a66e9, kSoundBanksReady, (void*)SoundBanksReady) +
+             PatchCall(0x583021, kLoadState, (void*)LoadState) + PatchCall(0x6085f1, kLoadState, (void*)LoadState) +
+             PatchCall(0x608680, kLoadState, (void*)LoadState) + PatchCall(0x6a66d6, kStartFlags, (void*)StartFlags) +
+             PatchCall(0x6a670d, kStartFlags, (void*)StartFlags);
+    Log(L"Online: level start-up waits for its loading in sessions (%d of 7 checks)", ok);
 }

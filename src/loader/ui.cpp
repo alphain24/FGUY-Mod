@@ -12,6 +12,7 @@
 // Addresses are for the retail PC exe (SHA-256 E4BCD19E...); each slot is checked before patching.
 
 #include "common.h"
+#include <intrin.h>
 
 #include <cstdio>
 #include <cstring>
@@ -166,9 +167,21 @@ void* __fastcall Hook_OpenFile(void* self, void*, const char* url, int flags, in
     if (!file || !url) return file;
     auto bytes = reinterpret_cast<unsigned char*>(file);
     std::lock_guard<std::mutex> lock(g_openLock);
-    if (g_seenFiles.insert(url).second)
-        Log(L"UI: game opens \"%S\" (file type %#x, %d bytes)", url, *reinterpret_cast<unsigned*>(file),
-            *reinterpret_cast<int*>(bytes + kMemFileLen));
+    if (g_seenFiles.insert(url).second || NetplayEnabled())
+        Log(L"UI: game opens \"%S\" (file type %#x, %d bytes) - tick %u, thread %lu%s", url,
+            *reinterpret_cast<unsigned*>(file), *reinterpret_cast<int*>(bytes + kMemFileLen), NetplayTick(),
+            GetCurrentThreadId(), GetCurrentThreadId() == NetplayGameThread() ? L" (game thread)" : L"");
+    static int stacks = 0;   // research: who loads the menus' movies
+    if (NetplayEnabled() && stacks < 3 && strstr(url, "main_menu")) {
+        ++stacks;
+        const DWORD* sp = reinterpret_cast<const DWORD*>(_AddressOfReturnAddress());
+        const DWORD* top = reinterpret_cast<const DWORD*>(reinterpret_cast<NT_TIB*>(NtCurrentTeb())->StackBase);
+        wchar_t line[1024];
+        int len = swprintf_s(line, L"UI: movie load callers:");
+        for (int i = 0, found = 0; sp + i < top && i < 4000 && found < 40 && len < 980; ++i)
+            if (sp[i] >= 0x401000 && sp[i] < 0x9f0000) { len += swprintf_s(line + len, 1024 - len, L" %#lx", sp[i]); ++found; }
+        Log(L"%s", line);
+    }
     if (*reinterpret_cast<uintptr_t*>(file) != kMemoryFileVtable) return file;
     unsigned char*& data = *reinterpret_cast<unsigned char**>(bytes + kMemFileData);
     int& length = *reinterpret_cast<int*>(bytes + kMemFileLen);
@@ -293,6 +306,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnString(movie, OnlinePauseCursor());
         } else if (strcmp(fn, "PauseQuitDone") == 0) {
             OnlinePauseQuitDone();
+        } else if (strcmp(fn, "TestShowDamageFx") == 0) {   // test tools: the HUD shows its damage frame (screenshots)
+            ReturnBool(movie, SettingInt(L"Debug", L"ShowDamageFx", L"FGUYMOD_TEST_DAMAGEFX", 0) != 0);
         } else if (strcmp(fn, "Now") == 0) {   // real milliseconds (a match copy's getTimer() is off: the fixed clock)
             ReturnNumber(movie, (double)GetTickCount64());
         } else if (strcmp(fn, "OnlineMatch") == 0) {   // the game's pause menu (pause patch): an online match?
@@ -335,7 +350,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         }
         return;
     }
-    if (name && g_seenCalls.insert(name).second) Log(L"UI: menu calls %S (%u args)", name, argc);
+    if (name && g_seenCalls.insert(name).second) {
+        if (NetplayEnabled()) Log(L"UI: menu calls %S (%u args) - tick %u", name, argc, NetplayTick());
+        else Log(L"UI: menu calls %S (%u args)", name, argc);
+    }
     // The Screen page reads the real settings when it opens (and again after OK, once our apply has
     // already run), so a choice left over from backing out without OK is dropped here.
     if (name && strcmp(name, "GRFX_IsWindowed") == 0) DisplayMenuReset();
@@ -367,12 +385,24 @@ using Command_t = void(__fastcall*)(void* self, void* edx, void* movie, const ch
 Command_t Real_Command = nullptr;
 
 void __fastcall Hook_Command(void* self, void* edx, void* movie, const char* command, const char* args) {
-    if (command && (strncmp(command, "CTRL_", 5) == 0 || strncmp(command, "GAME_", 5) == 0)) {
+    if (command && (strncmp(command, "CTRL_", 5) == 0 || strncmp(command, "GAME_", 5) == 0 || NetplayEnabled())) {
         static int logged = 0;
-        if (logged < 200) {
+        if (logged < 200 || NetplayEnabled()) {   // (online: every one, with its tick - the same on every PC)
             ++logged;
-            Log(L"UI: command %S(%S), buttons %s", command, args ? args : "",
-                self && !IsBadReadPtr(static_cast<char*>(self) + 0x60, 1) && static_cast<char*>(self)[0x60] ? L"on" : L"off");
+            Log(L"UI: command %S(%S), buttons %s%s", command, args ? args : "",
+                self && !IsBadReadPtr(static_cast<char*>(self) + 0x60, 1) && static_cast<char*>(self)[0x60] ? L"on" : L"off",
+                NetplayEnabled() ? (std::wstring(L" - tick ") + std::to_wstring(NetplayTick())).c_str() : L"");
+        }
+        static int stacks = 0;   // research: from where the menus' commands come (which thread, which call)
+        if (NetplayEnabled() && stacks < 2) {
+            ++stacks;
+            const DWORD* sp = reinterpret_cast<const DWORD*>(_AddressOfReturnAddress());
+            const DWORD* top = reinterpret_cast<const DWORD*>(reinterpret_cast<NT_TIB*>(NtCurrentTeb())->StackBase);
+            wchar_t line[1024];
+            int len = swprintf_s(line, L"UI: command from thread %lu, callers:", GetCurrentThreadId());
+            for (int i = 0, found = 0; sp + i < top && i < 3000 && found < 40 && len < 980; ++i)
+                if (sp[i] >= 0x401000 && sp[i] < 0x9f0000) { len += swprintf_s(line + len, 1024 - len, L" %#lx", sp[i]); ++found; }
+            Log(L"%s", line);
         }
     }
     Real_Command(self, edx, movie, command, args);

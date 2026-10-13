@@ -67,9 +67,10 @@ def build(data):
         vp = r['ViewportIndex']
         return A.store(vp, A.Code(A.external('FGUYMOD_HudViewport', Reg(vp)), A.op('ToNumber')))
 
-    # (the online pause menu starts with the HUD's first layout; offline its poll finds nothing to do)
+    # (the online pause menu starts with the HUD's first layout; offline its poll finds nothing to do; and the
+    #  damage frame is stretched to the screen's width - offline too: it's a plain bug fix)
     insert_at_start(p, data, actions, 'SetSplitScreenModeInternal',
-                    lambda r: split_mode(r) + A.Code(A.call('FGUYPauseStart')))
+                    lambda r: split_mode(r) + A.Code(A.call('FGUYPauseStart')) + A.Code(A.call('FGUYFitDamageFx')))
     o, _ = function_at(data, actions, 'SetSplitScreenModeInternal')
     p.replace(o, 0, as2c.compile_source(open(PAUSE_SOURCE, encoding='utf-8').read()))
     # The game hands the HUD real viewport numbers in many places (and the HUD stores them), so they

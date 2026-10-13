@@ -14,7 +14,7 @@ for ($r = 1; $r -le $Runs; $r++) {
         Where-Object { Select-String $_ -Pattern "frames per second in the match" -Quiet })
     $ticks = @()
     foreach ($f in $sess) {
-        $v = Select-String $f -Pattern "the players' views start at tick (\d+)" | Select-Object -First 1
+        $v = Select-String $f -Pattern "the players' views start at tick (\d+)" | Select-Object -Last 1   # (the first: the boot scene's)
         $w = (Select-String $f -Pattern "Online: tick \d+ - waited" | ForEach-Object { $_.Line -replace '^\S+ ', '' }) -join '; '
         $late = @(Select-String $f -Pattern "DESYNC at tick (\d+)" | Where-Object { [int]$_.Matches[0].Groups[1].Value -gt 1000 }).Count
         $t = if ($v) { [int]$v.Matches[0].Groups[1].Value } else { -1 }

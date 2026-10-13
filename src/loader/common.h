@@ -72,7 +72,8 @@ void NetplaySessionPress(int pad, WORD buttons, int delayTicks);  // session aut
 void NetplaySessionLevel();            //   the menu launched the level
 void NetplayLeave(const wchar_t* why); //   leave the session (back to the lobby): run on our own
 bool NetplaySessionReturn();           //   the menus: the match is over - back to the lobby (leaves the session)
-void InitLoadSync();                   // online: level start-up the same tick on every PC (loadsync.cpp)
+void InitLoadSync();
+void LoadSyncTickStart();              //   each session tick: wait for menu movies still loading                   // online: level start-up the same tick on every PC (loadsync.cpp)
 DWORD NetplayGameThread();             //   the game logic thread (netplay.cpp)
 void InitRngTrace();
 void CamDump(unsigned tick);           // research: players' cameras every tick (rngtrace.cpp)

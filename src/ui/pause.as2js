@@ -10,10 +10,15 @@ function FGUYPauseStart() {
     _root.FGUYPauseRunning = true;
     FGUYPauseLast = '';
     FGUYPauseQuitting = false;
+    FGUYFitCount = 0;
     FGUYPauseTimer = setInterval(FGUYPausePoll, 33);
 }
 
 function FGUYPausePoll() {
+    if (++FGUYFitCount >= 15) {   // (twice a second: the HUD may have moved the damage frame again)
+        FGUYFitCount = 0;
+        FGUYFitDamageFx();
+    }
     var s = flash.external.ExternalInterface.call('FGUYMOD_PauseMenu');
     if (s == undefined) return;   // not the loader we know (or offline): nothing to do
     s = String(s);
@@ -35,6 +40,38 @@ function FGUYPausePoll() {
         ui.pointer._visible = c[2] == '1';
         ui.pointer._x = r.x + Number(c[0]) / 10000 * r.w;
         ui.pointer._y = r.y + Number(c[1]) / 10000 * r.h;
+    }
+}
+
+// The damage frame (Icon_DamageFx_<viewport>_<layout>_<player>: frost, fire, acid, electric, disintegrate) is
+// drawn for the movie's 4:3 stage (960x720) and isn't in the HUD's widescreen list, so on a wider screen it
+// covered only the middle. Stretched across the visible width, from where the movie put it (kept, so it's never
+// stretched twice). Called when the HUD lays out, and twice a second (the HUD may move it again).
+function FGUYFitDamageFx() {
+    var r = FGUYPauseRect();
+    var f = r.w / 960;
+    var layouts = [0, 1, 2, 4];
+    var test = flash.external.ExternalInterface.call('FGUYMOD_TestShowDamageFx') == true;
+    for (var v = 0; v < 4; v++) {
+        for (var l = 0; l < layouts.length; l++) {
+            for (var p = 0; p < 4; p++) {
+                var mc = _root['Icon_DamageFx_' + v + '_' + layouts[l] + '_' + p];
+                if (mc == undefined) continue;
+                if (mc.fguyX0 == undefined) {
+                    mc.fguyX0 = mc._x;
+                    mc.fguyXScale0 = mc._xscale;
+                }
+                mc._x = r.x + mc.fguyX0 * f;
+                mc._xscale = mc.fguyXScale0 * f;
+                if (test) {   // (test screenshots: show it - frost, half-way through)
+                    mc._visible = true;
+                    mc._alpha = 100;
+                    mc.gotoAndStop(1);
+                    mc.FX.gotoAndStop(44);
+                    flash.external.ExternalInterface.call('FGUYMOD_HudDebug', 'dfx shown Icon_DamageFx_' + v + '_' + layouts[l] + '_' + p + ' x/xscale/x0', mc._x, mc._xscale, mc.fguyX0);
+                }
+            }
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-// The game's random numbers (research: what makes two PCs' matches drift apart).
+﻿// The game's random numbers (research: what makes two PCs' matches drift apart).
 //
 // One Mersenne Twister for the whole game: state at 0xb09360 (624 words), the next word's address at 0xb09358,
 // words left before the next refill at 0xada67c. Four functions hand out numbers, each starting by counting
@@ -14,6 +14,7 @@
 #include "common.h"
 
 #include <cstdio>
+#include <intrin.h>
 
 DWORD NetplayGameThread();
 
@@ -33,6 +34,24 @@ extern "C" void __cdecl RngRecord(DWORD caller, DWORD which) {
             DWORD entry[2] = {NetplayTick(), caller | (which << 28)};
             fwrite(entry, sizeof(entry), 1, g_trace);
             if (entry[0] >= lastFlush + 60) { lastFlush = entry[0]; fflush(g_trace); }   // (test copies get killed)
+        }
+        // FGUYMOD_RNGSTACK=<hex caller>: who gets there (the game addresses up the stack), the first 3 times
+        static DWORD stackCaller = 0xffffffff;
+        static int stacks = 0;
+        if (stackCaller == 0xffffffff) {
+            wchar_t v[32] = L"";
+            SettingString(L"Debug", L"RngStack", L"FGUYMOD_RNGSTACK", L"", v, 32);
+            stackCaller = v[0] ? wcstoul(v, nullptr, 16) : 0;
+        }
+        if (stackCaller && caller == stackCaller && stacks < 3) {
+            ++stacks;
+            const DWORD* sp = reinterpret_cast<const DWORD*>(_AddressOfReturnAddress());
+            const DWORD* top = reinterpret_cast<const DWORD*>(reinterpret_cast<NT_TIB*>(NtCurrentTeb())->StackBase);
+            wchar_t line[1024];
+            int len = swprintf_s(line, L"Rng: tick %u, %#lx called from:", NetplayTick(), caller);
+            for (int i = 0, found = 0; sp + i < top && i < 1500 && found < 30 && len < 980; ++i)
+                if (sp[i] >= 0x401000 && sp[i] < 0x9f0000) { len += swprintf_s(line + len, 1024 - len, L" %#lx", sp[i]); ++found; }
+            Log(L"%s", line);
         }
         return;
     }

@@ -1065,6 +1065,7 @@ void Tick() {
         }
     }
     if (g_inSession) OnlineSettingsApply(kbm, g_players);   // everyone's own aim settings (onlinesettings.cpp)
+    if (g_inSession) LoadSyncTickStart();   // menus' movies loaded the same tick everywhere (loadsync.cpp)
     if (g_inSession) CamDump(g_tick);   // research (FGUYMOD_CAMDUMP, rngtrace.cpp)
     if (g_inSession) {   // (the level's start-up must reach this the same tick on every PC - loadsync.cpp)
         static bool viewsOn = false;
