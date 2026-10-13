@@ -186,7 +186,8 @@ const unsigned char kIsVerticalSplitStart[] = {0x83, 0x3d, 0x60, 0x3e, 0xb5, 0x0
 // coordinates with an offset/scale per split layout, from the viewport count. Online the HUD is the 4-way
 // one (zoomed into my quarter), so its count call answers 4 (display only).
 const uintptr_t kMarkerCountCall = 0x97b885, kGetViewportCount = 0x625fe0;
-int __cdecl MarkerViewportCount() { return MyViewport() >= 0 ? 4 : Count(); }
+bool g_markerFull = false;   // (my own view's markers: mapped as one full-screen view, see Hook_MarkerToHud)
+int __cdecl MarkerViewportCount() { return g_markerFull ? 1 : MyViewport() >= 0 ? 4 : Count(); }
 
 // The game makes those markers per viewing player (0x9909a0: find the viewer, project the point with their
 // viewport's camera, then 0x97b880 maps it into HUD space). Full screen, the other viewers' markers would
@@ -194,12 +195,22 @@ int __cdecl MarkerViewportCount() { return MyViewport() >= 0 ? 4 : Count(); }
 // 0x97b880: bool __thiscall (float* screenPoint, int viewport, float* hudOut)  ret 0xc; called once.
 const uintptr_t kMarkerToHudCall = 0x990af7, kMarkerToHud = 0x97b880;
 using MarkerToHud_t = void(__thiscall*)(void* hud, float* point, int viewport, float* out);
+// My own view's markers (name tags over the others' heads): mapped as if mine were the only view - the whole
+// screen, as in single player. (Mapped into my quarter of the 4-way layout they sat in the middle of the screen's
+// top-left quarter, wherever the heads were: the markers' own layer isn't zoomed with the HUD.) The other views'
+// markers go off screen.
 void __fastcall Hook_MarkerToHud(void* hud, void*, float* point, int viewport, float* out) {
-    reinterpret_cast<MarkerToHud_t>(kMarkerToHud)(hud, point, viewport, out);
     int mine = MyViewport();
+    if (mine >= 0 && viewport == mine) {
+        g_markerFull = true;
+        reinterpret_cast<MarkerToHud_t>(kMarkerToHud)(hud, point, viewport, out);
+        g_markerFull = false;
+        return;
+    }
+    reinterpret_cast<MarkerToHud_t>(kMarkerToHud)(hud, point, viewport, out);
     if (mine >= 0 && viewport != mine) {
         point[0] = point[1] = -10000.0f;
-        out[0] = out[1] = -10000.0f;
+        if (out) out[0] = out[1] = -10000.0f;
     }
 }
 

@@ -111,13 +111,19 @@ function FGUYHudZoom() {
             }
         }
     }
+    FGUYPauseUnzoom();
+}
+
+// Our pause menu is drawn in whole-screen units: zoomed back (here, and right after each redraw - a new menu
+// showed zoomed into the quarter for a frame each time you moved in it).
+function FGUYPauseUnzoom() {
     var ui = _root.FGUYPauseUI;
-    if (ui != undefined) {
-        ui._xscale = 100 / z;
-        ui._yscale = 100 / z;
-        ui._x = -_root._x / z;
-        ui._y = -_root._y / z;
-    }
+    if (ui == undefined || !FGUYZoomed) return;
+    var z = _root._xscale / 100;
+    ui._xscale = 100 / z;
+    ui._yscale = 100 / z;
+    ui._x = -_root._x / z;
+    ui._y = -_root._y / z;
 }
 
 // Research (FGUYMOD_TEST_HUDDUMP=1): where the HUD's own layout has put every element, a second into the level.
@@ -160,6 +166,7 @@ function FGUYPausePoll() {
     if (s != FGUYPauseLast) {
         FGUYPauseLast = s;
         FGUYPauseDraw(f);
+        FGUYPauseUnzoom();
     }
     var c = String(flash.external.ExternalInterface.call('FGUYMOD_PauseCursor')).split('|');
     var ui = _root.FGUYPauseUI;

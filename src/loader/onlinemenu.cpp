@@ -110,10 +110,31 @@ void OnlineMenuTurnPreview(float radians) {
 
 namespace {
 
+// The preview's own controls switched off on the ONLINE screens: its input object ([player +0x101c],
+// zPlayerInputHuman) answers every key / button / stick question "not pressed" while its +0x38 is set (every one
+// of those queries checks it first, 0x5bd310...). A / D / the arrows walked it a step before (put back a moment
+// later - you saw the step). The menus read the keyboard elsewhere; Q / E turn it directly (OnlineMenuTurnPreview).
+unsigned char* g_blockedInput = nullptr;
+unsigned char g_blockedWas = 0;
+void BlockPreviewInput(unsigned char* player) {
+    unsigned char* input = player ? *reinterpret_cast<unsigned char**>(player + 0x101c) : nullptr;
+    if (input && IsBadWritePtr(input + 0x38, 1)) input = nullptr;
+    if (input != g_blockedInput) {
+        if (g_blockedInput && !IsBadWritePtr(g_blockedInput + 0x38, 1)) g_blockedInput[0x38] = g_blockedWas;
+        g_blockedInput = input;
+        if (input) {
+            g_blockedWas = input[0x38];
+            Log(L"Online: the preview's own controls off");
+        }
+    }
+    if (input) input[0x38] = 1;
+}
+
 // Every frame on the ONLINE screens: undo the Store's own small turns (A / D / arrows / the stick).
 void HoldPreview() {
     unsigned char* p;
     float* yaw = PreviewYaw(&p);
+    BlockPreviewInput(yaw ? p : nullptr);
     if (!yaw) {
         g_yawPlayer = nullptr;
         return;
@@ -161,7 +182,10 @@ void HoldPreview() {
 
 // d3d9.cpp, every frame: Q / E held on the ONLINE screens turn the preview (about half a turn a second).
 void OnlineMenuFrame() {
-    if (!g_open || NetplayEnabled()) return;
+    if (!g_open || NetplayEnabled()) {
+        if (g_blockedInput) BlockPreviewInput(nullptr);   // (left the ONLINE screens: its controls as they were)
+        return;
+    }
     HoldPreview();
     if (!g_menuWnd || GetForegroundWindow() != g_menuWnd) return;
     static LARGE_INTEGER last = {}, freq = {};
