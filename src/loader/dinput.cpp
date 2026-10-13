@@ -2,7 +2,7 @@
 //
 // The game creates its keyboard/mouse devices through the dinput8.dll we replace. Fullscreen games
 // commonly pass DISCL_NOWINKEY to SetCooperativeLevel, which disables the Windows key while the game
-// is in front. In windowed and borderless modes we drop that flag so the Start menu works.
+// is in front. We drop that flag so the Start menu works (the game never runs exclusive fullscreen).
 //
 // During netplay every input must come through the netplay layer (so all PCs see the same thing), so
 // DirectInput devices (keyboard, mouse, DirectInput pads) report nothing to the game.
@@ -71,7 +71,9 @@ const wchar_t* DeviceName(REFGUID guid) {
 
 HRESULT STDMETHODCALLTYPE Hook_SetCooperativeLevel(void* self, HWND wnd, DWORD flags) {
     DWORD newFlags = flags;
-    if (g_allowWinKeySetting && DisplayIsWindowed()) newFlags &= ~DISCL_NOWINKEY;
+    // Every mode: our "fullscreen" is a window covering the screen too (display.cpp), and the game sets this
+    // once at start - starting in fullscreen and switching to borderless kept the Windows key blocked.
+    if (g_allowWinKeySetting) newFlags &= ~DISCL_NOWINKEY;
     Log(L"Input: SetCooperativeLevel flags %#lx%s", flags,
         newFlags != flags ? L" -> Windows key allowed" : L"");
     return Real_SetCooperativeLevel(self, wnd, newFlags);
