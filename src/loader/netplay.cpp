@@ -1,4 +1,4 @@
-﻿// Netplay core: lockstep input sync.
+// Netplay core: lockstep input sync.
 //
 // Every peer runs the same game. Each peer owns one player slot (= one virtual XInput pad). Every game
 // tick, each peer sends its pad state for (tick + InputDelay) to the others and waits until it has every
@@ -1051,7 +1051,7 @@ const int kPaceSteps[] = {240, 200, 165, 144, 120, 100, 90, 80, 72, 60, 50, 45, 
 
 // This PC's pace from its last stretch of ticks: `perSecond` = ticks it could do a second, by its own work.
 // Down at once when it can't keep up. Up only one step at a time, with room spare, after 2 s at the same rate -
-// and not back to a rate it just couldn't hold (for 20 s): a slower rate leaves the graphics card idle time, so
+// and not back to a rate it just couldn't hold (for a minute: each try that fails is a hitch): a slower rate leaves the graphics card idle time, so
 // the PC looks quicker there than it is at the higher rate (it went 144 -> 100 -> 144 -> 100 ... before).
 void NotePace(double perSecond) {
     static double smooth = 0;
@@ -1073,7 +1073,7 @@ void NotePace(double perSecond) {
     if (want == now && g_paceMine) return;
     if (want < now && g_paceMine) {   // this rate didn't hold: don't come back to it for a while
         ceiling = now;
-        ceilingUntil = nowMs + 20000;
+        ceilingUntil = nowMs + 60000;
     }
     static int logged = 0;
     if (g_inSession && g_rateFollows && ++logged <= 40)
