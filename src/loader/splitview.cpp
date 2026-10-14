@@ -39,6 +39,7 @@ const uintptr_t kViewportCount = 0xb53e60;
 const uintptr_t kRectImm = 0x4db0e3, kRectFn = 0x403480;      // imm32 inside "mov [eax+1C], 0x403480"
 const uintptr_t kEnableImm = 0x4d188d, kEnableFn = 0x476390;  // imm32 inside "mov [eax+10], 0x476390"
 const int kMaxViewports = 4;
+bool g_menuWatch = false;   // (research: log the menus' view 0 changes once the ONLINE screens have been used)
 
 using Rect_t = void(__thiscall*)(void* camera, float x, float y, float w, float h);
 using Enable_t = void(__thiscall*)(void* camera, int on);
@@ -108,6 +109,9 @@ void SqueezeOthers(int mine) {
 void __fastcall Hook_Rect(void* camera, void*, float x, float y, float w, float h) {
     int v = ViewportOf(camera), mine = v >= 0 ? MyViewport() : -1;
     if (mine < 0) {
+        static int logged = 0;   // (research: the menus' own view rectangles - the main menu's black 3D)
+        if (v == 0 && g_menuWatch && ++logged <= 30)
+            Log(L"SplitView: the game sets view 0's rectangle %.3f %.3f %.3f %.3f", x, y, w, h);
         Real_Rect(camera, x, y, w, h);
         return;
     }
@@ -122,6 +126,9 @@ void __fastcall Hook_Rect(void* camera, void*, float x, float y, float w, float 
 }
 
 void __fastcall Hook_Enable(void* camera, void*, int on) {
+    static int logged = 0;
+    if (ViewportOf(camera) == 0 && g_menuWatch && ++logged <= 30)
+        Log(L"SplitView: the game turns view 0 %s", (on & 0xff) ? L"on" : L"off");
     Real_Enable(camera, on & 0xff);  // every view stays as the game wants it (see SqueezeOthers)
 }
 
@@ -360,7 +367,35 @@ int SplitViewHudZoomViewport() { return g_active ? MyPlayerViewport() : -1; }
 // fractions of the screen; the lobby keeps the screen's shape, so the picture isn't stretched) and back to
 // the whole screen when it closes. The rest of the screen is covered by the lobby.
 void SplitViewMenuRect(float left, float top, float right, float bottom) {
+    g_menuWatch = true;
     for (int k = 0; k < 2; ++k) Real_Rect(Camera(0, k), left, top, right, bottom);
+}
+
+// Leaving the ONLINE screens (online.cpp): how the menus' view 0 stands a moment later (research: the main menu's
+// 3D went black after going in and out quickly with Esc) - and if it's still the lobby's panel, the whole screen.
+void SplitViewMenuCheck() {
+    CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
+        for (int pass = 0; pass < 2; ++pass) {
+            Sleep(pass ? 2500 : 600);
+            auto c = static_cast<unsigned char*>(Camera(0, 0));
+            const float* r = reinterpret_cast<const float*>(c + 0x34);
+            Log(L"SplitView: after ONLINE (%.1f s): view 0 %.3f %.3f %.3f %.3f, %s", pass ? 3.1 : 0.6, r[0], r[1], r[2],
+                r[3], c[0x1e] ? L"on" : L"off");
+            if (!pass || NetplayEnabled()) continue;
+            if (r[0] != 0 || r[1] != 0 || r[2] != 1 || r[3] != 1) {
+                Log(L"SplitView: view 0 still in the lobby's panel - the whole screen again");
+                for (int k = 0; k < 2; ++k) Real_Rect(Camera(0, k), 0, 0, 1, 1);
+            }
+            for (int k = 0; k < 2; ++k) {   // (the camera's own switch, 0x476390: +0x1e, and +0x294 "changed")
+                auto cam = static_cast<unsigned char*>(Camera(0, k));
+                if (cam[0x1e]) continue;
+                Log(L"SplitView: view 0 (camera %d) left off - on again", k);
+                cam[0x1e] = 1;
+                if (*reinterpret_cast<int*>(cam + 0x290)) cam[0x294] = 1;
+            }
+        }
+        return 0;
+    }, nullptr, 0, nullptr));
 }
 
 void InitSplitView() {

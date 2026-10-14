@@ -621,6 +621,7 @@ void OnlineEnter() {
 
 void OnlineExit() {
     OnlineMenuOpen(false);
+    SplitViewMenuCheck();
     {
         std::lock_guard<std::mutex> lock(g_lock);
         if (g_state == State::Starting) return;
