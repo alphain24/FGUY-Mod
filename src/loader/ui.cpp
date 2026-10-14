@@ -306,6 +306,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnString(movie, OnlinePauseMenu());
         } else if (strcmp(fn, "PauseCursor") == 0) {
             ReturnString(movie, OnlinePauseCursor());
+        } else if (strcmp(fn, "DeathMouse") == 0) {   // (my death menu's buttons) -> the pointer
+            ReturnString(movie, OnlinePauseDeathMouse(ArgString(args, argc, 0)));
+        } else if (strcmp(fn, "MyPlayer") == 0) {     // online: my player's index (-1: not yet)
+            ReturnNumber(movie, NetplayEnabled() ? NetplayLocalSlot() : -1);
         } else if (strcmp(fn, "PauseQuitDone") == 0) {
             OnlinePauseQuitDone();
         } else if (strcmp(fn, "TestHudDump") == 0) {   // research: the HUD logs where its elements are (pause.as2js)

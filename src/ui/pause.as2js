@@ -176,6 +176,75 @@ function FGUYPausePoll() {
         ui.pointer._x = r.x + Number(c[0]) / 10000 * r.w;
         ui.pointer._y = r.y + Number(c[1]) / 10000 * r.h;
     }
+    FGUYDeathMouse();
+}
+
+// Online, my keyboard player's death menu takes the mouse: the game feeds the HUD no mouse in a match (and a click
+// straight on a button would happen on this PC only - out of sync), so the loader gets where the buttons are on
+// my screen and turns a click on one into its key in my input (Enter / X / Y: the match's input, every PC alike).
+// Here: those boxes (1/10000 of the screen), and the pointer.
+function FGUYDeathMouse() {
+    if (FGUYMyPlayer == undefined || FGUYMyPlayer < 0) FGUYMyPlayer = Number(flash.external.ExternalInterface.call('FGUYMOD_MyPlayer'));
+    var p = FGUYMyPlayer, boxes = '';
+    var v = p >= 0 && PlayerViewportMapping != undefined ? PlayerViewportMapping[p] : undefined;
+    var r = FGUYPauseRect();
+    var layer = _root.FGUYMouseUI;
+    if (v != undefined && CurScreen != undefined && CurScreen[v] == 'DeathMenu' && IsKeyboardEnabled(p)) {
+        if (layer == undefined) {
+            layer = _root.createEmptyMovieClip('FGUYMouseUI', 30001);
+            FGUYPausePointer(layer, r.h / 720);
+        }
+        FGUYMouseUnzoom(layer);
+        var m = GetScreenMovieClip(p);
+        var names = ['continueButton', 'characterSelectButton', 'weaponChangesButton'], keys = [13, 88, 89];
+        var got = [], x0 = undefined, x1 = undefined;
+        for (var i = 0; m != undefined && i < names.length; i++) {
+            var b = m[names[i]];
+            if (b == undefined || !b._visible) continue;
+            var bb = b.getBounds(layer);
+            if (bb.xMax <= bb.xMin) continue;
+            got.push({y0: bb.yMin, y1: bb.yMax, x0: bb.xMin, x1: bb.xMax, key: keys[i]});
+            if (keys[i] != 13) {   // (Continue's bounds hold our hint line, wider than the buttons)
+                x0 = x0 == undefined ? bb.xMin : Math.min(x0, bb.xMin);
+                x1 = x1 == undefined ? bb.xMax : Math.max(x1, bb.xMax);
+            }
+        }
+        // The buttons are stacked, and each one's bounds reach over the next (its hidden pad icon): a button's box
+        // ends where the next one's starts (the bottom one's: one step on).
+        for (var j = 0; j < got.length; j++) {
+            var e = got[j], below = undefined, above = undefined;
+            for (var k = 0; k < got.length; k++) {
+                if (got[k].y0 > e.y0 && (below == undefined || got[k].y0 < below)) below = got[k].y0;
+                if (got[k].y0 < e.y0 && (above == undefined || got[k].y0 > above)) above = got[k].y0;
+            }
+            var y1 = e.y1;
+            if (below != undefined) y1 = Math.min(y1, below);
+            else if (above != undefined) y1 = Math.min(y1, e.y0 + (e.y0 - above));
+            var bx0 = x0 == undefined ? e.x0 : x0, bx1 = x1 == undefined ? e.x1 : x1;
+            boxes = boxes + Math.round((bx0 - r.x) / r.w * 10000) + ',' + Math.round((e.y0 - r.y) / r.h * 10000) + ',' +
+                    Math.round((bx1 - r.x) / r.w * 10000) + ',' + Math.round((y1 - r.y) / r.h * 10000) + ',' + e.key + ';';
+        }
+    }
+    if (boxes == '' && layer == undefined) return;   // (nothing to say: no menu of mine now, none before)
+    var c = String(flash.external.ExternalInterface.call('FGUYMOD_DeathMouse', boxes)).split('|');
+    if (layer == undefined) return;
+    layer.pointer._visible = c[2] == '1';
+    layer.pointer._x = r.x + Number(c[0]) / 10000 * r.w;
+    layer.pointer._y = r.y + Number(c[1]) / 10000 * r.h;
+    if (boxes == '') layer.removeMovieClip();
+}
+
+// The pointer's layer in whole-screen units, like the pause menu's (FGUYPauseUnzoom).
+function FGUYMouseUnzoom(layer) {
+    if (!FGUYZoomed) {
+        layer._xscale = 100; layer._yscale = 100; layer._x = 0; layer._y = 0;
+        return;
+    }
+    var z = _root._xscale / 100;
+    layer._xscale = 100 / z;
+    layer._yscale = 100 / z;
+    layer._x = -_root._x / z;
+    layer._y = -_root._y / z;
 }
 
 // The damage frame (Icon_DamageFx_<viewport>_<layout>_<player>: frost, fire, acid, electric, disintegrate) is
@@ -211,8 +280,8 @@ function FGUYFitDamageFx() {
 }
 
 // Online, a keyboard player's death menu: which keys do what (Enter goes on, X / Y as on a controller - the
-// loader turns the keyboard's X / Y / Backspace into the controller's X / Y / B there, kbm.cpp; the mouse doesn't
-// work online). The hint goes on the Continue button, so it comes and goes with the menu.
+// loader turns the keyboard's X / Y / Backspace into the controller's X / Y / B there, kbm.cpp; a click on a
+// button becomes its key: FGUYDeathMouse). The hint goes on the Continue button, so it comes and goes with the menu.
 function FGUYDeathHints(playerIndex) {
     if (flash.external.ExternalInterface.call('FGUYMOD_OnlineMatch') != true) return;
     var m = GetScreenMovieClip(playerIndex);

@@ -42,6 +42,34 @@ std::string g_text;
 
 bool Key(const BYTE* keys, int vk) { return (keys[vk >> 3] >> (vk & 7)) & 1; }
 
+// My keyboard player's death menu and the mouse (FGUYMOD_DeathMouse, the HUD on this PC): where its buttons are
+// on this screen (1/10000 of it) and the key each stands for. A click on one presses that key in my input for a
+// few ticks - the match's input, so every PC does it the same tick (a click straight on the HUD's button happened
+// on this PC only: out of sync). The boxes come from the HUD's thread, the clicks are seen on the game's.
+struct MouseBox { int x0, y0, x1, y1, vk; };
+SRWLOCK g_boxLock = SRWLOCK_INIT;
+MouseBox g_boxes[4];
+int g_boxCount = 0;
+ULONGLONG g_boxesAt = 0;       // (the HUD says every 33 ms; older than this: the menu is gone)
+int g_clickVk = 0, g_clickTicks = 0;
+
+int BoxKeyAt(SHORT cx, SHORT cy) {
+    int x = cx * 10000 / 32767, y = cy * 10000 / 32767, vk = 0;
+    AcquireSRWLockShared(&g_boxLock);
+    if (GetTickCount64() - g_boxesAt < 300)
+        for (int i = 0; i < g_boxCount && !vk; ++i)
+            if (x >= g_boxes[i].x0 && x <= g_boxes[i].x1 && y >= g_boxes[i].y0 && y <= g_boxes[i].y1) vk = g_boxes[i].vk;
+    ReleaseSRWLockShared(&g_boxLock);
+    return vk;
+}
+
+bool BoxesShown() {
+    AcquireSRWLockShared(&g_boxLock);
+    bool on = g_boxCount > 0 && GetTickCount64() - g_boxesAt < 300;
+    ReleaseSRWLockShared(&g_boxLock);
+    return on;
+}
+
 int Items() { return NetplayLocalSlot() == 0 ? 4 : 3; }
 
 // The menu's items, as fractions of the screen (pause.as2js draws them at the same place).
@@ -149,6 +177,18 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
 
     bool pausePress = (down & XINPUT_GAMEPAD_START) || pressed(VK_ESCAPE);
     if (g_gamePaused) return false;   // the game's own pause menu is up: everything goes to it
+    if (keyboardPlayer && !g_open) {   // the death menu's buttons by mouse: their keys (see BoxKeyAt)
+        int vk = click ? BoxKeyAt(kbm->cursorX, kbm->cursorY) : 0;
+        if (vk) {
+            g_clickVk = vk;
+            g_clickTicks = 6;
+            Log(L"Pause: death menu clicked - key %d", vk);
+        }
+        if (g_clickTicks > 0) {
+            --g_clickTicks;
+            kbm->keys[g_clickVk >> 3] |= (BYTE)(1 << (g_clickVk & 7));
+        }
+    }
     if (!g_open) {
         if (pausePress) {
             g_open = true;
@@ -274,6 +314,31 @@ const char* OnlinePauseMenu() {
 const char* OnlinePauseCursor() {
     static char buf[32];
     sprintf_s(buf, "%d|%d|%d", g_cursorX * 10000 / 32767, g_cursorY * 10000 / 32767, g_open && g_keyboard ? 1 : 0);
+    return buf;
+}
+
+// FGUYMOD_DeathMouse("x0,y0,x1,y1,key;...", or "" - no death menu of mine): its buttons for the mouse.
+// Returns the pointer: "x|y|show" (x, y in 1/10000 of the screen).
+const char* OnlinePauseDeathMouse(const char* boxes) {
+    MouseBox b[4];
+    int n = 0;
+    for (const char* at = boxes; at && *at && n < 4;) {
+        if (sscanf_s(at, "%d,%d,%d,%d,%d", &b[n].x0, &b[n].y0, &b[n].x1, &b[n].y1, &b[n].vk) == 5 && b[n].vk > 0 &&
+            b[n].vk < 256)
+            ++n;
+        at = strchr(at, ';');
+        if (at) ++at;
+    }
+    AcquireSRWLockExclusive(&g_boxLock);
+    static int lastCount = -1;
+    if ((n > 0) != (lastCount > 0)) Log(L"Pause: death menu mouse %s %S", n > 0 ? L"on" : L"off", boxes ? boxes : "");
+    lastCount = n;
+    memcpy(g_boxes, b, sizeof(b));
+    g_boxCount = n;
+    g_boxesAt = GetTickCount64();
+    ReleaseSRWLockExclusive(&g_boxLock);
+    static char buf[32];
+    sprintf_s(buf, "%d|%d|%d", g_cursorX * 10000 / 32767, g_cursorY * 10000 / 32767, n > 0 && g_keyboard && !g_open ? 1 : 0);
     return buf;
 }
 

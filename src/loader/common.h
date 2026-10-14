@@ -127,6 +127,7 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
 void OnlinePauseCommand(const char* command);  //   ui.cpp: a menu command ran
 const char* OnlinePauseMenu();                 //   FGUYMOD_PauseMenu (the HUD)
 const char* OnlinePauseCursor();
+const char* OnlinePauseDeathMouse(const char* boxes);   //   FGUYMOD_DeathMouse (the HUD): my death menu's buttons
 void OnlinePauseQuitDone();
 void OnlinePauseForceQuit();                    //   netplay: out of sync - everyone back to the lobby
 
