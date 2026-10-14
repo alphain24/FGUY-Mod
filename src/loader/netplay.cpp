@@ -1050,34 +1050,40 @@ LONGLONG PaceTick() {
 const int kPaceSteps[] = {240, 200, 165, 144, 120, 100, 90, 80, 72, 60, 50, 45, 40, 36, 30};
 
 // This PC's pace from its last stretch of ticks: `perSecond` = ticks it could do a second, by its own work.
-// Down at once when it can't keep up. Up only one step at a time, with room spare, after 2 s at the same rate -
-// and not back to a rate it just couldn't hold (for a minute: each try that fails is a hitch): a slower rate leaves the graphics card idle time, so
-// the PC looks quicker there than it is at the higher rate (it went 144 -> 100 -> 144 -> 100 ... before).
+// Down at once, straight to the rate it manages right now (stepping down through the rates, a window each, ran the
+// match faster than the PC could for a couple of seconds: slow motion). Up only one step at a time, with room spare,
+// after a second at the same rate - and not back to a rate it just couldn't hold (for a minute: each try that
+// fails is a short slow-down): a slower rate leaves the graphics card idle time, so the PC looks quicker there
+// than it is at the higher rate (it went 144 -> 100 -> 144 -> 100 ... before). The match starts following the PCs
+// from the 60 it loaded at, and climbs (it started at the top before: a second or so of slow motion).
 void NotePace(double perSecond) {
     static double smooth = 0;
     static ULONGLONG since = 0, ceilingUntil = 0;
     static int ceiling = 0;
-    if (!g_rateFollows) return;   // (loading the level says nothing about the match: from the top once it runs)
+    if (!g_rateFollows) return;   // (loading the level says nothing about the match)
     smooth = smooth ? smooth * 0.5 + perSecond * 0.5 : perSecond;
     ULONGLONG nowMs = GetTickCount64();
-    int cap = g_rateTarget, now = g_paceMine ? g_paceMine : cap, want = kPaceSteps[_countof(kPaceSteps) - 1];
-    for (int s : kPaceSteps)
-        if (s <= cap && smooth * 0.93 >= s) { want = s; break; }
-    if (want > now) {   // up: the next step only
+    int cap = g_rateTarget, now = g_paceMine ? g_paceMine : 60, want = now;
+    if (perSecond * 0.93 < now) {   // can't keep up: down to what it manages now
+        want = kPaceSteps[_countof(kPaceSteps) - 1];
+        for (int s : kPaceSteps)
+            if (s <= cap && perSecond * 0.93 >= s) { want = s; break; }
+    } else {                        // room spare: the next step up, now and then
         int next = now;
         for (int s : kPaceSteps)
             if (s <= cap && s > now) next = s;
-        bool held = nowMs >= since + 2000, blocked = nowMs < ceilingUntil && next >= ceiling;
-        want = held && !blocked && smooth * 0.85 >= next ? next : now;
+        bool held = nowMs >= since + 1000, blocked = nowMs < ceilingUntil && next >= ceiling;
+        if (next > now && held && !blocked && smooth * 0.85 >= next) want = next;
     }
+    if (want > cap) want = cap;
     if (want == now && g_paceMine) return;
     if (want < now && g_paceMine) {   // this rate didn't hold: don't come back to it for a while
         ceiling = now;
         ceilingUntil = nowMs + 60000;
     }
     static int logged = 0;
-    if (g_inSession && g_rateFollows && ++logged <= 40)
-        Log(L"Netplay: tick %u - this PC manages %d frames per second (%.0f with no room spare)", g_tick, want, smooth);
+    if (g_inSession && ++logged <= 40)
+        Log(L"Netplay: tick %u - this PC manages %d frames per second (%.0f with no room spare)", g_tick, want, perSecond);
     g_paceMine = want;
     since = nowMs;
 }
@@ -1234,16 +1240,20 @@ void Tick() {
         const int kViewportCount = 0xb53e60;   // (story co-op: once everyone has dropped in)
         if (!g_sessionStory || *reinterpret_cast<volatile int*>(kViewportCount) >= g_players) {
             g_rateFollows = true;
+            if (!g_paceMine) g_paceMine = 60;   // (from the rate it loaded at, up from there: NotePace)
             Log(L"Netplay: from tick %u the match runs at up to %d frames per second - as fast as the slowest PC "
                 L"manages", g_tick, g_rateTarget);
         }
     }
     if (g_rateFollows) {   // this tick's rate: the slowest PC's (from this tick's inputs - the same on every PC)
         int rate = g_rateTarget;
+        bool told = false;   // (no PC has said yet - the first ticks: the rate stays)
         for (int s = 0; s < g_players && s < 4; ++s)
-            if (!g_gone[s] && !(g_goneFrom[s] && g_tick >= g_goneFrom[s]) && g_current[s].kbm.pace >= 30 &&
-                g_current[s].kbm.pace < rate)
-                rate = g_current[s].kbm.pace;
+            if (!g_gone[s] && !(g_goneFrom[s] && g_tick >= g_goneFrom[s]) && g_current[s].kbm.pace >= 30) {
+                told = true;
+                if (g_current[s].kbm.pace < rate) rate = g_current[s].kbm.pace;
+            }
+        if (!told) rate = g_rate;
         if (rate != g_rate) {
             static int logged = 0;
             if (++logged <= 60) Log(L"Netplay: tick %u - %d frames per second", g_tick, rate);
