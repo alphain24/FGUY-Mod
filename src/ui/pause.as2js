@@ -228,6 +228,45 @@ function FGUYDeathHints(playerIndex) {
     c.fguyHint._visible = true;
 }
 
+// ...and on the screens behind it (change character, change weapons): there the game hides its controller help
+// in keyboard mode (it's for the mouse there). Ours goes where that help is. which: 0 character, 1 weapons.
+function FGUYNavHints(playerIndex, which) {
+    if (flash.external.ExternalInterface.call('FGUYMOD_OnlineMatch') != true) return;
+    var m = GetScreenMovieClip(playerIndex);
+    if (m == undefined || m.navHelp == undefined) return;
+    var name = which == 1 ? 'fguyHintWeapons' : 'fguyHintCharacter';
+    if (!IsKeyboardEnabled(playerIndex)) {
+        if (m[name] != undefined) m[name]._visible = false;
+        return;
+    }
+    if (m[name] == undefined) {
+        var b = m.navHelp.getBounds(m), y = b.yMin;
+        var wheel = which == 1 ? GetWeaponWheel(playerIndex) : undefined;
+        if (wheel != undefined) {   // (the weapons screen's help is inside the wheel: ours goes under it)
+            var vb = undefined;   // (its spokes only: the clip holds hidden pieces far around it)
+            for (var i = 0; i < 8; i++) {
+                var c = GetSpokeFromSlot(playerIndex, i);
+                if (c == undefined || !c._visible) continue;
+                var cb = c.getBounds(m);
+                if (cb.xMax <= cb.xMin) continue;
+                if (vb == undefined) vb = {xMin: cb.xMin, xMax: cb.xMax, yMin: cb.yMin, yMax: cb.yMax};
+                else {
+                    vb.xMin = Math.min(vb.xMin, cb.xMin); vb.xMax = Math.max(vb.xMax, cb.xMax);
+                    vb.yMin = Math.min(vb.yMin, cb.yMin); vb.yMax = Math.max(vb.yMax, cb.yMax);
+                }
+            }
+            if (vb != undefined) {
+                b = vb;
+                y = b.yMax + 8;
+            }
+        }
+        var str = which == 1 ? 'W A S D  choose      X  buy      ENTER  done      BACKSPACE  back'
+                             : 'LEFT / RIGHT  character      UP / DOWN  costume      ENTER  pick      BACKSPACE  back';
+        m[name] = FGUYPauseText(m, (b.xMin + b.xMax) / 2 - 400, y, 800, 30, str, false, 16, 0xFFFFFF, 'center');
+    }
+    m[name]._visible = true;
+}
+
 function FGUYPauseRect() {   // the visible screen in stage units
     var vr = Stage.visibleRect;
     if (vr) return {x: vr.x, y: vr.y, w: vr.width, h: vr.height};

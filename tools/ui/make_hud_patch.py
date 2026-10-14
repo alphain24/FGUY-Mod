@@ -92,6 +92,13 @@ def build(data):
                         lambda r: A.Code(A.call('FGUYDeathHints', Reg(r['playerIndex']))))
     except KeyError:
         pass
+    #     (and on the change character / change weapons screens: FGUYNavHints)
+    for name, which in (('OnCharacterSelectRefreshText', 0), ('OnCharacterCustomizeRefreshText', 1)):
+        try:
+            insert_at_start(p, data, actions, name,
+                            lambda r, which=which: A.Code(A.call('FGUYNavHints', Reg(r['playerIndex']), which)))
+        except KeyError:
+            pass
     # The game hands the HUD real viewport numbers in many places (and the HUD stores them), so they
     # stay real everywhere; only the three helpers that turn a viewport into HUD objects translate
     # (each is always called with a real number, so every path translates exactly once).
