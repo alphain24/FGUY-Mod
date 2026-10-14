@@ -194,6 +194,8 @@ void HandoffMute(bool mute) {
     if (StaysMuted()) return;
     CloseHandle(CreateThread(nullptr, 0, MuteThread, mute ? (LPVOID)1 : nullptr, 0, nullptr));
 }
+// (research, audio.cpp's report: a test copy that keeps its real volumes is kept muted in Windows instead)
+void HandoffMuteInWindows() { CloseHandle(CreateThread(nullptr, 0, MuteThread, (LPVOID)1, 0, nullptr)); }
 
 // The match is over (netplay.cpp): hand back to the player's own game, waiting hidden since the match started.
 // False if there's none (this game then opens the lobby itself).

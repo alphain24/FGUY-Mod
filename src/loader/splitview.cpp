@@ -140,9 +140,11 @@ void __fastcall Hook_Enable(void* camera, void*, int on) {
 //   name id 0:       "_root.Icon_%d_%d"          slot, player
 //   otherwise:       "_root.Icon_%s%d_%d_%d_%d"  name, slot, viewport, layout, player
 // (name = hud->vtable[0x78/4](nameId)). Online the HUD is the 4-way split screen's on every PC (see
-// SplitViewHudMode), so ours writes every player's own objects - their real viewport, layout 4.
+// SplitViewHudMode), so ours writes every player's own objects - their real viewport, layout 4. The story's HUD
+// has no 4-way layout: there it's the single-player one, with my viewport as its viewport 0 (layout 0).
 const uintptr_t kIconPath = 0x97b360;
 const int kHudLayout4Way = 4;   // the HUD's SPLIT_SCREEN_MODE_4WAY
+bool g_hud4Way = true;          // the level's HUD has that layout (SplitViewHudHas4Way)
 const unsigned char kIconPathStart[] = {0x53, 0x56, 0x8b, 0x35, 0x88, 0xd9, 0xba, 0x00};  // push ebx; push esi; mov esi,[0xbad988]
 int SplitViewHudViewportImpl(int viewport);
 
@@ -160,7 +162,7 @@ bool __fastcall Hook_IconPath(void* hud, void*, int nameId, int player, char* ou
     if (vp < 0) return false;
     vp = SplitViewHudViewportImpl(vp);
     if (vp < 0) return false;
-    int layout = kHudLayout4Way;
+    int layout = g_hud4Way ? kHudLayout4Way : 0;
     using Name_t = const char*(__thiscall*)(void* hud, int id);
     auto name = [&] { return reinterpret_cast<Name_t>((*reinterpret_cast<void***>(hud))[0x78 / 4])(hud, nameId); };
     if (slot < 0) sprintf_s(out, 128, "_root.Icon_%s_%d_%d_%d", name(), vp, layout, player);
@@ -195,7 +197,7 @@ const unsigned char kIsVerticalSplitStart[] = {0x83, 0x3d, 0x60, 0x3e, 0xb5, 0x0
 // one (zoomed into my quarter), so its count call answers 4 (display only).
 const uintptr_t kMarkerCountCall = 0x97b885, kGetViewportCount = 0x625fe0;
 bool g_markerFull = false;   // (my own view's markers: mapped as one full-screen view, see Hook_MarkerToHud)
-int __cdecl MarkerViewportCount() { return g_markerFull ? 1 : MyViewport() >= 0 ? 4 : Count(); }
+int __cdecl MarkerViewportCount() { return g_markerFull ? 1 : MyViewport() >= 0 ? (g_hud4Way ? 4 : 1) : Count(); }
 
 // The game makes those markers per viewing player (0x9909a0: find the viewer, project the point with their
 // viewport's camera, then 0x97b880 maps it into HUD space). Full screen, the other viewers' markers would
@@ -355,13 +357,28 @@ int __cdecl PlayerNameText(char* buf, const char* fmt, int number) {
 // the game (shown only on the player's own PC, they made the match go out of sync). Each PC then shows only
 // its own quarter, zoomed to the whole screen (a quarter of the screen has the screen's shape:
 // SplitViewHudZoomViewport, pause.as2js).
-int SplitViewHudMode(int mode) { return g_active ? 4 : mode; }
+//
+// The story's HUD (hudCampaign.gfx) has no 4-way layout - with it forced there, nothing showed at all - and no
+// death menu, so there it's the single-player layout (0) with my viewport as its viewport 0 and nobody else's,
+// unzoomed (as the online HUD was before the 4-way one).
+int SplitViewHudMode(int mode) { return g_active ? (g_hud4Way ? 4 : 0) : mode; }
+void SplitViewHudHas4Way(bool has) {
+    if (has != g_hud4Way) Log(L"SplitView: the level's HUD %s", has ? L"has the 4-way layout" : L"has no 4-way layout - the single-player one, mine");
+    g_hud4Way = has;
+}
 namespace {
 int SplitViewHudViewportImpl(int viewport) { return SplitViewHudViewport(viewport); }
 }
-int SplitViewHudViewport(int viewport) { return viewport; }
+int SplitViewHudViewport(int viewport) {
+    if (!g_active || g_hud4Way || viewport < 0) return viewport;
+    int mine = MyPlayerViewport();
+    if (mine < 0) return viewport;
+    return viewport == mine ? 0 : -1;
+}
 // The quarter of the HUD to show full screen (my viewport), -1: the HUD as it is.
-int SplitViewHudZoomViewport() { return g_active ? MyPlayerViewport() : -1; }
+int SplitViewHudZoomViewport() { return g_active && g_hud4Way ? MyPlayerViewport() : -1; }
+// My player's viewport online (the one this PC shows full screen - audio.cpp's listener), -1: offline / not yet.
+int SplitViewMyViewport() { return g_active ? MyPlayerViewport() : -1; }
 
 // The online lobby shows the menu scene's 3D character (the Store's model) inside its centre panel: it
 // draws viewport 0 into that part of the screen (the camera's rectangle is left, top, right, bottom as

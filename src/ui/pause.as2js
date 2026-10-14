@@ -61,6 +61,7 @@ function FGUYHudZoom() {
             _root._xscale = 100;
             _root._yscale = 100;
             FGUYZoomed = false;
+            FGUYHudWholeScreen(false);
         }
         return;
     }
@@ -111,7 +112,39 @@ function FGUYHudZoom() {
             }
         }
     }
+    FGUYHudWholeScreen(true);
     FGUYPauseUnzoom();
+}
+
+// The HUD's whole-screen pieces - not any player's (the announcements: "WELCOME TO MULTIVERSE MADNESS!",
+// "ROUND 2"; the match timer, the tips box...): zoomed with my quarter they sat at the screen's bottom right, half
+// off it (the whole screen's middle is my quarter's corner). Zoomed back to where and how big the HUD has them on
+// the whole screen, every poll (as the pause menu); as they were when the zoom goes.
+function FGUYHudWholeScreen(on) {
+    var names = ['AnnounceText', 'Timer', 'challengeStats', 'topTextbox', 'Icon_Watermark', 'bruceBox'];
+    var z = _root._xscale / 100;
+    for (var i = 0; i < names.length; i++) {
+        var c = _root[names[i]];
+        if (c == undefined) continue;
+        if (c.fguyX0 == undefined) {
+            if (!on) continue;
+            c.fguyX0 = c._x;
+            c.fguyY0 = c._y;
+            c.fguyXS0 = c._xscale;
+            c.fguyYS0 = c._yscale;
+        }
+        if (on) {
+            c._xscale = c.fguyXS0 / z;
+            c._yscale = c.fguyYS0 / z;
+            c._x = (c.fguyX0 - _root._x) / z;
+            c._y = (c.fguyY0 - _root._y) / z;
+        } else {
+            c._xscale = c.fguyXS0;
+            c._yscale = c.fguyYS0;
+            c._x = c.fguyX0;
+            c._y = c.fguyY0;
+        }
+    }
 }
 
 // Our pause menu is drawn in whole-screen units: zoomed back (here, and right after each redraw - a new menu

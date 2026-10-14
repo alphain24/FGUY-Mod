@@ -259,6 +259,7 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             if (seen.size() < 600 && seen.insert(line).second) Log(L"UI: HUD %S", line);
         } else if (strcmp(fn, "HudSplitMode") == 0) {  // the level's HUD lays itself out: the level runs
             HandoffMatchRunning();
+            SplitViewHudHas4Way(argc < 2 || ArgNumber(args, argc, 1) != 0);   // (mode, has a 4-way layout)
             Log(L"UI: HUD split mode %d -> %d", (int)ArgNumber(args, argc, 0), SplitViewHudMode((int)ArgNumber(args, argc, 0)));
             ReturnNumber(movie, SplitViewHudMode((int)ArgNumber(args, argc, 0)));
         } else if (strcmp(fn, "HudZoom") == 0) {   // online: which quarter of the 4-way HUD is mine (-1: none)

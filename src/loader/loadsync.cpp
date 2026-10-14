@@ -193,6 +193,29 @@ float __cdecl LookRandom() {
 // numbers (intervals between a and b, 0x424c60, and a chance, 0x4f69a0): in Multiverse Madness the enemies' sounds
 // made the PCs' random numbers part a few seconds in, and the match with them. Online it takes its own numbers;
 // it's only looks.
+// A level's movie (0x98a2c0 plays one, then says so: 0xbad9e8 = 1). The story's levels start with one, and while
+// it's due the game holds all its sound (the master category's reason 8, set when the movie's asked for; taken off
+// by the level's frame once "played" is said, 0x6a68f5). Sessions boot with NoMovies (config.cpp - nobody sits
+// through the logos), so the movie was skipped (0x98a2c8: [0xbad9d8] set -> straight out) without saying so: online
+// story co-op had no sound at all. Online a skipped movie says "played" too, as playing it would.
+extern "C" void __cdecl MovieSkipped() {
+    if (!NetplayEnabled()) return;
+    *reinterpret_cast<volatile BYTE*>(0xbad9e8) = 1;
+    static int logged = 0;
+    if (++logged <= 5) Log(L"Online: tick %u - a level movie skipped (no movies in sessions) - its sound hold let go", NetplayTick());
+}
+__declspec(naked) void MovieSkipStub() {
+    __asm {
+        pushad
+        pushfd
+        call MovieSkipped
+        popfd
+        popad
+        push 0x98a3d6
+        ret
+    }
+}
+
 using Between_t = float(__cdecl*)(float a, float b);
 const uintptr_t kBetween = 0x424c60;
 float __cdecl EffectBetween(float a, float b) {
@@ -232,4 +255,16 @@ void InitLoadSync() {
              PatchCall(0x5c05eb, kBetween, (void*)EffectBetween) + PatchCall(0x5c0608, kBetween, (void*)EffectBetween) +
              PatchCall(0x5c0554, kRandom01, (void*)LookRandom);
     if (fx != 5) Log(L"Online: the sound effects' timer isn't what we expect (%d of 5) - left as it is", fx);
+    // 0x98a2ce: jne 0x98a3d6 (no movies: out) - to MovieSkipStub
+    static const unsigned char kNoMovieJump[] = {0x0f, 0x85, 0x02, 0x01, 0x00, 0x00};
+    auto jump = reinterpret_cast<unsigned char*>(0x98a2ce);
+    if (!memcmp(jump, kNoMovieJump, sizeof(kNoMovieJump))) {
+        DWORD old;
+        VirtualProtect(jump, 6, PAGE_EXECUTE_READWRITE, &old);
+        *reinterpret_cast<int*>(jump + 2) = (int)(reinterpret_cast<uintptr_t>(&MovieSkipStub) - (0x98a2ce + 6));
+        VirtualProtect(jump, 6, old, &old);
+        FlushInstructionCache(GetCurrentProcess(), jump, 6);
+    } else {
+        Log(L"Online: the level movie code isn't what we expect - a skipped movie may leave the sound held");
+    }
 }

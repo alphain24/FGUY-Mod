@@ -59,9 +59,13 @@ def build(data):
     tag, start, end = root_doaction_containing(data, anchor)
     actions = parse_actions(data, start, end)
 
-    def split_mode(r):  # ScreenFrame = ScreenMode = FGUYMOD_HudSplitMode(ScreenMode)
+    # (the second argument: does this HUD have a 4-way layout? The story's hudCampaign.gfx has none - only one and
+    #  two players' layouts)
+    has_4way = 1 if b'Icon_Lifebar_0_4' in data else 0
+
+    def split_mode(r):  # ScreenFrame = ScreenMode = FGUYMOD_HudSplitMode(ScreenMode, has 4-way)
         frame, mode = r['ScreenFrame'], r['ScreenMode']
-        return (A.store(mode, A.Code(A.external('FGUYMOD_HudSplitMode', Reg(mode)), A.op('ToNumber'))) +
+        return (A.store(mode, A.Code(A.external('FGUYMOD_HudSplitMode', Reg(mode), has_4way), A.op('ToNumber'))) +
                 A.store(frame, Reg(mode)))
 
     def viewport(r):    # ViewportIndex = FGUYMOD_HudViewport(ViewportIndex)

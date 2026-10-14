@@ -18,6 +18,8 @@
 
 #include "common.h"
 
+#include <cmath>
+#include <intrin.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -38,6 +40,7 @@ float g_savedMusic = 1.0f;
 float g_movie = kMovieDefault;              // MOVIES & TITLE, 0..1
 bool g_settingsLoaded = false;              // the save's settings have been applied once
 bool g_testRun = false;                     // test copies don't write audio.ini
+bool g_report = false;                      // FGUYMOD_AUDIOREPORT (AudioReport): test copies keep their volumes
 volatile LONG g_silent = 0;                 // AudioSilenceGame: the game's own sound off (its settings stay)
 volatile LONG g_silentPending = 0;          //   to apply on the game thread (AudioTick)
 using Apply_t = void(__fastcall*)(void* self, void* edx);
@@ -70,7 +73,7 @@ void __fastcall Hook_ApplyVolumes(void* self, void* edx) {
     }
     if (g_settingsLoaded) Remember(L"Music", real[0], g_savedMusic);
     for (int i = 0; i < 4; ++i)   // bot / test copies: silent; before the save: everything at MOVIES & TITLE
-        Setting(offs[i]) = StaysMuted() || g_silent ? 0.0f : Curve(g_settingsLoaded ? real[i] : g_movie);
+        Setting(offs[i]) = (StaysMuted() && !g_report) || g_silent ? 0.0f : Curve(g_settingsLoaded ? real[i] : g_movie);
     g_applyOriginal(self, edx);
     for (int i = 0; i < 4; ++i) Setting(offs[i]) = real[i];
 }
@@ -82,7 +85,7 @@ void __stdcall Hook_BinkSetVolume(void* bink, unsigned track, int volume) {
     // The game passed cinematic * 32768 * (something); keep its "something", use MOVIES & TITLE instead.
     float now = Setting(kCinematic);
     double base = now > 0.001f ? volume / now : volume;
-    int out = StaysMuted() || g_silent ? 0 : (int)(base * Curve(g_movie) * kMovieScale);
+    int out = (StaysMuted() && !g_report) || g_silent ? 0 : (int)(base * Curve(g_movie) * kMovieScale);
     if (out < 0) out = 0;
     static int logged = 0;
     if (logged < 8) {
@@ -135,13 +138,117 @@ SetNumListeners_t Real_SetNumListeners = nullptr;
 SetListener_t Real_SetListener = nullptr;
 
 int __stdcall Hook_SetNumListeners(void* system, int count) {
-    if (SplitViewHudZoomViewport() >= 0 && count > 1) count = 1;
+    if (SplitViewMyViewport() >= 0 && count > 1) count = 1;
     return Real_SetNumListeners(system, count);
+}
+
+// Research (FGUYMOD_AUDIOREPORT=1): in a match, every 5 s, what FMOD is playing - the channels, and each channel
+// group (the game's sound categories) with its volume, paused and muted state.
+void AudioReport(void* system) {
+    static int reports = 0;
+    static ULONGLONG next = 0;
+    if (!g_report || !NetplayLevelLive() || reports >= 12 || GetTickCount64() < next) return;
+    next = GetTickCount64() + 5000;
+    ++reports;
+    HMODULE fm = GetModuleHandleW(L"fmodex.dll");
+    if (!fm) return;
+    using GetInt_t = int(__stdcall*)(void* self, int* out);
+    using GetPtr_t = int(__stdcall*)(void* self, void** out);
+    using GetGroup_t = int(__stdcall*)(void* self, int index, void** out);
+    using GetName_t = int(__stdcall*)(void* self, char* name, int len);
+    using GetFloat_t = int(__stdcall*)(void* self, float* out);
+    using GetBool_t = int(__stdcall*)(void* self, bool* out);
+    auto playing = reinterpret_cast<GetInt_t>(GetProcAddress(fm, "?getChannelsPlaying@System@FMOD@@QAG?AW4FMOD_RESULT@@PAH@Z"));
+    auto master = reinterpret_cast<GetPtr_t>(GetProcAddress(fm, "?getMasterChannelGroup@System@FMOD@@QAG?AW4FMOD_RESULT@@PAPAVChannelGroup@2@@Z"));
+    auto groups = reinterpret_cast<GetInt_t>(GetProcAddress(fm, "?getNumGroups@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@PAH@Z"));
+    auto group = reinterpret_cast<GetGroup_t>(GetProcAddress(fm, "?getGroup@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@HPAPAV12@@Z"));
+    auto name = reinterpret_cast<GetName_t>(GetProcAddress(fm, "?getName@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@PADH@Z"));
+    auto volume = reinterpret_cast<GetFloat_t>(GetProcAddress(fm, "?getVolume@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@PAM@Z"));
+    auto paused = reinterpret_cast<GetBool_t>(GetProcAddress(fm, "?getPaused@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@PA_N@Z"));
+    auto mute = reinterpret_cast<GetBool_t>(GetProcAddress(fm, "?getMute@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@PA_N@Z"));
+    auto channels = reinterpret_cast<GetInt_t>(GetProcAddress(fm, "?getNumChannels@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@PAH@Z"));
+    if (!playing || !master || !groups || !group || !name || !volume || !paused || !mute || !channels) return;
+    int n = 0;
+    playing(system, &n);
+    // the mix as it goes out (this copy is muted in Windows, not in the game: see InitAudio)
+    using Wave_t = int(__stdcall*)(void* self, float* out, int count, int channel);
+    auto wave = reinterpret_cast<Wave_t>(GetProcAddress(fm, "?getWaveData@System@FMOD@@QAG?AW4FMOD_RESULT@@PAMHH@Z"));
+    static float samples[2048];
+    double sum = 0, peak = 0;
+    if (wave && wave(system, samples, 2048, 0) == 0)
+        for (float x : samples) { sum += x * x; if (std::fabs(x) > peak) peak = std::fabs(x); }
+    wchar_t line[2048];
+    int len = swprintf_s(line, L"Audio: tick %u, %d channels playing, output rms %.4f peak %.4f;", NetplayTick(), n,
+                         std::sqrt(sum / 2048), peak);
+    struct Walk { void* g; int depth; };
+    Walk stack[64];
+    int top = 0;
+    void* m = nullptr;
+    if (master(system, &m) == 0 && m) stack[top++] = {m, 0};
+    while (top > 0 && len < 1900) {
+        Walk w = stack[--top];
+        char nm[64] = "";
+        float vol = -1;
+        bool p = false, mu = false;
+        int ch = 0, kids = 0;
+        name(w.g, nm, 63);
+        volume(w.g, &vol);
+        paused(w.g, &p);
+        mute(w.g, &mu);
+        channels(w.g, &ch);
+        groups(w.g, &kids);
+        len += swprintf_s(line + len, 2048 - len, L" %*s%S vol %.2f%s%s ch %d;", w.depth * 2, L"", nm[0] ? nm : "(master)", vol,
+                          p ? L" PAUSED" : L"", mu ? L" MUTED" : L"", ch);
+        for (int i = kids - 1; i >= 0 && top < 64; --i) {
+            void* c = nullptr;
+            if (group(w.g, i, &c) == 0 && c && w.depth < 3) stack[top++] = {c, w.depth + 1};
+        }
+    }
+    Log(L"%s", line);
+}
+
+// Research (with the report): the game pauses / mutes a sound category while any of its reasons holds -
+// 0x6367e0 __thiscall (manager, int category, bool on, unsigned reasons): reasons at manager + category * 12 + 0x3c0,
+// its name at +0x3c4, then the category's +0x30 (on = any reason). Every change into the log.
+extern "C" void __cdecl CategoryLog(const unsigned char* mgr, int category, int on, unsigned bits) {
+    static int logged = 0;
+    if (!mgr || category < 0 || category > 64 || ++logged > 300) return;
+    const unsigned char* e = mgr + category * 12;
+    const char* name = *reinterpret_cast<const char* const*>(e + 0x3c4);
+    unsigned before = *reinterpret_cast<const unsigned*>(e + 0x3c0);
+    unsigned after = (on & 0xff) ? before | bits : before & ~bits;
+    wchar_t stack[200] = L"";
+    if (on & 0xff) {   // (who: the game addresses up the stack)
+        const DWORD* sp = reinterpret_cast<const DWORD*>(_AddressOfReturnAddress());
+        int len = 0;
+        for (int i = 4, found = 0; i < 600 && found < 10 && len < 180; ++i)
+            if (sp[i] >= 0x401000 && sp[i] < 0x9f0000) { len += swprintf_s(stack + len, 200 - len, L" %#lx", sp[i]); ++found; }
+    }
+    Log(L"Audio: tick %u category %d '%S' reasons %#x %s %#x -> %#x%s", NetplayTick(), category,
+        name && !IsBadReadPtr(name, 1) ? name : "?", before, (on & 0xff) ? L"+" : L"-", bits, after, stack);
+}
+__declspec(naked) void CategoryStub() {
+    __asm {
+        pushad
+        pushfd
+        push dword ptr [esp + 48]   // reasons (pushad 32 + pushfd 4 + the return address 4: index at +40)
+        push dword ptr [esp + 48]   // on
+        push dword ptr [esp + 48]   // category
+        push ecx
+        call CategoryLog
+        add esp, 16
+        popfd
+        popad
+        cmp byte ptr [esp + 8], 0
+        push 0x6367e5
+        ret
+    }
 }
 
 int __stdcall Hook_SetListener(void* system, int listener, const void* pos, const void* vel, const void* forward,
                                const void* up) {
-    int mine = SplitViewHudZoomViewport();
+    AudioReport(system);
+    int mine = SplitViewMyViewport();
     static bool one = false;   // (the count may have been set before the level's views were known)
     if (mine >= 0) {
         if (!one) { one = true; Real_SetNumListeners(system, 1); Log(L"Audio: online - one 3D listener, viewport %d's", mine); }
@@ -159,6 +266,21 @@ void InitAudio(HMODULE exe) {
     g_movie = ReadSaved(L"MoviesAndTitle", L"0.5");
     wchar_t v[8];
     g_testRun = GetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", v, 8) != 0;
+    g_report = GetEnvironmentVariableW(L"FGUYMOD_AUDIOREPORT", v, 8) != 0;
+    static const unsigned char kCategoryStart[] = {0x80, 0x7c, 0x24, 0x08, 0x00};   // cmp byte ptr [esp+8], 0
+    auto cat = reinterpret_cast<unsigned char*>(0x6367e0);
+    if (g_report && !memcmp(cat, kCategoryStart, sizeof(kCategoryStart))) {
+        DWORD old;
+        VirtualProtect(cat, 5, PAGE_EXECUTE_READWRITE, &old);
+        cat[0] = 0xE9;
+        *reinterpret_cast<int*>(cat + 1) = (int)(reinterpret_cast<uintptr_t>(&CategoryStub) - (0x6367e0 + 5));
+        VirtualProtect(cat, 5, old, &old);
+        FlushInstructionCache(GetCurrentProcess(), cat, 5);
+    }
+    if (g_report && StaysMuted())   // (a test copy: its real volumes, but silent in Windows - re-muted now and then)
+        CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
+            for (;;) { HandoffMuteInWindows(); Sleep(2000); }
+        }, nullptr, 0, nullptr));
     bool curve = MakeTrampoline();
     HookSpec hooks[] = {
         {"binkw32.dll", "_BinkSetVolume@12", (void*)Hook_BinkSetVolume, (void**)&Real_BinkSetVolume},
