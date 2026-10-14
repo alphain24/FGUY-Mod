@@ -187,6 +187,20 @@ float __cdecl LookRandom() {
     return (s >> 8) * (1.0f / 16777216.0f);
 }
 
+// A sound-driven effect's timer (0x5c0370: a character's mouth / flicker while one of its sounds plays - the
+// component at an enemy's +0x860): FMOD's "event started / finished" callbacks (0x67e240 -> 0x5f5270) switch it on
+// and off, and those come as the sound really plays - at a different tick on each PC. While on, it draws random
+// numbers (intervals between a and b, 0x424c60, and a chance, 0x4f69a0): in Multiverse Madness the enemies' sounds
+// made the PCs' random numbers part a few seconds in, and the match with them. Online it takes its own numbers;
+// it's only looks.
+using Between_t = float(__cdecl*)(float a, float b);
+const uintptr_t kBetween = 0x424c60;
+float __cdecl EffectBetween(float a, float b) {
+    if (!Online()) return reinterpret_cast<Between_t>(kBetween)(a, b);
+    float r = LookRandom();
+    return (1.0f - r) * a + r * b;
+}
+
 }  // namespace
 
 // netplay.cpp, the start of every session tick (game thread).
@@ -214,4 +228,8 @@ void InitLoadSync() {
     Log(L"Online: level start-up waits for its loading in sessions (%d of 9 checks)", ok);
     if (!PatchCall(0x6a724d, kRandom01, (void*)LookRandom))
         Log(L"Online: the player look's random pick isn't what we expect - left as it is");
+    int fx = PatchCall(0x5c0549, kBetween, (void*)EffectBetween) + PatchCall(0x5c0584, kBetween, (void*)EffectBetween) +
+             PatchCall(0x5c05eb, kBetween, (void*)EffectBetween) + PatchCall(0x5c0608, kBetween, (void*)EffectBetween) +
+             PatchCall(0x5c0554, kRandom01, (void*)LookRandom);
+    if (fx != 5) Log(L"Online: the sound effects' timer isn't what we expect (%d of 5) - left as it is", fx);
 }

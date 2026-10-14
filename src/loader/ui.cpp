@@ -362,6 +362,26 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         }
         return;
     }
+    {   // research (with FGUYMOD_RNGTRACE): every menu call in a session with its tick, into cb_<pid>.txt - two PCs'
+        // files side by side show a call one PC made and the other didn't (or later)
+        static int on = -1;
+        static FILE* f = nullptr;
+        if (on < 0) {
+            on = SettingInt(L"Debug", L"RngTrace", L"FGUYMOD_RNGTRACE", 0);
+            wchar_t path[MAX_PATH];
+            swprintf_s(path, L"%s\\cb_%lu.txt", g_modDir, GetCurrentProcessId());
+            if (on && _wfopen_s(&f, path, L"w") != 0) f = nullptr;
+        }
+        if (f && name && NetplayEnabled()) {
+            fprintf(f, "%u %s", NetplayTick(), name);
+            for (unsigned i = 0; i < argc && i < 4; ++i) {
+                if ((args[i].type & 0x0F) == kString) fprintf(f, " '%s'", ArgString(args, argc, i));
+                else fprintf(f, " %g", ArgNumber(args, argc, i));
+            }
+            fputc('\n', f);
+            fflush(f);   // (test copies get closed without a goodbye)
+        }
+    }
     if (name && g_seenCalls.insert(name).second) {
         if (NetplayEnabled()) Log(L"UI: menu calls %S (%u args) - tick %u", name, argc, NetplayTick());
         else Log(L"UI: menu calls %S (%u args)", name, argc);

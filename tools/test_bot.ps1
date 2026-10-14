@@ -1,6 +1,6 @@
 # Test bot check on one PC: a test copy goes to ONLINE and hosts a lobby, "Start test bot.bat" starts the bot,
 # the bot should join, pick someone and ready up by itself; then the host starts and both play.
-#   test_bot.ps1 [-Story] [-Seconds 40] [-MapLefts 2]
+#   test_bot.ps1 [-Story] [-Seconds 40] [-MapLefts 2] [-ModeRights 1]
 # Needs a lobby server (python server\fguy_lobby.py). Leaves everything running (stop_tests.ps1 +
 # "Stop test bot.bat" close it).
 param(
@@ -9,7 +9,8 @@ param(
     [int]$Seconds = 40,
     [string]$Controls = "controller",  # the host copy: controller (virtual pad) / keyboard
     [string]$HostRes = "960x540",
-    [int]$MapLefts = 0                 # MAP: this many steps left (2 = AIRPORT'12)
+    [int]$MapLefts = 0,                # MAP: this many steps left (2 = AIRPORT'12)
+    [int]$ModeRights = 0               # GAME MODE: this many steps right (1 = MULTIVERSE MADNESS)
 )
 $pad = Join-Path $PSScriptRoot "pad.ps1"
 function Press([int]$id, [string]$button) { & $pad -Id $id $button | Out-Null; Start-Sleep -Milliseconds 600 }
@@ -27,6 +28,7 @@ Start-Sleep 2
 Press $hostId down; Press $hostId down; Press $hostId a          # HOST A GAME > CREATE LOBBY
 Start-Sleep 3
 if ($Story) { Press $hostId down; Press $hostId left }           # GAME MODE: back one = STORY CO-OP
+elseif ($ModeRights) { Press $hostId down; foreach ($k in 1..$ModeRights) { Press $hostId right } }
 elseif ($MapLefts) { Press $hostId down; Press $hostId down; foreach ($k in 1..$MapLefts) { Press $hostId left } }
 
 Start-Process -FilePath (Join-Path $GameDir "FGUYMod\Start test bot.bat") -WindowStyle Hidden
