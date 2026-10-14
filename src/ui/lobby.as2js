@@ -1325,6 +1325,9 @@ function FGUYTyping() {   // the code boxes have the focus: letter keys type
 
 function FGUYInputHub(key) {
     var online = FGUYS.state == 'online';
+    // (not in the first moment: the 3D camera is still on its way to the Store, and leaving then showed the main
+    //  menu with the camera mid-way - black - until it got back; the game's own pages wait for their camera too)
+    if (key == 27 && FGUYNow() - FGUYEnteredAt < 1200) return;
     if (key == 27) { FGUYSound('back'); PrevPage(); return; }
 
     if ((key == 76 || key == 82) && (FGUYKeyFromPad || !FGUYTyping())) {
