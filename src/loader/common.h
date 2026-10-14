@@ -88,6 +88,7 @@ int SplitViewHudZoomViewport();        //   online: the HUD quarter to show full
 void SplitViewMenuRect(float left, float top, float right, float bottom);  // lobby: 3D scene inside a panel
 
 // onlinemenu.cpp: keyboard / mouse helpers for the ONLINE screens, and the test bot
+void InitOnlineMenu();                 // onlinemenu.cpp: the Store's own key turning off on the ONLINE screens
 void OnlineMenuOpen(bool open);
 void OnlineMenuKey(HWND wnd, WPARAM vk);    //   display.cpp: a key went down in the game window
 const char* OnlineMenuTyped();
@@ -188,6 +189,7 @@ bool KbmSkipPressed();
 void KbmSessionStart(const char* session);     // netplay.cpp: which players play with keyboard and mouse
 void KbmLeaveSession();                         //   netplay.cpp: the session is over for this game
 bool KbmIsKeyboardSlot(int slot);
+void KbmLevelMenu(int player, bool open);      //   ui.cpp: a level menu takes / gives back a player's input (CTRL_Add/RemoveInput)
 bool KbmCursorScreen(POINT* pt);               //   netplay.cpp: the keyboard players' cursor this tick, on screen
 void KbmCapture(KbmRaw* out);                  //   my keyboard and mouse now
 void KbmApply(const KbmRaw* bySlot, int players);  //   every tick: feed the keyboard players' devices

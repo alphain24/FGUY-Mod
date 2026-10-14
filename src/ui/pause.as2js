@@ -210,6 +210,24 @@ function FGUYFitDamageFx() {
     }
 }
 
+// Online, a keyboard player's death menu: which keys do what (Enter goes on, X / Y as on a controller - the
+// loader turns the keyboard's X / Y / Backspace into the controller's X / Y / B there, kbm.cpp; the mouse doesn't
+// work online). The hint goes on the Continue button, so it comes and goes with the menu.
+function FGUYDeathHints(playerIndex) {
+    if (flash.external.ExternalInterface.call('FGUYMOD_OnlineMatch') != true) return;
+    var m = GetScreenMovieClip(playerIndex);
+    if (m == undefined || m.continueButton == undefined) return;
+    var c = m.continueButton;
+    if (!IsKeyboardEnabled(playerIndex)) {
+        if (c.fguyHint != undefined) c.fguyHint._visible = false;
+        return;
+    }
+    if (c.fguyHint == undefined)
+        c.fguyHint = FGUYPauseText(c, -300, 34, 600, 30, 'ENTER  continue      X  change character      Y  change weapons',
+                                   false, 16, 0xFFFFFF, 'center');
+    c.fguyHint._visible = true;
+}
+
 function FGUYPauseRect() {   // the visible screen in stage units
     var vr = Stage.visibleRect;
     if (vr) return {x: vr.x, y: vr.y, w: vr.width, h: vr.height};

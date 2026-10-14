@@ -294,6 +294,38 @@ void __fastcall Hook_MenuInputUpdate(void* movie, void* edx, int arg) {
     g_menuInputOriginal(movie, edx, arg);
 }
 
+// The menus get each controller's buttons from that update (0x5a079e: call 0x44d7e0(movie + 0x100, controller,
+// buttons, arg) - bit 14 X, bit 15 Y, as the key codes 88 / 89, table 0xacee88). For the keyboard's controller
+// the game makes buttons only of Esc, Enter and the arrows (the mouse does the rest - online the mouse can't:
+// a click would land on one PC's screen only). So in a session the keyboard's X, Y and Backspace count as the
+// controller's X, Y and back there: on the death menu X changes the character, Y the weapons (Enter goes on),
+// Backspace goes back (Esc opens the online pause menu) - from everyone's synced keys, so on every PC alike.
+const uintptr_t kMenuButtonsCall = 0x5a079e, kMenuButtons = 0x44d7e0;
+volatile LONG g_levelMenus = 0;   // players a level menu has the input of (bits): there Enter also counts as Start -
+                                  // the character screen accepts with Start (A on a pad: 13, which it ignores here)
+using MenuButtons_t = void(__cdecl*)(void* movie, int controller, unsigned buttons, int arg);
+void __cdecl Hook_MenuButtons(void* movie, int controller, unsigned buttons, int arg) {
+    BYTE keys[32];
+    if (controller == *reinterpret_cast<int*>(kKeyboardController) && KbmMenuKeys(keys)) {
+        if ((keys['X' >> 3] >> ('X' & 7)) & 1) buttons |= 1u << 14;
+        if ((keys['Y' >> 3] >> ('Y' & 7)) & 1) buttons |= 1u << 15;
+        if ((keys[VK_BACK >> 3] >> (VK_BACK & 7)) & 1) buttons |= 1u << 19;   // Backspace: back (as Esc - which opens the online pause menu)
+        bool menu = false;   // (a keyboard player's level menu: they all share the keyboard's controller)
+        for (int p = 0; p < 4; ++p) menu |= ((g_levelMenus >> p) & 1) && KbmIsKeyboardSlot(p);
+        if (menu && ((keys[VK_RETURN >> 3] >> (VK_RETURN & 7)) & 1)) buttons |= 1u;   // (Start)
+    }
+    reinterpret_cast<MenuButtons_t>(kMenuButtons)(movie, controller, buttons, arg);
+}
+
+// ui.cpp: CTRL_AddInput / CTRL_RemoveInput(player) in a session (only once the level runs: the front end's don't
+// count).
+void KbmLevelMenu(int player, bool open) {
+    if (player < 0 || player >= 4) return;
+    if (open && !NetplayLevelLive()) return;
+    if (open) InterlockedOr(&g_levelMenus, 1 << player);
+    else InterlockedAnd(&g_levelMenus, ~(1 << player));
+}
+
 // Session start: the menu input hook (a trampoline with the function's first 8 bytes).
 void HookMenuInput() {
     static bool done = false;
@@ -310,6 +342,16 @@ void HookMenuInput() {
     *reinterpret_cast<int*>(t + 9) = (int)((kMenuInputUpdate + 8) - (reinterpret_cast<uintptr_t>(t) + 13));
     g_menuInputOriginal = reinterpret_cast<MenuInputUpdate_t>(t);
     PatchJump(kMenuInputUpdate, kMenuInputUpdateStart, sizeof(kMenuInputUpdateStart), (void*)Hook_MenuInputUpdate);
+    auto call = reinterpret_cast<unsigned char*>(kMenuButtonsCall);
+    if (call[0] == 0xE8 && kMenuButtonsCall + 5 + *reinterpret_cast<int*>(call + 1) == kMenuButtons) {
+        DWORD old;
+        VirtualProtect(call, 5, PAGE_EXECUTE_READWRITE, &old);
+        *reinterpret_cast<int*>(call + 1) = (int)(reinterpret_cast<uintptr_t>(&Hook_MenuButtons) - (kMenuButtonsCall + 5));
+        VirtualProtect(call, 5, old, &old);
+        FlushInstructionCache(GetCurrentProcess(), call, 5);
+    } else {
+        Log(L"Input: menu button code isn't what we expect - X / Y won't reach the menus from keyboards online");
+    }
 }
 
 // The session is over for this game (back to the lobby): the game's own keyboard and mouse again.

@@ -85,6 +85,13 @@ def build(data):
     no_mouse = (A.Code(A.external('FGUYMOD_OnlineMatch'), A.pushes(True), A.op('Equals2'), A.op('Not')).if_true('offline') +
                 A.Code(A.pushes(False), A.op('Return')).label('offline'))
     insert_at_start(p, data, actions, 'NeedMouseControls', lambda r: no_mouse)
+    # ...so a keyboard player online sees which keys do what on the death menu (its buttons show no keys in
+    # keyboard mode - they're for the mouse there): pause.as2js FGUYDeathHints.
+    try:   # (the other HUD movie, PLYW, has no death menu)
+        insert_at_start(p, data, actions, 'OnDeathMenuRefreshText',
+                        lambda r: A.Code(A.call('FGUYDeathHints', Reg(r['playerIndex']))))
+    except KeyError:
+        pass
     # The game hands the HUD real viewport numbers in many places (and the HUD stores them), so they
     # stay real everywhere; only the three helpers that turn a viewport into HUD objects translate
     # (each is always called with a real number, so every path translates exactly once).

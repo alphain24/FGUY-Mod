@@ -92,6 +92,7 @@ void Init() {
     InitSplitView();
     InitRngTrace();
     InitLoadSync();
+    InitOnlineMenu();
 }
 
 }  // namespace

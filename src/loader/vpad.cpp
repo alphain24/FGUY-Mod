@@ -199,6 +199,26 @@ void HandleCommand(char* line) {
         if (w && h) NetplayTestResolution(atoi(w), atoi(h));
         return;
     }
+    if (cmd && _stricmp(cmd, "winkey") == 0) {   // test tools: winkey <vk> <ms> - a key held in the game's own key
+        char* k = strtok_s(nullptr, " \t\r\n", &ctx);   // table (as if typed on the game window; menus, not netplay)
+        char* ms = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (k) {
+            static int vk;
+            static DWORD hold;
+            vk = atoi(k) & 0xff;
+            hold = ms ? (DWORD)atoi(ms) : 500;
+            CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
+                auto wnd = *reinterpret_cast<unsigned char**>(0xad39e8);
+                if (!wnd) return 0;
+                Log(L"VPad: winkey %d held for %lu ms", vk, hold);
+                ULONGLONG until = GetTickCount64() + hold;
+                while (GetTickCount64() < until) { wnd[0xc2 + vk] = 0x80; Sleep(1); }
+                wnd[0xc2 + vk] = 0;
+                return 0;
+            }, nullptr, 0, nullptr));
+        }
+        return;
+    }
     if (cmd && _stricmp(cmd, "yaw") == 0) {   // test tools: the lobby's 3D preview facing, into the log
         OnlineMenuLogYaw();
         return;

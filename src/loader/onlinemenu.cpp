@@ -35,7 +35,55 @@ unsigned char* PreviewPlayer() {
     return nullptr;
 }
 
+// The Store turns its character itself, every frame while it's on (0x66e5f0, store flag 0xbadcec): by the
+// controller's stick, or in keyboard mode straight from the keyboard - Left / Right arrows, else A / D (the
+// keyboard's stick). The ONLINE screens show that character with the Store on, so A / D / the arrows turned it
+// (and the character's own controls being off didn't matter). There that turning is skipped; Q / E and dragging
+// it with the mouse are ours (they set its facing directly).
+//   0x66e70a  cmp byte ptr [0xbadcec], 0 / 0x66e711 xorps xmm1, xmm1 / 0x66e714 je 0x66e803 (no store turning)
+volatile unsigned char g_noStoreTurn = 0;
+extern "C" unsigned char __cdecl StoreTurnBlocked() { return g_open && !NetplayEnabled() ? 1 : 0; }
+
+__declspec(naked) void StoreTurnStub() {
+    __asm {
+        pushad
+        call StoreTurnBlocked
+        mov g_noStoreTurn, al
+        popad
+        cmp g_noStoreTurn, 0
+        jne skip
+        cmp byte ptr ds:[0xbadcec], 0
+        push 0x66e711          // (xorps leaves the flags: its je decides as before)
+        ret
+    skip:
+        xorps xmm1, xmm1
+        push 0x66e803
+        ret
+    }
+}
+
+void PatchStoreTurn() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    static const unsigned char expected[] = {0x80, 0x3d, 0xec, 0xdc, 0xba, 0x00, 0x00, 0x0f, 0x57, 0xc9};
+    auto at = reinterpret_cast<unsigned char*>(0x66e70a);
+    if (memcmp(at, expected, sizeof(expected)) != 0) {
+        Log(L"Online: the Store's turning code isn't what we expect - the preview can still be turned with keys");
+        return;
+    }
+    DWORD old;
+    VirtualProtect(at, 7, PAGE_EXECUTE_READWRITE, &old);
+    at[0] = 0xE9;
+    *reinterpret_cast<int*>(at + 1) = (int)(reinterpret_cast<uintptr_t>(&StoreTurnStub) - (0x66e70a + 5));
+    at[5] = at[6] = 0x90;
+    VirtualProtect(at, 7, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, 7);
+}
+
 }  // namespace
+
+void InitOnlineMenu() { PatchStoreTurn(); }   // (at start: the code isn't running yet; offline it does as before)
 
 void OnlineMenuOpen(bool open) {
     g_open = open;
@@ -88,8 +136,8 @@ float* PreviewYaw(unsigned char** player) {
 void OnlineMenuLogYaw() {
     unsigned char* p;
     float* yaw = PreviewYaw(&p);
-    Log(L"Online: preview player %p, facing %s%.4f, screens %s", p, yaw ? L"" : L"(none) ", yaw ? *yaw : 0.0f,
-        g_open ? L"open" : L"closed");
+    Log(L"Online: preview player %p, facing %s%.4f (at %p), screens %s", p, yaw ? L"" : L"(none) ", yaw ? *yaw : 0.0f,
+        yaw, g_open ? L"open" : L"closed");
 }
 
 // FGUYMOD_TurnPreview(radians): turn the 3D character preview.

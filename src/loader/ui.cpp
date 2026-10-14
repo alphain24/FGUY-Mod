@@ -397,6 +397,10 @@ void __fastcall Hook_Command(void* self, void* edx, void* movie, const char* com
                 self && !IsBadReadPtr(static_cast<char*>(self) + 0x60, 1) && static_cast<char*>(self)[0x60] ? L"on" : L"off",
                 NetplayEnabled() ? (std::wstring(L" - tick ") + std::to_wstring(NetplayTick())).c_str() : L"");
         }
+        // A level's menus (death menu, character / weapon screens) take a controller's input from CTRL_AddInput(n)
+        // to CTRL_RemoveInput(n) - the same tick on every PC (kbm.cpp: Enter accepts there, as Start)
+        if (NetplayEnabled() && args && (strcmp(command, "CTRL_AddInput") == 0 || strcmp(command, "CTRL_RemoveInput") == 0))
+            KbmLevelMenu(atoi(args), command[5] == 'A');
         static int stacks = 0;   // research: from where the menus' commands come (which thread, which call)
         if (NetplayEnabled() && stacks < 2) {
             ++stacks;
