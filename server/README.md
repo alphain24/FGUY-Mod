@@ -58,4 +58,5 @@ Server=SERVER-IP:7650
    `FGUYMod\online\`; nobody's own save is touched). Every copy boots to the main menu in lockstep, and
    each remote player is one more controller. The game's own menus handle the rest: Story co-op
    drop-in, and the Multiplayer modes with their join screens.
-4. During play the server only forwards small UDP packets: about 60 per second per player.
+4. During play the server only forwards small UDP packets: one per game tick per player (60 at first, up to
+   240 a second once the match runs at the PCs' frame rate).
