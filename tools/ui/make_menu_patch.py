@@ -61,6 +61,21 @@ function OnMovieVolumeValueChanged(curValue) {
     b.percentText = pct;
     b.MusicVolumeMeter.gotoAndStop(pct + 1);
 }
+
+// With MOVIES & TITLE the page has six rows - the game spaces them for five (80 apart from the panel's top
+// row), so SUBTITLES hung below the panel. A little closer and a little higher: all six inside it.
+function FGUYAudioLayout() {
+    var c = _root.subMenu.buttonContainer;
+    var info = audioOptionsButtonInfo;
+    if (c == undefined || info == undefined || info.length <= 5) return;
+    var first = c[info[0].name];
+    if (first == undefined) return;
+    var top = first._y - 44;
+    for (var i = 0; i < info.length; i++) {
+        var b = c[info[i].name];
+        if (b != undefined) b._y = top + i * 75;
+    }
+}
 '''
 
 
@@ -277,6 +292,11 @@ def build(data):
     update = A.call('UpdateSlider', 'SNDS', 'MovieVolume',
                     A.member(A.ROOT, 'subMenu', 'buttonContainer', 'MovieVolume', 'button')).assemble()
     p.replace(after, 0, update)
+    #     ...and the six rows fitted into the panel, right after the page builds them (FGUYAudioLayout).
+    g = next(i for i, a in enumerate(inner) if a[1] == 0x96 and 'GenerateButtons' in texts(a[0]))
+    assert inner[g + 1][1] == 0x3D   # CallFunction (then the game's own Subtract, Pop)
+    q = next(i for i in range(g + 2, g + 5) if inner[i][1] == 0x17)
+    p.replace(inner[q][0] + 1, 0, A.call('FGUYAudioLayout').assemble())
     p.fix_top_level_jumps(inner)
     p.replace(size_field, 2, struct.pack('<H', code_end - code_start + p.delta_between(code_start, code_end)))
 

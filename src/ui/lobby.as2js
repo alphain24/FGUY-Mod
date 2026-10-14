@@ -144,10 +144,25 @@ function FGUY3DStart() {
     flash.external.ExternalInterface.call('PLYR_SetJoinEnabled', false);
     DropOtherPlayers();
     flash.external.ExternalInterface.call('MENU_EnableStore');
+    if (FGUYPickChar != undefined) FGUY3DShow(FGUYPickChar, FGUYPickCostume);   // (the Store camera frames it)
     getURL('FSCommand:GAME_Run', 'MNUS_Script_Camera_StoreEnter_ref');
+    FGUY3DAgainAt = FGUYNow() + 800;
+    FGUY3DAgainN = 0;
+}
+
+// The Store camera sometimes didn't take (about half the time in tests - old builds too): the lobby's panel
+// showed the empty living room instead of the character, and sending the Store camera again changed nothing. Out
+// of the Store and back in once does it, every time - done behind the first ONLINE screen (it covers the 3D
+// scene), 0.8 s and 1.1 s in (FGUYPoll).
+function FGUY3DAgain() {
+    if (FGUY3DAgainAt == undefined || FGUY3DAgainAt <= 0 || FGUYNow() < FGUY3DAgainAt) return;
+    FGUY3DAgainN = FGUY3DAgainN + 1;
+    FGUY3DAgainAt = FGUY3DAgainN < 2 ? FGUYNow() + 300 : -1;
+    getURL('FSCommand:GAME_Run', FGUY3DAgainN < 2 ? 'MNUS_Script_Camera_StoreExit_ref' : 'MNUS_Script_Camera_StoreEnter_ref');
 }
 
 function FGUY3DStop() {
+    FGUY3DAgainAt = -1;
     flash.external.ExternalInterface.call('PLYR_ResetRotation', 2);
     flash.external.ExternalInterface.call('MENU_DisableStore');
     getURL('FSCommand:GAME_Run', 'MNUS_Script_Camera_StoreExit_ref');
@@ -250,7 +265,8 @@ function FGUYData() {
     FGUYStory = ['FR', 'AM', 'CT', 'CH', 'MC', 'PI', 'TF', 'SS', 'GC', 'BP'];
     FGUYMapPics = {FR: 'screenshot_FratRow.tif', AM: 'screenshot_Amish.tif', CT: 'screenshot_Crippletron.tif',
                    CH: 'screenshot_CH.tif', TF: 'screenshot_TF.tif', SS: 'screenshot_SS.tif', BP: 'screenshot_BertramPrime.tif',
-                   MC: 'screenshot_MC.tif', PI: 'screenshot_PI.tif', GC: 'screenshot_PvGC.tif'};
+                   MC: 'screenshot_MC.tif', PI: 'screenshot_PI.tif', GC: 'screenshot_PvGC.tif',
+                   AP: 'screenshot_PvGC.tif'};   // the Airport is the "Chicken Fight!" level's map
     FGUYCostumes = GetCostumesInfo();          // my save's bought costumes, by character index
     FGUYAllCostumes = [];                      // every costume (names and pictures for any save's picks)
     for (var i = 0; i < 11; i++) FGUYAllCostumes[i] = flash.external.ExternalInterface.call('STOR_GetCostumesInfo', 0, i);
@@ -292,10 +308,8 @@ function FGUYMapName(map, code) {
     return String(s).toUpperCase();
 }
 
-// The game's level shots are drawn as a TV screen inside a dark bezel: show just the screen. Maps the game
-// has no picture of (the Airport) get a drawn card.
+// The game's level shots are drawn as a TV screen inside a dark bezel: show just the screen.
 function FGUYMapPicture(mc, map, code, x, y, w, h, r) {
-    if (FGUYMapPics[map] == undefined && FGUYMode(code).code != 'ST') return FGUYDrawnMap(mc, map, x, y, w, h, r);
     return FGUYPicture(mc, FGUYMapPic(map, code), x, y, w, h, r, 0.5, 1.6);
 }
 
@@ -305,34 +319,6 @@ function FGUYPoly(mc, pts, fill, alpha) {
     mc.moveTo(pts[0], pts[1]);
     for (var i = 2; i < pts.length; i = i + 2) mc.lineTo(pts[i], pts[i + 1]);
     mc.endFill();
-}
-
-// Dusk sky, a runway and a jet, in the lobby's colours (drawn in a 160 x 90 box, scaled to fit).
-function FGUYDrawnMap(mc, map, x, y, w, h, r) {
-    FGUYTextN = FGUYTextN + 1;
-    var card = mc.createEmptyMovieClip('d' + FGUYTextN, mc.getNextHighestDepth());
-    var art = card.createEmptyMovieClip('art', 1);
-    var bands = [0x0E2350, 0x16336B, 0x22478A, 0x3561A6, 0x5A86C2, 0x8FB2DA];
-    for (var b = 0; b < bands.length; b++) FGUYRect(art, 0, b * 10, 160, 11, 0, bands[b], 100, 0, 0, 0);
-    FGUYCircle(art, 118, 50, 12, 0xFFD27A, 60, 0, 0);
-    FGUYRect(art, 0, 58, 160, 32, 0, 0x22303F, 100, 0, 0, 0);
-    FGUYPoly(art, [62, 58, 98, 58, 130, 90, 30, 90], 0x3A4756, 100);
-    for (var k = 0; k < 4; k++) FGUYPoly(art, [79.4 - k * 0.6, 61 + k * 8, 80.6 + k * 0.6, 61 + k * 8, 80.8 + k * 0.8, 66 + k * 8, 79.2 - k * 0.8, 66 + k * 8], 0xFFFFFF, 85);
-    for (var t = 0; t < 7; t++) FGUYRect(art, 4 + t * 22, 55, 14, 3, 0, 0x18222E, 100, 0, 0, 0);   // terminal
-    // the jet, climbing
-    FGUYPoly(art, [36, 34, 96, 22, 102, 22, 98, 25, 38, 37], 0xFFFFFF, 95);
-    FGUYPoly(art, [62, 28, 76, 16, 82, 16, 74, 28], 0xE8F0FA, 95);
-    FGUYPoly(art, [58, 31, 72, 40, 78, 40, 70, 30], 0xD6E2F0, 95);
-    FGUYPoly(art, [38, 33, 34, 23, 39, 23, 46, 32], 0xFFD23F, 95);
-    var s = Math.max(w / 160, h / 90);
-    art._xscale = s * 100;
-    art._yscale = s * 100;
-    art._x = x + (w - 160 * s) / 2;
-    art._y = y + (h - 90 * s) / 2;
-    var mask = card.createEmptyMovieClip('mask', 2);
-    FGUYRect(mask, x, y, w, h, r, 0xFFFFFF, 100, 0, 0, 0);
-    art.setMask(mask);
-    return card;
 }
 
 function FGUYMapPic(map, code) {
@@ -367,6 +353,7 @@ function FGUYOwned() {
 }
 
 function FGUYCharList() {
+    if (FGUYS != undefined && FGUYS.mode == 'ST') return ['Stewie', 'Brian'];   // story co-op: the story's two
     var o = FGUYOwned();
     if (o != null) {
         var all = GetMultiplayerCharacterList(), out = [];
@@ -415,7 +402,8 @@ function FGUYCheckPick() {
     if (!cok) { FGUYPickCostume = list.length > 0 ? list[0].CostumeIndex : 0; changed = true; }
     if (changed && FGUYS.state == 'lobby') {
         FGUYSendPick();
-        FGUYToast("The host's save doesn't have your pick - you're " + FGUYCharName(FGUYPickChar));
+        if (FGUYS.mode == 'ST') FGUYToast("Story co-op is Stewie and Brian - you're " +FGUYCharName(FGUYPickChar));
+        else FGUYToast("The host's save doesn't have your pick - you're " + FGUYCharName(FGUYPickChar));
     }
 }
 
@@ -474,6 +462,7 @@ function FGUYParse(blob) {
 
 function FGUYPoll() {
     var blob = flash.external.ExternalInterface.call('FGUYMOD_LobbyState');
+    FGUY3DAgain();
     if (FGUYScreen == 'loading') {   // animate
         var step = Math.floor((FGUYNow() - FGUYLoadStart) / 450);
         if (step != FGUYLoadStep) { FGUYLoadStep = step; FGUYDraw(); }
@@ -510,7 +499,7 @@ function FGUYPoll() {
         FGUYSound('accept');
         if (FGUYIsHost()) { FGUYCheckMap(); FGUYDo('own', FGUYOwnString()); }
     }
-    if (FGUYS.own != old.own || FGUYS.state != was) FGUYCheckPick();
+    if (FGUYS.own != old.own || FGUYS.state != was || FGUYS.mode != old.mode) FGUYCheckPick();
     if (FGUYS.state == 'starting' && FGUYScreen != 'loading') {
         FGUYScreen = 'loading';
         FGUYLoadStart = FGUYNow();
@@ -1473,6 +1462,7 @@ function FGUYCycleMode(dir) {
     if (!FGUYModes[at].teams && FGUYPickTeam != 0) { FGUYPickTeam = 0; FGUYSendPick(); }
     FGUYSendConf();
     FGUYToast('Mode: ' + FGUYModes[at].name + (ok ? '' : ' - map: ' + FGUYMapName(FGUYS.map, FGUYS.mode)));
+    FGUYCheckPick();   // (story co-op is Stewie and Brian only; the server's echo won't show this change)
 }
 
 // Host: make sure the lobby's map exists in its mode (e.g. right after creating the lobby).
