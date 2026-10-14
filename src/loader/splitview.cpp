@@ -27,6 +27,7 @@
 
 #include "common.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -396,6 +397,24 @@ void SplitViewMenuCheck() {
         }
         return 0;
     }, nullptr, 0, nullptr));
+}
+
+// FGUYMOD_MenuCamera: where the menus' 3D camera (view 0's) is - "x|y|z". The ONLINE screens check it's the Store's
+// (sometimes the Store camera didn't take: the lobby's panel showed the empty living room).
+const char* SplitViewMenuCamera() {
+    static char buf[64];
+    auto c = static_cast<const float*>(Camera(0, 0));
+    const float* pos = reinterpret_cast<const float*>(reinterpret_cast<const unsigned char*>(c) + 0x200);
+    sprintf_s(buf, "%.3f|%.3f|%.3f", pos[0], pos[1], pos[2]);
+    static float last[3] = {1e9f, 1e9f, 1e9f};
+    static int logged = 0;
+    float d = std::fabs(pos[0] - last[0]) + std::fabs(pos[1] - last[1]) + std::fabs(pos[2] - last[2]);
+    if (d > 0.5f && logged < 60) {
+        ++logged;
+        Log(L"SplitView: menu camera at %S", buf);
+        memcpy(last, pos, sizeof(last));
+    }
+    return buf;
 }
 
 void InitSplitView() {

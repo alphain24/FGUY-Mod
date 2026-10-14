@@ -349,6 +349,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         } else if (strcmp(fn, "MenuView") == 0) {  // (left, top, right, bottom) of the screen, 0..1
             SplitViewMenuRect((float)ArgNumber(args, argc, 0), (float)ArgNumber(args, argc, 1),
                               (float)ArgNumber(args, argc, 2), (float)ArgNumber(args, argc, 3));
+        } else if (strcmp(fn, "MenuCamera") == 0) {   // the menus' 3D camera: "x|y|z"
+            ReturnString(movie, SplitViewMenuCamera());
+        } else if (strcmp(fn, "TestNo3DFix") == 0) {   // test: the lobby's 3D camera check off (to see it fail)
+            ReturnBool(movie, SettingInt(L"Debug", L"No3DFix", L"FGUYMOD_TEST_NO3DFIX", 0) != 0);
         } else if (strcmp(fn, "SessionLevel") == 0) {
             NetplaySessionLevel();
         } else if (strcmp(fn, "SessionLog") == 0) {

@@ -146,23 +146,44 @@ function FGUY3DStart() {
     flash.external.ExternalInterface.call('MENU_EnableStore');
     if (FGUYPickChar != undefined) FGUY3DShow(FGUYPickChar, FGUYPickCostume);   // (the Store camera frames it)
     getURL('FSCommand:GAME_Run', 'MNUS_Script_Camera_StoreEnter_ref');
+    FGUY3DActive = flash.external.ExternalInterface.call('FGUYMOD_TestNo3DFix') != true;
+    FGUY3DStep = 0;
+    FGUY3DTries = 0;
+    FGUY3DLastCam = '';
     FGUY3DAgainAt = FGUYNow() + 800;
-    FGUY3DAgainN = 0;
 }
 
-// The Store camera sometimes didn't take (about half the time in tests - old builds too): the lobby's panel
-// showed the empty living room instead of the character, and sending the Store camera again changed nothing. Out
-// of the Store and back in once does it, every time - done behind the first ONLINE screen (it covers the 3D
-// scene), 0.8 s and 1.1 s in (FGUYPoll).
+// The Store camera sometimes doesn't take (about half the time in tests - old builds too): it stays on the main
+// menu's view, and the lobby's panel shows the empty living room. Sending it again changes nothing; out of the
+// Store and back in does it. So while the ONLINE screens are open (FGUYPoll), twice a second: where is the 3D
+// camera? Come to rest anywhere but the Store's spot - out and back in, then look again (a few tries at most).
 function FGUY3DAgain() {
-    if (FGUY3DAgainAt == undefined || FGUY3DAgainAt <= 0 || FGUYNow() < FGUY3DAgainAt) return;
-    FGUY3DAgainN = FGUY3DAgainN + 1;
-    FGUY3DAgainAt = FGUY3DAgainN < 2 ? FGUYNow() + 300 : -1;
-    getURL('FSCommand:GAME_Run', FGUY3DAgainN < 2 ? 'MNUS_Script_Camera_StoreExit_ref' : 'MNUS_Script_Camera_StoreEnter_ref');
+    if (!FGUY3DActive) return;
+    var now = FGUYNow();
+    if (now < FGUY3DAgainAt) return;
+    if (FGUY3DStep == 1) {   // out of the Store: back in
+        FGUY3DStep = 0;
+        FGUY3DAgainAt = now + 1500;   // (it gets there before we look again)
+        FGUY3DLastCam = '';
+        getURL('FSCommand:GAME_Run', 'MNUS_Script_Camera_StoreEnter_ref');
+        return;
+    }
+    FGUY3DAgainAt = now + 500;
+    var cam = String(flash.external.ExternalInterface.call('FGUYMOD_MenuCamera'));
+    var still = cam == FGUY3DLastCam;   // (moving: on its way somewhere - wait)
+    FGUY3DLastCam = cam;
+    var p = cam.split('|');   // (the Store camera's spot: -9.505, 1.197, 14.555)
+    var d = Math.abs(Number(p[0]) + 9.505) + Math.abs(Number(p[1]) - 1.197) + Math.abs(Number(p[2]) - 14.555);
+    if (!(d > 1) || !still || FGUY3DTries >= 4) return;
+    FGUY3DTries = FGUY3DTries + 1;
+    flash.external.ExternalInterface.call('FGUYMOD_Log', 'the 3D camera stayed at ' + cam + ' - out of the Store and back in');
+    FGUY3DStep = 1;
+    FGUY3DAgainAt = now + 300;
+    getURL('FSCommand:GAME_Run', 'MNUS_Script_Camera_StoreExit_ref');
 }
 
 function FGUY3DStop() {
-    FGUY3DAgainAt = -1;
+    FGUY3DActive = false;
     flash.external.ExternalInterface.call('PLYR_ResetRotation', 2);
     flash.external.ExternalInterface.call('MENU_DisableStore');
     getURL('FSCommand:GAME_Run', 'MNUS_Script_Camera_StoreExit_ref');
