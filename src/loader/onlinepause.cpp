@@ -34,6 +34,7 @@ volatile LONG g_quit = 0;      // the HUD movie should quit the level now (GAME_
 int g_openCount = 0, g_players = 0;
 int g_injectSlot = -1, g_injectTicks = 0;
 int g_storyPauseTicks = 0;     // story co-op: my pause goes out with the next few inputs
+bool g_swallowBack = false;    // my SETTINGS closed over the game's pause menu: its back press stays mine
 WORD g_lastButtons = 0;
 BYTE g_lastKeys[32];
 BYTE g_lastMouse = 0;
@@ -51,9 +52,10 @@ bool Key(const BYTE* keys, int vk) { return (keys[vk >> 3] >> (vk & 7)) & 1; }
 // A box of kind 1 is the weapons screen's wheel: pointing at a weapon holds the W A S D direction of it (the wheel's
 // six weapons sit every 60 degrees from the top; a keyboard player chooses with W, W+D, S+D, S, S+A, W+A), a click
 // presses the box's key (X: buy). (aspect: the screen's width / height x 1000, for the angle)
-// A box of kind 2 is an item of a menu list (the end of the match's RETRY / MAIN MENU - FGUYMOD_MenuMouse, the results
-// movie): its index there (in the aspect's place) and the item chosen now (cur). Pointing at another item moves the
-// choice there with Up / Down, a click moves it and presses Enter - one key at a time, through the match's input.
+// A box of kind 2 is an item of a menu list (FGUYMOD_MenuMouse: the end of the match's RETRY / MAIN MENU, the game's
+// pause menu, their yes / no questions): its index there (in the aspect's place) and the item chosen now (cur).
+// Pointing at another item moves the choice there with Up / Down (kind 3: a row - Left / Right), a click moves it and
+// presses Enter - one key at a time, through the match's input.
 struct MouseBox { int x0, y0, x1, y1, vk, kind, aspect, cur; };
 SRWLOCK g_boxLock = SRWLOCK_INIT;
 MouseBox g_boxes[4];
@@ -99,14 +101,14 @@ bool BoxesShown() {
     return on;
 }
 
-// The list item the pointer is on (-1: none), and the item chosen now.
-int ListItemAt(SHORT cx, SHORT cy, int* cur) {
+// The list item the pointer is on (-1: none), the item chosen now, and whether the list is a row (kind 3).
+int ListItemAt(SHORT cx, SHORT cy, int* cur, bool* row) {
     int x = cx * 10000 / 32767, y = cy * 10000 / 32767, item = -1;
     AcquireSRWLockShared(&g_boxLock);
     if (GetTickCount64() - g_listAt < 300)
         for (int i = 0; i < g_listCount && item < 0; ++i) {
             const MouseBox& b = g_listBoxes[i];
-            if (x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1) { item = b.aspect; *cur = b.cur; }
+            if (x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1) { item = b.aspect; *cur = b.cur; *row = b.kind == 3; }
         }
     ReleaseSRWLockShared(&g_boxLock);
     return item;
@@ -211,6 +213,34 @@ void Choose(int item) {
     }
 }
 
+// The game's menu lists by mouse (FGUYMOD_MenuMouse's boxes): pointing moves the choice, a click moves it and picks -
+// keys into my input, one at a time.
+void ListMouse(KbmRaw* kbm, bool click) {
+    int cur = 0;
+    bool row = false;
+    int item = ListItemAt(kbm->cursorX, kbm->cursorY, &cur, &row);
+    if (!BoxesShown()) g_seqLen = g_seqPos = 0;   // (the menu went: what's left of the keys isn't for anything now)
+    const int next = row ? VK_RIGHT : VK_DOWN, prev = row ? VK_LEFT : VK_UP;
+    if (g_seqPos >= g_seqLen && item >= 0) {
+        ULONGLONG now = GetTickCount64();
+        if (click) {
+            g_seqLen = g_seqPos = g_seqTick = 0;
+            for (int k = cur; k != item && g_seqLen < 10; k += item > cur ? 1 : -1) g_seq[g_seqLen++] = item > cur ? next : prev;
+            g_seq[g_seqLen++] = VK_RETURN;
+            Log(L"Pause: game menu - item %d clicked (chosen %d)", item, cur);
+        } else if (item != cur && now >= g_hoverAt) {   // (one step, then look again: the menu says where it is)
+            g_seqLen = g_seqPos = g_seqTick = 0;
+            g_seq[g_seqLen++] = item > cur ? next : prev;
+            g_hoverAt = now + 150;
+        }
+    }
+    if (g_seqPos < g_seqLen) {   // each key down 4 ticks, then up 4
+        int key = g_seq[g_seqPos];
+        if (g_seqTick < 4) kbm->keys[key >> 3] |= (BYTE)(1 << (key & 7));
+        if (++g_seqTick >= 8) { g_seqTick = 0; ++g_seqPos; }
+    }
+}
+
 }  // namespace
 
 // netplay.cpp, every tick, with this PC's input for the tick being sent: run the menu and hide the input
@@ -234,9 +264,21 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
     if (keyboardPlayer) { g_cursorX = kbm->cursorX; g_cursorY = kbm->cursorY; }
 
     bool pausePress = (down & XINPUT_GAMEPAD_START) || pressed(VK_ESCAPE);
-    if (g_gamePaused) {   // the game's own pause menu is up: everything goes to it
-        g_storyPauseTicks = 0;   // (my pause did it: the rest of its presses would pause again after RESUME)
+    if (g_gamePaused) g_storyPauseTicks = 0;   // (my pause did it: the rest of its presses would pause again after RESUME)
+    if (g_gamePaused && !(g_open && g_settings)) {   // the game's own pause menu is up: everything goes to it
+        if (g_swallowBack) {   // (the Esc / B that closed my SETTINGS: not the game's menu's back too)
+            bool held = (*buttons & (XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_START)) || Key(keys, VK_ESCAPE) || Key(keys, VK_BACK);
+            if (!held) g_swallowBack = false;
+            *buttons &= ~(XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_START);
+            kbm->keys[VK_ESCAPE >> 3] &= ~(1 << (VK_ESCAPE & 7));
+            kbm->keys[VK_BACK >> 3] &= ~(1 << (VK_BACK & 7));
+        }
+        if (keyboardPlayer) ListMouse(kbm, click);    //   (its buttons by mouse, if it's mine to drive)
         return false;
+    }
+    if (g_gamePaused && keyboardPlayer) {   // (my SETTINGS over it: the pointer as on our menu)
+        g_cursorX = kbm->cursorX;
+        g_cursorY = kbm->cursorY;
     }
     if (keyboardPlayer && !g_open) {   // the death menu's buttons / the weapons wheel by mouse: their keys (BoxKeyAt)
         int hold = 0;
@@ -261,26 +303,7 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
             --g_clickTicks;
             kbm->keys[g_clickVk >> 3] |= (BYTE)(1 << (g_clickVk & 7));
         }
-        // the end of the match's list: pointing moves the choice, a click moves it and picks
-        int cur = 0, item = ListItemAt(kbm->cursorX, kbm->cursorY, &cur);
-        if (g_seqPos >= g_seqLen && item >= 0) {
-            ULONGLONG now = GetTickCount64();
-            if (click) {
-                g_seqLen = g_seqPos = g_seqTick = 0;
-                for (int k = cur; k != item && g_seqLen < 10; k += item > cur ? 1 : -1) g_seq[g_seqLen++] = item > cur ? VK_DOWN : VK_UP;
-                g_seq[g_seqLen++] = VK_RETURN;
-                Log(L"Pause: end of the match - item %d clicked (chosen %d)", item, cur);
-            } else if (item != cur && now >= g_hoverAt) {   // (one step, then look again: the menu says where it is)
-                g_seqLen = g_seqPos = g_seqTick = 0;
-                g_seq[g_seqLen++] = item > cur ? VK_DOWN : VK_UP;
-                g_hoverAt = now + 150;
-            }
-        }
-        if (g_seqPos < g_seqLen) {   // each key down 4 ticks, then up 4
-            int key = g_seq[g_seqPos];
-            if (g_seqTick < 4) kbm->keys[key >> 3] |= (BYTE)(1 << (key & 7));
-            if (++g_seqTick >= 8) { g_seqTick = 0; ++g_seqPos; }
-        }
+        ListMouse(kbm, click);
     }
     // Story co-op pauses as it does offline: one player's pause pauses everyone's game, the game's own pause menu
     // (theirs to drive). The press goes out with my input (KbmRaw.flags bit 3) - OnlinePauseTick on every PC.
@@ -340,6 +363,10 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
         }
         if ((down & XINPUT_GAMEPAD_A) || pressed(VK_RETURN) || pressed(VK_SPACE)) Choose(g_sel);
         else if ((down & (XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_START)) || pressed(VK_ESCAPE) || pressed(VK_BACK)) g_open = false;
+    }
+    if (g_gamePaused && !g_settings && g_open) {   // (my SETTINGS closed: back to the game's pause menu)
+        g_open = false;
+        g_swallowBack = true;
     }
     BYTE flags = kbm->flags;
     if (g_partyTicks > 0) { --g_partyTicks; flags |= 4; }
@@ -450,21 +477,36 @@ const char* OnlinePauseDeathMouse(const char* boxes) {
     return buf;
 }
 
-// FGUYMOD_MenuMouse("x0,y0,x1,y1,13,2,index,chosen;..." or ""): the end of the match's menu (the results movie) - its
-// items for the mouse. Returns whether the Windows pointer is shown ("1": the movie needn't show its own).
-const char* OnlineMenuMouse(const char* boxes) {
+// FGUYMOD_MenuMouse("x0,y0,x1,y1,13,2,index,chosen;..." or "", who): a menu of the game's - its items for the mouse.
+// who "pause": the game's pause menu, which only the player who paused drives (anyone else's pointer would do
+// nothing there); else the end of the match's menu. Returns whether the Windows pointer is shown ("1").
+const char* OnlineMenuMouse(const char* boxes, const char* who) {
     MouseBox b[6];
     int n = ParseBoxes(boxes, b, 6);
+    if (who && strcmp(who, "pause") == 0 && !(g_gamePaused && g_injectSlot == NetplayLocalSlot() && !g_open)) n = 0;
     AcquireSRWLockExclusive(&g_boxLock);
-    static int last = -1;
-    if ((n > 0) != (last > 0)) Log(L"Pause: end of the match menu mouse %s %S", n > 0 ? L"on" : L"off", boxes ? boxes : "");
-    last = n;
+    static std::string last = "-";
+    static int logged = 0;
+    std::string now = n > 0 && boxes ? boxes : "";
+    if (now != last && ++logged <= 60) Log(L"Pause: game menu mouse %s %S", n > 0 ? L"on" : L"off", now.c_str());
+    last = now;
     memcpy(g_listBoxes, b, sizeof(b));
     g_listCount = n;
     g_listAt = GetTickCount64();
     ReleaseSRWLockExclusive(&g_boxLock);
     bool shown = DisplayOsPointer(n > 0 && g_keyboard);
     return shown ? "1" : "0";
+}
+
+// FGUYMOD_PauseSettings (the game's pause menu, its OPTIONS online): the game's options would change the settings of
+// everyone's game (the menu runs on every PC alike) - the player who paused gets their own SETTINGS page instead (on
+// their PC; the game stays paused meanwhile, its menu where it was). Everyone else: nothing.
+void OnlinePauseSettings() {
+    if (!g_gamePaused || g_injectSlot != NetplayLocalSlot()) return;
+    g_open = true;
+    OpenSettings();
+    g_seqLen = g_seqPos = 0;   // (the click's Enter did it: the rest of it would pick OPTIONS again once I'm back)
+    Log(L"Pause: my settings (from the game's pause menu)");
 }
 
 // Out of sync (netplay.cpp, the same check on every PC): leave the match - back to the lobby.

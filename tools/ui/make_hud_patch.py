@@ -31,6 +31,7 @@ from placements import matrix as placement_matrix  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
 PAUSE_SOURCE = os.path.join(HERE, '..', '..', 'src', 'ui', 'pause.as2js')   # the online pause menu
+MENU_DRAW = os.path.join(HERE, '..', '..', 'src', 'ui', 'menudraw.as2js')   #   and its drawing
 
 
 def param_registers(data, o):
@@ -171,7 +172,8 @@ def build(data):
     # (where and how big each element is in the single-player HUD and in each 4-way quarter, from this movie:
     #  see FGUYHudZoom)
     table = ', '.join(f"'{k}': [{', '.join(str(x) for x in v)}]" for k, v in sorted(layout_table(data).items()))
-    source = open(PAUSE_SOURCE, encoding='utf-8').read().replace('FGUY_HUD_SCALES', '{' + table + '}')
+    source = (open(PAUSE_SOURCE, encoding='utf-8').read() + '\n' + open(MENU_DRAW, encoding='utf-8').read()).replace(
+        'FGUY_HUD_SCALES', '{' + table + '}')
     p.replace(o, 0, as2c.compile_source(source))
     # Online the HUD's menus (death menu, character / weapon screens) take no mouse clicks: a click lands on
     # the button on this PC's screen only (each PC shows its own quarter of the 4-way HUD), so a player's

@@ -5,8 +5,7 @@ Online the game feeds that menu no mouse (its pointer stayed in the screen's cor
 its buttons would happen on this PC only - out of sync. So in an online match its buttons go to the loader instead
 (FGUYMOD_MenuMouse: where each one is on the screen, in 1/10000 of it, and which one is chosen now): pointing at
 one moves the choice there with Up / Down, a click moves it and presses Enter - keys in the match's input, the same
-tick on every PC (src/loader/onlinepause.cpp). The Windows mouse pointer shows meanwhile; the movie's own is
-hidden. Offline nothing changes.
+tick on every PC (menumouse.py, src/loader/onlinepause.cpp). Offline nothing changes.
 
 Usage: make_results_patch.py <game folder>
 """
@@ -25,42 +24,7 @@ from make_menu_patch import function2_code  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
 
-SOURCE = r'''
-function FGUYResultsStart() {
-    if (flash.external.ExternalInterface.call('FGUYMOD_OnlineMatch') != true) return;
-    Mouse.hide();
-    if (_root.FGUYResultsMC != undefined) return;
-    var mc = _root.createEmptyMovieClip('FGUYResultsMC', 30500);
-    mc.onEnterFrame = FGUYResultsPoll;
-}
-
-function FGUYResultsShown(mc) {
-    while (mc != undefined && mc != _root) {
-        if (!mc._visible) return false;
-        mc = mc._parent;
-    }
-    return true;
-}
-
-function FGUYResultsPoll() {
-    var vr = Stage.visibleRect;
-    var rx = 0, ry = 0, rw = 960, rh = 720;
-    if (vr) { rx = vr.x; ry = vr.y; rw = vr.width; rh = vr.height; }
-    var refs = buttonReferences, boxes = '';
-    if (refs != undefined && refs != null)
-        for (var i = 0; i < refs.length; i++) {
-            var b = refs[i];
-            if (b == undefined || !FGUYResultsShown(b) || b.buttonIndex == undefined) continue;
-            var h = b.hitBox != undefined ? b.hitBox : b;
-            var bb = h.getBounds(_root);
-            if (bb.xMax <= bb.xMin) continue;
-            boxes = boxes + Math.round((bb.xMin - rx) / rw * 10000) + ',' + Math.round((bb.yMin - ry) / rh * 10000) + ',' +
-                    Math.round((bb.xMax - rx) / rw * 10000) + ',' + Math.round((bb.yMax - ry) / rh * 10000) + ',13,2,' +
-                    b.buttonIndex + ',' + CurBtn + ';';
-        }
-    if (flash.external.ExternalInterface.call('FGUYMOD_MenuMouse', boxes) == '1') Mouse.hide();
-}
-'''
+from menumouse import SOURCE  # noqa: E402  (the mouse for the game's menus online)
 
 
 def build(data):
@@ -69,7 +33,7 @@ def build(data):
     actions = parse_actions(data, start, end)
     o, total = function_at(data, actions, 'OnScreenEnter')
     code_start, code_end, size_field = function2_code(data, o)
-    call = A.call('FGUYResultsStart').assemble()
+    call = A.call('FGUYMenuMouseStart', 'results').assemble()
     p.replace(code_start, 0, call)
     p.replace(size_field, 2, struct.pack('<H', code_end - code_start + len(call)))
     p.replace(o, 0, as2c.compile_source(SOURCE))  # our functions, defined just before OnScreenEnter
