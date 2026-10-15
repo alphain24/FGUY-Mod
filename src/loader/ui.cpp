@@ -317,6 +317,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             OnlinePauseQuitDone();
         } else if (strcmp(fn, "TestHudDump") == 0) {   // research: the HUD logs where its elements are (pause.as2js)
             ReturnBool(movie, SettingInt(L"Debug", L"HudDump", L"FGUYMOD_TEST_HUDDUMP", 0) != 0);
+        } else if (strcmp(fn, "TestAnnounce") == 0) {   // test tools: the HUD shows its "ready" announcement
+            ReturnNumber(movie, SettingInt(L"Debug", L"TestAnnounce", L"FGUYMOD_TEST_ANNOUNCE", 0));
         } else if (strcmp(fn, "TestShowDamageFx") == 0) {   // test tools: the HUD shows its damage frame (screenshots)
             ReturnBool(movie, SettingInt(L"Debug", L"ShowDamageFx", L"FGUYMOD_TEST_DAMAGEFX", 0) != 0);
         } else if (strcmp(fn, "Now") == 0) {   // real milliseconds (a match copy's getTimer() is off: the fixed clock)

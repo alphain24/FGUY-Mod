@@ -24,6 +24,9 @@ import as2asm as A  # noqa: E402
 import as2c  # noqa: E402
 from make_menu_patch import function2_code  # noqa: E402
 from hudscale import layout_table  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 're'))
+import swf  # noqa: E402
+from placements import matrix as placement_matrix  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
@@ -51,6 +54,94 @@ def insert_at_start(p, data, actions, name, code):
     body = code(param_registers(data, o)).assemble()
     p.replace(code_start, 0, body)
     p.replace(size_field, 2, struct.pack('<H', code_end - code_start + len(body)))
+
+
+def read_rect(data, o):
+    """(xmin, xmax, ymin, ymax in twips, bits per value, byte length) of the SWF RECT at o."""
+    nb = data[o] >> 3
+    n = (5 + 4 * nb + 7) // 8
+    bits = int.from_bytes(data[o:o + n], 'big')
+    vals = []
+    for i in range(4):
+        v = (bits >> (n * 8 - 5 - nb * (i + 1))) & ((1 << nb) - 1)
+        vals.append(v - (1 << nb) if v >> (nb - 1) else v)
+    return vals, nb, n
+
+
+def write_rect(vals, nb, n):
+    bits = nb
+    for v in vals:
+        assert -(1 << (nb - 1)) <= v < (1 << (nb - 1)), 'rect value too big for its bits'
+        bits = (bits << nb) | (v & ((1 << nb) - 1))
+    return (bits << (n * 8 - 5 - 4 * nb)).to_bytes(n, 'big')
+
+
+def placement_of(data, parent_id, char_id=None, name=None):
+    """(sx, sy, tx, ty) of the first PlaceObject2 / 3 in sprite parent_id placing char_id / named name."""
+    top = swf.header_end(data)
+    for code, body, ln, to in swf.tags(data, top, len(data)):
+        if code != 39 or struct.unpack_from('<H', data, body)[0] != parent_id:
+            continue
+        for c2, b2, l2, t2 in swf.tags(data, body + 4, body + ln):
+            if c2 not in (26, 70) or not data[b2] & 0x04:
+                continue
+            o = b2 + (3 if c2 == 26 else 4)
+            if c2 == 70 and data[b2 + 1] & 0x08:   # (PlaceObject3: a class name first)
+                o = data.index(b'\0', o) + 1
+            cid = None
+            if data[b2] & 0x02:
+                cid = struct.unpack_from('<H', data, o)[0]
+                o += 2
+            if (char_id is not None and cid == char_id) or (name is not None and name.encode() in data[b2:b2 + l2]):
+                return placement_matrix(data, o)[0]
+    raise KeyError((parent_id, char_id, name))
+
+
+def center_ready_text(p, data):
+    """Multiverse Madness' READY announcement (=MNU_READY: "PRESS [R] WHEN READY" for a keyboard player) is
+    left-aligned in a wide box: the short controller text looked centred, the keyboard one ran off to the right of
+    the screen - offline too. Centred instead, on the point the announcement grows from (ready_animGroup's origin:
+    the screen's middle in the one-player layout), its box made even around that point."""
+    top = swf.header_end(data)
+    fields = [(body, ln, to) for depth, code, body, ln, to in swf.walk(data, top, len(data))
+              if code == 37 and b'=MNU_READY' in data[body:body + ln] and b'align="left"' in data[body:body + ln]]
+    for body, ln, to in fields:
+        cid = struct.unpack_from('<H', data, body)[0]
+        # the box's parent sprite (the one placing it), and the sprite placing that one as ready_animGroup
+        holder = next(sid for sid in sprite_ids(data) if placed_in(data, sid, cid))
+        group = next(sid for sid in sprite_ids(data) if placed_in(data, sid, holder))
+        gsx, _, gtx, _ = placement_of(data, group, name='ready_animGroup')
+        fsx, _, ftx, _ = placement_of(data, holder, char_id=cid)
+        pivot = ((-gtx / gsx) - ftx) / fsx * 20   # in the box's own twips
+        (x0, x1, y0, y1), nb, n = read_rect(data, body + 2)
+        half = (x1 - x0) / 2
+        p.replace(body + 2, n, write_rect([round(pivot - half), round(pivot + half), y0, y1], nb, n))
+        o = body + 2 + n
+        f1, f2 = data[o], data[o + 1]
+        o += 2 + (4 if f1 & 0x01 else 0)
+        if f2 & 0x80:
+            o = data.index(b'\0', o) + 1
+        o += (4 if f1 & 0x04 else 0) + (2 if f1 & 0x02 else 0)
+        if f2 & 0x20:
+            p.replace(o, 1, b'\x02')   # layout: centre
+        h = data.index(b'align="left"', body, body + ln)
+        p.replace(h, len(b'align="left"'), b'align="center"')
+        assert struct.unpack_from('<H', data, to)[0] & 0x3f == 0x3f, 'expected a long DefineEditText header'
+        p.fix_length_u32(to + 2, body, body + ln)
+    return len(fields)
+
+
+def sprite_ids(data):
+    top = swf.header_end(data)
+    return [struct.unpack_from('<H', data, body)[0] for code, body, ln, to in swf.tags(data, top, len(data)) if code == 39]
+
+
+def placed_in(data, sprite_id, char_id):
+    try:
+        placement_of(data, sprite_id, char_id=char_id)
+        return True
+    except KeyError:
+        return False
 
 
 def build(data):
@@ -136,6 +227,7 @@ def build(data):
     p.fix_top_level_jumps(actions)
     assert struct.unpack_from('<H', data, tag)[0] & 0x3f == 0x3f, 'expected long DoAction header'
     p.fix_length_u32(tag + 2, start, end)
+    center_ready_text(p, data)
     p.fix_length_u32(4, 0, len(data))
     return p
 

@@ -178,7 +178,43 @@ function FGUYHudDump() {
                 }
 }
 
+// Test (FGUYMOD_TEST_ANNOUNCE=1): ten seconds in, the "ready" announcement (=2: the Ready screen between Multiverse
+// Madness waves), and where it is on the screen.
+function FGUYTestAnnounce() {
+    if (FGUYTestAnnWait == undefined) {
+        FGUYTestAnnKind = Number(flash.external.ExternalInterface.call('FGUYMOD_TestAnnounce'));
+        FGUYTestAnnWait = FGUYTestAnnKind > 0 ? 300 : -1;
+        FGUYTestAnnLog = 0;
+    }
+    if (FGUYTestAnnWait > 0) {
+        FGUYTestAnnWait = FGUYTestAnnWait - 1;
+        if (FGUYTestAnnWait == 0) {
+            if (FGUYTestAnnKind == 2) PushScreen(Math.max(0, Number(flash.external.ExternalInterface.call('FGUYMOD_MyPlayer'))), 'Ready');
+            else AnnounceReady();
+        }
+        return;
+    }
+    if (FGUYTestAnnWait != 0 || FGUYTestAnnLog > 240) return;
+    FGUYTestAnnLog = FGUYTestAnnLog + 1;
+    if (FGUYTestAnnLog % 30 != 1) return;
+    var r = FGUYPauseRect(), lay = [0, 4], els = ['Announcement_Text', 'MP_Character_Screen'];
+    for (var v = 0; v < 2; v++)
+        for (var l = 0; l < 2; l++)
+            for (var p = 0; p < 2; p++) {
+              for (var e = 0; e < 2; e++) {
+                var m = _root[els[e] + '_' + v + '_' + lay[l] + '_' + p];
+                if (m == undefined || !m._visible) continue;
+                var b = m.getBounds(_root);
+                var zx = _root._xscale / 100;
+                flash.external.ExternalInterface.call('FGUYMOD_HudDebug', els[e] + ' ' + v + '_' + lay[l] + '_' + p +
+                    ' x/xs/screen x0 x1 (of ' + Math.round(r.w) + ', from ' + Math.round(r.x) + ')', m._x, m._xscale,
+                    Math.round(_root._x + b.xMin * zx - r.x), Math.round(_root._x + b.xMax * zx - r.x));
+              }
+            }
+}
+
 function FGUYPausePoll() {
+    FGUYTestAnnounce();
     if (FGUYHudDumpWait == undefined) FGUYHudDumpWait = 0;
     FGUYHudDump();
     FGUYHudZoom();
