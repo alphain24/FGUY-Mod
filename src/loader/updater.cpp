@@ -1,5 +1,5 @@
-// Updates: the lobby game asks GitHub for the mod's latest release (FGUYMod.ini [Update] Repo=<owner>/<name>; none
-// set: no checks) and the ONLINE screen says when there's a newer one. Installing (the player asks): the release's
+// Updates: the lobby game asks GitHub for the mod's latest release (FGUYMod.ini [Update] Repo=<owner>/<name>, default
+// alphain24/FGUY-Mod; Repo= with nothing: no checks) and the ONLINE screen says when there's a newer one. Installing (the player asks): the release's
 // FGUYMod-<version>.zip and its FGUYMod-<version>.zip.sha256 are downloaded, the zip's SHA-256 checked, the zip
 // unpacked (Windows' own tar) and its files copied into the game folder - never over FGUYMod\FGUYMod.ini (the
 // player's settings). The running dinput8.dll can't be overwritten, but it can be renamed: dinput8.dll.old (deleted at
@@ -122,7 +122,7 @@ std::wstring LatestUrl() {
     wchar_t env[512];
     if (GetEnvironmentVariableW(L"FGUYMOD_UPDATE_URL", env, 512)) return env;
     wchar_t repo[200];
-    SettingString(L"Update", L"Repo", nullptr, L"", repo, 200);
+    SettingString(L"Update", L"Repo", nullptr, L"alphain24/FGUY-Mod", repo, 200);   // (the mod's own; empty: no checks)
     if (!repo[0]) return L"";
     return L"https://api.github.com/repos/" + std::wstring(repo) + L"/releases/latest";
 }
