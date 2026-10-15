@@ -68,5 +68,6 @@ function FGUYMenuMousePoll() {
     else if (buttonReferences != undefined && buttonReferences != null)
         boxes = FGUYMenuBoxes(buttonReferences, CurBtn, rx, ry, rw, rh);
     flash.external.ExternalInterface.call('FGUYMOD_MenuMouse', boxes, _root.FGUYMenuWho);
+    if (_root.FGUYMenuWho == 'results') FGUYRematchDraw();   // (make_results_patch.py)
 }
 '''

@@ -35,6 +35,14 @@ int g_openCount = 0, g_players = 0;
 int g_injectSlot = -1, g_injectTicks = 0;
 int g_storyPauseTicks = 0;     // story co-op: my pause goes out with the next few inputs
 bool g_swallowBack = false;    // my SETTINGS closed over the game's pause menu: its back press stays mine
+// The end of the match's rematch vote: Y votes (KbmRaw.flags bit 4, with my input - every PC sees everyone's); once
+// everyone has, the host's input picks the menu's first item (RETRY) by itself. The host can still pick either.
+ULONGLONG g_resultsAt = 0;     // the end of the match's menu last said it's up (FGUYMOD_MenuMouse "results")
+bool g_vote = false;           // mine
+bool g_votes[4] = {};          // everyone's (OnlinePauseTick)
+int g_votePlayers = 0;
+bool g_rematchGo = false, g_rematchDone = false;
+bool ResultsShown() { return GetTickCount64() - g_resultsAt < 500; }
 WORD g_lastButtons = 0;
 BYTE g_lastKeys[32];
 BYTE g_lastMouse = 0;
@@ -305,6 +313,27 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
         }
         ListMouse(kbm, click);
     }
+    if (ResultsShown()) {
+        if (pressed('Y') || (down & XINPUT_GAMEPAD_Y)) {
+            g_vote = !g_vote;
+            Log(L"Pause: rematch vote %s", g_vote ? L"yes" : L"withdrawn");
+        }
+        if (g_vote) kbm->flags |= 16;
+        if (g_rematchGo && keyboardPlayer && g_seqPos >= g_seqLen) {   // (the host: RETRY, as a click on it would)
+            g_rematchGo = false;
+            int cur = 0;
+            bool row = false;
+            AcquireSRWLockShared(&g_boxLock);
+            if (g_listCount > 0) { cur = g_listBoxes[0].cur; row = g_listBoxes[0].kind == 3; }
+            ReleaseSRWLockShared(&g_boxLock);
+            g_seqLen = g_seqPos = g_seqTick = 0;
+            for (int k = cur; k > 0 && g_seqLen < 10; --k) g_seq[g_seqLen++] = row ? VK_LEFT : VK_UP;
+            g_seq[g_seqLen++] = VK_RETURN;
+            Log(L"Pause: everyone voted for a rematch - RETRY");
+        }
+    } else {
+        g_vote = false;
+    }
     // Story co-op pauses as it does offline: one player's pause pauses everyone's game, the game's own pause menu
     // (theirs to drive). The press goes out with my input (KbmRaw.flags bit 3) - OnlinePauseTick on every PC.
     if (!g_open && pausePress && NetplayStoryCoop()) {
@@ -393,6 +422,17 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
     }
     g_openCount = open;
     g_players = here;
+    int voted = 0;
+    for (int s = 0; s < players && s < 4; ++s) {
+        g_votes[s] = !gone[s] && (flags[s] & 16);
+        if (g_votes[s]) ++voted;
+    }
+    g_votePlayers = here;
+    if (!ResultsShown()) g_rematchDone = false;
+    else if (here > 1 && voted == here && !g_rematchDone && NetplayLocalSlot() == 0) {
+        g_rematchDone = true;
+        g_rematchGo = true;
+    }
     for (int s = 0; s < players && !g_gamePaused; ++s)   // story co-op: someone paused - everyone's game, theirs to drive
         if (!gone[s] && (flags[s] & 8)) {
             g_gamePaused = true;
@@ -484,6 +524,7 @@ const char* OnlineMenuMouse(const char* boxes, const char* who) {
     MouseBox b[6];
     int n = ParseBoxes(boxes, b, 6);
     if (who && strcmp(who, "pause") == 0 && !(g_gamePaused && g_injectSlot == NetplayLocalSlot() && !g_open)) n = 0;
+    if (who && strcmp(who, "results") == 0 && n > 0) g_resultsAt = GetTickCount64();
     AcquireSRWLockExclusive(&g_boxLock);
     static std::string last = "-";
     static int logged = 0;
@@ -507,6 +548,31 @@ void OnlinePauseSettings() {
     OpenSettings();
     g_seqLen = g_seqPos = 0;   // (the click's Enter did it: the rest of it would pick OPTIONS again once I'm back)
     Log(L"Pause: my settings (from the game's pause menu)");
+}
+
+// netplay.cpp, the test bot's scripted input: it always wants a rematch (tests of the vote).
+bool OnlinePauseBotVotes() { return IsBot() && ResultsShown(); }
+
+// FGUYMOD_Rematch (the end of the match's menu): "<votes>|<players>|<my vote 0/1>|<name>:<0/1>;..." ("" offline).
+const char* OnlinePauseRematch() {
+    static std::string out;
+    out.clear();
+    if (!NetplayEnabled()) return out.c_str();
+    int voted = 0;
+    std::string names;
+    for (int s = 0; s < 4; ++s) {
+        const wchar_t* w = NetplayLobbyName(s);
+        if (!w || !*w) continue;
+        char n8[64];
+        WideCharToMultiByte(CP_UTF8, 0, w, -1, n8, sizeof(n8), nullptr, nullptr);
+        for (char* c = n8; *c; ++c) if (*c == '|' || *c == ':' || *c == ';') *c = ' ';
+        names += std::string(n8) + ":" + (g_votes[s] ? "1" : "0") + ";";
+        if (g_votes[s]) ++voted;
+    }
+    char head[32];
+    sprintf_s(head, "%d|%d|%d|", voted, g_votePlayers, g_vote ? 1 : 0);
+    out = head + names;
+    return out.c_str();
 }
 
 // Out of sync (netplay.cpp, the same check on every PC): leave the match - back to the lobby.

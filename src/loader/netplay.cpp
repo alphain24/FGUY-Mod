@@ -767,6 +767,7 @@ Pad SampleLocal(unsigned f) {
         Pad sp = ScriptPad(f);
         if (HandoffHudUp()) sp.kbm.flags |= 1;   // my level's HUD is up (as below)
         if (g_inSession) sp.kbm.pace = (BYTE)g_paceMine;
+        if (g_inSession && OnlinePauseBotVotes()) sp.kbm.flags |= 16;   // (the rematch vote, onlinepause.cpp)
         if (g_rngWanted && g_slot == 0) { sp.kbm.sync = 1; g_rngWanted = false; }
         return sp;
     }

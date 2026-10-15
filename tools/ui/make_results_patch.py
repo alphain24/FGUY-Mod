@@ -24,7 +24,33 @@ from make_menu_patch import function2_code  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
 
-from menumouse import SOURCE  # noqa: E402  (the mouse for the game's menus online)
+from menumouse import SOURCE as MENU_MOUSE  # noqa: E402  (the mouse for the game's menus online)
+
+MENU_DRAW = os.path.join(HERE, '..', '..', 'src', 'ui', 'menudraw.as2js')   # (its text and boxes)
+
+# The rematch vote (src/loader/onlinepause.cpp): Y votes; the bar at the bottom says who has.
+REMATCH = r'''
+function FGUYRematchDraw() {
+    var s = String(flash.external.ExternalInterface.call('FGUYMOD_Rematch'));
+    if (s == _root.FGUYRematchLast) return;
+    _root.FGUYRematchLast = s;
+    _root.FGUYRematchUI.removeMovieClip();
+    if (s == '' || s == 'undefined') return;
+    var f = s.split('|');
+    var ui = _root.createEmptyMovieClip('FGUYRematchUI', 30550);
+    var r = FGUYPauseRect(), size = r.h / 720, names = String(f[3]).split(';'), list = '';
+    FGUYPauseN = 0;
+    for (var i = 0; i < names.length; i++) {
+        if (names[i] == '') continue;
+        var p = names[i].split(':');
+        list = list + (list == '' ? '' : '     ') + p[0] + (p[1] == '1' ? ': yes' : ': -');
+    }
+    var text = 'REMATCH  ' + f[0] + ' / ' + f[1] + '      ' + list + '      Y: ' + (f[2] == '1' ? 'take it back' : 'vote');
+    FGUYPauseBox(ui, r.x + r.w * 0.2, r.y + r.h * 0.895, r.w * 0.6, r.h * 0.058, 12, 0x13213C, 90, 0x2E5C9A, 100, 2);
+    FGUYPauseText(ui, r.x + r.w * 0.2, r.y + r.h * 0.905, r.w * 0.6, r.h * 0.05, text, false, 15 * size, 0xFFFFFF, 'center');
+}
+'''
+SOURCE = MENU_MOUSE + REMATCH + open(MENU_DRAW, encoding='utf-8').read()
 
 
 def build(data):
