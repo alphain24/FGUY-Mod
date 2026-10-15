@@ -734,6 +734,7 @@ void NoteMismatch(unsigned tick) {
     if (badRun == 3) {
         Log(L"Netplay: out of sync since tick %u - back to the lobby", tick - 2 * g_syncEvery);
         OverlayShow(L"The match went out of sync - back to the lobby", 6000);
+        ReportDesync(tick - 2 * g_syncEvery, "players parted");
         OnlinePauseForceQuit();
     }
 }

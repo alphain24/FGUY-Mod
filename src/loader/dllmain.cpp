@@ -80,6 +80,7 @@ void Init() {
     InitNetplay(exe);
     InitConfigOverride(exe);
     InitHandoff();
+    InitReports();
     InitAudio(exe);
     InitSounds();
     InitDisplay(exe);

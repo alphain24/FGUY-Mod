@@ -534,6 +534,11 @@ function FGUYPoll() {
         FGUY3DStart();
         PlayOptionsSubMenuMusic();   // what the loading screen stopped
         FGUYApplySettingsBack();     // and my settings as I left them in the match
+        var saved = String(flash.external.ExternalInterface.call('FGUYMOD_ReportNew'));
+        if (saved != '' && saved != 'undefined') {   // (the match went out of sync: its report)
+            FGUYToast('The match went out of sync - a report was saved (Y on the ONLINE screen)');
+            FGUYToastUntil = FGUYNow() + 9000;
+        }
         FGUYReportSettings();
     }
     if (FGUYS.state == 'lobby' && was != 'lobby') {
@@ -1026,7 +1031,10 @@ function FGUYDrawHub(ui) {
     FGUYHit(x, py + ph - 120, pw - 56, 90, 'codeJoin', 0);
     FGUYTitle(ui, x, py + ph - 100, pw - 56, 56, 'JOIN', 36, FGUYC.white, 'center');
     if (FGUYS.status != '' && FGUYS.state == 'online') FGUYText(ui, 48, 824, 1504, 28, FGUYS.status, false, 18, FGUYC.red, 'left');
-    FGUYFooter(ui, ['A', 'Select', 'B', 'Main menu', 'LB', 'Switch panel'], '');
+    var hints = ['A', 'Select', 'B', 'Main menu', 'LB', 'Switch panel'];
+    var reports = Number(flash.external.ExternalInterface.call('FGUYMOD_ReportCount'));   // (saved when a match went wrong)
+    if (reports > 0) { hints.push('Y'); hints.push('Reports (' + reports + ')'); }
+    FGUYFooter(ui, hints, '');
 }
 
 // ---- lobby --------------------------------------------------------------------------------------------------------
@@ -1368,6 +1376,11 @@ function FGUYInputHub(key) {
         FGUYHubPanel = (FGUYHubPanel + (key == 82 ? 1 : 2)) % 3;
         FGUYFocus = 0;
         FGUYSound('nav');
+        return;
+    }
+    if (key == 89 && (FGUYKeyFromPad || !FGUYTyping())) {   // Y: the reports folder (out-of-sync matches, crashes)
+        flash.external.ExternalInterface.call('FGUYMOD_OpenReports');
+        FGUYSound('accept');
         return;
     }
     if (FGUYHubPanel == 0) {

@@ -84,6 +84,12 @@ void NetplayWatchAim(int player);      //   research: who writes a player's aim 
 void InitSplitView();                  // one full-screen view per PC online    (splitview.cpp)
 int SplitViewHudMode(int mode);
 bool NetplayStoryCoop();               // netplay.cpp: this session is story co-op
+void InitReports();                    // report.cpp: zips of the logs - crashed games found at start
+void ReportDesync(unsigned tick, const char* what);   //   the match went out of sync: this PC's report
+int ReportCount();                     //   FGUYMOD_ReportCount
+const char* ReportNew();               //   FGUYMOD_ReportNew: one saved in the last match ("" none)
+void ReportOpenFolder();               //   FGUYMOD_OpenReports
+DWORD HandoffLobbyPid();               // handoff.cpp: the session game's lobby game (0: none)
 std::string NetplayStats();            //   FGUYMOD_NetStats: "name:ping ms|..." of the other players
 bool OnlineShowPing();                 // onlinesettings.cpp: the match shows the pings
 void SplitViewHudHas4Way(bool has);    //   the level's HUD: does it have the 4-way layout? (the story's has none)

@@ -228,3 +228,5 @@ int HandoffGiveBackState() {
     LONG s = g_giveBack;
     return s == 1 || s == 2 ? (int)s : 0;
 }
+
+DWORD HandoffLobbyPid() { return g_oldPid; }

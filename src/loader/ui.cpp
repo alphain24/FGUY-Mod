@@ -314,6 +314,13 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         } else if (strcmp(fn, "PauseSettings") == 0) {   // (the game's pause menu: OPTIONS online -> my own settings)
             OnlinePauseSettings();
             ReturnBool(movie, true);
+        } else if (strcmp(fn, "ReportCount") == 0) {     // (the ONLINE screen: reports saved)
+            ReturnNumber(movie, ReportCount());
+        } else if (strcmp(fn, "ReportNew") == 0) {       // (back from a match: one saved in it?)
+            ReturnString(movie, ReportNew());
+        } else if (strcmp(fn, "OpenReports") == 0) {     // (the REPORTS button: the folder)
+            ReportOpenFolder();
+            ReturnBool(movie, true);
         } else if (strcmp(fn, "NetStats") == 0) {        // (the HUD: the other players' pings, top right)
             static std::string stats;
             stats = OnlineShowPing() ? NetplayStats() : std::string();
