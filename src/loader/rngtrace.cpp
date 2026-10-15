@@ -239,6 +239,40 @@ __declspec(naked) void NpcUpdateStub() {
     }
 }
 
+// Research (with the trace): every change of a player's money (0x5bf460, __thiscall (wallet, new amount): the wallet is
+// player +0xbc, its player index at +0x214, the money at +0x224), with who changed it.
+extern "C" void __cdecl MoneyLog(DWORD ret, const unsigned char* wallet, int to) {
+    static int logged = 0;
+    if (!NetplayEnabled() || ++logged > 400) return;
+    const DWORD* sp = reinterpret_cast<const DWORD*>(_AddressOfReturnAddress());
+    const DWORD* top = reinterpret_cast<const DWORD*>(reinterpret_cast<NT_TIB*>(NtCurrentTeb())->StackBase);
+    wchar_t line[600];
+    int len = swprintf_s(line, L"Rng: tick %u money of player %d %d -> %d%s from %#lx:", NetplayTick(),
+                         *reinterpret_cast<const int*>(wallet + 0x214), *reinterpret_cast<const int*>(wallet + 0x224), to,
+                         GetCurrentThreadId() == NetplayGameThread() ? L"" : L" (not the game thread)", ret);
+    for (int i = 3, found = 0; sp + i < top && i < 800 && found < 10 && len < 560; ++i)
+        if (sp[i] >= 0x401000 && sp[i] < 0x9f0000) { len += swprintf_s(line + len, 600 - len, L" %#lx", sp[i]); ++found; }
+    Log(L"%s", line);
+}
+__declspec(naked) void MoneyStub() {   // (0x5bf460: push esi; mov esi, ecx; call 0x6655a0)
+    __asm {
+        pushad
+        pushfd
+        push dword ptr [esp + 40]
+        push ecx
+        push dword ptr [esp + 44]
+        call MoneyLog
+        add esp, 12
+        popfd
+        popad
+        push esi
+        mov esi, ecx
+        push 0x5bf468
+        push 0x6655a0
+        ret
+    }
+}
+
 bool Hook(uintptr_t at, const unsigned char* expected, size_t n, void* to) {
     auto b = reinterpret_cast<unsigned char*>(at);
     if (memcmp(b, expected, n) != 0) return false;
@@ -274,6 +308,8 @@ void InitRngTrace() {
         swprintf_s(npath, L"%s\\npc_%lu.bin", g_modDir, GetCurrentProcessId());
         if (_wfopen_s(&g_npc, npath, L"wb") != 0) g_npc = nullptr;
         if (!g_npc || !Hook(0x60b8f0, kNpc, sizeof(kNpc), (void*)NpcUpdateStub)) Log(L"Rng: enemy update not traced");
+        static const unsigned char kMoney[] = {0x56, 0x8b, 0xf1, 0xe8, 0x38, 0x61, 0x0a, 0x00};
+        if (!Hook(0x5bf460, kMoney, sizeof(kMoney), (void*)MoneyStub)) Log(L"Rng: money code isn't what we expect");
         wchar_t path[MAX_PATH];
         swprintf_s(path, L"%s\\rng_%lu.bin", g_modDir, GetCurrentProcessId());
         if (_wfopen_s(&g_trace, path, L"wb") != 0) g_trace = nullptr;

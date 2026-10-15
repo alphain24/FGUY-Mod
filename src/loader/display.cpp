@@ -148,6 +148,7 @@ const UINT kRestyleMsg = WM_APP + 0x4647;  // wParam = target Mode
 const UINT kRevealMsg = WM_APP + 0x4648;   // show the hidden session window (handoff.cpp)
 const UINT kHideMsg = WM_APP + 0x4649;     // hide the window (the old game, while it closes)
 const UINT kParkMsg = WM_APP + 0x464A;     // hide the window and hold the game until DisplayUnpark (online.cpp)
+const UINT kPointerMsg = WM_APP + 0x464B;  // show / hide the Windows mouse pointer (wParam 1 / 0, DisplayOsPointer)
 void RestyleWindow(Mode to);
 
 // Parked (the lobby game while its player is in a match, online.cpp): the window hidden and the game held in
@@ -192,6 +193,34 @@ void ParkHere(HWND wnd) {
     if (g_unparkShown) SetEvent(g_unparkShown);
 }
 
+// The mouse pointer of the online menus (the pause menu, the death menu, the weapons wheel - onlinepause.cpp): the
+// HUD movie runs at 30 frames a second, and a pointer it drew moved 30 times a second - choppy at any frame rate.
+// The Windows pointer instead: drawn by Windows at the monitor's own rate, right where the mouse is - and where the
+// menu sees it (kbm.cpp reads the same Windows cursor position). Asked for by the HUD's poll (30 times a second);
+// when it stops asking (the menu closed, the level quit) the timer hides it again.
+volatile ULONGLONG g_pointerAt = 0;   // the last time it was asked for
+volatile LONG g_pointerWanted = 0;
+bool g_pointerShown = false;          // (window thread only)
+int g_pointerShows = 0;               //   ShowCursor(TRUE)s we did - undone when it goes
+const UINT_PTR kPointerTimer = 0x4647;
+
+void PointerShow(HWND wnd, bool on) {
+    if (on && !g_pointerShown) {
+        g_pointerShows = 0;
+        int count;
+        do { count = ShowCursor(TRUE); ++g_pointerShows; } while (count < 0 && g_pointerShows < 32);
+        SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+        SetTimer(wnd, kPointerTimer, 200, nullptr);
+        g_pointerShown = true;
+        Log(L"Window: the Windows mouse pointer on (online menu)");
+    } else if (!on && g_pointerShown) {
+        for (; g_pointerShows > 0; --g_pointerShows) ShowCursor(FALSE);
+        KillTimer(wnd, kPointerTimer);
+        g_pointerShown = false;
+        Log(L"Window: the Windows mouse pointer off");
+    }
+}
+
 LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_KEYDOWN && !NetplayEnabled()) OnlineMenuKey(wnd, wp);  // typing on the ONLINE screens
     LRESULT handled;
@@ -225,6 +254,22 @@ LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
         case kParkMsg:
             ParkHere(wnd);
             return 0;
+        case kPointerMsg:
+            PointerShow(wnd, wp != 0 && g_pointerWanted);
+            return 0;
+        case WM_TIMER:
+            if (wp != kPointerTimer) break;
+            if (GetTickCount64() - g_pointerAt > 400) {   // (nobody asks any more)
+                InterlockedExchange(&g_pointerWanted, 0);
+                PointerShow(wnd, false);
+            }
+            return 0;
+        case WM_SETCURSOR:
+            if (g_pointerShown && LOWORD(lp) == HTCLIENT) {
+                SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+                return TRUE;
+            }
+            break;
         case WM_WINDOWPOSCHANGED:
             // In windowed mode the game takes its screen size from the window's client area here
             // (FGUY.exe 0x48399a; its window procedure handles only WM_DESTROY, WM_ACTIVATE,
@@ -541,6 +586,18 @@ bool DisplayPark() {
     if (!g_unpark) g_unpark = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     ResetEvent(g_unpark);
     return PostMessageW(g_mainWnd, kParkMsg, 0, 0) != FALSE;
+}
+
+// The online menus' poll (the HUD's thread), 30 times a second: is the Windows pointer wanted? Returns whether it's
+// shown (exclusive fullscreen: no - the menu draws its own).
+bool DisplayOsPointer(bool want) {
+    if (!g_mainWnd || g_mode == Mode::Fullscreen) return false;
+    if (want) g_pointerAt = GetTickCount64();
+    if (want != (g_pointerWanted != 0)) {
+        InterlockedExchange(&g_pointerWanted, want ? 1 : 0);
+        PostMessageW(g_mainWnd, kPointerMsg, want ? 1 : 0, 0);
+    }
+    return want;
 }
 
 void DisplayUnpark(bool show, const RECT* at, HANDLE shown) {

@@ -413,12 +413,18 @@ unsigned g_peerHashTick[4][8];
 unsigned g_myHash[8], g_myHashTick[8];
 int g_desyncs = 0;
 // What each check hashed, kept so a mismatch can show the exact values of that tick (both PCs log the same tick).
-struct Hashed { int count; int index[8]; float pos[8][3], aim[8][3]; unsigned players, rng; int rngLeft; };
+struct Hashed { int count; int index[8]; float pos[8][3], aim[8][3]; int money[8]; float health[8]; unsigned players, rng; int rngLeft; };
 Hashed g_hashed[8];
+// Every tick's player state, the last 128 ticks: the first time the match goes out of sync both PCs write the ticks
+// since the last check that matched - side by side the logs show the very tick the players parted.
+const int kHistory = 128;
+Hashed g_history[kHistory];
+unsigned g_historyTick[kHistory];
 
 
 void LogPlayers(const wchar_t* tag);
 int PlayerMoney(const unsigned char* player);
+float PlayerHealth(const unsigned char* player);
 
 void NoteMismatch(unsigned tick);
 void RngDrift(unsigned tick);
@@ -480,9 +486,22 @@ void CompareHash(int slot, unsigned tick, unsigned hash, unsigned players, unsig
         if (details) {   // what this PC hashed at that tick (compare with the peer's log)
             const Hashed& v = g_hashed[k];
             for (int i = 0; i < v.count; ++i)
-                Log(L"Netplay:   tick %u player %d pos (%.5f, %.5f, %.5f) aim (%.5f, %.5f, %.5f)", tick, v.index[i],
-                    v.pos[i][0], v.pos[i][1], v.pos[i][2], v.aim[i][0], v.aim[i][1], v.aim[i][2]);
+                Log(L"Netplay:   tick %u player %d pos (%.5f, %.5f, %.5f) aim (%.5f, %.5f, %.5f) money %d health %.5f", tick,
+                    v.index[i], v.pos[i][0], v.pos[i][1], v.pos[i][2], v.aim[i][0], v.aim[i][1], v.aim[i][2], v.money[i],
+                    v.health[i]);
             Log(L"Netplay:   tick %u random numbers %08x (%d left before the next refill)", tick, v.rng, v.rngLeft);
+        }
+        static bool historyDone = false;
+        if (!historyDone && !onlyRng) {
+            historyDone = true;
+            for (unsigned t = tick > (unsigned)g_syncEvery + 2 ? tick - g_syncEvery - 2 : 0; t <= tick; ++t) {
+                const Hashed& h = g_history[t % kHistory];
+                if (g_historyTick[t % kHistory] != t) continue;
+                for (int i = 0; i < h.count; ++i)
+                    Log(L"Netplay:   history tick %u player %d pos (%.5f, %.5f, %.5f) aim (%.5f, %.5f, %.5f) money %d health %.5f "
+                        L"rng %08x", t, h.index[i], h.pos[i][0], h.pos[i][1], h.pos[i][2], h.aim[i][0], h.aim[i][1], h.aim[i][2],
+                        h.money[i], h.health[i], h.rng);
+            }
         }
     }
 }
@@ -856,7 +875,15 @@ unsigned HashPlayers(Hashed* keep) {
         // and their money (the wallet: player +0xbc, its +0x224 - what the store's prices are checked against; a
         // purchase that went through on one PC only went unnoticed until the random numbers parted)
         int money = PlayerMoney(self);
+        keep->money[i] = money;
         for (int k = 0; k < 4; ++k) h = (h ^ ((money >> (k * 8)) & 0xff)) * 16777619u;
+        // and their health (a player who died on one PC only: Multiverse Madness was over there - everyone down -
+        // and went on everywhere else)
+        float health = PlayerHealth(self);
+        keep->health[i] = health;
+        unsigned hb;
+        memcpy(&hb, &health, 4);
+        for (int k = 0; k < 4; ++k) h = (h ^ ((hb >> (k * 8)) & 0xff)) * 16777619u;
     }
     // The game's random numbers (one Mersenne Twister, rngtrace.cpp: 624 words at 0xb09360, the next one's address
     // at 0xb09358, words left at 0xada67c): every PC must have drawn the same ones. Hashed on its own as well, so a
@@ -878,6 +905,12 @@ int PlayerMoney(const unsigned char* player) {   // (the wallet, 0x5bf420: playe
     return IsBadReadPtr(money, 4) ? 0 : *money;
 }
 
+float PlayerHealth(const unsigned char* player) {   // (player +0x5c points to its health: +0x140, 200 when full)
+    auto obj = *reinterpret_cast<const unsigned char* const*>(player + 0x5c);
+    const float* health = obj ? reinterpret_cast<const float*>(obj + 0x140) : nullptr;
+    return !health || IsBadReadPtr(health, 4) ? 0.0f : *health;
+}
+
 void LogPlayers(const wchar_t* tag) {
     unsigned char* players[8];
     int n = GamePlayers(players, 8);
@@ -886,9 +919,9 @@ void LogPlayers(const wchar_t* tag) {
         const float* aim = PlayerAim(players[i]);
         static const float none[3] = {0, 0, 0};
         if (!aim) aim = none;
-        Log(L"Netplay: %s tick %u player %d at (%.4f, %.4f, %.4f) aim (%.3f, %.3f, %.3f) money %d", tag, g_tick,
+        Log(L"Netplay: %s tick %u player %d at (%.4f, %.4f, %.4f) aim (%.3f, %.3f, %.3f) money %d health %.3f", tag, g_tick,
             *reinterpret_cast<int*>(players[i] + 0xdf8), pos[0], pos[1], pos[2], aim[0], aim[1], aim[2],
-            PlayerMoney(players[i]));
+            PlayerMoney(players[i]), PlayerHealth(players[i]));
     }
 }
 
@@ -1124,6 +1157,10 @@ void Tick() {
                 Log(L"Netplay: players exist from tick %u", g_playStartTick);
             }
         }
+        if (g_syncEvery > 0 && g_playStartTick) {   // (the history: every tick)
+            HashPlayers(&g_history[g_tick % kHistory]);
+            g_historyTick[g_tick % kHistory] = g_tick;
+        }
         if (g_syncEvery > 0 && g_tick % g_syncEvery == 0) {
             int k = (g_tick / g_syncEvery) % 8;
             unsigned h = HashPlayers(&g_hashed[k]);
@@ -1320,6 +1357,28 @@ void Tick() {
                         Log(L"Netplay: test - player %d's money %d -> %d at tick %u", moneyPlayer[d], *money, moneyAmount[d], g_tick);
                         *money = moneyAmount[d];
                     }
+            }
+    }
+    {   // test: FGUYMOD_TEST_MEDAL=<tick>:<player>:<medal>,... - at that tick, on every PC, that player earns that medal
+        // (0x9abfb0 on the HUD manager 0x97e760: its money is paid by 0x9a4fa0 - loadsync.cpp)
+        static int medals = -1;
+        static unsigned medalTick[8];
+        static int medalPlayer[8], medalId[8];
+        if (medals < 0) {
+            medals = 0;
+            char env[128];
+            if (GetEnvironmentVariableA("FGUYMOD_TEST_MEDAL", env, sizeof(env))) {
+                char* ctx = nullptr;
+                for (char* t = strtok_s(env, ",", &ctx); t && medals < 8; t = strtok_s(nullptr, ",", &ctx))
+                    if (sscanf_s(t, "%u:%d:%d", &medalTick[medals], &medalPlayer[medals], &medalId[medals]) == 3) ++medals;
+            }
+        }
+        for (int d = 0; d < medals; ++d)
+            if (g_inSession && g_tick == medalTick[d]) {
+                using Hud_t = void*(__cdecl*)();
+                using Medal_t = void(__thiscall*)(void*, int, int);
+                Log(L"Netplay: test - player %d earns medal %d at tick %u", medalPlayer[d], medalId[d], g_tick);
+                reinterpret_cast<Medal_t>(0x9abfb0)(reinterpret_cast<Hud_t>(0x97e760)(), medalId[d], medalPlayer[d]);
             }
     }
     {   // test: FGUYMOD_TEST_DROP=<tick>:<player>,... - at that tick, on every PC, that player is dropped far below

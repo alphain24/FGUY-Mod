@@ -56,6 +56,7 @@ MouseBox g_boxes[4];
 int g_boxCount = 0;
 ULONGLONG g_boxesAt = 0;       // (the HUD says every 33 ms; older than this: the menu is gone)
 int g_clickVk = 0, g_clickTicks = 0;
+bool g_osPointer = false;      // the Windows pointer is shown for the menus (OnlinePauseCursor)
 
 int BoxKeyAt(SHORT cx, SHORT cy, int* hold = nullptr) {
     int x = cx * 10000 / 32767, y = cy * 10000 / 32767, vk = 0;
@@ -341,9 +342,13 @@ const char* OnlinePauseMenu() {
 }
 
 // FGUYMOD_PauseCursor: "x|y|show" (x, y in 1/10000 of the screen) - keyboard / mouse players get a pointer.
+// (the Windows pointer instead where it can be: display.cpp DisplayOsPointer - smooth; this one moves with the HUD's
+// 30 frames a second)
 const char* OnlinePauseCursor() {
+    bool want = g_keyboard && (g_open || BoxesShown());
+    g_osPointer = DisplayOsPointer(want);
     static char buf[32];
-    sprintf_s(buf, "%d|%d|%d", g_cursorX * 10000 / 32767, g_cursorY * 10000 / 32767, g_open && g_keyboard ? 1 : 0);
+    sprintf_s(buf, "%d|%d|%d", g_cursorX * 10000 / 32767, g_cursorY * 10000 / 32767, g_open && g_keyboard && !g_osPointer ? 1 : 0);
     return buf;
 }
 
@@ -372,7 +377,8 @@ const char* OnlinePauseDeathMouse(const char* boxes) {
     g_boxesAt = GetTickCount64();
     ReleaseSRWLockExclusive(&g_boxLock);
     static char buf[32];
-    sprintf_s(buf, "%d|%d|%d", g_cursorX * 10000 / 32767, g_cursorY * 10000 / 32767, n > 0 && g_keyboard && !g_open ? 1 : 0);
+    sprintf_s(buf, "%d|%d|%d", g_cursorX * 10000 / 32767, g_cursorY * 10000 / 32767,
+              n > 0 && g_keyboard && !g_open && !g_osPointer ? 1 : 0);
     return buf;
 }
 

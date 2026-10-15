@@ -162,6 +162,7 @@ void DisplayAfterReset();              // d3d9.cpp: borderless again if a Reset 
 bool DisplayPark();                    // the lobby game during its player's match: hidden, held (online.cpp)
 void DisplayUnpark(bool show, const RECT* at, HANDLE shown);   //   go on (shown: at `at`), then set `shown`
 bool DisplayWindowRectOf(DWORD pid, RECT* r);   // another process's game window (the session game's)
+bool DisplayOsPointer(bool want);      // online menus: the Windows mouse pointer shown (false: draw your own)
 
 // handoff.cpp: the old game shows the loading screen while the session boots hidden
 void InitHandoff();

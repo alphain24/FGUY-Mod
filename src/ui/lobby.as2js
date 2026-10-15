@@ -411,19 +411,42 @@ function FGUYOwnString() {
     return parts.join(';');
 }
 
-// My pick must be something the host's save has; if not, take the first one that is.
+// Story co-op: everyone plays someone else (Stewie, Brian). Another player in the lobby who has character c - with
+// lowerOnly, only one who joined before me (a lower slot): they keep it, I change.
+function FGUYStoryTakenBy(c, lowerOnly) {
+    if (FGUYS.mode != 'ST' || FGUYS.state != 'lobby') return null;
+    for (var i = 0; i < FGUYS.members.length; i++) {
+        var m = FGUYS.members[i];
+        if (m.slot != FGUYS.slot && m.character == c && (!lowerOnly || m.slot < FGUYS.slot)) return m;
+    }
+    return null;
+}
+
+// My pick must be something the host's save has; if not, take the first one that is. In story co-op also one
+// nobody who joined before me has (if there is one left).
 function FGUYCheckPick() {
     FGUYChars = FGUYCharList();
     var ok = false;
     for (var i = 0; i < FGUYChars.length; i++) if (FGUYChars[i] == FGUYPickChar) ok = true;
-    var changed = false;
+    var changed = false, taken = null;
     if (!ok) { FGUYPickChar = FGUYChars[0]; changed = true; }
+    var first = FGUYStoryTakenBy(FGUYPickChar, true);
+    if (first != null)
+        for (var j = 0; j < FGUYChars.length; j++)
+            if (FGUYStoryTakenBy(FGUYChars[j], false) == null) {
+                FGUYPickChar = FGUYChars[j];
+                FGUYPickCostume = -1;   // (its first costume, below)
+                changed = true;
+                taken = first;
+                break;
+            }
     var list = FGUYCostumeList(FGUYPickChar), cok = false;
     for (var k = 0; k < list.length; k++) if (String(list[k].CostumeIndex) == String(FGUYPickCostume)) cok = true;
     if (!cok) { FGUYPickCostume = list.length > 0 ? list[0].CostumeIndex : 0; changed = true; }
     if (changed && FGUYS.state == 'lobby') {
         FGUYSendPick();
-        if (FGUYS.mode == 'ST') FGUYToast("Story co-op is Stewie and Brian - you're " +FGUYCharName(FGUYPickChar));
+        if (taken != null) FGUYToast(taken.name + ' is ' + FGUYCharName(taken.character) + " - you're " + FGUYCharName(FGUYPickChar));
+        else if (FGUYS.mode == 'ST') FGUYToast("Story co-op is Stewie and Brian - you're " + FGUYCharName(FGUYPickChar));
         else FGUYToast("The host's save doesn't have your pick - you're " + FGUYCharName(FGUYPickChar));
     }
 }
@@ -520,7 +543,8 @@ function FGUYPoll() {
         FGUYSound('accept');
         if (FGUYIsHost()) { FGUYCheckMap(); FGUYDo('own', FGUYOwnString()); }
     }
-    if (FGUYS.own != old.own || FGUYS.state != was || FGUYS.mode != old.mode) FGUYCheckPick();
+    if (FGUYS.own != old.own || FGUYS.state != was || FGUYS.mode != old.mode || (FGUYS.mode == 'ST' && FGUYS.state == 'lobby'))
+        FGUYCheckPick();
     if (FGUYS.state == 'starting' && FGUYScreen != 'loading') {
         FGUYScreen = 'loading';
         FGUYLoadStart = FGUYNow();
@@ -1511,9 +1535,16 @@ function FGUYCycleSkin(dir) {
 }
 
 function FGUYCycleChar(dir) {
-    var at = 0;
-    for (var i = 0; i < FGUYChars.length; i++) if (FGUYChars[i] == FGUYPickChar) at = i;
-    FGUYPickChar = FGUYChars[(at + dir + FGUYChars.length) % FGUYChars.length];
+    var at = 0, n = FGUYChars.length;
+    for (var i = 0; i < n; i++) if (FGUYChars[i] == FGUYPickChar) at = i;
+    var to = (at + dir + n) % n;
+    while (to != at && FGUYStoryTakenBy(FGUYChars[to], false) != null) to = (to + dir + n) % n;   // (story: someone's)
+    if (to == at) {
+        var by = FGUYStoryTakenBy(FGUYChars[(at + dir + n) % n], false);
+        if (by != null) FGUYToast(by.name + ' is ' + FGUYCharName(by.character));
+        return;
+    }
+    FGUYPickChar = FGUYChars[to];
     var list = FGUYCostumeList(FGUYPickChar);
     FGUYPickCostume = list.length > 0 ? list[0].CostumeIndex : 0;
 }
@@ -1540,6 +1571,12 @@ function FGUYInputChar(key) {
         FGUYSound('change');
     } else if (key == 88 && mode.teams) { FGUYPickTeam = 1 - FGUYPickTeam; FGUYSound('change'); }
     else if (key == 13 || key == 36) {
+        var by = FGUYStoryTakenBy(FGUYChars[FGUYCharSel], false);
+        if (by != null && FGUYChars[FGUYCharSel] != FGUYPickChar) {   // (story co-op: someone else plays them)
+            FGUYToast(by.name + ' is ' + FGUYCharName(by.character));
+            FGUYSound('back');
+            return;
+        }
         FGUYPickChar = FGUYChars[FGUYCharSel];
         var costumes = FGUYCostumeList(FGUYPickChar);
         FGUYPickCostume = costumes.length > 0 ? costumes[FGUYCostumeSel].CostumeIndex : 0;

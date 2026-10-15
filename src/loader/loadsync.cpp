@@ -224,6 +224,55 @@ float __cdecl EffectBetween(float a, float b) {
     return (1.0f - r) * a + r * b;
 }
 
+// The match's medals (3 kills in a row and the like - 0x9abfb0 queues one for a player) pay their money from
+// 0x9a4fa0, each tick: a player's next one only once the HUD's popup for the last one has finished - the HUD element
+// clears the player's flag (+0x10a + player, 0x97e7b0) at the end of its animation. That's the HUD's clock, and
+// online each PC's HUD shows only its own player: on my PC my medals paid out as the popups ended, everyone else's
+// never again - the money parted (Multiverse Madness: +100 on one PC) and the match with it. Online the money doesn't
+// wait for the popups: every PC pays every medal the tick it's due (and "all paid", 0x9a50f6, likewise).
+volatile LONG g_rewardWaits = 1;   // (the stubs' answer: 1 offline - the game's own way)
+extern "C" void __cdecl RewardCheck() {
+    static int off = -1;   // (test: FGUYMOD_TEST_NOMEDALFIX=1 - the game's own way online too, to see the money part)
+    if (off < 0) off = GetEnvironmentVariableW(L"FGUYMOD_TEST_NOMEDALFIX", nullptr, 0) ? 1 : 0;
+    g_rewardWaits = NetplayEnabled() && !off ? 0 : 1;
+}
+__declspec(naked) void RewardPayStub() {   // 0x9a4fed: cmp byte ptr [edi + esi + 0x10a], al (7 bytes)
+    __asm {
+        pushad
+        pushfd
+        call RewardCheck
+        popfd
+        popad
+        cmp dword ptr [g_rewardWaits], 0
+        je online
+        cmp byte ptr [edi + esi + 0x10a], al
+        push 0x9a4ff4
+        ret
+    online:
+        cmp eax, eax   // (ZF: "not waiting for the popup")
+        push 0x9a4ff4
+        ret
+    }
+}
+__declspec(naked) void RewardAllPaidStub() {   // 0x9a50f6: cmp byte ptr [esi + ebx + 0x10a], al (7 bytes)
+    __asm {
+        pushad
+        pushfd
+        call RewardCheck
+        popfd
+        popad
+        cmp dword ptr [g_rewardWaits], 0
+        je online
+        cmp byte ptr [esi + ebx + 0x10a], al
+        push 0x9a50fd
+        ret
+    online:
+        cmp eax, eax
+        push 0x9a50fd
+        ret
+    }
+}
+
 }  // namespace
 
 // netplay.cpp, the start of every session tick (game thread).
@@ -267,4 +316,11 @@ void InitLoadSync() {
     } else {
         Log(L"Online: the level movie code isn't what we expect - a skipped movie may leave the sound held");
     }
+    static const unsigned char kRewardPay[] = {0x38, 0x84, 0x37, 0x0a, 0x01, 0x00, 0x00, 0x0f, 0x85, 0xc1};
+    static const unsigned char kRewardAllPaid[] = {0x38, 0x84, 0x1e, 0x0a, 0x01, 0x00, 0x00, 0x75, 0x33};
+    // (only the 7-byte compares are replaced; the jumps after them are checked to be where we expect)
+    int rw = PatchStart(0x9a4fed, kRewardPay, 7, (void*)RewardPayStub) +
+             PatchStart(0x9a50f6, kRewardAllPaid, 7, (void*)RewardAllPaidStub);
+    if (rw != 2 || memcmp(reinterpret_cast<void*>(0x9a4ff4), kRewardPay + 7, 3) || memcmp(reinterpret_cast<void*>(0x9a50fd), kRewardAllPaid + 7, 2))
+        Log(L"Online: the medal money code isn't what we expect (%d of 2) - medals may part the PCs' money", rw);
 }
