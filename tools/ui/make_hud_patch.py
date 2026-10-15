@@ -119,6 +119,12 @@ def build(data):
         else:
             insert_at_start(p, data, actions, name, viewport)
     if debug:
+        for name, where in (('OnCharacterCustomizeKeyDown', 1), ('OnDeathMenuKeyDown', 2)):
+            try:   # (which keys reach the screens' own key handlers - pause.as2js FGUYKeyProbe)
+                insert_at_start(p, data, actions, name,
+                                lambda r, where=where: A.Code(A.call('FGUYKeyProbe', Reg(r['playerIndex']), where)))
+            except KeyError:
+                pass
         insert_at_start(p, data, actions, 'SetHeadIcon', lambda r: A.Code(A.external(
             'FGUYMOD_HudDebug', 'head icon player', Reg(r['playerIndex'])), A.op('Pop')))
         insert_at_start(p, data, actions, 'SetAmmo', lambda r: A.Code(A.external(

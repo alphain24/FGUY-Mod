@@ -418,6 +418,7 @@ Hashed g_hashed[8];
 
 
 void LogPlayers(const wchar_t* tag);
+int PlayerMoney(const unsigned char* player);
 
 void NoteMismatch(unsigned tick);
 void RngDrift(unsigned tick);
@@ -852,6 +853,10 @@ unsigned HashPlayers(Hashed* keep) {
                     a[1] != a[1] || a[2] != a[2]))
             aim = nullptr;
         for (int k = 0; aim && k < 12; ++k) h = (h ^ aim[k]) * 16777619u;
+        // and their money (the wallet: player +0xbc, its +0x224 - what the store's prices are checked against; a
+        // purchase that went through on one PC only went unnoticed until the random numbers parted)
+        int money = PlayerMoney(self);
+        for (int k = 0; k < 4; ++k) h = (h ^ ((money >> (k * 8)) & 0xff)) * 16777619u;
     }
     // The game's random numbers (one Mersenne Twister, rngtrace.cpp: 624 words at 0xb09360, the next one's address
     // at 0xb09358, words left at 0xada67c): every PC must have drawn the same ones. Hashed on its own as well, so a
@@ -868,6 +873,11 @@ unsigned HashPlayers(Hashed* keep) {
     return (h ^ r) * 16777619u;
 }
 
+int PlayerMoney(const unsigned char* player) {   // (the wallet, 0x5bf420: player +0xbc, its +0x224)
+    const int* money = reinterpret_cast<const int*>(player + 0xbc + 0x224);
+    return IsBadReadPtr(money, 4) ? 0 : *money;
+}
+
 void LogPlayers(const wchar_t* tag) {
     unsigned char* players[8];
     int n = GamePlayers(players, 8);
@@ -876,8 +886,9 @@ void LogPlayers(const wchar_t* tag) {
         const float* aim = PlayerAim(players[i]);
         static const float none[3] = {0, 0, 0};
         if (!aim) aim = none;
-        Log(L"Netplay: %s tick %u player %d at (%.4f, %.4f, %.4f) aim (%.3f, %.3f, %.3f)", tag, g_tick,
-            *reinterpret_cast<int*>(players[i] + 0xdf8), pos[0], pos[1], pos[2], aim[0], aim[1], aim[2]);
+        Log(L"Netplay: %s tick %u player %d at (%.4f, %.4f, %.4f) aim (%.3f, %.3f, %.3f) money %d", tag, g_tick,
+            *reinterpret_cast<int*>(players[i] + 0xdf8), pos[0], pos[1], pos[2], aim[0], aim[1], aim[2],
+            PlayerMoney(players[i]));
     }
 }
 
@@ -1283,6 +1294,32 @@ void Tick() {
             if (*reinterpret_cast<int*>(list[i] + 0xdf8) == g_slot) {
                 float* pos = const_cast<float*>(PlayerPos(list[i]));
                 if (pos) pos[0] += 2.0f;
+            }
+    }
+    {   // test: FGUYMOD_TEST_MONEY=<tick>:<player>:<amount>,... - at that tick, on every PC, that player's match money
+        // (the wallet at player +0xbc, its +0x224 - 0x5bf420)
+        static int moneys = -1;
+        static unsigned moneyTick[8];
+        static int moneyPlayer[8], moneyAmount[8];
+        if (moneys < 0) {
+            moneys = 0;
+            char env[128];
+            if (GetEnvironmentVariableA("FGUYMOD_TEST_MONEY", env, sizeof(env))) {
+                char* ctx = nullptr;
+                for (char* t = strtok_s(env, ",", &ctx); t && moneys < 8; t = strtok_s(nullptr, ",", &ctx))
+                    if (sscanf_s(t, "%u:%d:%d", &moneyTick[moneys], &moneyPlayer[moneys], &moneyAmount[moneys]) == 3) ++moneys;
+            }
+        }
+        for (int d = 0; d < moneys; ++d)
+            if (g_inSession && g_tick == moneyTick[d]) {
+                unsigned char* list[8];
+                int n = GamePlayers(list, 8);
+                for (int i = 0; i < n; ++i)
+                    if (*reinterpret_cast<int*>(list[i] + 0xdf8) == moneyPlayer[d]) {
+                        int* money = reinterpret_cast<int*>(list[i] + 0xbc + 0x224);
+                        Log(L"Netplay: test - player %d's money %d -> %d at tick %u", moneyPlayer[d], *money, moneyAmount[d], g_tick);
+                        *money = moneyAmount[d];
+                    }
             }
     }
     {   // test: FGUYMOD_TEST_DROP=<tick>:<player>,... - at that tick, on every PC, that player is dropped far below

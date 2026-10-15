@@ -14,6 +14,7 @@
 
 #include <xinput.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -46,19 +47,36 @@ bool Key(const BYTE* keys, int vk) { return (keys[vk >> 3] >> (vk & 7)) & 1; }
 // on this screen (1/10000 of it) and the key each stands for. A click on one presses that key in my input for a
 // few ticks - the match's input, so every PC does it the same tick (a click straight on the HUD's button happened
 // on this PC only: out of sync). The boxes come from the HUD's thread, the clicks are seen on the game's.
-struct MouseBox { int x0, y0, x1, y1, vk; };
+// A box of kind 1 is the weapons screen's wheel: pointing at a weapon holds the W A S D direction of it (the wheel's
+// six weapons sit every 60 degrees from the top; a keyboard player chooses with W, W+D, S+D, S, S+A, W+A), a click
+// presses the box's key (X: buy). (aspect: the screen's width / height x 1000, for the angle)
+struct MouseBox { int x0, y0, x1, y1, vk, kind, aspect; };
 SRWLOCK g_boxLock = SRWLOCK_INIT;
 MouseBox g_boxes[4];
 int g_boxCount = 0;
 ULONGLONG g_boxesAt = 0;       // (the HUD says every 33 ms; older than this: the menu is gone)
 int g_clickVk = 0, g_clickTicks = 0;
 
-int BoxKeyAt(SHORT cx, SHORT cy) {
+int BoxKeyAt(SHORT cx, SHORT cy, int* hold = nullptr) {
     int x = cx * 10000 / 32767, y = cy * 10000 / 32767, vk = 0;
+    if (hold) *hold = 0;
     AcquireSRWLockShared(&g_boxLock);
     if (GetTickCount64() - g_boxesAt < 300)
-        for (int i = 0; i < g_boxCount && !vk; ++i)
-            if (x >= g_boxes[i].x0 && x <= g_boxes[i].x1 && y >= g_boxes[i].y0 && y <= g_boxes[i].y1) vk = g_boxes[i].vk;
+        for (int i = 0; i < g_boxCount && !vk; ++i) {
+            const MouseBox& b = g_boxes[i];
+            if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) continue;
+            vk = b.vk;
+            if (b.kind == 1 && hold) {   // the wheel: which weapon it points at
+                double dx = (x - (b.x0 + b.x1) / 2.0) * (b.aspect > 0 ? b.aspect / 1000.0 : 16.0 / 9.0);
+                double dy = y - (b.y0 + b.y1) / 2.0;
+                if (dx * dx + dy * dy > 0.04 * ((b.y1 - b.y0) / 2.0) * ((b.y1 - b.y0) / 2.0)) {   // (not its middle)
+                    double a = std::atan2(dx, -dy) * 180.0 / 3.14159265358979;
+                    if (a < 0) a += 360;
+                    static const int keys[6] = {1, 1 | 8, 4 | 8, 4, 4 | 2, 1 | 2};   // W 1, A 2, S 4, D 8
+                    *hold = keys[(int)((a + 30) / 60) % 6];
+                }
+            }
+        }
     ReleaseSRWLockShared(&g_boxLock);
     return vk;
 }
@@ -177,12 +195,24 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
 
     bool pausePress = (down & XINPUT_GAMEPAD_START) || pressed(VK_ESCAPE);
     if (g_gamePaused) return false;   // the game's own pause menu is up: everything goes to it
-    if (keyboardPlayer && !g_open) {   // the death menu's buttons by mouse: their keys (see BoxKeyAt)
-        int vk = click ? BoxKeyAt(kbm->cursorX, kbm->cursorY) : 0;
+    if (keyboardPlayer && !g_open) {   // the death menu's buttons / the weapons wheel by mouse: their keys (BoxKeyAt)
+        int hold = 0;
+        int vk = BoxKeyAt(kbm->cursorX, kbm->cursorY, &hold);
+        static const int dirs[4] = {'W', 'A', 'S', 'D'};
+        for (int d = 0; d < 4; ++d)
+            if (hold & (1 << d)) kbm->keys[dirs[d] >> 3] |= (BYTE)(1 << (dirs[d] & 7));
+        static int lastHold = 0;
+        if (hold && hold != lastHold) {
+            static int logged = 0;
+            if (++logged <= 20) Log(L"Pause: the wheel pointed at - holding %s%s%s%s", hold & 1 ? L"W" : L"", hold & 2 ? L"A" : L"",
+                                     hold & 4 ? L"S" : L"", hold & 8 ? L"D" : L"");
+        }
+        lastHold = hold;
+        if (!click) vk = 0;
         if (vk) {
             g_clickVk = vk;
             g_clickTicks = 6;
-            Log(L"Pause: death menu clicked - key %d", vk);
+            Log(L"Pause: menu clicked - key %d", vk);
         }
         if (g_clickTicks > 0) {
             --g_clickTicks;
@@ -323,16 +353,20 @@ const char* OnlinePauseDeathMouse(const char* boxes) {
     MouseBox b[4];
     int n = 0;
     for (const char* at = boxes; at && *at && n < 4;) {
-        if (sscanf_s(at, "%d,%d,%d,%d,%d", &b[n].x0, &b[n].y0, &b[n].x1, &b[n].y1, &b[n].vk) == 5 && b[n].vk > 0 &&
+        b[n].kind = 0;
+        b[n].aspect = 0;
+        if (sscanf_s(at, "%d,%d,%d,%d,%d,%d,%d", &b[n].x0, &b[n].y0, &b[n].x1, &b[n].y1, &b[n].vk, &b[n].kind, &b[n].aspect) >= 5 &&
+            b[n].vk > 0 &&
             b[n].vk < 256)
             ++n;
         at = strchr(at, ';');
         if (at) ++at;
     }
     AcquireSRWLockExclusive(&g_boxLock);
-    static int lastCount = -1;
-    if ((n > 0) != (lastCount > 0)) Log(L"Pause: death menu mouse %s %S", n > 0 ? L"on" : L"off", boxes ? boxes : "");
-    lastCount = n;
+    static int lastSig = -1;   // (logged as it changes: off, the death menu's buttons, the wheel)
+    int sig = n > 0 ? 1 + b[0].kind : 0;
+    if (sig != lastSig) Log(L"Pause: menu mouse %s %S", n > 0 ? (b[0].kind == 1 ? L"on (the wheel)" : L"on") : L"off", boxes ? boxes : "");
+    lastSig = sig;
     memcpy(g_boxes, b, sizeof(b));
     g_boxCount = n;
     g_boxesAt = GetTickCount64();

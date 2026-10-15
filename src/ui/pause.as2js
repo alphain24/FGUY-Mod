@@ -222,12 +222,36 @@ function FGUYDeathMouse() {
     var v = p >= 0 && PlayerViewportMapping != undefined ? PlayerViewportMapping[p] : undefined;
     var r = FGUYPauseRect();
     var layer = _root.FGUYMouseUI;
-    if (v != undefined && CurScreen != undefined && CurScreen[v] == 'DeathMenu' && IsKeyboardEnabled(p)) {
+    var screen = v != undefined && CurScreen != undefined ? CurScreen[v] : undefined;
+    var mouseScreen = (screen == 'DeathMenu' || screen == 'CharacterCustomize') && IsKeyboardEnabled(p);
+    if (mouseScreen) {
         if (layer == undefined) {
             layer = _root.createEmptyMovieClip('FGUYMouseUI', 30001);
             FGUYPausePointer(layer, r.h / 720);
         }
         FGUYMouseUnzoom(layer);
+    }
+    // The weapons screen (from the death menu, or a store portal): the wheel - pointing at a weapon chooses it, a
+    // click buys it. The loader turns that into the keys a keyboard player has for it (the direction on W A S D,
+    // then X), so every PC chooses and buys alike. Its box: the wheel's spokes, the 6th field 1 (a wheel).
+    if (mouseScreen && screen == 'CharacterCustomize') {
+        var wb = undefined;
+        for (var si = 0; si < 8; si++) {
+            var spoke = GetSpokeFromSlot(p, si);
+            if (spoke == undefined || !spoke._visible) continue;
+            var sb = spoke.getBounds(layer);
+            if (sb.xMax <= sb.xMin) continue;
+            if (wb == undefined) wb = {xMin: sb.xMin, xMax: sb.xMax, yMin: sb.yMin, yMax: sb.yMax};
+            else {
+                wb.xMin = Math.min(wb.xMin, sb.xMin); wb.xMax = Math.max(wb.xMax, sb.xMax);
+                wb.yMin = Math.min(wb.yMin, sb.yMin); wb.yMax = Math.max(wb.yMax, sb.yMax);
+            }
+        }
+        if (wb != undefined)
+            boxes = Math.round((wb.xMin - r.x) / r.w * 10000) + ',' + Math.round((wb.yMin - r.y) / r.h * 10000) + ',' +
+                    Math.round((wb.xMax - r.x) / r.w * 10000) + ',' + Math.round((wb.yMax - r.y) / r.h * 10000) + ',88,1,' + Math.round(r.w / r.h * 1000) + ';';
+    }
+    if (mouseScreen && screen == 'DeathMenu') {
         var m = GetScreenMovieClip(p);
         var names = ['continueButton', 'characterSelectButton', 'weaponChangesButton'], keys = [13, 88, 89];
         var got = [], x0 = undefined, x1 = undefined;
@@ -362,11 +386,18 @@ function FGUYNavHints(playerIndex, which) {
                 y = b.yMax + 8;
             }
         }
-        var str = which == 1 ? 'W A S D  choose      X  buy      ENTER  done      BACKSPACE  back'
+        var str = which == 1 ? 'W A S D or point  choose      X or click  buy      ENTER  done      BACKSPACE  back'
                              : 'LEFT / RIGHT  character      UP / DOWN  costume      ENTER  pick      BACKSPACE  back';
         m[name] = FGUYPauseText(m, (b.xMin + b.xMax) / 2 - 400, y, 800, 30, str, false, 16, 0xFFFFFF, 'center');
     }
     m[name]._visible = true;
+}
+
+// Research (make_hud_patch.py --debug): a screen's own key handler ran - which key, for whom (where: 1 weapons, 2 death).
+function FGUYKeyProbe(playerIndex, where) {
+    FGUYKeyN = FGUYKeyN == undefined ? 1 : FGUYKeyN + 1;
+    flash.external.ExternalInterface.call('FGUYMOD_HudDebug', 'key handler', where, playerIndex, Key.getCode(), FGUYKeyN,
+        Number(flash.external.ExternalInterface.call('STOR_GetCurrency', playerIndex)), currentCustomizeSelection[playerIndex]);
 }
 
 function FGUYPauseRect() {   // the visible screen in stage units
