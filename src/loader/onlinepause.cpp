@@ -33,6 +33,7 @@ volatile LONG g_leave = 0;     // QUIT TO LOBBY chosen: leave the session (from 
 volatile LONG g_quit = 0;      // the HUD movie should quit the level now (GAME_Quit)
 int g_openCount = 0, g_players = 0;
 int g_injectSlot = -1, g_injectTicks = 0;
+int g_storyPauseTicks = 0;     // story co-op: my pause goes out with the next few inputs
 WORD g_lastButtons = 0;
 BYTE g_lastKeys[32];
 BYTE g_lastMouse = 0;
@@ -233,7 +234,10 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
     if (keyboardPlayer) { g_cursorX = kbm->cursorX; g_cursorY = kbm->cursorY; }
 
     bool pausePress = (down & XINPUT_GAMEPAD_START) || pressed(VK_ESCAPE);
-    if (g_gamePaused) return false;   // the game's own pause menu is up: everything goes to it
+    if (g_gamePaused) {   // the game's own pause menu is up: everything goes to it
+        g_storyPauseTicks = 0;   // (my pause did it: the rest of its presses would pause again after RESUME)
+        return false;
+    }
     if (keyboardPlayer && !g_open) {   // the death menu's buttons / the weapons wheel by mouse: their keys (BoxKeyAt)
         int hold = 0;
         int vk = BoxKeyAt(kbm->cursorX, kbm->cursorY, &hold);
@@ -278,14 +282,21 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
             if (++g_seqTick >= 8) { g_seqTick = 0; ++g_seqPos; }
         }
     }
+    // Story co-op pauses as it does offline: one player's pause pauses everyone's game, the game's own pause menu
+    // (theirs to drive). The press goes out with my input (KbmRaw.flags bit 3) - OnlinePauseTick on every PC.
+    if (!g_open && pausePress && NetplayStoryCoop()) {
+        g_storyPauseTicks = 4;
+        Log(L"Pause: story co-op - pausing the game for everyone");
+    }
     if (!g_open) {
-        if (pausePress) {
+        if (pausePress && !NetplayStoryCoop()) {
             g_open = true;
             g_sel = 0;
             g_settings = false;
             Log(L"Pause: menu open (the match goes on)");
         } else {
             if (g_partyTicks > 0) { --g_partyTicks; kbm->flags |= 4; }
+            if (g_storyPauseTicks > 0) { --g_storyPauseTicks; kbm->flags |= 8; }
             *buttons &= ~XINPUT_GAMEPAD_START;   // (only the menu answers the pause button online)
             if (keyboardPlayer) kbm->keys[VK_ESCAPE >> 3] &= ~(1 << (VK_ESCAPE & 7));
             return false;
@@ -355,6 +366,15 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
     }
     g_openCount = open;
     g_players = here;
+    for (int s = 0; s < players && !g_gamePaused; ++s)   // story co-op: someone paused - everyone's game, theirs to drive
+        if (!gone[s] && (flags[s] & 8)) {
+            g_gamePaused = true;
+            g_open = false;
+            g_storyPauseTicks = 0;
+            g_injectSlot = s;
+            g_injectTicks = 4 * NetplayRate() / 60;
+            Log(L"Pause: player %d paused the game (story co-op)", s);
+        }
     if (!g_gamePaused && here > 0 && open == here) {
         g_gamePaused = true;
         g_open = false;

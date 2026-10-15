@@ -1605,6 +1605,7 @@ void NetplayLogStacks() {
     if (g_renderThread) { Log(L"Netplay: render thread %lu:", g_renderThread); LogStack(g_renderThread); }
 }
 bool NetplayLevelLive() { return g_enabled && g_liveTick && g_tick >= g_liveTick; }
+bool NetplayStoryCoop() { return g_enabled && g_sessionStory; }
 
 void InitNetplay(HMODULE exe) {
     g_enabled = SettingInt(L"Netplay", L"Enable", L"FGUYMOD_NET", 0) != 0;

@@ -83,6 +83,7 @@ void WatchAddress(const void* addr, const wchar_t* what, bool reads = false);   
 void NetplayWatchAim(int player);      //   research: who writes a player's aim point (test pipe "watchaim")                   // research: the game's random numbers   (rngtrace.cpp)
 void InitSplitView();                  // one full-screen view per PC online    (splitview.cpp)
 int SplitViewHudMode(int mode);
+bool NetplayStoryCoop();               // netplay.cpp: this session is story co-op
 void SplitViewHudHas4Way(bool has);    //   the level's HUD: does it have the 4-way layout? (the story's has none)
 int SplitViewMyViewport();             //   online: my player's viewport (-1: offline / not in the level yet)
 int SplitViewHudViewport(int viewport);
