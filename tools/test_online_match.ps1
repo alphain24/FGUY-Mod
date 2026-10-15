@@ -11,7 +11,8 @@ param(
     [string[]]$Controls = @(),   # per copy: keyboard / controller
     [string]$Save = "",           # the save every copy starts from (default: test_online.ps1's)
     [string]$Res = "960x540",     # the copies' render size
-    [int]$Players = 2
+    [int]$Players = 2,
+    [string]$Server = "127.0.0.1:7650"   # the lobby server (your VPS: <ip>:7650)
 )
 $Controls = @($Controls | ForEach-Object { $_ -split ',' } | Where-Object { $_ })   # ("a,b" from -File comes as one)
 $pad = Join-Path $PSScriptRoot "pad.ps1"
@@ -20,7 +21,7 @@ function Log([int]$id) { Join-Path $GameDir "FGUYMod\FGUYMod_$id.log" }
 
 $extra = @{}
 if ($Save) { $extra.Save = $Save }
-$ids = @(& (Join-Path $PSScriptRoot "test_online.ps1") -GameDir $GameDir -Players $Players -Controls $Controls -Res $Res @extra)
+$ids = @(& (Join-Path $PSScriptRoot "test_online.ps1") -GameDir $GameDir -Players $Players -Controls $Controls -Res $Res -Server $Server @extra)
 $ids = @($ids[($ids.Count - $Players)..($ids.Count - 1)])
 $hostId = $ids[0]; $guestId = $ids[1]
 $guests = @($ids[1..($ids.Count - 1)])
