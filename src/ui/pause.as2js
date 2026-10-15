@@ -237,9 +237,32 @@ function FGUYPingPoll() {
     FGUYMouseUnzoom(ui);
 }
 
+// Online, dead in Multiverse Madness: whose view this PC shows now (splitview.cpp spectates a teammate).
+function FGUYSpectatePoll() {
+    if (FGUYPingWait != 15) return;   // (with the pings, twice a second)
+    var who = flash.external.ExternalInterface.call('FGUYMOD_Spectating');
+    if (who == undefined) return;
+    who = String(who);
+    if (who == FGUYSpecLast && (who == '' || _root.FGUYSpecUI != undefined)) {
+        if (_root.FGUYSpecUI != undefined) FGUYMouseUnzoom(_root.FGUYSpecUI);
+        return;
+    }
+    FGUYSpecLast = who;
+    _root.FGUYSpecUI.removeMovieClip();
+    if (who == '') return;
+    var ui = _root.createEmptyMovieClip('FGUYSpecUI', 29991);
+    var r = FGUYPauseRect(), size = r.h / 720;
+    FGUYPauseN = 0;
+    FGUYPauseBox(ui, r.x + r.w * 0.35, r.y + r.h * 0.03, r.w * 0.3, r.h * 0.05, 10, 0x13213C, 80, 0x2E5C9A, 100, 2);
+    FGUYPauseText(ui, r.x + r.w * 0.35, r.y + r.h * 0.037, r.w * 0.3, r.h * 0.045, 'SPECTATING  ' + who, true, 16 * size,
+                  0xF5D33A, 'center');
+    FGUYMouseUnzoom(ui);
+}
+
 function FGUYPausePoll() {
     FGUYTestAnnounce();
     FGUYPingPoll();
+    FGUYSpectatePoll();
     if (FGUYHudDumpWait == undefined) FGUYHudDumpWait = 0;
     FGUYHudDump();
     FGUYHudZoom();

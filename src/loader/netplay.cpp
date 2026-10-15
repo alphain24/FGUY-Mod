@@ -1335,6 +1335,7 @@ void Tick() {
     if (g_inSession && g_current[0].kbm.sync == 1) RngResync();   // the host's random numbers, everyone
     if (g_inSession) OnlineSettingsApply(kbm, g_players);   // everyone's own aim settings (onlinesettings.cpp)
     if (g_inSession) LoadSyncTickStart();   // menus' movies loaded the same tick everywhere (loadsync.cpp)
+    if (g_inSession) SplitViewSpectateTick(g_rate);   // dead in Multiverse Madness: a teammate's view (display only)
     if (g_inSession) CamDump(g_tick);   // research (FGUYMOD_CAMDUMP, rngtrace.cpp)
     if (g_inSession) {   // (the level's start-up must reach this the same tick on every PC - loadsync.cpp)
         static bool viewsOn = false;
@@ -1630,6 +1631,7 @@ void NetplayLogStacks() {
 }
 bool NetplayLevelLive() { return g_enabled && g_liveTick && g_tick >= g_liveTick; }
 bool NetplayStoryCoop() { return g_enabled && g_sessionStory; }
+float NetplayPlayerHealth(const unsigned char* player) { return PlayerHealth(player); }
 
 // FGUYMOD_NetStats: the round trip to every other player still in the match - "name:ms|..." (ms -1: not known yet).
 std::string NetplayStats() {

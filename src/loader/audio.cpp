@@ -248,7 +248,7 @@ __declspec(naked) void CategoryStub() {
 int __stdcall Hook_SetListener(void* system, int listener, const void* pos, const void* vel, const void* forward,
                                const void* up) {
     AudioReport(system);
-    int mine = SplitViewMyViewport();
+    int mine = SplitViewShownViewport();   // (spectating: what the shown view hears)
     static bool one = false;   // (the count may have been set before the level's views were known)
     if (mine >= 0) {
         if (!one) { one = true; Real_SetNumListeners(system, 1); Log(L"Audio: online - one 3D listener, viewport %d's", mine); }

@@ -88,6 +88,18 @@ int MyViewport() {
     return count > 1 && mine >= 0 && mine < count ? mine : -1;
 }
 
+// Spectating (SplitViewSpectateTick): dead in Multiverse Madness - nothing to do until the round is over - this PC
+// shows a living teammate's view instead of mine (drawing, their name tags, what I hear; my HUD stays mine). Only
+// what's drawn changes: every viewport's camera runs on every PC anyway.
+volatile LONG g_spectate = -1;   // the viewport shown instead of mine (-1: mine)
+volatile LONG g_spectateSlot = -1;
+LONG g_shownApplied = -2;        // (render thread) the view the rectangles were last set for
+
+int ShownViewport() {
+    int mine = MyViewport(), s = g_spectate;
+    return mine >= 0 && s >= 0 && s < Count() ? s : mine;
+}
+
 // The other players' views: their cameras keep running (the game updates a player's camera - and with it
 // where they aim - only while that view is on, so switching them off made each PC play them differently).
 // They get exactly one pixel in the screen's corner, under my view's HUD (and normally aren't drawn at all -
@@ -121,9 +133,11 @@ void __fastcall Hook_Rect(void* camera, void*, float x, float y, float w, float 
         lastMine = mine;
         Log(L"SplitView: %d viewports - showing viewport %d full screen", Count(), mine);
     }
-    if (v == mine) Real_Rect(camera, 0, 0, 1, 1);
+    int shown = ShownViewport();
+    if (v == shown) Real_Rect(camera, 0, 0, 1, 1);
     else OtherRect(camera);
-    SqueezeOthers(mine);
+    SqueezeOthers(shown);
+    g_shownApplied = shown;
 }
 
 void __fastcall Hook_Enable(void* camera, void*, int on) {
@@ -210,7 +224,7 @@ using MarkerToHud_t = void(__thiscall*)(void* hud, float* point, int viewport, f
 // top-left quarter, wherever the heads were: the markers' own layer isn't zoomed with the HUD.) The other views'
 // markers go off screen.
 void __fastcall Hook_MarkerToHud(void* hud, void*, float* point, int viewport, float* out) {
-    int mine = MyViewport();
+    int mine = ShownViewport();   // (spectating: the shown view's name tags)
     if (mine >= 0 && viewport == mine) {
         g_markerFull = true;
         reinterpret_cast<MarkerToHud_t>(kMarkerToHud)(hud, point, viewport, out);
@@ -282,7 +296,14 @@ bool __cdecl DrawSkip(void* camera) {
     // at the same tick everywhere), and drawing doesn't change the game anyway.
     if (HandoffBooting()) return true;
     int mine = MyViewport();
-    return mine >= 0 && v != mine;
+    if (mine < 0) return false;
+    int shown = ShownViewport();
+    if (shown != g_shownApplied) {   // (spectating began / ended: the shown view gets the screen now)
+        g_shownApplied = shown;
+        for (int k = 0; k < 2; ++k) Real_Rect(Camera(shown, k), 0, 0, 1, 1);
+        SqueezeOthers(shown);
+    }
+    return v != shown;
 }
 
 __declspec(naked) void ScenePassStub() {
@@ -379,6 +400,44 @@ int SplitViewHudViewport(int viewport) {
 int SplitViewHudZoomViewport() { return g_active && g_hud4Way ? MyPlayerViewport() : -1; }
 // My player's viewport online (the one this PC shows full screen - audio.cpp's listener), -1: offline / not yet.
 int SplitViewMyViewport() { return g_active ? MyPlayerViewport() : -1; }
+int SplitViewShownViewport() { return g_active && MyViewport() >= 0 ? ShownViewport() : SplitViewMyViewport(); }
+
+// netplay.cpp, every tick of a session (the game thread): spectate when dead in Multiverse Madness - 3 s after my
+// player went down, the first teammate still standing; mine again once I'm back (or SETTINGS > Spectate off).
+void SplitViewSpectateTick(int rate) {
+    static int deadTicks = 0;
+    int want = -1, wantSlot = -1, slot = NetplayLocalSlot();
+    const char* cfg = SessionConfig();
+    bool horde = cfg && strncmp(cfg, "HD,", 3) == 0;
+    unsigned char* players[8];
+    int n = horde && slot >= 0 && OnlineSpectate() ? GamePlayers(players, 8) : 0;
+    unsigned char* me = nullptr;
+    for (int i = 0; i < n; ++i)
+        if (*reinterpret_cast<int*>(players[i] + 0xdf8) == slot) me = players[i];
+    deadTicks = me && NetplayPlayerHealth(me) <= 0.0f ? deadTicks + 1 : 0;
+    if (me && deadTicks > 3 * (rate > 0 ? rate : 60)) {
+        for (int i = 0; i < n && want < 0; ++i) {
+            int s = *reinterpret_cast<int*>(players[i] + 0xdf8), vp = *reinterpret_cast<int*>(players[i] + 0xdfc);
+            if (players[i] != me && s >= 0 && s < 4 && vp >= 0 && vp < kMaxViewports && NetplayPlayerHealth(players[i]) > 0.0f &&
+                NetplayLobbyName(s)[0]) {
+                want = vp;
+                wantSlot = s;
+            }
+        }
+    }
+    if (want != g_spectate) {
+        if (want >= 0) Log(L"SplitView: spectating player %d (viewport %d) - I'm down", wantSlot, want);
+        else Log(L"SplitView: my own view again");
+        InterlockedExchange(&g_spectateSlot, wantSlot);
+        InterlockedExchange(&g_spectate, want);
+    }
+}
+
+// FGUYMOD_Spectating (the HUD): the name of the player whose view this PC shows ("" mine).
+const wchar_t* SplitViewSpectating() {
+    int s = g_spectateSlot;
+    return g_spectate >= 0 && s >= 0 ? NetplayLobbyName(s) : L"";
+}
 
 // The online lobby shows the menu scene's 3D character (the Store's model) inside its centre panel: it
 // draws viewport 0 into that part of the screen (the camera's rectangle is left, top, right, bottom as

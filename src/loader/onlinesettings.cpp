@@ -86,6 +86,7 @@ void SaveFlag(const wchar_t* name, bool on) {
 }
 
 bool g_showPing = true;   // the match shows every player's ping (top right)
+bool g_spectate = true;   // dead in Multiverse Madness: watch a teammate (splitview.cpp)
 
 void SaveVibration() {
     wchar_t path[MAX_PATH];
@@ -97,11 +98,13 @@ void SaveVibration() {
 
 bool OnlineVibration() { return g_vibration; }
 bool OnlineShowPing() { return g_showPing; }
+bool OnlineSpectate() { return g_spectate; }
 
 // The session game, at start: the player's own settings from their lobby game.
 void OnlineSettingsInit() {
     g_vibration = SettingInt(L"Online", L"Vibration", nullptr, 1) != 0;
     g_showPing = SettingInt(L"Online", L"ShowPing", nullptr, 1) != 0;
+    g_spectate = SettingInt(L"Online", L"Spectate", nullptr, 1) != 0;
     char env[256];
     if (GetEnvironmentVariableA("FGUYMOD_MY_SETTINGS", env, sizeof(env)) && Parse(env, &g_mine))
         Log(L"Settings: mine for this match: %S", env);
@@ -209,7 +212,7 @@ void OnlineSettingsWriteBack(DWORD lobbyPid) {
 enum Row {
     kAudio, kMusic, kEffects, kDialog, kCinematic, kMovies, kSubs,
     kControls, kAim, kInvert, kVibration, kReticles, kInputInfo, kKeysInfo,
-    kScreen, kDisplay, kResolution, kFrameRate, kShowPing,
+    kScreen, kDisplay, kResolution, kFrameRate, kShowPing, kSpectate,
     kBack, kRowCount
 };
 
@@ -247,6 +250,7 @@ int OnlineSettingsRows(SettingsRow* out, int max) {
     sprintf_s(v, "%d fps (the match's)", NetplayRate());
     put(kFrameRate, "Frame rate", v, 'i');
     put(kShowPing, "Show ping", onoff(g_showPing), 't');
+    put(kSpectate, "Spectate when dead", onoff(g_spectate), 't');
     put(kBack, "BACK", "", 'b');
     return kRowCount;
 }
@@ -277,6 +281,9 @@ void OnlineSettingsChange(int row, int delta) {
     } else if (row == kShowPing) {
         g_showPing = !g_showPing;
         SaveFlag(L"ShowPing", g_showPing);
+    } else if (row == kSpectate) {
+        g_spectate = !g_spectate;
+        SaveFlag(L"Spectate", g_spectate);
     } else if (row == kDisplay) {
         int mode = DisplayMenuIndex();   // windowed <-> borderless (an online match never runs fullscreen)
         DisplayMenuSelect(mode == 0 ? 2 : 0);

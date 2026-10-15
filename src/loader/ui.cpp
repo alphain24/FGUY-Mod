@@ -328,6 +328,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         } else if (strcmp(fn, "OpenReports") == 0) {     // (the REPORTS button: the folder)
             ReportOpenFolder();
             ReturnBool(movie, true);
+        } else if (strcmp(fn, "Spectating") == 0) {      // (the HUD: whose view this PC shows, "" mine)
+            static char who[64];
+            WideCharToMultiByte(CP_UTF8, 0, SplitViewSpectating(), -1, who, sizeof(who), nullptr, nullptr);
+            ReturnString(movie, who);
         } else if (strcmp(fn, "NetStats") == 0) {        // (the HUD: the other players' pings, top right)
             static std::string stats;
             stats = OnlineShowPing() ? NetplayStats() : std::string();
