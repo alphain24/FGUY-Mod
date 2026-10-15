@@ -81,6 +81,7 @@ void Init() {
     InitConfigOverride(exe);
     InitHandoff();
     InitReports();
+    InitMods();
     InitAudio(exe);
     InitSounds();
     InitDisplay(exe);

@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <string>
+#include <vector>
 
 extern wchar_t g_gameDir[MAX_PATH];  // folder containing FGUY.exe
 extern wchar_t g_modDir[MAX_PATH];   // <game>\FGUYMod
@@ -99,6 +100,19 @@ void SplitViewSpectateTick(int rate);  //   netplay, every tick: dead in Multive
 const wchar_t* SplitViewSpectating();  //   FGUYMOD_Spectating: whose view ("" mine)
 float NetplayPlayerHealth(const unsigned char* player);   // netplay.cpp: a player's health (0: down)
 bool OnlineSpectate();                 // onlinesettings.cpp: SETTINGS > Spectate when dead
+// modloader.cpp: separate mods (FGUYMod\mods\<folder>, sdk\fguymod_plugin.h)
+void InitMods();                       //   at start: the mods there are, which are on
+void ModsLoadPlugins();                //   at the end of start-up: their plugins
+bool ModsFileOverride(const wchar_t* gamePath, wchar_t* out);   //   a mod's copy of a game file
+std::vector<std::wstring> ModsUiFolders();   //   their movie patches' folders
+void ModsTick();                       //   vpad.cpp: a game tick starts (the game's thread)
+void ModsFrame();                      //   d3d9.cpp: a frame was drawn
+std::string ModsOnlineKey();           //   the gameplay mods that are on (the lobby server matches by it)
+const char* ModsList();                //   FGUYMOD_ModsList (the MODS page)
+bool ModsToggle(const char* folder);   //   FGUYMOD_ModsToggle
+void ModsOpenFolder();                 //   FGUYMOD_ModsOpenFolder
+struct KbmRaw;
+bool NetplayInputOf(int slot, WORD* buttons, BYTE* lt, BYTE* rt, SHORT* sticks, KbmRaw* kbm, bool* keyboard);
 int SplitViewHudViewport(int viewport);
 int SplitViewHudZoomViewport();        //   online: the HUD quarter to show full screen (-1: none)
 void SplitViewMenuCheck();

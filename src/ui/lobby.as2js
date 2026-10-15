@@ -500,7 +500,8 @@ function FGUYParse(blob) {
         } else if (f[0] == 'T') {
             st.chat.push({seq: Number(f[1]), name: f[2], text: f.slice(3).join('|')});
         } else if (f[0] == 'L') {
-            st.lobbies.push({code: f[1], host: f[2], players: Number(f[3]), max: Number(f[4]), mode: f[5], map: f[6]});
+            st.lobbies.push({code: f[1], host: f[2], players: Number(f[3]), max: Number(f[4]), mode: f[5], map: f[6],
+                             mods: f.length > 7 && f[7] != '-' ? String(f[7]).split('+').join(', ').split('_').join(' ') : ''});
         }
     }
     return st;
@@ -635,6 +636,12 @@ function FGUYSendConf() {
 }
 
 // ---- the page ----------------------------------------------------------------------------------------------------
+// Main Menu > MODS: the same page as ONLINE (its own screen, no server).
+function OnModsSelect() {
+    FGUYModsPage = true;
+    OnOnlineSelect();
+}
+
 function OnOnlineSelect() {
     FGUYOnline = true;
     PauseTVSound();
@@ -677,6 +684,7 @@ function FGUYApplySettingsBack() {
 }
 
 function OnOnlineEnter() {
+    if (FGUYModsPage) { FGUYModsEnter(); return; }
     flash.external.ExternalInterface.call('FGUYMOD_OnlineEnter');
     FGUYReportSettings();
     _root.subMenu._visible = false;
@@ -705,6 +713,13 @@ function OnOnlineEnter() {
 }
 
 function OnOnlineExit() {
+    if (FGUYModsPage) {
+        FGUYModsPage = false;
+        _root.FGUYLobbyUI.removeMovieClip();
+        _root.subMenu._visible = true;
+        FGUYOnline = false;
+        return;
+    }
     clearInterval(FGUYTimer);
     FGUY3DStop();
     flash.external.ExternalInterface.call('FGUYMOD_OnlineExit');
@@ -795,6 +810,7 @@ function FGUYMouseHover(kind, i) {
              kind == 'setRow' || kind == 'setRowLeft' || kind == 'setRowRight') FGUYFocus = i;
     else if (kind == 'charCard') { if (FGUYCharSel != i) { FGUYCharSel = i; FGUYCostumeSel = 0; } }
     else if (kind == 'skin') FGUYCostumeSel = i;
+    else if (kind == 'modRow') FGUYModsSel = i;
     var now = FGUYScreen + FGUYHubPanel + ',' + FGUYFocus + ',' + FGUYFind + ',' + FGUYCharSel + ',' + FGUYCostumeSel;
     return now != was;
 }
@@ -818,10 +834,12 @@ function FGUYMouseClick(kind, i) {
     else if (kind == 'skin') FGUYSound('change');
     else if (kind == 'team') { FGUYPickTeam = i; FGUYSound('change'); }
     else if (kind == 'key') FGUYScreenKey(i);   // a footer button hint: its button
+    else if (kind == 'modRow') FGUYInputMods(13);
 }
 
 function FGUYScreenKey(key) {   // a key, as if pressed (footer hints, mouse)
-    if (FGUYScreen == 'hub') FGUYInputHub(key);
+    if (FGUYScreen == 'mods') FGUYInputMods(key);
+    else if (FGUYScreen == 'hub') FGUYInputHub(key);
     else if (FGUYScreen == 'lobby') FGUYInputLobby(key);
     else if (FGUYScreen == 'char') FGUYInputChar(key);
     else if (FGUYScreen == 'settings') FGUYInputSettings(key);
@@ -875,7 +893,8 @@ function FGUYDraw() {
         FGUYRect(ui, 0, hy, hx + 1, hh, 0, FGUYC.bg, 100, 0, 0, 0);
         FGUYRect(ui, hx + hw - 1, hy, 1601 - hx - hw, hh, 0, FGUYC.bg, 100, 0, 0, 0);
     }
-    if (FGUYScreen == 'hub') FGUYDrawHub(ui);
+    if (FGUYScreen == 'mods') FGUYDrawMods(ui);
+    else if (FGUYScreen == 'hub') FGUYDrawHub(ui);
     else if (FGUYScreen == 'lobby') FGUYDrawLobby(ui);
     else if (FGUYScreen == 'char') FGUYDrawChar(ui);
     else if (FGUYScreen == 'loading') FGUYDrawLoading(ui);
@@ -1018,7 +1037,8 @@ function FGUYDrawHub(ui) {
         FGUYRect(ui, x, y, pw - 56, 66, 16, sel ? FGUYC.rowHot : FGUYC.row, 100, sel ? FGUYC.yellow : FGUYC.rowLine, 100, sel ? 3 : 2);
         FGUYHit(x, y, pw - 56, 66, 'find', i);
         FGUYText(ui, x + 16, y + 6, 300, 30, g.host + "'s game", false, 21, FGUYC.white, 'left');
-        FGUYText(ui, x + 16, y + 34, 330, 26, FGUYMode(g.mode).name + ' - ' + FGUYMapName(g.map, g.mode), false, 16, FGUYC.muted2, 'left');
+        FGUYText(ui, x + 16, y + 34, 330, 26, FGUYMode(g.mode).name + ' - ' + FGUYMapName(g.map, g.mode) +
+                 (g.mods != '' ? ' - mods: ' + g.mods : ''), false, 16, g.mods != '' ? FGUYC.yellow : FGUYC.muted2, 'left');
         FGUYText(ui, x + pw - 56 - 120, y + 18, 104, 30, g.players + ' / ' + g.max, false, 21, FGUYC.white, 'right');
     }
     FGUYText(ui, x, py + ph - 50, pw - 56, 30, 'Press A or click a game to join', false, 17, FGUYC.muted, 'left');
@@ -1405,7 +1425,8 @@ function OnOnlineHandleInput(key, controller) {
     if (FGUYChatTyping) return;            // (typing in the chat box: its characters come from the loader)
     if (key >= 37 && key <= 40 && flash.external.ExternalInterface.call('FGUYMOD_FromWASD', key) == true) return;
     FGUYKeyFromPad = FGUYPadKey(key);
-    if (FGUYScreen == 'hub') FGUYInputHub(key);
+    if (FGUYScreen == 'mods') FGUYInputMods(key);
+    else if (FGUYScreen == 'hub') FGUYInputHub(key);
     else if (FGUYScreen == 'lobby') FGUYInputLobby(key);
     else if (FGUYScreen == 'char') FGUYInputChar(key);
     else FGUYInputSettings(key);
@@ -1703,4 +1724,85 @@ function FGUYInputSettings(key) {
         FGUYToast(v[0].charAt(0) + v[0].substr(1).toLowerCase() + ': ' + v[1]);
     }
     FGUYSound('change');
+}
+
+// ---- MODS ------------------------------------------------------------------------------------------------------------
+// The separate mods in FGUYMod\mods\ (src/loader/modloader.cpp): on / off, from the next start. Gameplay mods must be
+// the same for everyone in an online lobby; cosmetic ones may differ.
+function FGUYModsEnter() {
+    _root.subMenu._visible = false;
+    Selection.setFocus(null);
+    FGUYColors();
+    FGUYScreen = 'mods';
+    FGUYModsSel = 0;
+    FGUYModsTop = 0;
+    FGUYModsRead();
+    FGUYDraw();
+}
+
+function FGUYModsRead() {
+    var lines = String(flash.external.ExternalInterface.call('FGUYMOD_ModsList')).split('\n');
+    FGUYModsChanged = lines[0] == '1';
+    FGUYMods = [];
+    for (var i = 1; i < lines.length; i++) {
+        if (lines[i] == '') continue;
+        var f = lines[i].split('|');
+        FGUYMods.push({folder: f[0], name: f[1], version: f[2], author: f[3], type: f[4], on: f[5] == '1', running: f[6] == '1',
+                       about: f[7]});
+    }
+    if (FGUYModsSel >= FGUYMods.length) FGUYModsSel = Math.max(0, FGUYMods.length - 1);
+}
+
+function FGUYDrawMods(ui) {
+    FGUYTitle(ui, 48, 26, 600, 80, 'MODS', 60, FGUYC.title, 'left');
+    FGUYText(ui, 640, 50, 912, 30, 'Separate mods from FGUYMod\\mods - switching takes effect after a restart', false, 20,
+             FGUYC.muted2, 'right');
+    FGUYPanel(ui, 48, 130, 1504, 690, 28, FGUYC.panel, FGUYC.glow);
+    if (FGUYMods.length == 0) {
+        FGUYText(ui, 90, 200, 1400, 40, 'No mods yet.', false, 30, FGUYC.white, 'left');
+        FGUYText(ui, 90, 250, 1400, 30, 'Put a mod\'s folder in FGUYMod\\mods\\ (Y opens it), then come back here to switch it on.',
+                 false, 20, FGUYC.soft, 'left');
+    }
+    var shown = 7;
+    if (FGUYModsSel < FGUYModsTop) FGUYModsTop = FGUYModsSel;
+    if (FGUYModsSel >= FGUYModsTop + shown) FGUYModsTop = FGUYModsSel - shown + 1;
+    for (var i = FGUYModsTop; i < FGUYMods.length && i < FGUYModsTop + shown; i++) {
+        var m = FGUYMods[i], y = 156 + (i - FGUYModsTop) * 72, hot = i == FGUYModsSel;
+        FGUYRect(ui, 76, y, 1448, 62, 16, hot ? FGUYC.rowHot : FGUYC.row, 100, hot ? FGUYC.yellow : FGUYC.rowLine, 100, hot ? 3 : 2);
+        FGUYHit(76, y, 1448, 62, 'modRow', i);
+        FGUYText(ui, 100, y + 6, 760, 30, m.name + '  ' + m.version, false, 22, FGUYC.white, 'left');
+        FGUYText(ui, 100, y + 34, 760, 26, m.author != '' ? 'by ' + m.author : m.folder, false, 16, FGUYC.muted2, 'left');
+        var gameplay = m.type == 'gameplay';
+        FGUYRect(ui, 1080, y + 16, 170, 32, 10, FGUYC.ink, 100, gameplay ? FGUYC.yellow : FGUYC.glow, 100, 2);
+        FGUYText(ui, 1080, y + 20, 170, 28, gameplay ? 'GAMEPLAY' : 'COSMETIC', false, 15, gameplay ? FGUYC.yellow : FGUYC.soft, 'center');
+        FGUYRect(ui, 1290, y + 12, 200, 40, 14, m.on ? FGUYC.green : FGUYC.bg, 100, m.on ? FGUYC.greenLine : FGUYC.redLine, 100, 2);
+        FGUYText(ui, 1290, y + 18, 200, 30, m.on ? 'ON' : 'OFF', false, 20, m.on ? FGUYC.white : FGUYC.red, 'center');
+    }
+    if (FGUYMods.length > 0) {   // the chosen one's description, and what on / off means for it
+        var c = FGUYMods[FGUYModsSel];
+        var note = c.type == 'gameplay' ? 'Gameplay mod: online, everyone in the lobby needs it (the same version).'
+                                        : 'Cosmetic mod: online, the others don\'t need it.';
+        if (c.on && c.running) note = note + '  Its plugin is running.';
+        FGUYText(ui, 90, 676, 1420, 30, c.about, false, 20, FGUYC.white, 'left');
+        FGUYText(ui, 90, 712, 1420, 28, note, false, 17, FGUYC.muted2, 'left');
+    }
+    if (FGUYModsChanged) {
+        FGUYRect(ui, 76, 754, 1448, 46, 14, 0x3A2A10, 100, FGUYC.yellow, 100, 2);
+        FGUYText(ui, 76, 762, 1448, 30, 'Restart the game to apply your changes', false, 20, FGUYC.yellow, 'center');
+    }
+    FGUYFooter(ui, ['A', 'On / off', 'Y', 'Open the mods folder', 'B', 'Back'], '');
+}
+
+function FGUYInputMods(key) {
+    var n = FGUYMods.length;
+    if (key == 27) { FGUYSound('back'); PrevPage(); return; }
+    if (key == 89) { flash.external.ExternalInterface.call('FGUYMOD_ModsOpenFolder'); FGUYSound('accept'); return; }
+    if (n == 0) return;
+    if (key == 38) { FGUYModsSel = (FGUYModsSel + n - 1) % n; FGUYSound('nav'); }
+    else if (key == 40) { FGUYModsSel = (FGUYModsSel + 1) % n; FGUYSound('nav'); }
+    else if (key == 13 || key == 37 || key == 39) {
+        flash.external.ExternalInterface.call('FGUYMOD_ModsToggle', FGUYMods[FGUYModsSel].folder);
+        FGUYModsRead();
+        FGUYSound('change');
+    }
 }

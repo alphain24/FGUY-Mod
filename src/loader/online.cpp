@@ -44,6 +44,7 @@ struct Member {
 struct LobbyInfo {
     std::string code, host, mode, map;
     int players = 0, max = 0;
+    std::string mods = "-";   // the host's gameplay mods' names (+ separated; - none)
 };
 
 std::mutex g_lock;  // guards everything below (menu thread vs lobby thread)
@@ -237,6 +238,8 @@ void HandleLine(const std::string& line) {
         int hz = EnumDisplaySettingsW(nullptr, ENUM_CURRENT_SETTINGS, &mode) && mode.dmDisplayFrequency > 1
                      ? (int)mode.dmDisplayFrequency : 60;
         SendLine("RATE " + std::to_string(hz));
+        std::string mods = ModsOnlineKey();   // my gameplay mods: a lobby takes only players with the host's
+        SendLine("MODS " + (mods.empty() ? std::string("-") : mods));
         if (!g_rejoin.empty()) {   // back from a match: our place in its lobby
             SendLine("REJOIN " + g_rejoin);
             Log(L"Online: back from the match - rejoining lobby %S", g_rejoin.c_str());
@@ -246,7 +249,8 @@ void HandleLine(const std::string& line) {
         g_lobbies.clear();
         for (size_t i = 1; i < f.size(); ++i) {
             auto e = Split(f[i], ',');
-            if (e.size() == 6) g_lobbies.push_back({e[0], e[1], e[4], e[5], atoi(e[2].c_str()), atoi(e[3].c_str())});
+            if (e.size() >= 6)
+                g_lobbies.push_back({e[0], e[1], e[4], e[5], atoi(e[2].c_str()), atoi(e[3].c_str()), e.size() > 6 ? e[6] : "-"});
         }
     } else if (cmd == "LOBBY" && f.size() > 1) {
         g_state = State::InLobby;
@@ -294,6 +298,7 @@ void HandleLine(const std::string& line) {
     } else if (cmd == "ERROR") {
         g_returning = false;
         g_status = line.size() > 6 ? line.substr(6) : "Error";
+        Log(L"Online: the server says: %S", g_status.c_str());
     } else if (cmd == "SAVE" && f.size() > 1) {
         g_saveB64 = f[1];
     } else if (cmd == "START" && f.size() >= 9) {
@@ -644,7 +649,7 @@ void OnlineExit() {
 //   C|<mode>|<map>|<time>|<score>|<ff>                      the lobby's match settings
 //   O|<char>:<costume>.<costume>;...                         what the host's save has (in a lobby)
 //   M|<slot>|<name>|<ready>|<ping>|<character>|<costume>|<team>|<input k/c>   one per player in my lobby
-//   L|<code>|<host>|<players>|<max>|<mode>|<map>            one per open lobby (when not in one)
+//   L|<code>|<host>|<players>|<max>|<mode>|<map>|<mods>     one per open lobby (when not in one; mods: names + -)
 //   T|<number>|<name>|<text>                                  my lobby's chat, oldest first (the last 8 lines)
 const char* LobbyState() {
     std::lock_guard<std::mutex> lock(g_lock);
@@ -665,7 +670,7 @@ const char* LobbyState() {
     } else {
         for (const LobbyInfo& l : g_lobbies)
             g_text += "L|" + l.code + "|" + Field(l.host) + "|" + std::to_string(l.players) + "|" +
-                      std::to_string(l.max) + "|" + Field(l.mode) + "|" + Field(l.map) + "\n";
+                      std::to_string(l.max) + "|" + Field(l.mode) + "|" + Field(l.map) + "|" + Field(l.mods) + "\n";
     }
     return g_text.c_str();
 }

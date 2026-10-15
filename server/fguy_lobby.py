@@ -31,12 +31,15 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     LANG <code>                      host: game language for the session
     START                            host: start the session
     SAY <text...>                    a chat line for my lobby (up to 100 characters; no '|')
+    MODS <list | ->                  the gameplay mods I have on: <name>@<version>#<hash>;... (- none); a lobby
+                                     takes only players with the host's
     REJOIN <code> <token> <slot>     back from a match: take my place in that lobby again (the lobby
                                      stays while its match runs; its players show as "in match")
     LEAVE
   server -> client
     WELCOME <proto>
-    LIST [<code>,<host>,<players>,<max>,<mode>,<map> ...]     (public lobbies)
+    LIST [<code>,<host>,<players>,<max>,<mode>,<map>,<mods> ...]     (public lobbies; mods: the host's
+                                     gameplay mods' names joined by +, or -)
     LOBBY <code> <private>
     MEMBERS <your slot> [<slot>,<name>,<ready>,<rtt>,<character>,<costume>,<team>,<input>,<rate> ...]
                                      ready: 0 / 1, or 2 = still in the match
@@ -85,9 +88,28 @@ CLIENT_IDLE_S = 60                # drop a lobby connection silent this long (th
 SLOT_MOVE_S = 5                   # a slot's address may change (new NAT port) only after this much silence
 RELAY_MAX_PPS = 2000              # per player address
 CHAT_MAX = 100                    # characters in a chat line
+MODS_RE = re.compile(r'^[A-Za-z0-9_\-.@#;]{1,600}$')   # Better_Movement@1.0#1a2b3c4d;...
 CHAT_EVERY_S = 0.6                # one chat line per player this often at most
 RATES = (60, 120, 144, 165, 240)  # online frame rates (everyone in a match runs the same one)
 AUTO_MAX = 240                    # auto never picks more (a slower PC: the match follows it, netplay.cpp)
+
+
+def mod_names(mods):
+    """The names in a MODS list, joined by + (- none)."""
+    if mods == '-':
+        return '-'
+    return '+'.join(m.split('@')[0] for m in mods.split(';'))[:120]
+
+
+def mod_list(mods):
+    """A MODS list for people: "Better Movement 1.0, ..." (none)."""
+    if mods == '-':
+        return 'none'
+    out = []
+    for m in mods.split(';'):
+        name, _, rest = m.partition('@')
+        out.append(name.replace('_', ' ') + ' ' + rest.split('#')[0])
+    return ', '.join(out)
 
 
 def snap_rate(hz):
@@ -112,6 +134,7 @@ class Client:
         self.gone_at = None   # when an away player's lobby connection closed
         self.match_slot = -1  # their slot in that match
         self.said_at = 0.0    # their last chat line (flood guard)
+        self.mods = '-'       # their gameplay mods (MODS)
 
     def send(self, line):
         try:
@@ -221,8 +244,8 @@ class Server:
             open_ = [l for l in self.lobbies.values()
                      if l.host.gamekey == c.gamekey and len(l.members) < l.max and not l.private and not l.playing
                      and l.host in l.members and not l.host.away]
-            c.send(' '.join(['LIST'] + [f'{l.code},{l.host.name},{len(l.members)},{l.max},{l.conf[0]},{l.conf[1]}'
-                                        for l in open_[:50]]))
+            c.send(' '.join(['LIST'] + [f'{l.code},{l.host.name},{len(l.members)},{l.max},{l.conf[0]},{l.conf[1]},'
+                                        f'{mod_names(l.host.mods)}' for l in open_[:50]]))
         elif cmd == 'HOST':
             self.leave(c)
             if len(self.lobbies) >= MAX_LOBBIES:
@@ -248,6 +271,9 @@ class Server:
                 c.send('ERROR That lobby is in a match - try again when it ends')
             elif lobby.host.gamekey != c.gamekey:
                 c.send('ERROR That lobby runs a different version of the game or mod')
+            elif lobby.host.mods != c.mods:
+                c.send(f'ERROR That lobby plays with other mods - the host has: {mod_list(lobby.host.mods)}; '
+                       f'you have: {mod_list(c.mods)}')
             elif len(lobby.members) >= lobby.max:
                 c.send('ERROR That lobby is full')
             else:
@@ -293,6 +319,8 @@ class Server:
             c.lobby.lang = re.sub(r'[^A-Za-z_]', '', args[0])[:8] if args else '-'
         elif cmd == 'START' and c.lobby and c is c.lobby.host:
             self.start(c.lobby)
+        elif cmd == 'MODS':
+            c.mods = args[0] if args and MODS_RE.match(args[0]) else '-'
         elif cmd == 'SAY' and c.lobby:
             text = ''.join(ch for ch in ' '.join(args) if ch.isprintable() and ch != '|').strip()[:CHAT_MAX]
             now = time.monotonic()

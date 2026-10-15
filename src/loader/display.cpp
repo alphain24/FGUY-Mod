@@ -357,6 +357,8 @@ decltype(&ShowWindow) Real_ShowWindow;
 HWND WINAPI Hook_CreateWindowExW(DWORD ex, LPCWSTR cls, LPCWSTR title, DWORD style, int x, int y,
                                  int w, int h, HWND parent, HMENU menu, HINSTANCE inst, LPVOID param) {
     bool main = !(style & WS_CHILD) && IsGameMainWindowClass(cls);
+    static bool plugins = false;   // (the mods' plugins: here, early in the game's start and out of DllMain's lock)
+    if (main && !plugins) { plugins = true; ModsLoadPlugins(); }
     if (main && (style & WS_CAPTION)) g_windowedStyle = (LONG)style;
     if (main && g_hidden) style &= ~WS_VISIBLE;
     if (main && Covering()) {

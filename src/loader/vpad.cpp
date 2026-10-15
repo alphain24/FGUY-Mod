@@ -113,8 +113,11 @@ namespace {
 
 DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
     if (pad == 0) AudioTick();
-    if (state && NetplayPad(pad, state, Real_XInputGetState))
+    if (state && NetplayPad(pad, state, Real_XInputGetState)) {
+        if (pad == 0) ModsTick();   // the mods' plugins (after the lockstep has this tick's inputs)
         return NetplayPadConnected(pad) ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
+    }
+    if (pad == 0) ModsTick();
     DWORD r = Real_XInputGetState(pad, state);
     if (IsBot() && state && r == ERROR_SUCCESS) ZeroMemory(&state->Gamepad, sizeof(state->Gamepad));  // not your pad
     static LONG calls[4];

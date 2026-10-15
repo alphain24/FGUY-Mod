@@ -73,6 +73,8 @@ HANDLE WINAPI Hook_CreateFileW(LPCWSTR path, DWORD access, DWORD share, LPSECURI
         actual = g_iniPath;
     } else if (RedirectSave(path, saveRedirect)) {
         actual = saveRedirect;
+    } else if (!(access & GENERIC_WRITE) && ModsFileOverride(path, saveRedirect)) {   // (a mod's copy of the file)
+        actual = saveRedirect;
     }
     HANDLE h = Real_CreateFileW(actual, access, share, sa, disposition, flags, templ);
     if (h != INVALID_HANDLE_VALUE) SoundsOnFileOpen(path);  // a level's package: loading music
@@ -90,6 +92,10 @@ HANDLE WINAPI Hook_CreateFileA(LPCSTR path, DWORD access, DWORD share, LPSECURIT
         Log(L"Config: game asked for \"%S\" -> redirected to \"%s\"", path, g_iniPath);
         return Hook_CreateFileW(g_iniPath, access, share, sa, disposition, flags, templ);
     }
+    wchar_t wide[MAX_PATH], mod[MAX_PATH];
+    if (path && !(access & GENERIC_WRITE) && MultiByteToWideChar(CP_ACP, 0, path, -1, wide, MAX_PATH) &&
+        ModsFileOverride(wide, mod))   // (a mod's copy of the file)
+        return Real_CreateFileW(mod, access, share, sa, disposition, flags, templ);
     HANDLE h = Real_CreateFileA(path, access, share, sa, disposition, flags, templ);
     if (path && g_fileLogBudget > 0) {
         --g_fileLogBudget;

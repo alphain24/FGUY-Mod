@@ -12,6 +12,7 @@
 // Addresses are for the retail PC exe (SHA-256 E4BCD19E...); each slot is checked before patching.
 
 #include "common.h"
+#include <algorithm>
 #include <intrin.h>
 
 #include <cstdio>
@@ -120,15 +121,15 @@ bool ParsePatch(const std::vector<unsigned char>& b, MoviePatch& p) {
     return true;
 }
 
-void LoadPatches() {
-    wchar_t pattern[MAX_PATH];
-    swprintf_s(pattern, L"%s\\ui\\*.fgpatch", g_modDir);
+// The base mod's patches (FGUYMod\\ui), then the mods' that are on (each mods\\<folder>\\ui): a mod's patch made for a
+// movie as the base mod patched it applies on top of it (Hook_OpenFile looks again after each patch).
+void LoadPatchesFrom(const std::wstring& dir) {
     WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW(pattern, &fd);
+    HANDLE h = FindFirstFileW((dir + L"\\*.fgpatch").c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) return;
     do {
         wchar_t path[MAX_PATH];
-        swprintf_s(path, L"%s\\ui\\%s", g_modDir, fd.cFileName);
+        swprintf_s(path, L"%s\\%s", dir.c_str(), fd.cFileName);
         std::vector<unsigned char> bytes;
         MoviePatch p;
         p.name = fd.cFileName;
@@ -140,6 +141,11 @@ void LoadPatches() {
         }
     } while (FindNextFileW(h, &fd));
     FindClose(h);
+}
+
+void LoadPatches() {
+    LoadPatchesFrom(std::wstring(g_modDir) + L"\\ui");
+    for (const auto& dir : ModsUiFolders()) LoadPatchesFrom(dir);
 }
 
 bool BuildPatched(MoviePatch& p, const unsigned char* orig) {
@@ -186,21 +192,29 @@ void* __fastcall Hook_OpenFile(void* self, void*, const char* url, int flags, in
     unsigned char*& data = *reinterpret_cast<unsigned char**>(bytes + kMemFileData);
     int& length = *reinterpret_cast<int*>(bytes + kMemFileLen);
     if (!data || length < 8 || memcmp(data + 1, "FX", 2) != 0) return file;
-    // Match on the movie's own size field: packaged files can carry a padding byte after it.
-    unsigned movieLength;
-    memcpy(&movieLength, data + 4, 4);
-    if (movieLength > (unsigned)length) return file;
-    unsigned crc = 0;
-    for (MoviePatch& p : g_patches) {
-        if (movieLength != p.origLength) continue;
-        if (!crc) crc = Crc32(data, movieLength);   // the very movie the patch was made for, every time
-        if (crc != p.origCrc) continue;
-        if (p.patched.empty() && !BuildPatched(p, data)) continue;
-        data = p.patched.data();
-        length = (int)p.patched.size();
-        *reinterpret_cast<int*>(bytes + kMemFilePos) = 0;
-        Log(L"UI: \"%S\" patched with %s", url, p.name.c_str());
-        break;
+    // Match on the movie's own size field: packaged files can carry a padding byte after it. After a patch, again
+    // (a mod's patch for the movie as patched).
+    std::vector<const MoviePatch*> applied;
+    for (int round = 0; round < 8; ++round) {
+        unsigned movieLength;
+        memcpy(&movieLength, data + 4, 4);
+        if (movieLength > (unsigned)length) break;
+        unsigned crc = 0;
+        bool did = false;
+        for (MoviePatch& p : g_patches) {
+            if (movieLength != p.origLength || std::find(applied.begin(), applied.end(), &p) != applied.end()) continue;
+            if (!crc) crc = Crc32(data, movieLength);   // the very movie the patch was made for, every time
+            if (crc != p.origCrc) continue;
+            if (p.patched.empty() && !BuildPatched(p, data)) continue;
+            data = p.patched.data();
+            length = (int)p.patched.size();
+            *reinterpret_cast<int*>(bytes + kMemFilePos) = 0;
+            Log(L"UI: \"%S\" patched with %s", url, p.name.c_str());
+            applied.push_back(&p);
+            did = true;
+            break;
+        }
+        if (!did) break;
     }
     return file;
 }
@@ -321,6 +335,13 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnBool(movie, true);
         } else if (strcmp(fn, "ChatTyped") == 0) {       // (what was typed into it since)
             ReturnString(movie, OnlineMenuChatTyped());
+        } else if (strcmp(fn, "ModsList") == 0) {        // (the MODS page: the mods there are)
+            ReturnString(movie, ModsList());
+        } else if (strcmp(fn, "ModsToggle") == 0) {      // (switch one on / off - from the next start)
+            ReturnBool(movie, ModsToggle(ArgString(args, argc, 0)));
+        } else if (strcmp(fn, "ModsOpenFolder") == 0) {  // (the mods folder in Explorer)
+            ModsOpenFolder();
+            ReturnBool(movie, true);
         } else if (strcmp(fn, "ReportCount") == 0) {     // (the ONLINE screen: reports saved)
             ReturnNumber(movie, ReportCount());
         } else if (strcmp(fn, "ReportNew") == 0) {       // (back from a match: one saved in it?)

@@ -1633,6 +1633,19 @@ bool NetplayLevelLive() { return g_enabled && g_liveTick && g_tick >= g_liveTick
 bool NetplayStoryCoop() { return g_enabled && g_sessionStory; }
 float NetplayPlayerHealth(const unsigned char* player) { return PlayerHealth(player); }
 
+// modloader.cpp (plugins): a player's input for the tick being run - the match's synced input, the same on every PC.
+bool NetplayInputOf(int slot, WORD* buttons, BYTE* lt, BYTE* rt, SHORT* sticks, KbmRaw* kbm, bool* keyboard) {
+    if (!g_enabled || slot < 0 || slot >= g_players || slot >= 4) return false;
+    const Pad& p = g_current[slot];
+    *buttons = p.buttons;
+    *lt = p.lt;
+    *rt = p.rt;
+    sticks[0] = p.lx; sticks[1] = p.ly; sticks[2] = p.rx; sticks[3] = p.ry;
+    *kbm = p.kbm;
+    *keyboard = KbmIsKeyboardSlot(slot);
+    return true;
+}
+
 // FGUYMOD_NetStats: the round trip to every other player still in the match - "name:ms|..." (ms -1: not known yet).
 std::string NetplayStats() {
     std::string out;

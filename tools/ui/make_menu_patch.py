@@ -220,7 +220,7 @@ def build(data):
     p.replace(code_start, 0, new_code)
     p.replace(size_field, 2, struct.pack('<H', code_end - code_start + len(new_code)))
 
-    # 9. OnHomeEnter(): FGUYOnline = false first; an ONLINE button right after MULTIPLAYER (before the
+    # 9. OnHomeEnter(): FGUYOnline = false first; ONLINE and MODS buttons right after MULTIPLAYER (before the
     #    'demoType' check that adds CHALLENGE MODE). Same shape as the original buttons (r2 scratch,
     #    r3 the button array).
     o, total = function_at(data, actions, 'OnHomeEnter')
@@ -228,7 +228,10 @@ def build(data):
     inner = parse_actions(data, code_start, code_end)
     at, _ = find_action(inner, 0x96, lambda q, t: texts(q) == ['demoType'])
     button = (A.store(2, A.new_object('Object')) + A.setmember(Reg(2), 'name', 'Online') +
-              A.setmember(Reg(2), 'text', 'ONLINE') + A.method(Reg(3), 'push', Reg(2))).assemble()
+              A.setmember(Reg(2), 'text', 'ONLINE') + A.method(Reg(3), 'push', Reg(2)) +
+              # MODS right after it (the separate mods: on / off - src/ui/lobby.as2js FGUYDrawMods)
+              A.store(2, A.new_object('Object')) + A.setmember(Reg(2), 'name', 'Mods') +
+              A.setmember(Reg(2), 'text', 'MODS') + A.method(Reg(3), 'push', Reg(2))).assemble()
     p.replace(code_start, 0, (A.setvar('FGUYOnline', False) +   # (and the profile's settings are in: audio.cpp)
                               A.Code(A.external('FGUYMOD_ProfileLoaded'), A.op('Pop'))).assemble())
     p.replace(at, 0, button)
