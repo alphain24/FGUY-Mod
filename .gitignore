@@ -14,6 +14,6 @@ backups/
 *.obj
 *.exe
 
-# Family Guy show audio (loading-screen music): yours to use, not ours to publish
+# The loading screen's music (a re-recording): it goes in the release download only, never in the code repo
 sounds/
 dist/FGUYMod/sounds/
