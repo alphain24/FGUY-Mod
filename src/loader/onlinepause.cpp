@@ -132,9 +132,9 @@ int ParseBoxes(const char* boxes, MouseBox* b, int max) {
 
 int Items() { return NetplayLocalSlot() == 0 ? 4 : 3; }
 
-// The menu's items, as fractions of the screen (pause.as2js draws them at the same place).
+// The menu's items, as fractions of the screen (menudraw.as2js draws them at the same place).
 const float kItemLeft = 0.36f, kItemRight = 0.64f, kItemTop = 0.40f, kItemStep = 0.085f, kItemHeight = 0.07f;
-// The SETTINGS page's rows (pause.as2js too): the value part on the right takes clicks (left half: less).
+// The SETTINGS page's rows (menudraw.as2js too): the value part on the right takes clicks (left half: less).
 const float kRowLeft = 0.22f, kRowRight = 0.78f, kRowTop = 0.215f, kRowStep = 0.054f, kRowHeight = 0.048f;
 const float kValueLeft = 0.52f, kValueRight = 0.76f;
 
