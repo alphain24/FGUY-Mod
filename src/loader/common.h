@@ -63,6 +63,8 @@ bool NetplayPadConnected(DWORD pad);
 int NetplayLocalSlot();                //   my player slot, -1 when netplay is off
 const wchar_t* NetplayLobbyName(int slot);   // a player's name in the lobby, or ""
 void NetplayTestStall(DWORD ms);       //   test pipe: this PC goes quiet (a dropped connection)
+void NetplayProfileRender(DWORD ms);   //   research (test pipe "profile <ms>"): the render thread's hot spots
+void NetplayTestLeave();               //   test pipe "netleave": quit the match to the lobby (as the pause menu does)
 void NetplayTestNudge();
 void OnlineMenuLogYaw();               //   test pipe "yaw": the lobby preview's facing (onlinemenu.cpp)
 void NetplayTestResolution(int w, int h);   //   test pipe: the game changes resolution (Options > Screen)               //   test pipe: my player moves a little here only (out of sync)
@@ -215,6 +217,16 @@ void HandoffMute(bool mute);           //   the lobby game waiting hidden: its s
 void HandoffMuteInWindows();           //   research: this process muted in Windows' mixer
 bool HandoffGiveBack();                //   the match is over: back to the player's own (lobby) game
 int HandoffGiveBackState();            //   0 none (the lobby opens here), 1 handing back, 2 handed back
+bool HandoffCatchingUp();              //   this game rejoins a running match and is still catching up (netplay.cpp)
+void HandoffCaughtUp();                //   netplay.cpp: caught up - show the match
+
+// Rejoining a running match (netplay.cpp catches up; the lobby game, online.cpp, shows how far it is): the session
+// game shares this as Local\FGUYMod_CatchUp_<its process id>.
+struct CatchUpShared {
+    volatile LONG tick, hostTick;   // where the catching-up game is, and the match
+    volatile LONG state;            // 0 catching up, 1 caught up, 2 failed (why: reason)
+    wchar_t reason[96];
+};
 
 // kbm.cpp: the game's own keyboard / mouse controls in online sessions
 #pragma pack(push, 1)

@@ -6,6 +6,8 @@
 // all choices, and every player's game restarts into a netplay session (netplay.cpp) through the
 // server's UDP relay. In the session the menu script reads that snapshot (FGUYMOD_SessionConfig) and
 // starts the match itself - identically on every PC, so the match is in sync from its first frame.
+// A guest who left a match that still runs (or whose game closed in it) can get back in from its lobby: REJOIN MATCH
+// starts the session game again, which catches up with the match (netplay.cpp) while this game shows how far it is.
 // The restart isn't seen: this game shows the loading screen until the new one has the match running
 // and shows itself (handoff.cpp), then closes.
 //
@@ -32,7 +34,7 @@
 namespace {
 
 const int kProto = 3;
-const char* kModVersion = "0.5";
+const char* kModVersion = "0.6";
 
 struct Member {
     std::string name, character = "Peter", costume = "0", team = "0", input = "c";  // input: k keyboard, c controller
@@ -78,6 +80,10 @@ bool g_returning = false;           // back from a match, on the way into its lo
 HANDLE g_returnEvent = nullptr;     // the session game: the match is over, come back (handoff.cpp)
 HANDLE g_backEvent = nullptr;       //   set once we show again
 int g_rtt = 0;
+bool g_matchOpen = false;           // my lobby's match still runs and I can get back into it (INMATCH)
+bool g_catchUpStart = false;        // this START gets me back into a running match: the session game catches up
+std::string g_progress;             //   how far it is (the loading screen)
+std::string g_notice;               // what the lobby says once we're back in it (a rejoin that didn't work...)
 
 // ---- helpers ----------------------------------------------------------------------------------------
 std::string Narrow(const wchar_t* w) {
@@ -260,7 +266,9 @@ void HandleLine(const std::string& line) {
         g_private = f.size() > 2 && f[2] == "1";
         g_chat.clear();   // (a new lobby: its own chat)
         g_ready = false;
-        g_status.clear();
+        g_matchOpen = false;
+        g_status = g_notice;
+        g_notice.clear();
         SendPicks();
     } else if (cmd == "MEMBERS" && f.size() > 1) {
         g_mySlot = atoi(f[1].c_str());
@@ -284,6 +292,8 @@ void HandleLine(const std::string& line) {
         size_t at = line.find(' ', line.find(' ', line.find(' ') + 1) + 1);
         g_chat.push_back({++g_chatSeq, f[2], at == std::string::npos ? "" : line.substr(at + 1)});
         if (g_chat.size() > 8) g_chat.erase(g_chat.begin());
+    } else if (cmd == "INMATCH" && f.size() > 1) {
+        g_matchOpen = f[1] == "1";
     } else if (cmd == "OWN" && f.size() > 1) {
         g_own = CleanList(f[1]);
     } else if (cmd == "CONF" && f.size() >= 6) {
@@ -291,6 +301,7 @@ void HandleLine(const std::string& line) {
         g_confRate = f.size() >= 7 ? CleanToken(f[6]) : "0";
     } else if (cmd == "CLOSED") {
         g_returning = false;
+        g_matchOpen = false;
         g_state = State::Connected;
         g_code.clear();
         g_members.clear();
@@ -303,7 +314,9 @@ void HandleLine(const std::string& line) {
         g_saveB64 = f[1];
     } else if (cmd == "START" && f.size() >= 9) {
         g_state = State::Starting;
-        g_status = "Starting the game...";
+        g_catchUpStart = f.size() >= 11 && f[10] == "catchup";   // (back into a running match)
+        g_status = g_catchUpStart ? "Rejoining the match..." : "Starting the game...";
+        g_progress.clear();
         StartSession(f);
     }
 }
@@ -408,6 +421,7 @@ DWORD WINAPI LobbyThread(LPVOID) {
 struct Handoff {
     HANDLE process, ready;
     DWORD pid;
+    bool catchUp;   // rejoining a running match: the session game catches up first (it can take minutes)
 };
 
 void StartLobbyThread() {
@@ -416,10 +430,82 @@ void StartLobbyThread() {
     g_thread = CreateThread(nullptr, 0, LobbyThread, nullptr, 0, nullptr);
 }
 
+// Back into our lobby (a rejoin that didn't work, or our session game closed mid-match): `notice` is what it says then.
+void BackToLobby(const std::string& notice, bool unpark) {
+    bool connected;
+    {
+        std::lock_guard<std::mutex> lock(g_lock);
+        g_notice = notice;
+        g_progress.clear();
+        g_returning = true;
+        g_status.clear();
+        connected = g_sock != INVALID_SOCKET && g_wantConnection && g_state == State::Starting;   // (still: rejoining)
+        if (connected) {
+            g_state = State::Connected;
+        } else {
+            g_rejoin = g_back;
+            g_state = State::Off;
+            g_code.clear();
+            g_members.clear();
+        }
+    }
+    AudioSilenceGame(false);
+    g_startingMatch = false;
+    if (unpark) {
+        HandoffMute(false);
+        DisplayUnpark(true, nullptr, nullptr);
+    }
+    if (connected) SendLine("REJOIN " + g_back);
+    else StartLobbyThread();
+}
+
 DWORD WINAPI HandoffWait(LPVOID arg) {
     auto* h = static_cast<Handoff*>(arg);
     HANDLE both[2] = {h->ready, h->process};
-    DWORD r = WaitForMultipleObjects(2, both, FALSE, 240000);
+    // (rejoining: the session game catches up first - how far it is, from its shared numbers)
+    DWORD limit = h->catchUp ? 45 * 60000 : 240000, waited = 0, r;
+    HANDLE cuMap = nullptr;
+    CatchUpShared* cu = nullptr;
+    for (;;) {
+        r = WaitForMultipleObjects(2, both, FALSE, h->catchUp ? 500 : limit);
+        if (r != WAIT_TIMEOUT || !h->catchUp) break;
+        waited += 500;
+        if (waited >= limit) break;
+        if (!cu) {
+            wchar_t name[64];
+            swprintf_s(name, L"Local\\FGUYMod_CatchUp_%lu", h->pid);
+            cuMap = OpenFileMappingW(FILE_MAP_READ, FALSE, name);
+            if (cuMap) cu = static_cast<CatchUpShared*>(MapViewOfFile(cuMap, FILE_MAP_READ, 0, 0, sizeof(CatchUpShared)));
+        }
+        if (cu && cu->hostTick > 0) {
+            int pct = (int)((long long)cu->tick * 100 / cu->hostTick);
+            if (pct > 99) pct = 99;
+            std::lock_guard<std::mutex> lock(g_lock);
+            g_progress = "Catching up with the match - " + std::to_string(pct) + "%";
+        }
+    }
+    if (h->catchUp && r != WAIT_OBJECT_0) {   // the rejoin didn't work: back into the lobby
+        std::string why = "it took too long";
+        if (r == WAIT_OBJECT_0 + 1 && cu && cu->state == 2) {
+            char reason[200];
+            WideCharToMultiByte(CP_UTF8, 0, cu->reason, -1, reason, sizeof(reason), nullptr, nullptr);
+            why = reason;
+        } else if (r == WAIT_OBJECT_0 + 1) {
+            why = "its game closed";
+        } else {
+            TerminateProcess(h->process, 1);
+        }
+        Log(L"Online: couldn't rejoin the match (%S) - back to its lobby", why.c_str());
+        BackToLobby("Couldn't rejoin the match: " + why, false);
+        if (cu) UnmapViewOfFile(cu);
+        if (cuMap) CloseHandle(cuMap);
+        CloseHandle(h->ready);
+        CloseHandle(h->process);
+        delete h;
+        return 0;
+    }
+    if (cu) UnmapViewOfFile(cu);
+    if (cuMap) CloseHandle(cuMap);
     if (r == WAIT_OBJECT_0 && g_returnEvent && g_backEvent && DisplayPark()) {
         // This game is the player's own (their save, settings and controllers): it waits hidden for the match
         // to end, and then the session game hands back to it (handoff.cpp HandoffGiveBack).
@@ -446,9 +532,16 @@ DWORD WINAPI HandoffWait(LPVOID arg) {
             DisplayUnpark(true, rect ? &at : nullptr, g_backEvent);
             StartLobbyThread();
         } else {
-            Log(L"Online: the session game closed without coming back - closing this game too");
-            DisplayUnpark(false, nullptr, nullptr);
-            VideoRequestQuit();
+            DWORD code = 0;
+            GetExitCodeProcess(h->process, &code);
+            if (code != 0) {   // it crashed (or was ended): back to the lobby - the match can be rejoined from there
+                Log(L"Online: the session game closed unexpectedly (exit code %#lx) - back to the lobby", code);
+                BackToLobby("Your game closed during the match - REJOIN MATCH gets you back in", true);
+            } else {
+                Log(L"Online: the session game closed without coming back - closing this game too");
+                DisplayUnpark(false, nullptr, nullptr);
+                VideoRequestQuit();
+            }
         }
     } else if (r == WAIT_OBJECT_0 + 1) {
         DWORD code = 0;
@@ -530,6 +623,7 @@ void StartSession(const std::vector<std::string>& f) {
     set(L"FGUYMOD_NET_RELAY", g_serverHost + ":" + f[5]);
     set(L"FGUYMOD_NET_TOKEN", f[1]);
     set(L"FGUYMOD_NET_LOBBY", g_code);   // to come back to this lobby after the match
+    set(L"FGUYMOD_NET_CATCHUP", g_catchUpStart ? "1" : "0");   // back into a running match: catch up first
     set(L"FGUYMOD_NET_RATE", f.size() >= 10 ? f[9] : std::string("60"));   // frames per second, everyone alike
     char testRate[8];   // test knob: FGUYMOD_TEST_RATE overrides it (every copy of a test alike)
     if (GetEnvironmentVariableA("FGUYMOD_TEST_RATE", testRate, sizeof(testRate))) set(L"FGUYMOD_NET_RATE", testRate);
@@ -540,6 +634,7 @@ void StartSession(const std::vector<std::string>& f) {
     set(L"FGUYMOD_MY_SETTINGS", OnlineSettingsCapture());   // my own settings, not the host's save's
     std::string names;   // everyone's name by slot, for the match's notices ("Waiting for ...")
     for (size_t i = 0; i < g_members.size(); ++i) names += (i ? "|" : "") + g_members[i].name;
+    if (g_catchUpStart && f.size() >= 12) names = f[11];   // (rejoining: the match's, as it started)
     set(L"FGUYMOD_NET_NAMES", names);
     set(L"FGUYMOD_PADMODE", "1");  // every player is a controller in a session
     set(L"FGUYMOD_HANDOFF", std::to_string(GetCurrentProcessId()));  // boot hidden, tell us when it shows
@@ -572,7 +667,7 @@ void StartSession(const std::vector<std::string>& f) {
         AllowSetForegroundWindow(pi.dwProcessId);  // so it can come to the front when it shows
         wchar_t name[64];
         swprintf_s(name, L"Local\\FGUYMod_SessionReady_%lu", pi.dwProcessId);
-        auto* h = new Handoff{pi.hProcess, CreateEventW(nullptr, TRUE, FALSE, name), pi.dwProcessId};
+        auto* h = new Handoff{pi.hProcess, CreateEventW(nullptr, TRUE, FALSE, name), pi.dwProcessId, g_catchUpStart};
         CloseHandle(CreateThread(nullptr, 0, HandoffWait, h, 0, nullptr));
     } else {
         g_status = "Couldn't restart the game (" + std::to_string(GetLastError()) + ")";
@@ -644,7 +739,8 @@ void OnlineExit() {
 }
 
 // Everything the ONLINE screens show, one item per line, fields separated by '|':
-//   S|<state>|<status>|<code>|<my slot>|<private>|<my name>|<server>|<my ping>
+//   S|<state>|<status>|<code>|<my slot>|<private>|<my name>|<server>|<my ping>|<match open>|<catching up>
+//        match open 1: my lobby's match still runs and I can get back into it; catching up: how far, rejoining
 //        state: off, connecting, online, lobby, starting, failed, returning (back from a match)
 //   C|<mode>|<map>|<time>|<score>|<ff>                      the lobby's match settings
 //   O|<char>:<costume>.<costume>;...                         what the host's save has (in a lobby)
@@ -656,7 +752,8 @@ const char* LobbyState() {
     bool inLobby = g_state == State::InLobby || g_state == State::Starting;
     g_text = "S|" + std::string(StateName()) + "|" + Field(g_status) + "|" + g_code + "|" + std::to_string(g_mySlot) +
              "|" + (g_private ? "1" : "0") + "|" + Field(g_name) + "|" + Field(g_serverHost) + "|" +
-             std::to_string(g_rtt) + "\n";
+             std::to_string(g_rtt) + "|" + (g_matchOpen && g_state == State::InLobby ? "1" : "0") + "|" +
+             Field(g_state == State::Starting ? g_progress : std::string()) + "\n";
     g_text += "C|" + g_conf + "|" + g_confRate + "\n";
     if (inLobby && !g_own.empty()) g_text += "O|" + g_own + "\n";
     if (inLobby) {
@@ -695,7 +792,10 @@ void LobbyDo(const char* command, const char* a, const char* b, const char* c, c
         g_code.clear();
         g_members.clear();
         SendLine("LIST");
-    } else if (cmd == "ready" && g_state == State::InLobby && g_mySlot > 0) {
+    } else if (cmd == "rejoin" && g_state == State::InLobby && g_matchOpen) {   // back into the running match
+        Log(L"Online: lobby action rejoin");
+        SendLine("BACKIN");
+    } else if (cmd == "ready" && g_state == State::InLobby && g_mySlot > 0 && !g_matchOpen) {
         g_ready = !g_ready;
         SendLine(g_ready ? "READY 1" : "READY 0");
     } else if (cmd == "start" && g_state == State::InLobby && g_mySlot == 0) {

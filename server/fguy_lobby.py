@@ -35,6 +35,8 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
                                      takes only players with the host's
     REJOIN <code> <token> <slot>     back from a match: take my place in that lobby again (the lobby
                                      stays while its match runs; its players show as "in match")
+    BACKIN                           back into my lobby's match while it still runs (I left it, or my game
+                                     closed): answered with its START again, plus "catchup" - my game catches up
     LEAVE
   server -> client
     WELCOME <proto>
@@ -46,10 +48,12 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     CONF <mode> <map> <time> <score> <ff>
     OWN <list>                       the host's characters and costumes (also sent on joining)
     SAVE <base64>                    sent right before START when the host shared a save
-    START <token> <slot> <players> <input delay> <udp port> <lang> <conf> <picks> <rate>
+    START <token> <slot> <players> <input delay> <udp port> <lang> <conf> <picks> <rate> [catchup <names>]
                                      conf = mode,map,time,score,ff; picks = char:costume:team:input;... by slot
-                                     (a snapshot, so every player starts from exactly the same choices)
+                                     (a snapshot, so every player starts from exactly the same choices);
+                                     catchup: back into a running match (BACKIN) - names: everyone's, | separated
     SAID <slot> <name> <text...>     someone in my lobby said something (chat)
+    INMATCH <0|1>                    (after MEMBERS) 1: my lobby's match still runs and I can get back into it (BACKIN)
     CLOSED <reason...>               the lobby is gone (host left)
     ERROR <text...>
     PONG <x>
@@ -90,6 +94,7 @@ RELAY_MAX_PPS = 2000              # per player address
 CHAT_MAX = 100                    # characters in a chat line
 MODS_RE = re.compile(r'^[A-Za-z0-9_\-.@#;]{1,600}$')   # Better_Movement@1.0#1a2b3c4d;...
 CHAT_EVERY_S = 0.6                # one chat line per player this often at most
+MATCH_ALIVE_S = 15                # a running match: packets through the relay this recently (to get back into it)
 RATES = (60, 120, 144, 165, 240)  # online frame rates (everyone in a match runs the same one)
 AUTO_MAX = 240                    # auto never picks more (a slower PC: the match follows it, netplay.cpp)
 
@@ -133,6 +138,7 @@ class Client:
         self.away = False     # in a match (the lobby keeps the place for REJOIN)
         self.gone_at = None   # when an away player's lobby connection closed
         self.match_slot = -1  # their slot in that match
+        self.match_token = None   # and that match's token
         self.said_at = 0.0    # their last chat line (flood guard)
         self.mods = '-'       # their gameplay mods (MODS)
 
@@ -157,6 +163,8 @@ class Lobby:
         self.own = None                           # the host's characters and costumes
         self.token = None                         # the running match's session token (hex)
         self.playing = False                      # its match runs and the host isn't back yet
+        self.session = None                       # its relay session
+        self.start_info = None                    # what its START said (for a player getting back into it)
 
     @property
     def host(self):
@@ -168,6 +176,13 @@ class Lobby:
         for c in self.members:
             if not c.away:
                 c.send(f'MEMBERS {c.slot} {entries}'.rstrip())
+                c.send(f'INMATCH {int(self.match_open(c))}')
+
+    def match_open(self, c):
+        """Can c get back into this lobby's running match? (a guest of it, the host still in it, packets flowing)"""
+        return bool(self.playing and self.token and self.session and self.start_info and c.match_slot > 0
+                    and c.match_token == self.token and self.host.away
+                    and time.monotonic() - self.session.last < MATCH_ALIVE_S)
 
     def broadcast_conf(self, only=None):
         for c in ([only] if only else self.members):
@@ -331,6 +346,8 @@ class Server:
                         m.send(f'SAID {c.slot} {c.name} {text}')
         elif cmd == 'REJOIN':
             self.rejoin(c, args)
+        elif cmd == 'BACKIN':
+            self.back_in(c)
         elif cmd == 'LEAVE':
             self.leave(c)
         else:
@@ -352,6 +369,7 @@ class Server:
         self.leave(c)
         slot = lobby.members.index(old)
         c.name, c.char, c.costume, c.team, c.input = old.name, old.char, old.costume, old.team, old.input
+        c.match_slot, c.match_token = old.match_slot, old.match_token
         c.lobby, c.ready, c.away = lobby, False, False
         lobby.members[slot] = c
         if slot == 0:
@@ -360,6 +378,19 @@ class Server:
         lobby.broadcast_members()
         lobby.broadcast_conf(only=c)
         log.info('%s is back in lobby %s', c.name, lobby.code)
+
+    def back_in(self, c):
+        lobby = c.lobby
+        if not lobby or c.away or not lobby.match_open(c):
+            c.send('ERROR That match is over')
+            return
+        n, delay, lang, conf, picks, rate, names = lobby.start_info
+        if lobby.save:
+            c.send('SAVE ' + lobby.save)
+        c.send(f'START {lobby.token} {c.match_slot} {n} {delay} {self.port} {lang} {conf} {picks} {rate} catchup {names}')
+        c.away, c.gone_at, c.ready = True, None, False
+        lobby.broadcast_members()
+        log.info('%s gets back into the match of lobby %s (slot %d)', c.name, lobby.code, c.match_slot)
 
     def leave(self, c):
         lobby = c.lobby
@@ -407,12 +438,15 @@ class Server:
         delay = max(2, min(40, 1 + math.ceil((worst + 15) / tick_ms)))
         conf = ','.join(lobby.conf)
         picks = ';'.join(f'{m.char}:{m.costume}:{m.team}:{m.input}' for m in lobby.members)
+        names = '|'.join(m.name for m in lobby.members)
         for i, m in enumerate(lobby.members):
             if lobby.save and i > 0:
                 m.send('SAVE ' + lobby.save)
             m.send(f'START {token.hex()} {i} {n} {delay} {self.port} {lobby.lang} {conf} {picks} {rate}')
-            m.away, m.gone_at, m.ready, m.match_slot = True, None, False, i
+            m.away, m.gone_at, m.ready, m.match_slot, m.match_token = True, None, False, i, token.hex()
         lobby.token, lobby.playing = token.hex(), True   # the lobby waits for its players to come back
+        lobby.session = self.sessions[token]
+        lobby.start_info = (n, delay, lobby.lang, conf, picks, rate, names)
         log.info('lobby %s started: %d players, %d fps, input delay %d (worst rtt %d ms)', lobby.code, n, rate, delay, worst)
 
     # ---- relay (UDP) -------------------------------------------------------------------------------

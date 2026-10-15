@@ -481,7 +481,7 @@ function FGUYCostumeName(c, costume) {
 
 // ---- lobby state from the loader ---------------------------------------------------------------------------
 function FGUYParse(blob) {
-    var st = {state: 'off', status: '', code: '', slot: -1, priv: false, name: '', server: '', ping: 0,
+    var st = {state: 'off', status: '', code: '', slot: -1, priv: false, name: '', server: '', ping: 0, matchOpen: false, progress: '',
               mode: 'DM', map: 'FR', time: 0, score: 0, ff: 0, own: '', members: [], lobbies: [], chat: []};
     var lines = String(blob).split('\n');
     for (var i = 0; i < lines.length; i++) {
@@ -489,6 +489,8 @@ function FGUYParse(blob) {
         if (f[0] == 'S') {
             st.state = f[1]; st.status = f[2]; st.code = f[3]; st.slot = Number(f[4]); st.priv = f[5] == '1';
             st.name = f[6]; st.server = f[7]; st.ping = Number(f[8]);
+            st.matchOpen = f[9] == '1';   // my lobby's match still runs and I can get back into it
+            st.progress = f[10] != undefined ? String(f[10]) : '';   // rejoining: how far the catch-up is
         } else if (f[0] == 'C') {
             st.mode = f[1]; st.map = f[2]; st.time = Number(f[3]); st.score = Number(f[4]); st.ff = Number(f[5]);
             st.rate = Number(f[6]);
@@ -615,6 +617,7 @@ function FGUYLobbyStatus() {
         if (waiting.length > 0) return ['Waiting for ' + waiting.join(', ') + ' to ready up', 'info'];
         return ["Everyone's ready! Press X to start", 'good'];
     }
+    if (FGUYS.matchOpen) return ['The match is still on - X / REJOIN MATCH gets you back in', 'good'];
     if (!FGUYMe().ready) return ["Press X when you're ready", 'warn'];
     return ["You're ready - waiting for the host to start", 'good'];
 }
@@ -872,7 +875,8 @@ function FGUYBotStep() {
             FGUYPickTeam = Math.random() < 0.5 ? 0 : 1;
             FGUYPickInput = 'c';
             FGUYSendPick();
-        } else if (!FGUYMe().ready) { FGUYDo('ready'); FGUYBotNext = now + 5000; }   // (it toggles: give it time)
+        } else if (FGUYS.matchOpen) { FGUYDo('rejoin'); FGUYBotNext = now + 10000; }   // (its match still runs: back in)
+        else if (!FGUYMe().ready) { FGUYDo('ready'); FGUYBotNext = now + 5000; }   // (it toggles: give it time)
     }
 }
 
@@ -1104,6 +1108,10 @@ function FGUYDrawLobby(ui) {
             FGUYBigButton(ui, 48, y, 400, 76, 'START MATCH', ready + ' / ' + FGUYS.members.length + ' ready', hot, all);
             FGUYHit(48, y, 400, 76, 'lobbyItem', i);
             y = y + 92;
+        } else if (it == 'ready' && FGUYS.matchOpen) {   // (my match still runs: back into it)
+            FGUYBigButton(ui, 48, y, 400, 76, 'REJOIN MATCH', 'still on - catch up and play', hot, true);
+            FGUYHit(48, y, 400, 76, 'lobbyItem', i);
+            y = y + 92;
         } else if (it == 'ready') {
             FGUYBigButton(ui, 48, y, 400, 76, me.ready ? 'READY!' : 'READY UP', me.ready ? 'waiting for host' : '', hot, true);
             FGUYHit(48, y, 400, 76, 'lobbyItem', i);
@@ -1175,7 +1183,7 @@ function FGUYDrawLobby(ui) {
     }
     FGUYDrawChat(ui, rx, Math.max(ry + 6, 600), rw);
     var status = FGUYLobbyStatus();
-    FGUYFooter(ui, ['A', 'Select', 'ARROWS', 'Change', 'X', host ? 'Start' : 'Ready up', 'Y', 'Character', 'B', 'Leave'],
+    FGUYFooter(ui, ['A', 'Select', 'ARROWS', 'Change', 'X', host ? 'Start' : (FGUYS.matchOpen ? 'Rejoin match' : 'Ready up'), 'Y', 'Character', 'B', 'Leave'],
                status[0], status[1]);
 }
 
@@ -1334,7 +1342,8 @@ function FGUYDrawLoading(ui) {
     // "LOADING..." with a spinner of dots
     var dots = FGUYLoadStep % 4, d = '';
     for (var k = 0; k < dots; k++) d = d + '.';
-    FGUYTitle(top, 1100, 640, 440, 70, 'LOADING' + d, 48, FGUYC.white, 'left');
+    FGUYTitle(top, 1100, 640, 440, 70, (FGUYS.progress != '' ? 'REJOINING' : 'LOADING') + d, 48, FGUYC.white, 'left');
+    if (FGUYS.progress != '') FGUYText(top, 1100, 600, 460, 30, FGUYS.progress, false, 20, FGUYC.yellow, 'left');
     for (var j = 0; j < 5; j++)
         FGUYCircle(top, 1124 + j * 34, 734, 10, j == FGUYLoadStep % 5 ? FGUYC.yellow : FGUYC.chipLine, 100, 0, 0);
     FGUYText(top, 64, 40, 1472, 30, 'Everyone gets their own full screen', false, 20, FGUYC.soft, 'right');
@@ -1610,6 +1619,9 @@ function FGUYPrimary() {
         var all = FGUYReadyCount() == FGUYS.members.length && FGUYS.members.length > 1;
         if (all) { FGUYDo('start'); FGUYSound('accept'); }
         else { FGUYToast(FGUYLobbyStatus()[0]); FGUYSound('deny'); }
+    } else if (FGUYS.matchOpen) {
+        FGUYDo('rejoin');
+        FGUYSound('accept');
     } else {
         FGUYDo('ready');
         FGUYSound('accept');

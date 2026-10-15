@@ -37,6 +37,8 @@ Install
 
 Play online
   Main Menu > ONLINE. Host a game or join one from the list; everyone readies up and the host starts.
+  Left a match, or your game closed in it? While it's still on, its lobby shows REJOIN MATCH: your game
+  catches up with the match (a minute or two - the loading screen shows how far) and you're back in.
 
 Settings
   FGUYMod\FGUYMod.ini (open with Notepad): display mode, frame rate, online server.

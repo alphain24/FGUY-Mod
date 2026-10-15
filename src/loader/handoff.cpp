@@ -10,6 +10,9 @@
 // The old game passes its process id in FGUYMOD_HANDOFF. Event: Local\FGUYMod_SessionReady_<new pid>.
 // If the match never starts, the new game shows itself anyway after kRevealTimeoutMs.
 //
+// Rejoining a running match (FGUYMOD_NET_CATCHUP, netplay.cpp): the new game plays the match from its start on everyone's
+// recorded inputs, as fast as it can and still hidden - "booting" until it has caught up - and shows itself only then.
+//
 // The old game doesn't quit, though: it waits hidden (online.cpp OnlinePark). It's the player's own game -
 // their save, settings and controllers - so after the match the session game hands back to it
 // (HandoffGiveBack): Local\FGUYMod_LobbyReturn_<old pid> tells it to come back (where the session game's window
@@ -27,6 +30,7 @@
 namespace {
 
 const DWORD kRevealTimeoutMs = 180000;  // from boot
+const DWORD kCatchUpTimeoutMs = 45 * 60000;   // (rejoining: catching up can take a while - netplay.cpp gives up itself)
 const DWORD kRevealDelayMs = 300;       // after the level is running (into its fade-in)
 
 bool g_on = false;
@@ -36,6 +40,7 @@ HANDLE g_readyEvent = nullptr;
 HANDLE g_unmute = nullptr;      // set when the window is shown
 volatile LONG g_revealAsked = 0;
 volatile LONG g_revealed = 0;
+volatile LONG g_catchingUp = 0;   // rejoining a running match: still catching up (shows only once caught up)
 
 // Mutes this process's audio session (WASAPI, default output device) until g_unmute, then unmutes.
 // Its own thread so COM stays in one place; the game's sound streams join the session's mute later.
@@ -67,7 +72,7 @@ DWORD WINAPI AudioThread(LPVOID arg) {
     } else {
         Log(L"Handoff: couldn't reach the game's sound session");
     }
-    DWORD r = unmuteOnly ? WAIT_OBJECT_0 : WaitForSingleObject(g_unmute, kRevealTimeoutMs);
+    DWORD r = unmuteOnly ? WAIT_OBJECT_0 : WaitForSingleObject(g_unmute, g_catchingUp ? kCatchUpTimeoutMs : kRevealTimeoutMs);
     if (r == WAIT_TIMEOUT) {
         Log(L"Handoff: the match didn't start in time - showing the game anyway");
         DisplayReveal();
@@ -134,7 +139,8 @@ DWORD WINAPI RevealLater(LPVOID) {
 }  // namespace
 
 void InitHandoff() {
-    wchar_t old[16];
+    wchar_t old[16], catchUp[8];
+    if (GetEnvironmentVariableW(L"FGUYMOD_NET_CATCHUP", catchUp, 8) && catchUp[0] == L'1') g_catchingUp = 1;
     if (GetEnvironmentVariableW(L"FGUYMOD_HANDOFF", old, 16)) g_oldPid = wcstoul(old, nullptr, 10);
     if (!g_oldPid) {
         // a normal start: make sure Windows isn't keeping the game muted (the bot / test copies are silent
@@ -167,16 +173,26 @@ void InitHandoff() {
 bool HandoffHidden() { return g_on && !g_revealed; }
 
 volatile LONG g_hudUp = 0;
-// Booting hidden, before the match runs: nobody watches, so it needn't run at real speed (d3d9.cpp).
-bool HandoffBooting() { return g_on && !g_hudUp; }
+// Booting hidden, before the match runs (or catching up with it): nobody watches, so it needn't run at real speed
+// (netplay.cpp) or draw the 3D (splitview.cpp).
+bool HandoffBooting() { return g_on && (!g_hudUp || g_catchingUp); }
+bool HandoffCatchingUp() { return g_catchingUp != 0; }
 
 bool HandoffHudUp() { return g_hudUp != 0; }
 
 // The level is running (its HUD has laid itself out). Show it a moment later.
 void HandoffMatchRunning() {
     InterlockedExchange(&g_hudUp, 1);
-    if (!g_on || InterlockedExchange(&g_revealAsked, 1)) return;
+    if (!g_on || g_catchingUp || InterlockedExchange(&g_revealAsked, 1)) return;   // (catching up: once caught up)
     Log(L"Handoff: the match is running");
+    CloseHandle(CreateThread(nullptr, 0, RevealLater, nullptr, 0, nullptr));
+}
+
+// netplay.cpp: rejoining, caught up with the match - show it now.
+void HandoffCaughtUp() {
+    InterlockedExchange(&g_catchingUp, 0);
+    if (!g_on || InterlockedExchange(&g_revealAsked, 1)) return;
+    Log(L"Handoff: caught up with the match");
     CloseHandle(CreateThread(nullptr, 0, RevealLater, nullptr, 0, nullptr));
 }
 

@@ -24,6 +24,13 @@
 // Every SyncCheckFrames ticks peers compare a hash of the players' positions and aim, taken at the tick boundary.
 // Scenes that hold the game thread (loading screens) are skipped for everyone when any player skips.
 //
+// Rejoining a match (catch-up): every PC records every tick as it played it - everyone's input, and who was idle - and
+// its sync checks. A player who left (or whose game closed) can come back: their new game (FGUYMOD_NET_CATCHUP) asks the
+// host for that record ('J' / 'K') and plays the whole match from its first tick on it, hidden and as fast as it can
+// (handoff.cpp), checking it comes out as the host's did. Meanwhile their character stays idle for everyone. Once it's
+// close, the host's input says "player N is back from tick T" (everyone reads it at the same tick); from T on everyone
+// waits for their input again, and their game shows.
+//
 // Settings ([Netplay] in FGUYMod.ini, env overrides for tests):
 //   Enable=1  Slot=0..3  Players=2  Port=7600  Peers=127.0.0.1:7601,...  InputDelay=3
 //   Script=1 (scripted test inputs instead of the real pad)  SyncCheckFrames=30
@@ -41,6 +48,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -74,7 +83,8 @@ struct Pad {
     SHORT lx, ly, rx, ry;
     KbmRaw kbm;          // keyboard / mouse players: their raw keyboard and mouse (kbm.cpp)
 };
-const int kRing = 256;               // ticks of input history kept
+const int kRing = 2048;              // ticks of input kept around the one being played (live inputs a little ahead
+                                     // too: catching up, the others are up to a few seconds ahead)
 Pad g_inputs[kRing][4];
 bool g_have[kRing][4];
 unsigned g_haveTick[kRing][4];       // which tick each ring entry holds
@@ -372,6 +382,9 @@ void WaitForQuiescence() {
 // three parts; 'Q' asks the host for them again. 'P' ping: slot, the sender's clock (ms); 'O' its echo: the echoing
 // slot, to whom, that clock - the round trip, shown in the match (FGUYMOD_NetStats). 'S' skip the scene that's holding the game: slot, sequence number. 'L' left the match (back to
 // the lobby): slot, the last tick with their input - from the next one on they're idle on every PC.
+// Rejoining: 'J' a rejoining player asks the host for the match's record: from that tick on, how many packets (0: none -
+// just where I am), and the tick they're at. 'K' the host's answer, to that player: a stretch of ticks (each as its
+// difference from the one before), the host's sync checks in it, and where the host is.
 #pragma pack(push, 1)
 struct PktHeader { char type; BYTE slot; };
 struct PktInputs { PktHeader h; unsigned first; BYTE count; Pad pads[16]; };
@@ -382,6 +395,9 @@ struct PktRngAsk { PktHeader h; unsigned tick; };
 struct PktSkip { PktHeader h; unsigned seq; };
 struct PktLeave { PktHeader h; unsigned last; };
 struct PktPing { PktHeader h; BYTE to; unsigned long long sent; };
+struct PktHistAsk { PktHeader h; unsigned from, at; BYTE want; };
+struct PktHist { PktHeader h; BYTE to, hashes, last; unsigned first; WORD count; unsigned hostTick, word; unsigned goneFrom[4]; };
+struct HashRec { unsigned tick, hash, players, rng; };   // (in a 'K' after the header: `hashes` of them, then the ticks)
 #pragma pack(pop)
 
 // Relay mode (online sessions): every packet goes to the lobby server, wrapped as
@@ -393,8 +409,11 @@ volatile LONG g_testNudge = 0;
 volatile LONG g_testResW = 0, g_testResH = 0;   // test pipe "resolution <w> <h>": the game changes resolution   // test pipe "nudge": move my player a little on this PC only (out of sync)
 volatile ULONGLONG g_testStallUntil = 0;   // test pipe "netstall <ms>": this PC sends nothing until then
 
+bool g_catchUpFailed = false;        // catching up: given up (this game quits; it says nothing to anyone any more)
+
 void SendAll(const void* data, int len) {
     if (g_testStallUntil && GetTickCount64() < g_testStallUntil) return;
+    if (g_catchUpFailed) return;
     if (g_relay) {
         char buf[1500];
         if (len > (int)sizeof(buf) - 11) return;
@@ -514,6 +533,360 @@ volatile LONG g_pingMs[4] = {-1, -1, -1, -1};   // the round trip to each player
 unsigned g_skipSeqSeen[4];
 void StartSkip(const wchar_t* why);
 
+// ---- who plays: players who left, and players coming back --------------------------------------------------------
+bool g_gone[4];                      // a player who stopped sending (left): their pad stays idle (until they rejoin)
+unsigned g_backAt[4];                // a player rejoining: everyone waits for their input again from this tick on
+unsigned g_goneAgain[4];             //   and they left again from this tick on (noticed before they were back)
+unsigned g_lastSent = 0;             // the last tick our inputs went out for
+bool g_inSession = false;            // an online session (the lobby started it)
+void SendInputs(unsigned upTo);
+
+// A player whose pad is idle at this tick on every PC (left the match, or not back yet).
+bool Idle(int s, unsigned tick) {
+    if (g_backAt[s]) return tick < g_backAt[s];
+    return g_gone[s] || (g_goneFrom[s] && tick >= g_goneFrom[s]);
+}
+
+// The start of every tick: players rejoining from this tick on are in the match again.
+void BackIn(unsigned tick);
+
+// ---- the match's record (every PC), for a player who rejoins ----------------------------------------------------
+// One tick as it was played: who was idle (bit per player), everyone's input.
+struct Row { BYTE idle; Pad pads[4]; };
+
+// A stretch of rows, each as its difference from the row before (bytes XOR - nearly all zero), as pairs of
+// <zero bytes> <other bytes> <those bytes> (counts as 7-bit varints). Each stretch starts from all-zero rows, so it
+// decodes on its own.
+struct RowCoder {
+    std::vector<unsigned char> out, lit;
+    unsigned zeros = 0;
+    Row prev{};
+    static void Varint(std::vector<unsigned char>& v, unsigned x) {
+        for (; x >= 0x80; x >>= 7) v.push_back((unsigned char)(x | 0x80));
+        v.push_back((unsigned char)x);
+    }
+    void Pair() {
+        Varint(out, zeros);
+        Varint(out, (unsigned)lit.size());
+        out.insert(out.end(), lit.begin(), lit.end());
+        zeros = 0;
+        lit.clear();
+    }
+    void Byte(unsigned char b) {
+        if (b) { lit.push_back(b); return; }
+        if (!lit.empty()) Pair();
+        ++zeros;
+    }
+    void Add(const Row& r, int players) {
+        Byte(r.idle ^ prev.idle);
+        for (int s = 0; s < players; ++s) {
+            auto a = reinterpret_cast<const unsigned char*>(&r.pads[s]), b = reinterpret_cast<const unsigned char*>(&prev.pads[s]);
+            for (size_t i = 0; i < sizeof(Pad); ++i) Byte(a[i] ^ b[i]);
+        }
+        prev = r;
+    }
+    size_t Size() const { return out.size() + lit.size() + 10; }
+    std::vector<unsigned char> Finish() const {
+        RowCoder c = *this;
+        if (c.zeros || !c.lit.empty()) c.Pair();
+        return c.out;
+    }
+};
+
+bool DecodeRows(const unsigned char* d, size_t n, unsigned count, int players, Row* rows) {
+    size_t at = 0;
+    unsigned zeros = 0, lit = 0;
+    auto varint = [&](unsigned& x) {
+        x = 0;
+        for (int shift = 0; shift < 35; shift += 7) {
+            if (at >= n) return false;
+            unsigned char c = d[at++];
+            x |= (unsigned)(c & 0x7f) << shift;
+            if (!(c & 0x80)) return true;
+        }
+        return false;
+    };
+    auto next = [&](unsigned char& b) {   // the next difference byte
+        while (!zeros && !lit)
+            if (!varint(zeros) || !varint(lit) || at + lit > n) return false;
+        if (zeros) { --zeros; b = 0; }
+        else { --lit; b = d[at++]; }
+        return true;
+    };
+    Row prev{};
+    for (unsigned t = 0; t < count; ++t) {
+        Row r = prev;
+        unsigned char b;
+        if (!next(b)) return false;
+        r.idle ^= b;
+        for (int s = 0; s < players; ++s) {
+            auto p = reinterpret_cast<unsigned char*>(&r.pads[s]);
+            for (size_t i = 0; i < sizeof(Pad); ++i) {
+                if (!next(b)) return false;
+                p[i] ^= b;
+            }
+        }
+        rows[t] = prev = r;
+    }
+    return true;
+}
+
+const size_t kHistData = 1000;       // a stretch's bytes at most (it goes in one packet)
+const int kHistHashes = 8;           // sync checks in one packet at most
+const int kServeMax = 24;            // packets per answer
+struct Stretch { unsigned first, count; std::vector<unsigned char> data; };
+std::vector<Stretch> g_rec;          // the match so far, in stretches (and the open one below)
+RowCoder g_recOpen;
+unsigned g_recOpenFirst = 0, g_recOpenCount = 0, g_recNext = 0;
+std::vector<HashRec> g_recHashes;    // my sync checks, in tick order
+std::vector<PktRng> g_rngAll;        // host: every time everyone took my random numbers, what they were
+
+void Record(const Row& r) {
+    unsigned most = 8u * (unsigned)(g_syncEvery > 0 ? g_syncEvery : 30);   // (at most kHistHashes checks in a stretch)
+    if (most > 240) most = 240;
+    RowCoder more = g_recOpen;
+    more.Add(r, g_players);
+    if (g_recOpenCount && (g_recOpenCount >= most || more.Size() > kHistData)) {   // full: close it, start the next
+        g_rec.push_back({g_recOpenFirst, g_recOpenCount, g_recOpen.Finish()});
+        g_recOpen = RowCoder{};
+        g_recOpen.Add(r, g_players);
+        g_recOpenFirst = g_recNext;
+        g_recOpenCount = 1;
+    } else {
+        if (!g_recOpenCount) g_recOpenFirst = g_recNext;
+        g_recOpen = std::move(more);
+        ++g_recOpenCount;
+    }
+    ++g_recNext;
+}
+
+// Host: a player rejoining - where they've got to (for when they're back), and the record they asked for.
+struct Rejoiner { ULONGLONG heardAt; unsigned at, issued; bool told; };
+Rejoiner g_rejoiners[4];
+
+void SendStretch(int to, unsigned first, unsigned count, const std::vector<unsigned char>* data, bool last) {
+    char buf[1400];
+    auto p = reinterpret_cast<PktHist*>(buf);
+    memset(p, 0, sizeof(*p));
+    p->h = {'K', (BYTE)g_slot};
+    p->to = (BYTE)to;
+    p->last = last ? 1 : 0;
+    p->first = first;
+    p->count = (WORD)count;
+    p->hostTick = g_tick;
+    p->word = to > 0 && to < 4 ? g_rejoiners[to].issued : 0;   // (the tick of my word that they're back, once given)
+    for (int s = 0; s < 4; ++s) p->goneFrom[s] = g_goneFrom[s];
+    size_t at = sizeof(PktHist);
+    if (count && data) {
+        auto it = std::lower_bound(g_recHashes.begin(), g_recHashes.end(), first,
+                                   [](const HashRec& h, unsigned t) { return h.tick < t; });
+        for (; it != g_recHashes.end() && it->tick < first + count && p->hashes < kHistHashes; ++it) {
+            memcpy(buf + at, &*it, sizeof(HashRec));
+            at += sizeof(HashRec);
+            ++p->hashes;
+        }
+        if (at + data->size() > sizeof(buf)) {
+            static int logged = 0;
+            if (logged++ < 3) Log(L"Netplay: a stretch of the match too big to send (%u bytes)", (unsigned)data->size());
+            return;
+        }
+        memcpy(buf + at, data->data(), data->size());
+        at += data->size();
+    }
+    SendAll(buf, (int)at);
+}
+
+void ServeHistory(int to, const PktHistAsk* q) {
+    if (to <= 0 || to >= g_players || to >= 4) return;
+    Rejoiner& r = g_rejoiners[to];
+    if (!r.told && (Idle(to, g_tick) || g_backAt[to])) {   // (not for a late ask from someone already back)
+        r.told = true;
+        Log(L"Netplay: player %d is rejoining the match (at tick %u, the match at %u)", to, q->at, g_tick);
+        OverlayShow((PlayerName(to) + L" is rejoining the match...").c_str(), 5000);
+    }
+    r.heardAt = GetTickCount64();
+    r.at = q->at;
+    int want = q->want > kServeMax ? kServeMax : q->want, sent = 0;
+    bool openNeeded = g_recOpenCount && g_recOpenFirst + g_recOpenCount > q->from;
+    // the stretch with `from` in it, and on (the open one last: all of it so far)
+    auto it = std::upper_bound(g_rec.begin(), g_rec.end(), q->from, [](unsigned t, const Stretch& x) { return t < x.first; });
+    if (it != g_rec.begin() && q->from < (it - 1)->first + (it - 1)->count) --it;
+    for (; it != g_rec.end() && sent < want; ++it, ++sent) {
+        bool last = sent + 1 == want || (it + 1 == g_rec.end() && !openNeeded);
+        SendStretch(to, it->first, it->count, &it->data, last);
+    }
+    if (sent < want && openNeeded) {
+        std::vector<unsigned char> open = g_recOpen.Finish();
+        SendStretch(to, g_recOpenFirst, g_recOpenCount, &open, true);
+        ++sent;
+    }
+    if (!sent) SendStretch(to, q->from, 0, nullptr, true);   // (nothing more yet, or not asked for: where I am)
+}
+
+// ---- catching up (the rejoining player's game) --------------------------------------------------------------------
+bool g_catchUp = false;              // this game rejoins a running match: it plays it from its start on the host's
+                                     // record, as fast as it can, until it's caught up (FGUYMOD_NET_CATCHUP)
+unsigned g_myBackAt = 0;             //   the tick I'm back in the match from (0: not known yet)
+CatchUpShared* g_cuShared = nullptr; //   how far it is, for my lobby game's loading screen
+ULONGLONG g_catchUpStartMs = 0, g_histHeardAt = 0;
+unsigned g_hostTick = 0;             //   where the match is (the host's last answer)
+unsigned g_myWordTick = 0;           //   the tick of the host's word that I'm back (an earlier word for my slot in the
+                                     //   record was an earlier rejoin - a game of mine before this one)
+struct HistIn { unsigned count; std::vector<unsigned char> data; };
+std::map<unsigned, HistIn> g_histIn; //   the record as it came, by first tick
+unsigned g_histEdge = 0;             //   every tick before this is in it
+bool g_histAsked = false;            //   an answer is on its way
+std::map<unsigned, HashRec> g_histHashes;   // the host's sync checks
+std::vector<Row> g_histRows;         //   the stretch being played, decoded
+unsigned g_histRowsFirst = 0;
+
+void CatchUpFail(const wchar_t* why) {
+    if (g_catchUpFailed) return;
+    Log(L"Netplay: couldn't rejoin the match - %s (tick %u, the match at %u)", why, g_tick, g_hostTick);
+    if (g_myBackAt) {   // the others wait for me from that tick: I've gone again
+        PktLeave p{{'L', (BYTE)g_slot}, g_lastSent >= g_myBackAt ? g_lastSent : g_myBackAt - 1};
+        for (int i = 0; i < 6; ++i) { SendAll(&p, sizeof(p)); Real_Sleep(4); }
+    }
+    g_catchUpFailed = true;
+    if (g_cuShared) {
+        wcsncpy_s(g_cuShared->reason, why, _TRUNCATE);
+        InterlockedExchange(&g_cuShared->state, 2);
+    }
+    VideoRequestQuit();   // (the game runs on, idle and unseen, to its next frame - then quits)
+    CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
+        Real_Sleep(10000);
+        Log(L"Netplay: no frame since giving up - exiting");
+        QuitGame();
+        return 0;
+    }, nullptr, 0, nullptr));
+}
+
+void StoreHistory(const PktHist* p, int n) {
+    if (p->to != g_slot) return;
+    g_histHeardAt = GetTickCount64();
+    if (p->hostTick > g_hostTick) g_hostTick = p->hostTick;
+    if (p->last) g_histAsked = false;
+    if (p->word) g_myWordTick = p->word;
+    for (int s = 0; s < 4 && s < g_players; ++s)   // (players who left: from when - for once I'm back in the match)
+        if (s != g_slot && p->goneFrom[s] && !g_goneFrom[s] && !g_backAt[s]) g_goneFrom[s] = p->goneFrom[s];
+    size_t at = sizeof(PktHist) + p->hashes * sizeof(HashRec);
+    if (at > (size_t)n) return;
+    for (int i = 0; i < p->hashes; ++i) {
+        HashRec h;
+        memcpy(&h, reinterpret_cast<const char*>(p) + sizeof(PktHist) + i * sizeof(HashRec), sizeof(h));
+        if (h.tick >= g_tick) g_histHashes[h.tick] = h;
+    }
+    if (!p->count || p->first + p->count <= g_tick) return;   // (nothing in it, or played already)
+    HistIn& e = g_histIn[p->first];
+    if (p->count > e.count) {
+        e.count = p->count;
+        e.data.assign(reinterpret_cast<const unsigned char*>(p) + at, reinterpret_cast<const unsigned char*>(p) + n);
+    }
+    for (;;) {   // how far it goes without a gap
+        auto it = g_histIn.upper_bound(g_histEdge);
+        if (it == g_histIn.begin()) break;
+        --it;
+        unsigned end = it->first + it->second.count;
+        if (end <= g_histEdge) break;
+        g_histEdge = end;
+    }
+}
+
+// The host's record of a tick (false: not here yet).
+bool HistRow(unsigned t, Row* out) {
+    if (t >= g_histEdge) return false;
+    if (t < g_histRowsFirst || t >= g_histRowsFirst + g_histRows.size()) {
+        auto it = g_histIn.upper_bound(t);
+        if (it == g_histIn.begin()) return false;
+        --it;
+        if (t >= it->first + it->second.count) return false;
+        g_histRows.resize(it->second.count);
+        if (!DecodeRows(it->second.data.data(), it->second.data.size(), it->second.count, g_players, g_histRows.data())) {
+            g_histRows.clear();
+            CatchUpFail(L"the match's record came damaged");
+            return false;
+        }
+        g_histRowsFirst = it->first;
+        g_histIn.erase(g_histIn.begin(), it);   // (the stretches before: played)
+    }
+    *out = g_histRows[t - g_histRowsFirst];
+    return true;
+}
+
+// Ask the host for more of the record while it runs low (one answer at a time), and say where I am now and then.
+void AskHistory() {
+    const unsigned kAhead = 6000;   // ticks wanted ahead
+    ULONGLONG now = GetTickCount64();
+    static ULONGLONG lastAsk = 0, lastTell = 0;
+    bool low = g_histEdge < g_tick + kAhead;
+    if (low) {
+        if (g_histAsked && now - lastAsk < 300) return;   // (an answer is on its way - or got lost)
+        if (now - lastAsk < 10) return;
+    } else if (now - lastTell < 2000) {
+        return;
+    }
+    PktHistAsk q{{'J', (BYTE)g_slot}, g_histEdge, g_tick, (BYTE)(low ? kServeMax : 0)};
+    SendAll(&q, sizeof(q));
+    if (low) { lastAsk = now; g_histAsked = true; }
+    lastTell = now;
+}
+
+// The host's word: I'm back in the match from tick `at`. My inputs from then: idle for the first few (so the
+// others needn't wait for me while I catch up the last bit), then my own.
+unsigned g_sampledUpTo = 0;          // my inputs are sampled up to this tick
+void CatchUpBackAt(unsigned at) {
+    g_myBackAt = at;
+    unsigned upTo = at + (unsigned)g_delay - 1;
+    for (unsigned t = at; t <= upTo; ++t) {
+        int r = t % kRing;
+        g_inputs[r][g_slot] = Pad{};
+        g_have[r][g_slot] = true;
+        g_haveTick[r][g_slot] = t;
+    }
+    g_sampledUpTo = upTo;
+    g_paceMine = 0;   // (my pace while catching up said nothing: no 3D was drawn - measured again once I'm back)
+    SendInputs(upTo);
+    Log(L"Netplay: catching up - back in the match from tick %u (here %u, the match at %u)", at, g_tick, g_hostTick);
+}
+
+void CatchUpDone() {
+    g_catchUp = false;
+    g_paceMine = 0;
+    Log(L"Netplay: caught up with the match at tick %u, in %llu s - playing", g_tick,
+        (GetTickCount64() - g_catchUpStartMs) / 1000);
+    if (g_cuShared) InterlockedExchange(&g_cuShared->state, 1);
+    HandoffCaughtUp();
+}
+
+// Everyone, at the tick the host's input says so: player s is back in the match a second from now.
+void RejoinWord(int s) {
+    if (s <= 0 || s >= g_players || s >= 4 || g_backAt[s]) return;
+    g_backAt[s] = g_tick + (unsigned)g_rate + 2u * (unsigned)g_delay;
+    g_goneAgain[s] = 0;
+    Log(L"Netplay: tick %u - player %d rejoins the match: back from tick %u", g_tick, s, g_backAt[s]);
+    if (s == g_slot && g_catchUp) {
+        if (g_tick != g_myWordTick) {   // (an earlier rejoin of my slot, in the record: not this one)
+            g_backAt[s] = 0;
+            Log(L"Netplay: catching up - tick %u: an earlier rejoin of my slot", g_tick);
+            return;
+        }
+        CatchUpBackAt(g_backAt[s]);
+    }
+}
+
+void BackIn(unsigned tick) {
+    for (int s = 0; s < g_players && s < 4; ++s) {
+        if (!g_backAt[s] || tick < g_backAt[s]) continue;
+        g_backAt[s] = 0;
+        g_gone[s] = false;
+        g_goneFrom[s] = g_goneAgain[s];
+        g_goneAgain[s] = 0;
+        g_rejoiners[s] = Rejoiner{};
+        Log(L"Netplay: player %d is back in the match from tick %u", s, tick);
+        if (g_inSession && s != g_slot && !g_catchUp) OverlayShow((PlayerName(s) + L" is back in the match").c_str(), 4000);
+    }
+}
+
 void Receive() {
     char buf[1500];
     EnterCriticalSection(&g_netLock);
@@ -554,14 +927,20 @@ void Receive() {
             g_peerPlayers[slot][k] = p->players;
             g_peerRng[slot][k] = p->rng;
             g_peerHashTick[slot][k] = p->tick;
-            CompareHash(slot, p->tick, p->hash, p->players, p->rng);
+            if (!g_gone[slot] && !g_goneFrom[slot] && !g_backAt[slot])   // (not from a player who isn't playing)
+                CompareHash(slot, p->tick, p->hash, p->players, p->rng);
         } else if (h->type == 'M' && n >= (int)sizeof(PktRng)) {
             RngReceive(reinterpret_cast<PktRng*>(buf));
         } else if (h->type == 'Q' && n >= (int)sizeof(PktRngAsk)) {
             RngAsked(reinterpret_cast<PktRngAsk*>(buf)->tick);
         } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
             auto p = reinterpret_cast<PktLeave*>(buf);
-            if (!g_goneFrom[slot] || p->last + 1 < g_goneFrom[slot]) {
+            if (g_backAt[slot] && p->last + 1 >= g_backAt[slot]) {   // rejoining, and gone again from then
+                if (!g_goneAgain[slot] || p->last + 1 < g_goneAgain[slot]) {
+                    g_goneAgain[slot] = p->last + 1;
+                    Log(L"Netplay: player %d left again - idle from tick %u", slot, p->last + 1);
+                }
+            } else if (!g_goneFrom[slot] || p->last + 1 < g_goneFrom[slot]) {
                 g_goneFrom[slot] = p->last + 1;
                 Log(L"Netplay: player %d left the match (back to the lobby) - idle from tick %u", slot, p->last + 1);
             }
@@ -575,6 +954,10 @@ void Receive() {
                 ULONGLONG now = GetTickCount64();
                 if (now >= p->sent && now - p->sent < 60000) InterlockedExchange(&g_pingMs[slot], (LONG)(now - p->sent));
             }
+        } else if (h->type == 'J' && n >= (int)sizeof(PktHistAsk)) {   // a player rejoining asks for the match so far
+            if (g_slot == 0 && g_inSession) ServeHistory(slot, reinterpret_cast<PktHistAsk*>(buf));
+        } else if (h->type == 'K' && n >= (int)sizeof(PktHist)) {          // the host's record, for me catching up
+            if (g_catchUp && slot == 0) StoreHistory(reinterpret_cast<PktHist*>(buf), n);
         } else if (h->type == 'S' && n >= (int)sizeof(PktSkip)) {
             auto p = reinterpret_cast<PktSkip*>(buf);
             if (p->seq > g_skipSeqSeen[slot]) {
@@ -585,19 +968,13 @@ void Receive() {
     }
 }
 
-bool g_gone[4];                      // a player who stopped sending (left): their pad stays idle
 
 bool HaveAll(unsigned tick) {
     int r = tick % kRing;
     for (int s = 0; s < g_players; ++s) {
-        if (g_goneFrom[s] && tick >= g_goneFrom[s]) {   // left the match: idle (whatever arrived)
-            g_inputs[r][s] = Pad{};
-            g_have[r][s] = true;
-            g_haveTick[r][s] = tick;
-            continue;
-        }
-        if (g_have[r][s] && g_haveTick[r][s] == tick) continue;
-        if (!g_gone[s]) return false;
+        bool idle = Idle(s, tick);   // (left the match, or not back yet: idle, whatever arrived)
+        if (!idle && g_have[r][s] && g_haveTick[r][s] == tick) continue;
+        if (!idle) return false;
         g_inputs[r][s] = Pad{};
         g_have[r][s] = true;
         g_haveTick[r][s] = tick;
@@ -605,7 +982,6 @@ bool HaveAll(unsigned tick) {
     return true;
 }
 
-unsigned g_lastSent = 0;             // the last tick our inputs went out for
 
 void SendInputs(unsigned upTo) {
     g_lastSent = upTo;
@@ -622,7 +998,6 @@ void SendInputs(unsigned upTo) {
 using XInputGetState_t = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
 XInputGetState_t g_realXInput = nullptr;
 unsigned g_playStartTick = 0;        // test script: first tick with players in the level
-bool g_inSession = false;            // an online session (the lobby started it)
 unsigned g_liveTick = 0;             // session: first tick every player's level HUD was up (in their inputs)
 
 // The test bot in an online session: from a second after everyone's level is up, walk around, look about,
@@ -670,7 +1045,9 @@ void RngSendSnap() {
 }
 
 void RngAsked(unsigned tick) {
-    if (g_slot == 0 && tick == g_rngSnapTick) RngSendSnap();
+    if (g_slot != 0) return;
+    if (tick == g_rngSnapTick) { RngSendSnap(); return; }
+    for (auto& p : g_rngAll) if (p.tick == tick) SendAll(&p, sizeof(p));   // (a player catching up)
 }
 
 void RngReceive(const PktRng* p) {
@@ -695,6 +1072,7 @@ void RngResync() {
             memcpy(p.words, mt + part * kRngPart, sizeof(p.words));
         }
         g_rngSnapTick = g_tick;
+        for (auto& part : g_rngSnap) g_rngAll.push_back(part);   // (a player who rejoins needs them too)
         RngSendSnap();
         Log(L"Netplay: tick %u - sent my random numbers to everyone", g_tick);
         return;
@@ -708,6 +1086,7 @@ void RngResync() {
         if (now - from > 5000) {
             Log(L"Netplay: tick %u - the host's random numbers didn't come", g_tick);
             g_rngWaitTick = 0;
+            if (g_catchUp) CatchUpFail(L"the host's random numbers didn't come");
             return;
         }
         if (now >= nextAsk) {
@@ -732,6 +1111,7 @@ void NoteMismatch(unsigned tick) {
     badRun = lastBadTick && tick - lastBadTick <= (unsigned)g_syncEvery ? badRun + 1 : 1;
     lastBadTick = tick;
     if (badRun == 3) {
+        if (g_catchUp) { CatchUpFail(L"the match came out differently here"); return; }
         Log(L"Netplay: out of sync since tick %u - back to the lobby", tick - 2 * g_syncEvery);
         OverlayShow(L"The match went out of sync - back to the lobby", 6000);
         ReportDesync(tick - 2 * g_syncEvery, "players parted");
@@ -762,13 +1142,38 @@ Pad ScriptPad(unsigned f) {
     return p;
 }
 
+// Host: what everyone must do at the same tick goes in my input for tick f (Pad.kbm.sync): 1 take my random numbers,
+// 0x10 | player: that player has caught up - back in the match a second on (RejoinWord).
+void HostWord(Pad* p, unsigned f) {
+    if (g_slot != 0 || !g_inSession) return;
+    if (g_rngWanted) {
+        p->kbm.sync = 1;
+        g_rngWanted = false;
+        Log(L"Netplay: everyone takes my random numbers at tick %u", f);
+        return;
+    }
+    ULONGLONG now = GetTickCount64();
+    unsigned closeBy = (unsigned)(g_rate / 2 > 3 * g_delay ? g_rate / 2 : 3 * g_delay);
+    for (int s = 1; s < g_players && s < 4; ++s) {
+        Rejoiner& r = g_rejoiners[s];
+        if (!r.heardAt || now - r.heardAt > 1000 || g_backAt[s] || !Idle(s, f) || g_tick > r.at + closeBy ||
+            (r.issued && f < r.issued + 2u * (unsigned)g_rate))
+            continue;
+        p->kbm.sync = (BYTE)(0x10 | s);
+        r.issued = f;
+        Log(L"Netplay: player %d has nearly caught up (at tick %u, here %u) - back in the match, from my input for tick %u",
+            s, r.at, g_tick, f);
+        return;
+    }
+}
+
 Pad SampleLocal(unsigned f) {
     if (g_script) {
         Pad sp = ScriptPad(f);
         if (HandoffHudUp()) sp.kbm.flags |= 1;   // my level's HUD is up (as below)
         if (g_inSession) sp.kbm.pace = (BYTE)g_paceMine;
         if (g_inSession && OnlinePauseBotVotes()) sp.kbm.flags |= 16;   // (the rematch vote, onlinepause.cpp)
-        if (g_rngWanted && g_slot == 0) { sp.kbm.sync = 1; g_rngWanted = false; }
+        HostWord(&sp, f);
         return sp;
     }
     Pad p{};
@@ -791,11 +1196,7 @@ Pad SampleLocal(unsigned f) {
     }
     if (g_inSession) OnlineSettingsStamp(&p.kbm);   // my aim settings go with my input (onlinesettings.cpp)
     if (g_inSession) p.kbm.pace = (BYTE)g_paceMine;   // and how many frames a second this PC manages
-    if (g_rngWanted && g_slot == 0) {   // (the random numbers' safety net: everyone takes mine at that tick)
-        p.kbm.sync = 1;
-        g_rngWanted = false;
-        Log(L"Netplay: everyone takes my random numbers at tick %u", f);
-    }
+    HostWord(&p, f);   // (the random numbers' safety net, a player back in the match)
     static Pad last{};
     static int logged = 0;
     if (memcmp(&p, &last, sizeof(p)) != 0 && logged < 60) {  // the first few changes (input problems)
@@ -991,6 +1392,14 @@ void TakeSessionPresses() {      // main thread, start of a tick
 
 // ---- tick boundary ----------------------------------------------------------------------------------------
 void Barrier() {
+    if (g_catchUp) {   // rejoining: everyone's long past it - the first tick is the host's record's
+        g_phase = Phase::Running;
+        CloseHandle(CreateThread(nullptr, 0, Watchdog, nullptr, 0, nullptr));
+        g_catchUpStartMs = g_histHeardAt = GetTickCount64();
+        Log(L"Netplay: rejoining the match - playing it from the first tick on the host's record, as fast as this PC can "
+            L"(slot %d of %d players, input delay %d)", g_slot, g_players, g_delay);
+        return;
+    }
     // Hold the game's first tick until every peer has reached it.
     Log(L"Netplay: first tick - waiting for the other players");
     g_peerReady[g_slot] = true;
@@ -1055,19 +1464,21 @@ WORD ScenePad() {
     if (scene && TryEnterCriticalSection(&g_netLock)) {
         Receive();  // the game thread isn't receiving while it's held
         WORD buttons = 0;
-        if (g_script) {
+        if (g_catchUp) {
+            if ((now - start) % 400 > 200) buttons = XINPUT_GAMEPAD_A;   // catching up: skipped right away (nobody sees it)
+        } else if (g_script) {
             if (g_slot == 0 && (now - start) % 2000 > 1500) buttons = XINPUT_GAMEPAD_A;  // tap every 2 s
         } else if (g_realXInput) {
             XINPUT_STATE st{};
             if (g_realXInput(0, &st) == ERROR_SUCCESS) buttons = st.Gamepad.wButtons;
             buttons |= VPadButtons(0);
         }
-        if (KbmSkipPressed()) buttons |= XINPUT_GAMEPAD_A;  // Space / Enter / Esc skip too
+        if (!g_catchUp && KbmSkipPressed()) buttons |= XINPUT_GAMEPAD_A;  // Space / Enter / Esc skip too
         WORD pressed = buttons & ~g_localButtonsLast;
         g_localButtonsLast = buttons;
         if (pressed & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_START) && now >= g_skipPressUntil + 300) {
             ++g_skipSeq;
-            g_skipSendUntil = now + 300;
+            if (!g_catchUp) g_skipSendUntil = now + 300;   // (catching up: my scene only)
             StartSkip(L"skipped here");
         }
         if (now < g_skipSendUntil && now >= g_skipNextSend) {  // a few copies against packet loss
@@ -1119,7 +1530,7 @@ void NotePace(double perSecond) {
     static double smooth = 0;
     static ULONGLONG since = 0, ceilingUntil = 0;
     static int ceiling = 0;
-    if (!g_rateFollows) return;   // (loading the level says nothing about the match)
+    if (!g_rateFollows || g_catchUp) return;   // (loading the level / catching up says nothing about the match)
     smooth = smooth ? smooth * 0.5 + perSecond * 0.5 : perSecond;
     ULONGLONG nowMs = GetTickCount64();
     int cap = g_rateTarget, now = g_paceMine ? g_paceMine : 60, want = now;
@@ -1145,6 +1556,67 @@ void NotePace(double perSecond) {
         Log(L"Netplay: tick %u - this PC manages %d frames per second (%.0f with no room spare)", g_tick, want, perSecond);
     g_paceMine = want;
     since = nowMs;
+}
+
+// ---- catching up, every tick ---------------------------------------------------------------------------------------
+// This tick's inputs: the host's record of it (true), or - once I'm back in the match - everyone's as they come
+// (false: in the ring), whichever is here first. Waits for them.
+bool CatchUpInputs(Row* row) {
+    ULONGLONG from = GetTickCount64();
+    for (;;) {
+        Receive();
+        if (g_catchUpFailed) { *row = Row{}; return true; }   // (given up: the game runs on, idle, until it quits)
+        if (HistRow(g_tick, row)) return true;
+        if (g_catchUpFailed) { *row = Row{}; return true; }
+        if (g_myBackAt && g_tick >= g_myBackAt && HaveAll(g_tick)) return false;
+        AskHistory();
+        ULONGLONG now = GetTickCount64(), heard = g_histHeardAt > from ? g_histHeardAt : from;
+        if (now - heard > 20000)
+            CatchUpFail(g_hostTick ? L"the match stopped answering" : L"the match didn't answer");
+        Real_Sleep(1);
+    }
+}
+
+// How far it is (my lobby game's loading screen), and giving up if it can't get there.
+void CatchUpProgress() {
+    if (g_cuShared) {
+        InterlockedExchange(&g_cuShared->tick, (LONG)g_tick);
+        InterlockedExchange(&g_cuShared->hostTick, (LONG)(g_hostTick > g_tick ? g_hostTick : g_tick));
+    }
+    static ULONGLONG checkAt = 0;
+    static long lastBehind = -1;
+    static int worse = 0;
+    ULONGLONG now = GetTickCount64();
+    if (now - g_catchUpStartMs > 40 * 60000) { CatchUpFail(L"it took too long"); return; }
+    if (!checkAt) checkAt = now + 60000;
+    if (now < checkAt || !g_hostTick) return;
+    checkAt = now + 60000;   // every minute: am I any closer? (twice not: this PC is too slow to catch up)
+    long behind = (long)g_hostTick - (long)g_tick;
+    if (lastBehind >= 0 && behind >= lastBehind) {
+        if (++worse >= 2) CatchUpFail(L"this PC can't catch up with it");
+    } else {
+        worse = 0;
+    }
+    Log(L"Netplay: catching up - tick %u, the match at %u", g_tick, g_hostTick);
+    lastBehind = behind;
+}
+
+// Catching up: my sync check against the host's at the same tick - it must come out the same.
+void CheckHostHash(unsigned tick, const Hashed& mine) {
+    auto it = g_histHashes.find(tick);
+    if (it == g_histHashes.end()) return;
+    HashRec host = it->second;
+    g_histHashes.erase(g_histHashes.begin(), std::next(it));
+    if (host.players != mine.players) {
+        Log(L"Netplay: catching up - tick %u came out differently from the host's (players %08x, the host's %08x)", tick,
+            mine.players, host.players);
+        NoteMismatch(tick);
+    } else if (host.rng != mine.rng) {
+        static int logged = 0;
+        if (logged++ < 5) Log(L"Netplay: catching up - tick %u: the players as the host's, the random numbers not", tick);
+    } else if (tick % (g_syncEvery * 20) == 0) {
+        Log(L"Netplay: catching up - tick %u as the host had it", tick);
+    }
 }
 
 // Called on the main thread at the start of every game tick (its first controller poll).
@@ -1181,10 +1653,12 @@ void Tick() {
             unsigned h = HashPlayers(&g_hashed[k]);
             g_myHash[k] = h;
             g_myHashTick[k] = g_tick;
+            if (g_inSession) g_recHashes.push_back({g_tick, h, g_hashed[k].players, g_hashed[k].rng});
             PktHash p{{'H', (BYTE)g_slot}, g_tick, h, g_hashed[k].players, g_hashed[k].rng};
-            SendAll(&p, sizeof(p));
+            if (!g_catchUp || (g_myBackAt && g_tick >= g_myBackAt)) SendAll(&p, sizeof(p));   // (catching up: not yet)
+            if (g_catchUp) CheckHostHash(g_tick, g_hashed[k]);
             for (int s = 0; s < g_players; ++s)   // (not with a player who has left: they're idle here from then)
-                if (s != g_slot && !g_gone[s] && !g_goneFrom[s] && g_peerHashTick[s][k] == g_tick)
+                if (s != g_slot && !g_gone[s] && !g_goneFrom[s] && !g_backAt[s] && g_peerHashTick[s][k] == g_tick)
                     CompareHash(s, g_tick, g_peerHash[s][k], g_peerPlayers[s][k], g_peerRng[s][k]);
             if (g_tick % (g_syncEvery * 10) == 0) {
                 LogPlayers(L"check");
@@ -1202,6 +1676,7 @@ void Tick() {
         }
         g_clockNs += 1000000000LL / g_rate;   // the tick that just ended took 1 / its rate
         ++g_tick;
+        BackIn(g_tick);   // (players rejoining from this tick on)
     }
     g_mainBlocksThisTick = 0;
     g_callsThisTick = 0;  // the clock reads exactly base + tick x 1/60 s from here
@@ -1211,8 +1686,9 @@ void Tick() {
     // instead (at 100 fps the same 5 ticks were twice as long: the mouse felt slow). Only my own inputs depend on
     // it: a longer delay fills the ticks between with the same input (the mouse's movement counted once), a
     // shorter one samples nothing new until the ticks catch up (the movement waits for the next sample).
-    static unsigned sampledUpTo = 0;
-    if (!sampledUpTo) sampledUpTo = (unsigned)g_delay - 1;   // (the first ticks: everyone idle, see Barrier)
+    // (catching up: nothing of mine until I'm back in the match - CatchUpBackAt)
+    bool sampling = (!g_catchUp || g_myBackAt) && !g_catchUpFailed;
+    if (!g_sampledUpTo && !g_catchUp) g_sampledUpTo = (unsigned)g_delay - 1;   // (the first ticks: everyone idle, see Barrier)
     int delayNow = g_delay;
     if (g_rateFollows && g_rateTarget > 0) {
         delayNow = (int)std::ceil(g_delay * (double)g_rate / g_rateTarget - 1e-6);
@@ -1224,9 +1700,9 @@ void Tick() {
         lastD = delayNow;
     }
     unsigned future = g_tick + delayNow - 1;
-    if (future > sampledUpTo) {
+    if (sampling && future > g_sampledUpTo) {
         Pad p = SampleLocal(future);
-        for (unsigned f = sampledUpTo + 1; f <= future; ++f) {
+        for (unsigned f = g_sampledUpTo + 1; f <= future; ++f) {
             Pad q = p;
             if (f != future) {   // (a tick in between: the same keys and buttons, the mouse's movement once)
                 q.kbm.dx = q.kbm.dy = q.kbm.dz = 0;
@@ -1237,17 +1713,23 @@ void Tick() {
             g_have[r][g_slot] = true;
             g_haveTick[r][g_slot] = f;
         }
-        sampledUpTo = future;
+        g_sampledUpTo = future;
     }
-    future = sampledUpTo;
-    SendInputs(future);
+    future = g_sampledUpTo;
+    if (sampling) {
+        static ULONGLONG lastSend = 0;   // (catching up, ticks go by fast: not more often than every 5 ms)
+        ULONGLONG now = GetTickCount64();
+        if (!g_catchUp || now - lastSend >= 5) { SendInputs(future); lastSend = now; }
+    }
 
     LARGE_INTEGER s0, s1, s2;
     Real_QPC(&s0);
     ULONGLONG waitFrom = GetTickCount64(), until = waitFrom + 10000, nextNotice = waitFrom + 400;
     ULONGLONG nextResend = GetTickCount64() + 5;
-    bool noticed = false;
-    while (!HaveAll(g_tick)) {
+    bool noticed = false, lostHost = false, fromRecord = false;
+    Row row{};
+    if (g_catchUp) fromRecord = CatchUpInputs(&row);
+    else while (!HaveAll(g_tick)) {
         Receive();
         ULONGLONG now = GetTickCount64();
         if (now >= nextResend) { SendInputs(future); nextResend = now + 5; }
@@ -1271,6 +1753,7 @@ void Tick() {
                     g_gone[s] = true;
                     Log(L"Netplay: no input from player %d for 10 s at tick %u - they left; their character stays idle", s, g_tick);
                     if (g_inSession) OverlayShow((PlayerName(s) + L" left the match").c_str(), 5000);
+                    if (s == 0 && g_slot != 0) lostHost = true;
                 }
             HaveAll(g_tick);
             noticed = false;
@@ -1279,7 +1762,35 @@ void Tick() {
         Real_Sleep(0);
     }
     if (noticed) OverlayHide();
-    for (int s = 0; s < g_players; ++s) g_current[s] = g_inputs[g_tick % kRing][s];
+    if (lostHost && g_inSession) {   // (a guest without the host: the match can't go on - back to its lobby, to rejoin)
+        Log(L"Netplay: lost the connection to the host - back to the lobby (the match can be rejoined from there)");
+        OverlayShow(L"Lost the connection to the match - back to the lobby, where you can rejoin it", 8000);
+        OnlinePauseForceQuit();
+    }
+    // This tick's inputs, and who's idle in it: as the host played it (catching up) or as they came. Recorded, for a
+    // player who rejoins.
+    bool idleNow[4] = {};
+    if (fromRecord) {
+        for (int s = 0; s < g_players && s < 4; ++s) {
+            g_current[s] = row.pads[s];
+            idleNow[s] = ((row.idle >> s) & 1) != 0;
+            if (s != g_slot) g_gone[s] = idleNow[s];   // (who the host has playing, for once I'm back in the match)
+        }
+    } else {
+        for (int s = 0; s < g_players && s < 4; ++s) {
+            g_current[s] = g_inputs[g_tick % kRing][s];
+            idleNow[s] = Idle(s, g_tick);
+        }
+    }
+    if (g_inSession) {
+        Row rec{};
+        for (int s = 0; s < g_players && s < 4; ++s) {
+            rec.pads[s] = g_current[s];
+            if (idleNow[s]) rec.idle |= (BYTE)(1 << s);
+        }
+        Record(rec);
+    }
+    if (g_catchUp) CatchUpProgress();
     TakeSessionPresses();
     KbmRaw kbm[4] = {};
     for (int s = 0; s < g_players && s < 4; ++s) kbm[s] = g_current[s].kbm;
@@ -1296,7 +1807,7 @@ void Tick() {
         bool gone[4] = {};
         for (int s = 0; s < g_players && s < 4; ++s) {
             flags[s] = g_current[s].kbm.flags;
-            gone[s] = g_gone[s] || (g_goneFrom[s] && g_tick >= g_goneFrom[s]);
+            gone[s] = idleNow[s];
         }
         bool keyboard = false;
         int at = OnlinePauseTick(flags, gone, g_players, &keyboard);
@@ -1321,7 +1832,7 @@ void Tick() {
         int rate = g_rateTarget;
         bool told = false;   // (no PC has said yet - the first ticks: the rate stays)
         for (int s = 0; s < g_players && s < 4; ++s)
-            if (!g_gone[s] && !(g_goneFrom[s] && g_tick >= g_goneFrom[s]) && g_current[s].kbm.pace >= 30) {
+            if (!idleNow[s] && g_current[s].kbm.pace >= 30) {
                 told = true;
                 if (g_current[s].kbm.pace < rate) rate = g_current[s].kbm.pace;
             }
@@ -1333,6 +1844,8 @@ void Tick() {
         }
     }
     if (g_inSession && g_current[0].kbm.sync == 1) RngResync();   // the host's random numbers, everyone
+    if (g_inSession && (g_current[0].kbm.sync & 0x10)) RejoinWord(g_current[0].kbm.sync & 3);   // a player back
+    if (g_catchUp && g_myBackAt && g_tick >= g_myBackAt + (unsigned)g_delay) CatchUpDone();   // (in step with everyone)
     if (g_inSession) OnlineSettingsApply(kbm, g_players);   // everyone's own aim settings (onlinesettings.cpp)
     if (g_inSession) LoadSyncTickStart();   // menus' movies loaded the same tick everywhere (loadsync.cpp)
     if (g_inSession) SplitViewSpectateTick(g_rate);   // dead in Multiverse Madness: a teammate's view (display only)
@@ -1606,6 +2119,10 @@ void NetplayTestStall(DWORD ms) {
     g_testStallUntil = GetTickCount64() + ms;
     Log(L"Netplay: test - sending nothing for %lu ms", ms);
 }
+void NetplayTestLeave() {
+    Log(L"Netplay: test - quitting the match to the lobby");
+    OnlinePauseForceQuit();
+}
 int NetplaySessionSlot() { return g_slot; }
 DWORD NetplayGameThread() { return g_mainThread; }
 void NetplayWatchAim(int player) {
@@ -1624,6 +2141,41 @@ void NetplayWatchAim(int player) {
 }
 unsigned NetplayTick() { return g_tick; }
 int NetplayRate() { return g_rate; }
+// Research (test pipe "profile <ms>"): where the render thread spends its time - its code address sampled every ms,
+// the most common places (256-byte buckets) into the log.
+void NetplayProfileRender(DWORD ms) {
+    DWORD tid = g_renderThread;
+    HANDLE h = tid ? OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, tid) : nullptr;
+    if (!h) { Log(L"Profile: no render thread"); return; }
+    std::map<ULONG_PTR, int> hits;
+    int samples = 0;
+    ULONGLONG until = GetTickCount64() + ms;
+    while (GetTickCount64() < until) {
+        if (SuspendThread(h) != (DWORD)-1) {
+            CONTEXT ctx{};
+            ctx.ContextFlags = CONTEXT_CONTROL;
+            if (GetThreadContext(h, &ctx)) { ++hits[ctx.Eip & ~0xffu]; ++samples; }
+            ResumeThread(h);
+        }
+        Real_Sleep(1);
+    }
+    CloseHandle(h);
+    std::vector<std::pair<int, ULONG_PTR>> top;
+    for (auto& e : hits) top.push_back({e.second, e.first});
+    std::sort(top.rbegin(), top.rend());
+    Log(L"Profile: render thread, %d samples", samples);
+    for (size_t i = 0; i < top.size() && i < 30; ++i) {
+        HMODULE m = nullptr;
+        wchar_t name[MAX_PATH] = L"?";
+        if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               (LPCWSTR)top[i].second, &m) && m)
+            GetModuleFileNameW(m, name, MAX_PATH);
+        const wchar_t* base = wcsrchr(name, L'\\');
+        Log(L"Profile: %5.1f%%  %s+%lx", top[i].first * 100.0 / samples, base ? base + 1 : name,
+            (unsigned long)(top[i].second - (ULONG_PTR)m));
+    }
+}
+
 void NetplayLogStacks() {
     Log(L"Netplay: game thread %lu:", g_mainThread);
     LogStack(g_mainThread);
@@ -1731,6 +2283,15 @@ void InitNetplay(HMODULE exe) {
     g_inSession = sessionLen > 0 && sessionLen < sizeof(session);
     KbmSessionStart(g_inSession ? session : nullptr);
     if (g_inSession) OnlineSettingsInit();   // my own settings (onlinesettings.cpp)
+    // rejoining a running match (online.cpp starts this game so): catch up with it first
+    g_catchUp = g_inSession && SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_CATCHUP", 0) != 0;
+    if (g_catchUp) {
+        wchar_t name[64];
+        swprintf_s(name, L"Local\\FGUYMod_CatchUp_%lu", GetCurrentProcessId());
+        HANDLE map = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(CatchUpShared), name);
+        if (map) g_cuShared = static_cast<CatchUpShared*>(MapViewOfFile(map, FILE_MAP_WRITE, 0, 0, sizeof(CatchUpShared)));
+        Log(L"Netplay: this game rejoins a running match");
+    }
     g_phase = Phase::Boot;
     Log(L"Netplay: up to %d frames per second in the match (60 until everyone is in the level)", g_rateTarget);
     Log(L"Netplay: on - slot %d of %d players, %s, input delay %d, %s input", g_slot, g_players,

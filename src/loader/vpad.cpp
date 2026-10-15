@@ -196,6 +196,22 @@ void HandleCommand(char* line) {
         NetplayTestStall(ms ? (DWORD)atoi(ms) : 5000);
         return;
     }
+    if (cmd && _stricmp(cmd, "profile") == 0) {   // research: profile <ms> - where the render thread spends its time
+        char* ms = strtok_s(nullptr, " \t\r\n", &ctx);
+        static DWORD len;
+        len = ms ? (DWORD)atoi(ms) : 3000;
+        CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD { NetplayProfileRender(len); return 0; }, nullptr, 0, nullptr));
+        return;
+    }
+    if (cmd && _stricmp(cmd, "netleave") == 0) {   // test tools: quit the match to its lobby (the pause menu's QUIT)
+        NetplayTestLeave();
+        return;
+    }
+    if (cmd && _stricmp(cmd, "crashexit") == 0) {   // test tools: end this game as a crash would (exit code 0xC0000005)
+        Log(L"VPad: test - ending this game as a crash would");
+        TerminateProcess(GetCurrentProcess(), 0xC0000005);
+        return;
+    }
     if (cmd && _stricmp(cmd, "resolution") == 0) {   // test tools: resolution <w> <h> - as Options > Screen does
         char* w = strtok_s(nullptr, " \t\r\n", &ctx);
         char* h = strtok_s(nullptr, " \t\r\n", &ctx);
