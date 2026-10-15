@@ -98,6 +98,22 @@ def placement_of(data, parent_id, char_id=None, name=None):
     raise KeyError((parent_id, char_id, name))
 
 
+def root_placement(data, name):
+    """(sx, sy, tx, ty) of the first PlaceObject2 / 3 on the movie's main timeline naming `name`."""
+    top = swf.header_end(data)
+    for code, body, ln, to in swf.tags(data, top, len(data)):
+        if code not in (26, 70) or not data[body] & 0x04 or not data[body] & 0x20:
+            continue
+        o = body + (3 if code == 26 else 4)
+        if code == 70 and data[body + 1] & 0x08:   # (PlaceObject3: a class name first)
+            o = data.index(b'\0', o) + 1
+        if data[body] & 0x02:
+            o += 2
+        if name.encode() + b'\0' in data[body:body + ln]:
+            return placement_matrix(data, o)[0]
+    raise KeyError(name)
+
+
 def center_ready_text(p, data):
     """Multiverse Madness' READY announcement (=MNU_READY: "PRESS [R] WHEN READY" for a keyboard player) is
     left-aligned in a wide box: the short controller text looked centred, the keyboard one ran off to the right of
@@ -172,8 +188,10 @@ def build(data):
     # (where and how big each element is in the single-player HUD and in each 4-way quarter, from this movie:
     #  see FGUYHudZoom)
     table = ', '.join(f"'{k}': [{', '.join(str(x) for x in v)}]" for k, v in sorted(layout_table(data).items()))
+    tsx, tsy, ttx, tty = root_placement(data, 'Timer')   # (single player's timer: pause.as2js FGUYHudWholeScreen)
     source = (open(PAUSE_SOURCE, encoding='utf-8').read() + '\n' + open(MENU_DRAW, encoding='utf-8').read()).replace(
-        'FGUY_HUD_SCALES', '{' + table + '}')
+        'FGUY_HUD_SCALES', '{' + table + '}').replace(
+        'FGUY_TIMER_AT', f'[{ttx}, {tty}, {tsx * 100}, {tsy * 100}]')
     p.replace(o, 0, as2c.compile_source(source))
     # Online the HUD's menus (death menu, character / weapon screens) take no mouse clicks: a click lands on
     # the button on this PC's screen only (each PC shows its own quarter of the 4-way HUD), so a player's

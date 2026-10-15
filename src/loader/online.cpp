@@ -630,6 +630,8 @@ void StartSession(const std::vector<std::string>& f) {
     if (GetEnvironmentVariableA("FGUYMOD_TEST_RATE", testRate, sizeof(testRate))) set(L"FGUYMOD_NET_RATE", testRate);
     set(L"FGUYMOD_NET_LANG", f[6]);
     set(L"FGUYMOD_SESSION", f[7] + "|" + f[8]);  // conf: mode,map,time,score,ff | picks: char:costume:team;...
+    char testConf[64];   // test knob: FGUYMOD_TEST_CONF=mode,map,time,score,ff overrides the rules (every copy alike)
+    if (GetEnvironmentVariableA("FGUYMOD_TEST_CONF", testConf, sizeof(testConf))) set(L"FGUYMOD_SESSION", testConf + ("|" + f[8]));
     keep(L"FGUYMOD_SAVEDIR");
     SetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", dirName);
     set(L"FGUYMOD_MY_SETTINGS", OnlineSettingsCapture());   // my own settings, not the host's save's

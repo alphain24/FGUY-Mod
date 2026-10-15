@@ -95,7 +95,9 @@ function FGUYHudZoom() {
                             FGUYHudRescale(c, ratio[0] / z, ratio[1] / z, qcx, qcy);
                             continue;
                         }
-                        if (kind == 2) continue;   // whole-screen pieces: the zoom alone makes them so
+                        // (kind 2, whole-screen pieces - the scoreboard, the scope, the curtain: placed as single
+                        //  player has them too. The zoom alone left them where the 4-way layout centres them in a 4:3
+                        //  quarter - on a widescreen, a fifth of the screen to the right: the scoreboard ran off it)
                         var tx = ratio[2] + FGUYHudShift(names[i]);
                         c._xscale = c._xscale * ratio[0] / z;
                         c._yscale = c._yscale * ratio[1] / z;
@@ -132,6 +134,13 @@ function FGUYHudWholeScreen(on) {
             c.fguyY0 = c._y;
             c.fguyXS0 = c._xscale;
             c.fguyYS0 = c._yscale;
+            if (names[i] == 'Timer') {   // (the 4-way layout moves the timer to the screen's middle: single player's
+                var at = FGUY_TIMER_AT;  //  spot instead, from the movie - top centre)
+                c.fguyX0 = at[0];
+                c.fguyY0 = at[1];
+                c.fguyXS0 = at[2];
+                c.fguyYS0 = at[3];
+            }
         }
         if (on) {
             c._xscale = c.fguyXS0 / z;
