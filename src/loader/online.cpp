@@ -17,7 +17,8 @@
 // The menu asks for everything with FGUYMOD_LobbyState() (one text blob, see LobbyState below) a few
 // times per second and acts with FGUYMOD_LobbyDo(command, args...).
 //
-// Settings ([Online] in FGUYMod.ini): Server=host:port (default port 7650), Name=<your name>.
+// Settings ([Online] in FGUYMod.ini): Server=host:port (default port 7650; default server: the mod's, 87.76.191.217),
+// Name=<your name>.
 
 #include "common.h"
 
@@ -703,7 +704,7 @@ void OnlineEnter() {
     OnlineMenuOpen(true);
     if (g_wantConnection) return;
     wchar_t server[256], name[64];
-    SettingString(L"Online", L"Server", L"FGUYMOD_ONLINE_SERVER", L"127.0.0.1:7650", server, 256);
+    SettingString(L"Online", L"Server", L"FGUYMOD_ONLINE_SERVER", L"87.76.191.217:7650", server, 256);   // (the mod's lobby server)
     DWORD len = 64;
     wchar_t user[64] = L"Player";
     GetUserNameW(user, &len);
