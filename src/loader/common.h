@@ -113,6 +113,10 @@ bool ModsToggle(const char* folder);   //   FGUYMOD_ModsToggle
 void ModsOpenFolder();                 //   FGUYMOD_ModsOpenFolder
 struct KbmRaw;
 bool NetplayInputOf(int slot, WORD* buttons, BYTE* lt, BYTE* rt, SHORT* sticks, KbmRaw* kbm, bool* keyboard);
+const char* ModVersion();              // online.cpp: the mod's version
+void InitUpdater();                    // updater.cpp: the player's own game checks for a newer release
+const char* UpdateState();             //   FGUYMOD_UpdateState
+void UpdateInstall();                  //   FGUYMOD_UpdateInstall
 int SplitViewHudViewport(int viewport);
 int SplitViewHudZoomViewport();        //   online: the HUD quarter to show full screen (-1: none)
 void SplitViewMenuCheck();

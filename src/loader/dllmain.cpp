@@ -82,6 +82,7 @@ void Init() {
     InitHandoff();
     InitReports();
     InitMods();
+    InitUpdater();
     InitAudio(exe);
     InitSounds();
     InitDisplay(exe);

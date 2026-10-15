@@ -517,6 +517,12 @@ function FGUYPoll() {
     if (FGUYToastUntil > 0 && FGUYNow() > FGUYToastUntil) { FGUYToastUntil = 0; FGUYDraw(); }
     if (FGUYChatQuick == undefined) { FGUYChatQuick = 0; FGUYChatTyping = false; FGUYChatDraft = ''; FGUYChatSeen = 0; }
     if (FGUYChatTyping) FGUYChatPoll();
+    FGUYUpdateWait = FGUYUpdateWait == undefined ? 0 : FGUYUpdateWait - 1;
+    if (FGUYUpdateWait <= 0 && FGUYScreen == 'hub') {
+        FGUYUpdateWait = 7;
+        var us = String(flash.external.ExternalInterface.call('FGUYMOD_UpdateState'));
+        if (us != FGUYUpdateLast) { FGUYUpdateLast = us; FGUYUpdate = us.split('|'); FGUYDraw(); }
+    }
     var typed = flash.external.ExternalInterface.call('FGUYMOD_TypedText');
     if (typed != undefined && typed != '' && FGUYScreen == 'hub') { FGUYTyped(String(typed)); FGUYDraw(); }
     else if (typed != undefined && String(typed).indexOf('T') >= 0 && FGUYScreen == 'lobby' && !FGUYChatTyping) { FGUYChatOpen(); FGUYDraw(); }
@@ -835,6 +841,7 @@ function FGUYMouseClick(kind, i) {
     else if (kind == 'team') { FGUYPickTeam = i; FGUYSound('change'); }
     else if (kind == 'key') FGUYScreenKey(i);   // a footer button hint: its button
     else if (kind == 'modRow') FGUYInputMods(13);
+    else if (kind == 'update') { flash.external.ExternalInterface.call('FGUYMOD_UpdateInstall'); FGUYSound('accept'); }
 }
 
 function FGUYScreenKey(key) {   // a key, as if pressed (footer hints, mouse)
@@ -999,6 +1006,7 @@ function FGUYDrawHub(ui) {
     FGUYTitle(ui, 48, 26, 600, 80, 'ONLINE', 60, FGUYC.title, 'left');
     FGUYStatusChip(ui);
     FGUYText(ui, 640, 50, 460, 30, FGUYS.name != '' ? 'Playing as ' + FGUYS.name : '', false, 20, FGUYC.muted2, 'right');
+    FGUYDrawUpdate(ui);
     var online = FGUYS.state == 'online';
     var px = [48, 545, 1042], pw = 494, py = 130, ph = 690;
     for (var p = 0; p < 3; p++) {
@@ -1463,6 +1471,11 @@ function FGUYInputHub(key) {
         FGUYSound('nav');
         return;
     }
+    if (key == 88 && FGUYKeyFromPad && FGUYUpdate != undefined && FGUYUpdate[0] == 'available') {   // X: install the update
+        flash.external.ExternalInterface.call('FGUYMOD_UpdateInstall');
+        FGUYSound('accept');
+        return;
+    }
     if (key == 89 && (FGUYKeyFromPad || !FGUYTyping())) {   // Y: the reports folder (out-of-sync matches, crashes)
         flash.external.ExternalInterface.call('FGUYMOD_OpenReports');
         FGUYSound('accept');
@@ -1805,4 +1818,20 @@ function FGUYInputMods(key) {
         FGUYModsRead();
         FGUYSound('change');
     }
+}
+
+// ---- updates (src/loader/updater.cpp) ---------------------------------------------------------------------------------
+// A newer version on the mod's release page: a banner on the ONLINE screen - click it (or X on a controller) to install;
+// then it says to restart.
+function FGUYDrawUpdate(ui) {
+    if (FGUYUpdate == undefined) return;
+    var st = FGUYUpdate[0], text = '', tone = FGUYC.yellow;
+    if (st == 'available') text = 'UPDATE ' + FGUYUpdate[1] + ' IS OUT - click (or X) to install';
+    else if (st == 'downloading') text = FGUYUpdate[2];
+    else if (st == 'ready') { text = FGUYUpdate[2]; tone = FGUYC.greenLine; }
+    else if (st == 'failed' && FGUYUpdate[2] != '' && FGUYUpdate[1] != '') { text = FGUYUpdate[2]; tone = FGUYC.redLine; }
+    if (text == '') return;
+    FGUYRect(ui, 640, 88, 912, 36, 14, FGUYC.ink, 100, tone, 100, 2);
+    FGUYText(ui, 640, 93, 912, 28, text, false, 18, st == 'ready' ? FGUYC.white : tone, 'center');
+    if (st == 'available') FGUYHit(640, 88, 912, 36, 'update', 0);
 }

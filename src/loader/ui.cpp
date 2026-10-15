@@ -335,6 +335,11 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnBool(movie, true);
         } else if (strcmp(fn, "ChatTyped") == 0) {       // (what was typed into it since)
             ReturnString(movie, OnlineMenuChatTyped());
+        } else if (strcmp(fn, "UpdateState") == 0) {     // (the ONLINE screen: is there a newer version?)
+            ReturnString(movie, UpdateState());
+        } else if (strcmp(fn, "UpdateInstall") == 0) {   // (install it)
+            UpdateInstall();
+            ReturnBool(movie, true);
         } else if (strcmp(fn, "ModsList") == 0) {        // (the MODS page: the mods there are)
             ReturnString(movie, ModsList());
         } else if (strcmp(fn, "ModsToggle") == 0) {      // (switch one on / off - from the next start)

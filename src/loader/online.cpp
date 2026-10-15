@@ -749,3 +749,6 @@ const char* SessionConfig() {
     if (!GetEnvironmentVariableA("FGUYMOD_SESSION", buf, sizeof(buf))) buf[0] = 0;
     return buf;
 }
+
+// The mod's version (updater.cpp compares it with the latest release).
+const char* ModVersion() { return kModVersion; }

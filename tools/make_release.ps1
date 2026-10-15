@@ -1,4 +1,6 @@
-# Builds the players' download: build\release\FGUYMod-<date>.zip - what goes into the game folder, nothing else.
+# Builds the players' download: build\release\FGUYMod-<version>.zip - what goes into the game folder, nothing else - and
+# FGUYMod-<version>.zip.sha256 (its checksum: the mod's updater installs a release only if it matches; upload both to the
+# GitHub release, src/loader/updater.cpp). The version is kModVersion in src/loader/online.cpp.
 #   make_release.ps1 [-Server host:port]   (the lobby server players connect to; default: what FGUYMod.ini says)
 # In it: dinput8.dll, FGUYMod\FGUYMod.ini, FGUYMod\dxvk (DXVK and its licence), FGUYMod\ui\*.fgpatch (only our
 # changes to the game's menus), INSTALL.txt. Never in it: game files, the show's sounds (FGUYMod\sounds), the
@@ -43,14 +45,25 @@ Settings
 Uninstall
   Delete dinput8.dll and the FGUYMod folder from the game's folder.
 
-Problems? The logs are in FGUYMod\FGUYMod_<number>.log - send the newest ones.
+Mods
+  Main Menu > MODS: separate mods, put in FGUYMod\mods\ - switch them on and off there (takes a restart).
+  Online, everyone in a lobby needs the same gameplay mods.
+
+Updates
+  The ONLINE screen says when there's a newer version; click it to install, then restart the game.
+
+Problems? If a match goes out of sync or the game crashes, a report is saved in FGUYMod\reports\
+  (the ONLINE screen's Y / Reports opens the folder) - send it. The logs are in FGUYMod\FGUYMod_<number>.log.
 
 DXVK (FGUYMod\dxvk) is by Philip Rebohle and contributors, zlib licence (FGUYMod\dxvk\LICENSE.txt).
 "@ | Set-Content "$stage\INSTALL.txt" -Encoding ascii
 $bad = Get-ChildItem $stage -Recurse -File | Where-Object { $_.Extension -in '.wav', '.ho', '.gfx', '.sav', '.log', '.bat' }
 if ($bad) { Write-Output "not releasing - these don't belong in it:"; $bad.FullName; exit 1 }
-$zip = Join-Path $P ("build\release\FGUYMod-" + (Get-Date -Format "yyyy-MM-dd") + ".zip")
+$version = [regex]::Match((Get-Content "$P\src\loader\online.cpp" -Raw), 'kModVersion = "([^"]+)"').Groups[1].Value
+if (-not $version) { Write-Output "no kModVersion in src\loader\online.cpp"; exit 1 }
+$zip = Join-Path $P "build\release\FGUYMod-$version.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path "$stage\*" -DestinationPath $zip
+(Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() + "  FGUYMod-$version.zip" | Set-Content "$zip.sha256" -Encoding ascii -NoNewline
 Get-ChildItem $stage -Recurse -File | ForEach-Object { $_.FullName.Substring($stage.Length + 1) }
-"-> $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"
+"-> $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB) and $zip.sha256"
