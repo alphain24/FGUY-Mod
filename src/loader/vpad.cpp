@@ -219,6 +219,21 @@ void HandleCommand(char* line) {
         }
         return;
     }
+    if (cmd && _stricmp(cmd, "typewin") == 0) {   // test tools: typewin <vk> <text...> - a key down on the game window,
+        char* k = strtok_s(nullptr, " \t\r\n", &ctx);   // then the text as typed characters, then Enter (the lobby's chat)
+        HWND wnd = DisplayMainWindow();
+        if (k && wnd) {
+            int vk = atoi(k) & 0xff;
+            if (vk) PostMessageW(wnd, WM_KEYDOWN, vk, 0);
+            Sleep(300);
+            std::string text = ctx ? ctx : "";
+            while (!text.empty() && (text.back() == '\r' || text.back() == '\n')) text.pop_back();
+            for (char ch : text) PostMessageW(wnd, WM_CHAR, (WPARAM)(unsigned char)ch, 0);
+            PostMessageW(wnd, WM_CHAR, '\r', 0);
+            Log(L"VPad: typewin %d '%S'", vk, text.c_str());
+        }
+        return;
+    }
     if (cmd && _stricmp(cmd, "yaw") == 0) {   // test tools: the lobby's 3D preview facing, into the log
         OnlineMenuLogYaw();
         return;

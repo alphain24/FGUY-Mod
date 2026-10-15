@@ -314,6 +314,11 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         } else if (strcmp(fn, "PauseSettings") == 0) {   // (the game's pause menu: OPTIONS online -> my own settings)
             OnlinePauseSettings();
             ReturnBool(movie, true);
+        } else if (strcmp(fn, "ChatMode") == 0) {        // (the lobby's chat box: typing in it, or not)
+            OnlineMenuChatMode(ArgNumber(args, argc, 0) != 0);
+            ReturnBool(movie, true);
+        } else if (strcmp(fn, "ChatTyped") == 0) {       // (what was typed into it since)
+            ReturnString(movie, OnlineMenuChatTyped());
         } else if (strcmp(fn, "ReportCount") == 0) {     // (the ONLINE screen: reports saved)
             ReturnNumber(movie, ReportCount());
         } else if (strcmp(fn, "ReportNew") == 0) {       // (back from a match: one saved in it?)

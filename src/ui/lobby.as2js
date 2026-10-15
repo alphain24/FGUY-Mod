@@ -482,7 +482,7 @@ function FGUYCostumeName(c, costume) {
 // ---- lobby state from the loader ---------------------------------------------------------------------------
 function FGUYParse(blob) {
     var st = {state: 'off', status: '', code: '', slot: -1, priv: false, name: '', server: '', ping: 0,
-              mode: 'DM', map: 'FR', time: 0, score: 0, ff: 0, own: '', members: [], lobbies: []};
+              mode: 'DM', map: 'FR', time: 0, score: 0, ff: 0, own: '', members: [], lobbies: [], chat: []};
     var lines = String(blob).split('\n');
     for (var i = 0; i < lines.length; i++) {
         var f = lines[i].split('|');
@@ -497,6 +497,8 @@ function FGUYParse(blob) {
         } else if (f[0] == 'M') {
             st.members.push({slot: Number(f[1]), name: f[2], ready: f[3] == '1', away: f[3] == '2', ping: Number(f[4]), character: f[5],
                              costume: f[6], team: Number(f[7]), input: f[8] == 'k' ? 'k' : 'c', rate: Number(f[9])});
+        } else if (f[0] == 'T') {
+            st.chat.push({seq: Number(f[1]), name: f[2], text: f.slice(3).join('|')});
         } else if (f[0] == 'L') {
             st.lobbies.push({code: f[1], host: f[2], players: Number(f[3]), max: Number(f[4]), mode: f[5], map: f[6]});
         }
@@ -512,14 +514,22 @@ function FGUYPoll() {
         if (step != FGUYLoadStep) { FGUYLoadStep = step; FGUYDraw(); }
     }
     if (FGUYToastUntil > 0 && FGUYNow() > FGUYToastUntil) { FGUYToastUntil = 0; FGUYDraw(); }
+    if (FGUYChatQuick == undefined) { FGUYChatQuick = 0; FGUYChatTyping = false; FGUYChatDraft = ''; FGUYChatSeen = 0; }
+    if (FGUYChatTyping) FGUYChatPoll();
     var typed = flash.external.ExternalInterface.call('FGUYMOD_TypedText');
     if (typed != undefined && typed != '' && FGUYScreen == 'hub') { FGUYTyped(String(typed)); FGUYDraw(); }
+    else if (typed != undefined && String(typed).indexOf('T') >= 0 && FGUYScreen == 'lobby' && !FGUYChatTyping) { FGUYChatOpen(); FGUYDraw(); }
     if (FGUYBot) FGUYBotStep();
     if (blob == FGUYLastBlob) return;
     FGUYLastBlob = blob;
     var was = FGUYS.state, old = FGUYS;
     FGUYS = FGUYParse(blob);
     if (was == 'lobby' && FGUYS.state == 'lobby') FGUYNoticeChanges(old, FGUYS);
+    var lastChat = FGUYS.chat.length > 0 ? FGUYS.chat[FGUYS.chat.length - 1] : undefined;
+    if (lastChat != undefined && lastChat.seq > FGUYChatSeen) {
+        FGUYChatSeen = lastChat.seq;
+        if (lastChat.name != FGUYS.name) FGUYSound('nav');
+    }
     // The loading screen without a match starting: back from the match (this game waited hidden meanwhile -
     // or the match didn't start). Covered until we're in the lobby again, and the 3D and music come back.
     if (FGUYScreen == 'loading' && FGUYS.state != 'starting' && !FGUYBackFromMatch) {
@@ -1039,7 +1049,7 @@ function FGUYDrawHub(ui) {
 
 // ---- lobby --------------------------------------------------------------------------------------------------------
 function FGUYLobbyItems() {
-    return [FGUYIsHost() ? 'start' : 'ready', 'mode', 'map', 'settings', 'char', 'skin', 'team', 'controls', 'leave'];
+    return [FGUYIsHost() ? 'start' : 'ready', 'mode', 'map', 'settings', 'char', 'skin', 'team', 'controls', 'chat', 'leave'];
 }
 
 function FGUYReadyCount() {
@@ -1071,7 +1081,7 @@ function FGUYDrawLobby(ui) {
             FGUYHit(48, y, 400, 76, 'lobbyItem', i);
             y = y + 92;
         } else if (it == 'leave') {
-            y = 736;
+            y = 778;
             FGUYRect(ui, 48, y, 400, 56, 16, FGUYC.bg, 100, hot ? FGUYC.yellow : FGUYC.redLine, 100, 2);
             FGUYHit(48, y, 400, 56, 'lobbyItem', i);
             FGUYText(ui, 70, y + 12, 360, 32, 'Leave lobby', false, 21, FGUYC.red, 'left');
@@ -1084,11 +1094,12 @@ function FGUYDrawLobby(ui) {
             else if (it == 'skin') { label = 'SKIN'; value = FGUYCostumeName(FGUYPickChar, FGUYPickCostume); }
             else if (it == 'team') { label = 'TEAM'; value = mode.teams ? (FGUYPickTeam == 1 ? 'Evil' : 'Good') : 'Everyone together'; }
             else if (it == 'controls') { label = 'CONTROLS'; value = FGUYInputName(FGUYPickInput); }
+            else if (it == 'chat') { label = 'CHAT'; value = FGUYQuickChat()[FGUYChatQuick]; }
             if (it == 'char') y = y + 8;
-            var changeable = it == 'char' || it == 'skin' || it == 'controls' || (it == 'team' && mode.teams) || ((it == 'mode' || it == 'map') && host);
+            var changeable = it == 'char' || it == 'skin' || it == 'controls' || it == 'chat' || (it == 'team' && mode.teams) || ((it == 'mode' || it == 'map') && host);
             FGUYRow(ui, 48, y, 400, 62, label, value, hot, changeable, (it == 'mode' || it == 'map' || it == 'settings') && !host ? 'Host picks' : '',
                     'lobbyItem', i);
-            y = y + 72;
+            y = y + 68;
         }
     }
 
@@ -1134,9 +1145,61 @@ function FGUYDrawLobby(ui) {
         FGUYText(ui, rx + 92, ry + 22, rw - 130, 30, 'Open slot - share code ' + FGUYS.code, false, 18, FGUYC.muted, 'left');
         ry = ry + 84;
     }
+    FGUYDrawChat(ui, rx, Math.max(ry + 6, 600), rw);
     var status = FGUYLobbyStatus();
     FGUYFooter(ui, ['A', 'Select', 'ARROWS', 'Change', 'X', host ? 'Start' : 'Ready up', 'Y', 'Character', 'B', 'Leave'],
                status[0], status[1]);
+}
+
+// ---- chat ------------------------------------------------------------------------------------------------------------
+// The lobby's chat (the server passes each line to everyone in the lobby): the last lines under the players. Keyboard:
+// T (or A on the CHAT row) types a message - Enter sends, Esc cancels; the loader hands over every typed character
+// while the box is open (FGUYMOD_ChatMode / ChatTyped). Controller: left / right on the CHAT row picks a quick
+// message, A sends it.
+function FGUYQuickChat() {
+    return ['Ready?', 'Ready!', 'One sec', "Let's go!", 'GG', 'Rematch?', 'Nice!', 'Brb'];
+}
+
+function FGUYDrawChat(ui, x, y, w) {
+    FGUYText(ui, x + 22, y, 200, 24, 'CHAT', false, 15, FGUYC.muted, 'left');
+    var lines = FGUYS.chat, first = Math.max(0, lines.length - 4);
+    for (var i = first; i < lines.length; i++)
+        FGUYText(ui, x + 22, y + 24 + (i - first) * 24, w - 44, 24, lines[i].name + ':  ' + lines[i].text, false, 16,
+                 lines[i].name == FGUYS.name ? FGUYC.yellow : FGUYC.white, 'left');
+    var by = y + 24 + 4 * 24 + 6;
+    FGUYRect(ui, x + 18, by, w - 36, 38, 12, FGUYC.deep, 100, FGUYChatTyping ? FGUYC.yellow : FGUYC.chipLine, 100, 2);
+    var hint = FGUYChatTyping ? FGUYChatDraft + '_' : 'T: type a message  -  CHAT row: quick messages';
+    FGUYText(ui, x + 30, by + 7, w - 60, 28, hint, false, 16, FGUYChatTyping ? FGUYC.white : FGUYC.muted, 'left');
+}
+
+function FGUYChatOpen() {
+    FGUYChatTyping = true;
+    FGUYChatDraft = '';
+    flash.external.ExternalInterface.call('FGUYMOD_ChatMode', 1);
+    FGUYSound('nav');
+}
+
+function FGUYChatClose(send) {
+    if (send && FGUYChatDraft != '') FGUYDo('say', FGUYChatDraft);
+    FGUYChatTyping = false;
+    FGUYChatDraft = '';
+    flash.external.ExternalInterface.call('FGUYMOD_ChatMode', 0);
+    FGUYSound(send ? 'accept' : 'back');
+}
+
+// (FGUYPoll, while the box is open) the characters typed since
+function FGUYChatPoll() {
+    if (FGUYScreen != 'lobby') { FGUYChatClose(false); return; }
+    var t = String(flash.external.ExternalInterface.call('FGUYMOD_ChatTyped'));
+    if (t == '' || t == 'undefined') return;
+    for (var i = 0; i < t.length && FGUYChatTyping; i++) {
+        var ch = t.charAt(i), code = t.charCodeAt(i);
+        if (code == 13 || code == 10) FGUYChatClose(true);
+        else if (code == 27) FGUYChatClose(false);
+        else if (code == 8) FGUYChatDraft = FGUYChatDraft.substr(0, Math.max(0, FGUYChatDraft.length - 1));
+        else if (code >= 32 && ch != '|' && FGUYChatDraft.length < 100) FGUYChatDraft = FGUYChatDraft + ch;
+    }
+    FGUYDraw();
 }
 
 function FGUYPlayerRow(ui, x, y, w, m) {
@@ -1339,6 +1402,7 @@ function FGUYDrawSettings(ui) {
 // 89 Y (112 = F1 on a keyboard), 76 LB, 82 RB; on a keyboard also letters / digits (code entry), 8 backspace.
 function OnOnlineHandleInput(key, controller) {
     if (FGUYScreen == 'loading') return;   // the match is on its way
+    if (FGUYChatTyping) return;            // (typing in the chat box: its characters come from the loader)
     if (key >= 37 && key <= 40 && flash.external.ExternalInterface.call('FGUYMOD_FromWASD', key) == true) return;
     FGUYKeyFromPad = FGUYPadKey(key);
     if (FGUYScreen == 'hub') FGUYInputHub(key);
@@ -1466,6 +1530,15 @@ function FGUYInputLobby(key) {
     if (key == 65 || key == 32) return;   // the controller's A and Start come again as Enter / Start
     if (key == 89 || key == 112) { FGUYOpenChar(); return; }
     var dir = key == 39 ? 1 : (key == 37 ? -1 : 0);
+    if (it == 'chat') {
+        var quick = FGUYQuickChat();
+        if (dir != 0) { FGUYChatQuick = (FGUYChatQuick + dir + quick.length) % quick.length; FGUYSound('change'); return; }
+        if (key == 13) {
+            if (FGUYKeyFromPad) { FGUYDo('say', quick[FGUYChatQuick]); FGUYSound('accept'); }
+            else FGUYChatOpen();
+            return;
+        }
+    }
     if (dir != 0) {
         if (it == 'mode' && host) { FGUYCycleMode(dir); FGUYSound('change'); }
         else if (it == 'map' && host) { FGUYCycleMap(dir); FGUYSound('change'); }

@@ -21,6 +21,8 @@
 namespace {
 
 volatile bool g_open = false;   // the ONLINE screens are showing
+volatile bool g_chatMode = false;   // the lobby's chat box is being typed in: every typed character goes there
+std::wstring g_chatTyped;           //   what was typed since the lobby last asked (Enter \r, Esc \x1b, Backspace \b)
 std::mutex g_typedLock;
 std::string g_typed;
 HWND g_menuWnd = nullptr;
@@ -94,7 +96,7 @@ void OnlineMenuOpen(bool open) {
 // display.cpp's window procedure: a key went down in the game window.
 void OnlineMenuKey(HWND wnd, WPARAM vk) {
     g_menuWnd = wnd;
-    if (!g_open || (GetKeyState(VK_CONTROL) & 0x8000) || (GetKeyState(VK_MENU) & 0x8000)) return;
+    if (!g_open || g_chatMode || (GetKeyState(VK_CONTROL) & 0x8000) || (GetKeyState(VK_MENU) & 0x8000)) return;
     char c = 0;
     if (vk >= 'A' && vk <= 'Z') c = (char)vk;
     else if (vk >= '0' && vk <= '9') c = (char)vk;
@@ -103,6 +105,32 @@ void OnlineMenuKey(HWND wnd, WPARAM vk) {
     if (!c) return;
     std::lock_guard<std::mutex> lock(g_typedLock);
     if (g_typed.size() < 32) g_typed += c;
+}
+
+// display.cpp's window procedure: a typed character (WM_CHAR) - for the lobby's chat box while it's open.
+void OnlineMenuChar(WPARAM ch) {
+    if (!g_open || !g_chatMode) return;
+    std::lock_guard<std::mutex> lock(g_typedLock);
+    if (g_chatTyped.size() < 200) g_chatTyped += (wchar_t)ch;
+}
+
+// FGUYMOD_ChatMode(on): the chat box is (not) being typed in.
+void OnlineMenuChatMode(bool on) {
+    std::lock_guard<std::mutex> lock(g_typedLock);
+    g_chatMode = on;
+    g_chatTyped.clear();
+    g_typed.clear();
+}
+
+// FGUYMOD_ChatTyped: the characters typed into the chat box since the last call (UTF-8).
+const char* OnlineMenuChatTyped() {
+    static std::string out;
+    std::lock_guard<std::mutex> lock(g_typedLock);
+    int n = WideCharToMultiByte(CP_UTF8, 0, g_chatTyped.c_str(), (int)g_chatTyped.size(), nullptr, 0, nullptr, nullptr);
+    out.assign(n, 0);
+    if (n) WideCharToMultiByte(CP_UTF8, 0, g_chatTyped.c_str(), (int)g_chatTyped.size(), &out[0], n, nullptr, nullptr);
+    g_chatTyped.clear();
+    return out.c_str();
 }
 
 // FGUYMOD_TypedText: what was typed since the last call (letters, digits, \b for Backspace).

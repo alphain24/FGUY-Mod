@@ -30,6 +30,7 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     SAVE <base64>                    host: the save file every player starts the session from
     LANG <code>                      host: game language for the session
     START                            host: start the session
+    SAY <text...>                    a chat line for my lobby (up to 100 characters; no '|')
     REJOIN <code> <token> <slot>     back from a match: take my place in that lobby again (the lobby
                                      stays while its match runs; its players show as "in match")
     LEAVE
@@ -45,6 +46,7 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     START <token> <slot> <players> <input delay> <udp port> <lang> <conf> <picks> <rate>
                                      conf = mode,map,time,score,ff; picks = char:costume:team:input;... by slot
                                      (a snapshot, so every player starts from exactly the same choices)
+    SAID <slot> <name> <text...>     someone in my lobby said something (chat)
     CLOSED <reason...>               the lobby is gone (host left)
     ERROR <text...>
     PONG <x>
@@ -82,6 +84,8 @@ LOBBY_KEEP_S = 1800               # a player's place in a lobby waits this long 
 CLIENT_IDLE_S = 60                # drop a lobby connection silent this long (the game pings every 2 s)
 SLOT_MOVE_S = 5                   # a slot's address may change (new NAT port) only after this much silence
 RELAY_MAX_PPS = 2000              # per player address
+CHAT_MAX = 100                    # characters in a chat line
+CHAT_EVERY_S = 0.6                # one chat line per player this often at most
 RATES = (60, 120, 144, 165, 240)  # online frame rates (everyone in a match runs the same one)
 AUTO_MAX = 240                    # auto never picks more (a slower PC: the match follows it, netplay.cpp)
 
@@ -107,6 +111,7 @@ class Client:
         self.away = False     # in a match (the lobby keeps the place for REJOIN)
         self.gone_at = None   # when an away player's lobby connection closed
         self.match_slot = -1  # their slot in that match
+        self.said_at = 0.0    # their last chat line (flood guard)
 
     def send(self, line):
         try:
@@ -288,6 +293,14 @@ class Server:
             c.lobby.lang = re.sub(r'[^A-Za-z_]', '', args[0])[:8] if args else '-'
         elif cmd == 'START' and c.lobby and c is c.lobby.host:
             self.start(c.lobby)
+        elif cmd == 'SAY' and c.lobby:
+            text = ''.join(ch for ch in ' '.join(args) if ch.isprintable() and ch != '|').strip()[:CHAT_MAX]
+            now = time.monotonic()
+            if text and now - c.said_at >= CHAT_EVERY_S:
+                c.said_at = now
+                for m in c.lobby.members:
+                    if not m.away:
+                        m.send(f'SAID {c.slot} {c.name} {text}')
         elif cmd == 'REJOIN':
             self.rejoin(c, args)
         elif cmd == 'LEAVE':

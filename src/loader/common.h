@@ -107,6 +107,9 @@ void OnlineMenuKey(HWND wnd, WPARAM vk);    //   display.cpp: a key went down in
 const char* OnlineMenuTyped();
 bool OnlineMenuFromWASD(int key);
 void OnlineMenuTurnPreview(float radians);
+void OnlineMenuChar(WPARAM ch);        //   the lobby's chat: a typed character (WM_CHAR)
+void OnlineMenuChatMode(bool on);      //   FGUYMOD_ChatMode
+const char* OnlineMenuChatTyped();     //   FGUYMOD_ChatTyped
 void OnlineMenuFrame();                     //   d3d9.cpp, every frame
 bool IsBot();                               //   this copy is the test bot (FGUYMOD_BOT)
 bool StaysMuted();                          //   the bot / test copies: no sound
@@ -173,6 +176,7 @@ void DisplayAfterReset();              // d3d9.cpp: borderless again if a Reset 
 bool DisplayPark();                    // the lobby game during its player's match: hidden, held (online.cpp)
 void DisplayUnpark(bool show, const RECT* at, HANDLE shown);   //   go on (shown: at `at`), then set `shown`
 bool DisplayWindowRectOf(DWORD pid, RECT* r);   // another process's game window (the session game's)
+HWND DisplayMainWindow();              // the game's window
 bool DisplayOsPointer(bool want);      // online menus: the Windows mouse pointer shown (false: draw your own)
 
 // handoff.cpp: the old game shows the loading screen while the session boots hidden

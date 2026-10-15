@@ -223,6 +223,7 @@ void PointerShow(HWND wnd, bool on) {
 
 LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_KEYDOWN && !NetplayEnabled()) OnlineMenuKey(wnd, wp);  // typing on the ONLINE screens
+    if (msg == WM_CHAR && !NetplayEnabled()) OnlineMenuChar(wp);         //   (the lobby's chat)
     LRESULT handled;
     if (KbmOnMessage(wnd, msg, wp, lp, &handled)) return handled;
     switch (msg) {
@@ -601,6 +602,8 @@ bool DisplayOsPointer(bool want) {
     }
     return true;
 }
+
+HWND DisplayMainWindow() { return g_mainWnd; }
 
 void DisplayUnpark(bool show, const RECT* at, HANDLE shown) {
     g_unparkShow = show;

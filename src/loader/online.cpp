@@ -54,6 +54,9 @@ std::string g_code;                 // lobby code while in a lobby
 bool g_private = false;
 int g_mySlot = -1;
 std::vector<Member> g_members;
+struct ChatLine { int seq; std::string name, text; };
+std::vector<ChatLine> g_chat;        // my lobby's chat, the last few lines (SAID)
+int g_chatSeq = 0;
 std::vector<LobbyInfo> g_lobbies;
 std::string g_conf = "DM|FR|0|0|0";  // mode|map|time|score|ff, as the menu uses it
 std::string g_confRate = "0";        // the match's frames per second (0 = auto: the lowest monitor among us)
@@ -251,6 +254,7 @@ void HandleLine(const std::string& line) {
         g_own.clear();
         g_code = f[1];
         g_private = f.size() > 2 && f[2] == "1";
+        g_chat.clear();   // (a new lobby: its own chat)
         g_ready = false;
         g_status.clear();
         SendPicks();
@@ -272,6 +276,10 @@ void HandleLine(const std::string& line) {
             if (e.size() > 8) m.rate = CleanToken(e[8]);
             g_members.push_back(m);
         }
+    } else if (cmd == "SAID" && f.size() > 3) {   // SAID <slot> <name> <text...>
+        size_t at = line.find(' ', line.find(' ', line.find(' ') + 1) + 1);
+        g_chat.push_back({++g_chatSeq, f[2], at == std::string::npos ? "" : line.substr(at + 1)});
+        if (g_chat.size() > 8) g_chat.erase(g_chat.begin());
     } else if (cmd == "OWN" && f.size() > 1) {
         g_own = CleanList(f[1]);
     } else if (cmd == "CONF" && f.size() >= 6) {
@@ -637,6 +645,7 @@ void OnlineExit() {
 //   O|<char>:<costume>.<costume>;...                         what the host's save has (in a lobby)
 //   M|<slot>|<name>|<ready>|<ping>|<character>|<costume>|<team>|<input k/c>   one per player in my lobby
 //   L|<code>|<host>|<players>|<max>|<mode>|<map>            one per open lobby (when not in one)
+//   T|<number>|<name>|<text>                                  my lobby's chat, oldest first (the last 8 lines)
 const char* LobbyState() {
     std::lock_guard<std::mutex> lock(g_lock);
     bool inLobby = g_state == State::InLobby || g_state == State::Starting;
@@ -652,6 +661,7 @@ const char* LobbyState() {
                       std::to_string(m.rtt) + "|" + Field(m.character) + "|" + Field(m.costume) + "|" + Field(m.team) +
                       "|" + m.input + "|" + m.rate + "\n";
         }
+        for (const ChatLine& t : g_chat) g_text += "T|" + std::to_string(t.seq) + "|" + Field(t.name) + "|" + Field(t.text) + "\n";
     } else {
         for (const LobbyInfo& l : g_lobbies)
             g_text += "L|" + l.code + "|" + Field(l.host) + "|" + std::to_string(l.players) + "|" +
@@ -712,6 +722,11 @@ void LobbyDo(const char* command, const char* a, const char* b, const char* c, c
         g_conf = CleanToken(a) + "|" + CleanToken(b) + "|" + CleanToken(c) + "|" + CleanToken(d) + "|" + CleanToken(e);
         SendLine("CONF " + CleanToken(a) + " " + CleanToken(b) + " " + CleanToken(c) + " " + CleanToken(d) + " " +
                  CleanToken(e) + " " + g_confRate);
+    } else if (cmd == "say" && g_state == State::InLobby && a) {   // a chat line (UTF-8)
+        std::string text;
+        for (const char* p = a; *p && text.size() < 300; ++p)
+            if ((unsigned char)*p >= 0x20 && *p != '|') text += *p;
+        if (!text.empty()) SendLine("SAY " + text);
     } else if (cmd == "rate" && g_state == State::InLobby && g_mySlot == 0) {   // the match's frame rate (0 auto)
         g_confRate = CleanToken(a);
         std::string line = "CONF";
