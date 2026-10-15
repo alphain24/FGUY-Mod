@@ -307,6 +307,52 @@ bool InstallAsAdmin(const std::wstring& dir) {
     return true;
 }
 
+// Windows Settings > Apps lists the mod (for this Windows user): removing it there runs FGUYMod\Uninstall.exe (this
+// setup without the mod inside - tools/make_release.ps1 puts it in the zip).
+const wchar_t* kAppsKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\FGUYMod";
+
+void Register(const std::wstring& dir) {
+    std::wstring un = dir + L"\\FGUYMod\\Uninstall.exe";
+    if (!IsFile(un)) return;
+    HKEY k;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, kAppsKey, 0, nullptr, 0, KEY_WRITE, nullptr, &k, nullptr) != ERROR_SUCCESS) return;
+    auto str = [k](const wchar_t* name, const std::wstring& v) {
+        RegSetValueExW(k, name, 0, REG_SZ, reinterpret_cast<const BYTE*>(v.c_str()), (DWORD)((v.size() + 1) * sizeof(wchar_t)));
+    };
+    auto num = [k](const wchar_t* name, DWORD v) { RegSetValueExW(k, name, 0, REG_DWORD, reinterpret_cast<const BYTE*>(&v), 4); };
+    str(L"DisplayName", L"FGUY Mod (Family Guy: Back to the Multiverse)");
+    str(L"DisplayVersion", g_version);
+    str(L"Publisher", L"FGUY Mod");
+    str(L"InstallLocation", dir);
+    str(L"DisplayIcon", dir + L"\\FGUY.exe");
+    str(L"UninstallString", L"\"" + un + L"\" --uninstall \"" + dir + L"\"");
+    str(L"URLInfoAbout", L"https://github.com/alphain24/FGUY-Mod");
+    num(L"NoModify", 1);
+    num(L"NoRepair", 1);
+    RegCloseKey(k);
+}
+
+void Unregister(const std::wstring& dir) {
+    std::wstring at = RegString(HKEY_CURRENT_USER, kAppsKey, L"InstallLocation");
+    if (!at.empty() && _wcsicmp(at.c_str(), dir.c_str()) == 0) RegDeleteTreeW(HKEY_CURRENT_USER, kAppsKey);
+}
+
+// Restarts this program with admin rights and these arguments (Windows asks the player). True if it ran.
+bool RunAsAdmin(const std::wstring& args) {
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(nullptr, self, MAX_PATH);
+    SHELLEXECUTEINFOW sei{sizeof(sei)};
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+    sei.lpVerb = L"runas";
+    sei.lpFile = self;
+    sei.lpParameters = args.c_str();
+    sei.nShow = SW_SHOWNORMAL;
+    if (!ShellExecuteExW(&sei) || !sei.hProcess) return false;
+    WaitForSingleObject(sei.hProcess, INFINITE);
+    CloseHandle(sei.hProcess);
+    return true;
+}
+
 // Installs (or updates) the mod in `dir`. Says how it went.
 bool Install(const std::wstring& dir, bool quiet) {
     while (GameRunning(dir)) {
@@ -346,13 +392,15 @@ bool Install(const std::wstring& dir, bool quiet) {
              TD_ERROR_ICON);
         return false;
     }
+    Register(dir);
     Tell(updating ? L"FGUY Mod updated to " + g_version : L"FGUY Mod " + g_version + L" installed",
          L"Start the game as usual.\n\nPlay online: Main Menu > ONLINE.\nSeparate mods: Main Menu > MODS.\nSettings: "
          L"FGUYMod\\FGUYMod.ini in the game's folder (open it with Notepad).\n\nGame folder: " + dir);
     return true;
 }
 
-bool Uninstall(const std::wstring& dir) {
+bool Uninstall(const std::wstring& dir, bool quiet = false) {
+    if (!CanWrite(dir) && !quiet) return RunAsAdmin(L"--uninstall-admin \"" + dir + L"\"");   // (it asks itself)
     int c = Ask(L"Remove FGUY Mod?", L"dinput8.dll and the FGUYMod folder go to the Recycle Bin - with your separate "
                 L"mods and reports in it. The game and its saves stay as they are.\n\n" + dir,
                 {{100, L"Remove it"}}, TD_WARNING_ICON);
@@ -361,7 +409,9 @@ bool Uninstall(const std::wstring& dir) {
         if (Ask(L"Close the game first", L"The game is running from this folder. Close it, then click Try again.",
                 {{100, L"Try again"}}, TD_WARNING_ICON) != 100) return false;
     }
-    std::wstring list = dir + L"\\dinput8.dll" + L'\0' + dir + L"\\FGUYMod" + L'\0' + L'\0';
+    std::wstring list = dir + L"\\dinput8.dll" + L'\0' + dir + L"\\FGUYMod" + L'\0';
+    if (IsFile(dir + L"\\INSTALL.txt")) list += dir + L"\\INSTALL.txt" + L'\0';   // (ours too: it came with the mod)
+    list += L'\0';
     SHFILEOPSTRUCTW op{};
     op.wFunc = FO_DELETE;
     op.pFrom = list.c_str();
@@ -371,6 +421,7 @@ bool Uninstall(const std::wstring& dir) {
              dir + L"\nyourself.", TD_ERROR_ICON);
         return false;
     }
+    Unregister(dir);
     Tell(L"FGUY Mod removed", L"It's in the Recycle Bin, if you change your mind.");
     return true;
 }
@@ -394,6 +445,41 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (argc >= 3 && wcscmp(argv[1], L"--install") == 0) return Install(argv[2], true) ? 0 : 1;   // (the admin restart)
+    if (argc >= 3 && wcscmp(argv[1], L"--uninstall-admin") == 0) return Uninstall(argv[2], true) ? 0 : 1;   // (same)
+
+    // Removing (Windows Settings > Apps, or FGUYMod\Uninstall.exe opened): the mod's folder goes, and this program with
+    // it if it runs from there - it can't while it runs, so a copy of it in the temp folder does the removing.
+    wchar_t self[MAX_PATH];
+    GetModuleFileNameW(nullptr, self, MAX_PATH);
+    bool hasMod = FindResourceW(nullptr, MAKEINTRESOURCEW(1), RT_RCDATA) != nullptr;
+    std::wstring removeDir;
+    if (argc >= 3 && wcscmp(argv[1], L"--uninstall") == 0) removeDir = argv[2];
+    else if (!hasMod) removeDir = Parent(Parent(self));   // (Uninstall.exe, opened: <game>\FGUYMod\Uninstall.exe)
+    if (!removeDir.empty()) {
+        while (!removeDir.empty() && (removeDir.back() == L'\\' || removeDir.back() == L'/')) removeDir.pop_back();
+        std::wstring inside = removeDir + L"\\FGUYMod\\";
+        if (_wcsnicmp(self, inside.c_str(), inside.size()) == 0) {
+            wchar_t tmp[MAX_PATH];
+            GetTempPathW(MAX_PATH, tmp);
+            std::wstring copy = std::wstring(tmp) + L"FGUYMod-Uninstall.exe";
+            if (CopyFileW(self, copy.c_str(), FALSE)) {
+                std::wstring cmd = L"\"" + copy + L"\" --uninstall \"" + removeDir + L"\"";
+                STARTUPINFOW si{sizeof(si)};
+                PROCESS_INFORMATION pi{};
+                if (CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+                    CloseHandle(pi.hThread);
+                    CloseHandle(pi.hProcess);
+                    return 0;
+                }
+            }
+        }
+        if (!ModInstalled(removeDir)) {
+            Tell(L"FGUY Mod isn't installed there", removeDir, TD_INFORMATION_ICON);
+            Unregister(removeDir);
+            return 0;
+        }
+        return Uninstall(removeDir) ? 0 : 1;
+    }
 
     std::wstring dir = FindGame();
     for (;;) {

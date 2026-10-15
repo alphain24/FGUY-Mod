@@ -53,7 +53,8 @@ Settings
   Most are in the game's own Options > Screen too.
 
 Uninstall
-  Run FGUYMod-Setup.exe and pick Remove - or delete dinput8.dll and the FGUYMod folder from the game's folder.
+  Windows Settings > Apps > FGUY Mod > Uninstall, or run FGUYMod-Setup.exe and pick Remove - or delete
+  dinput8.dll and the FGUYMod folder from the game's folder.
 
 Mods
   Main Menu > MODS: separate mods, put in FGUYMod\mods\ - switch them on and off there (takes a restart).
@@ -72,6 +73,23 @@ $bad = Get-ChildItem $stage -Recurse -File | Where-Object { $_.Extension -in '.h
 if ($bad) { Write-Output "not releasing - these don't belong in it:"; $bad.FullName; exit 1 }
 $version = [regex]::Match((Get-Content "$P\src\loader\online.cpp" -Raw), 'kModVersion = "([^"]+)"').Groups[1].Value
 if (-not $version) { Write-Output "no kModVersion in src\loader\online.cpp"; exit 1 }
+
+# src/installer/setup.cpp, built with these resources: 1 the zip (the setup; none: the uninstaller), 2 the version.
+$rel = Join-Path $P "build\release"
+Set-Content (Join-Path $rel "version.txt") $version -Encoding ascii -NoNewline
+$vs = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"
+$src = Join-Path $P "src\installer\setup.cpp"
+function BuildSetup([string]$rc, [string]$out) {
+    $rc | Set-Content (Join-Path $rel "setup.rc") -Encoding ascii
+    if (Test-Path $out) { Remove-Item $out -Force }
+    $cmd = "call `"$vs`" x86 >nul && cd /d `"$rel`" && rc /nologo /fo setup.res setup.rc && " +
+           "cl /nologo /O2 /MT /W4 /EHsc /std:c++17 /DUNICODE /D_UNICODE `"$src`" setup.res /Fo`"$rel\\`" /Fe`"$out`" " +
+           "/link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED"
+    cmd /c $cmd | Out-Null
+    if (-not (Test-Path $out)) { Write-Output "$out didn't build"; exit 1 }
+}
+# FGUYMod\Uninstall.exe: what Windows Settings > Apps runs to remove the mod
+BuildSetup "2 RCDATA `"version.txt`"" "$stage\FGUYMod\Uninstall.exe"
 $zip = Join-Path $P "build\release\FGUYMod-$version.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path "$stage\*" -DestinationPath $zip
@@ -79,19 +97,7 @@ Compress-Archive -Path "$stage\*" -DestinationPath $zip
 Get-ChildItem $stage -Recurse -File | ForEach-Object { $_.FullName.Substring($stage.Length + 1) }
 "-> $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB) and $zip.sha256"
 
-# The setup: src/installer/setup.cpp with the zip (resource 1) and the version (resource 2) in it.
-$rel = Join-Path $P "build\release"
+# The setup: the zip in it.
 $setup = Join-Path $rel "FGUYMod-$version-Setup.exe"
-Set-Content (Join-Path $rel "version.txt") $version -Encoding ascii -NoNewline
-@"
-1 RCDATA "FGUYMod-$version.zip"
-2 RCDATA "version.txt"
-"@ | Set-Content (Join-Path $rel "setup.rc") -Encoding ascii
-$vs = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"
-$src = Join-Path $P "src\installer\setup.cpp"
-$cmd = "call `"$vs`" x86 >nul && cd /d `"$rel`" && rc /nologo /fo setup.res setup.rc && " +
-       "cl /nologo /O2 /MT /W4 /EHsc /std:c++17 /DUNICODE /D_UNICODE `"$src`" setup.res /Fo`"$rel\\`" /Fe`"$setup`" " +
-       "/link /SUBSYSTEM:WINDOWS /MANIFEST:EMBED"
-cmd /c $cmd
-if (-not (Test-Path $setup)) { Write-Output "the setup didn't build"; exit 1 }
+BuildSetup "1 RCDATA `"FGUYMod-$version.zip`"`r`n2 RCDATA `"version.txt`"" $setup
 "-> $setup ($([math]::Round((Get-Item $setup).Length / 1MB, 1)) MB)"
