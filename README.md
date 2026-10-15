@@ -29,6 +29,9 @@ there's a new version, and installs it for you.
 - Put separate mods in `FGUYMod\mods\` and switch them on and off. Making one: see [`sdk/`](sdk/README.md).
 
 **PC fixes**
+- Runs on **Vulkan** ([DXVK](https://github.com/doitsujin/dxvk), the translation Valve's Proton uses) for
+  smoother, more reliable play on modern PCs. A PC without Vulkan 1.3 falls back to DirectX 9 by itself; to always
+  use DirectX 9, set `Renderer=d3d9` in `FGUYMod\FGUYMod.ini`.
 - Borderless fullscreen, every resolution your monitor has (4K too), frame rate cap or uncapped.
 - The Windows key works; keeps running when you alt-tab (optional).
 
