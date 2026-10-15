@@ -210,7 +210,7 @@ void PointerShow(HWND wnd, bool on) {
         int count;
         do { count = ShowCursor(TRUE); ++g_pointerShows; } while (count < 0 && g_pointerShows < 32);
         SetCursor(LoadCursorW(nullptr, IDC_ARROW));
-        SetTimer(wnd, kPointerTimer, 200, nullptr);
+        SetTimer(wnd, kPointerTimer, 100, nullptr);
         g_pointerShown = true;
         Log(L"Window: the Windows mouse pointer on (online menu)");
     } else if (!on && g_pointerShown) {
@@ -259,7 +259,7 @@ LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         case WM_TIMER:
             if (wp != kPointerTimer) break;
-            if (GetTickCount64() - g_pointerAt > 400) {   // (nobody asks any more)
+            if (GetTickCount64() - g_pointerAt > 250) {   // (nobody asks any more)
                 InterlockedExchange(&g_pointerWanted, 0);
                 PointerShow(wnd, false);
             }
@@ -590,14 +590,16 @@ bool DisplayPark() {
 
 // The online menus' poll (the HUD's thread), 30 times a second: is the Windows pointer wanted? Returns whether it's
 // shown (exclusive fullscreen: no - the menu draws its own).
+// (two ask: the HUD and the results movie - a "no" from one mustn't hide the other's: only a "yes" counts, and the
+// pointer goes once nobody has said yes for a moment - the timer)
 bool DisplayOsPointer(bool want) {
-    if (!g_mainWnd || g_mode == Mode::Fullscreen) return false;
-    if (want) g_pointerAt = GetTickCount64();
-    if (want != (g_pointerWanted != 0)) {
-        InterlockedExchange(&g_pointerWanted, want ? 1 : 0);
-        PostMessageW(g_mainWnd, kPointerMsg, want ? 1 : 0, 0);
+    if (!g_mainWnd || g_mode == Mode::Fullscreen || !want) return false;
+    g_pointerAt = GetTickCount64();
+    if (!g_pointerWanted) {
+        InterlockedExchange(&g_pointerWanted, 1);
+        PostMessageW(g_mainWnd, kPointerMsg, 1, 0);
     }
-    return want;
+    return true;
 }
 
 void DisplayUnpark(bool show, const RECT* at, HANDLE shown) {

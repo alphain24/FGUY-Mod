@@ -131,6 +131,7 @@ void OnlinePauseCommand(const char* command);  //   ui.cpp: a menu command ran
 const char* OnlinePauseMenu();                 //   FGUYMOD_PauseMenu (the HUD)
 const char* OnlinePauseCursor();
 const char* OnlinePauseDeathMouse(const char* boxes);   //   FGUYMOD_DeathMouse (the HUD): my death menu's buttons
+const char* OnlineMenuMouse(const char* boxes);         //   FGUYMOD_MenuMouse (the results movie): its list
 void OnlinePauseQuitDone();
 void OnlinePauseForceQuit();                    //   netplay: out of sync - everyone back to the lobby
 

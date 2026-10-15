@@ -50,12 +50,20 @@ bool Key(const BYTE* keys, int vk) { return (keys[vk >> 3] >> (vk & 7)) & 1; }
 // A box of kind 1 is the weapons screen's wheel: pointing at a weapon holds the W A S D direction of it (the wheel's
 // six weapons sit every 60 degrees from the top; a keyboard player chooses with W, W+D, S+D, S, S+A, W+A), a click
 // presses the box's key (X: buy). (aspect: the screen's width / height x 1000, for the angle)
-struct MouseBox { int x0, y0, x1, y1, vk, kind, aspect; };
+// A box of kind 2 is an item of a menu list (the end of the match's RETRY / MAIN MENU - FGUYMOD_MenuMouse, the results
+// movie): its index there (in the aspect's place) and the item chosen now (cur). Pointing at another item moves the
+// choice there with Up / Down, a click moves it and presses Enter - one key at a time, through the match's input.
+struct MouseBox { int x0, y0, x1, y1, vk, kind, aspect, cur; };
 SRWLOCK g_boxLock = SRWLOCK_INIT;
 MouseBox g_boxes[4];
 int g_boxCount = 0;
 ULONGLONG g_boxesAt = 0;       // (the HUD says every 33 ms; older than this: the menu is gone)
+MouseBox g_listBoxes[6];       // the results movie's list (kind 2)
+int g_listCount = 0;
+ULONGLONG g_listAt = 0;
 int g_clickVk = 0, g_clickTicks = 0;
+int g_seq[12], g_seqLen = 0, g_seqPos = 0, g_seqTick = 0;   // keys to press one after another (the list)
+ULONGLONG g_hoverAt = 0;
 bool g_osPointer = false;      // the Windows pointer is shown for the menus (OnlinePauseCursor)
 
 int BoxKeyAt(SHORT cx, SHORT cy, int* hold = nullptr) {
@@ -84,9 +92,39 @@ int BoxKeyAt(SHORT cx, SHORT cy, int* hold = nullptr) {
 
 bool BoxesShown() {
     AcquireSRWLockShared(&g_boxLock);
-    bool on = g_boxCount > 0 && GetTickCount64() - g_boxesAt < 300;
+    ULONGLONG now = GetTickCount64();
+    bool on = (g_boxCount > 0 && now - g_boxesAt < 300) || (g_listCount > 0 && now - g_listAt < 300);
     ReleaseSRWLockShared(&g_boxLock);
     return on;
+}
+
+// The list item the pointer is on (-1: none), and the item chosen now.
+int ListItemAt(SHORT cx, SHORT cy, int* cur) {
+    int x = cx * 10000 / 32767, y = cy * 10000 / 32767, item = -1;
+    AcquireSRWLockShared(&g_boxLock);
+    if (GetTickCount64() - g_listAt < 300)
+        for (int i = 0; i < g_listCount && item < 0; ++i) {
+            const MouseBox& b = g_listBoxes[i];
+            if (x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1) { item = b.aspect; *cur = b.cur; }
+        }
+    ReleaseSRWLockShared(&g_boxLock);
+    return item;
+}
+
+int ParseBoxes(const char* boxes, MouseBox* b, int max) {
+    int n = 0;
+    for (const char* at = boxes; at && *at && n < max;) {
+        b[n].kind = 0;
+        b[n].aspect = 0;
+        b[n].cur = 0;
+        if (sscanf_s(at, "%d,%d,%d,%d,%d,%d,%d,%d", &b[n].x0, &b[n].y0, &b[n].x1, &b[n].y1, &b[n].vk, &b[n].kind, &b[n].aspect,
+                     &b[n].cur) >= 5 &&
+            b[n].vk > 0 && b[n].vk < 256)
+            ++n;
+        at = strchr(at, ';');
+        if (at) ++at;
+    }
+    return n;
 }
 
 int Items() { return NetplayLocalSlot() == 0 ? 4 : 3; }
@@ -218,6 +256,26 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
         if (g_clickTicks > 0) {
             --g_clickTicks;
             kbm->keys[g_clickVk >> 3] |= (BYTE)(1 << (g_clickVk & 7));
+        }
+        // the end of the match's list: pointing moves the choice, a click moves it and picks
+        int cur = 0, item = ListItemAt(kbm->cursorX, kbm->cursorY, &cur);
+        if (g_seqPos >= g_seqLen && item >= 0) {
+            ULONGLONG now = GetTickCount64();
+            if (click) {
+                g_seqLen = g_seqPos = g_seqTick = 0;
+                for (int k = cur; k != item && g_seqLen < 10; k += item > cur ? 1 : -1) g_seq[g_seqLen++] = item > cur ? VK_DOWN : VK_UP;
+                g_seq[g_seqLen++] = VK_RETURN;
+                Log(L"Pause: end of the match - item %d clicked (chosen %d)", item, cur);
+            } else if (item != cur && now >= g_hoverAt) {   // (one step, then look again: the menu says where it is)
+                g_seqLen = g_seqPos = g_seqTick = 0;
+                g_seq[g_seqLen++] = item > cur ? VK_DOWN : VK_UP;
+                g_hoverAt = now + 150;
+            }
+        }
+        if (g_seqPos < g_seqLen) {   // each key down 4 ticks, then up 4
+            int key = g_seq[g_seqPos];
+            if (g_seqTick < 4) kbm->keys[key >> 3] |= (BYTE)(1 << (key & 7));
+            if (++g_seqTick >= 8) { g_seqTick = 0; ++g_seqPos; }
         }
     }
     if (!g_open) {
@@ -356,17 +414,7 @@ const char* OnlinePauseCursor() {
 // Returns the pointer: "x|y|show" (x, y in 1/10000 of the screen).
 const char* OnlinePauseDeathMouse(const char* boxes) {
     MouseBox b[4];
-    int n = 0;
-    for (const char* at = boxes; at && *at && n < 4;) {
-        b[n].kind = 0;
-        b[n].aspect = 0;
-        if (sscanf_s(at, "%d,%d,%d,%d,%d,%d,%d", &b[n].x0, &b[n].y0, &b[n].x1, &b[n].y1, &b[n].vk, &b[n].kind, &b[n].aspect) >= 5 &&
-            b[n].vk > 0 &&
-            b[n].vk < 256)
-            ++n;
-        at = strchr(at, ';');
-        if (at) ++at;
-    }
+    int n = ParseBoxes(boxes, b, 4);
     AcquireSRWLockExclusive(&g_boxLock);
     static int lastSig = -1;   // (logged as it changes: off, the death menu's buttons, the wheel)
     int sig = n > 0 ? 1 + b[0].kind : 0;
@@ -380,6 +428,23 @@ const char* OnlinePauseDeathMouse(const char* boxes) {
     sprintf_s(buf, "%d|%d|%d", g_cursorX * 10000 / 32767, g_cursorY * 10000 / 32767,
               n > 0 && g_keyboard && !g_open && !g_osPointer ? 1 : 0);
     return buf;
+}
+
+// FGUYMOD_MenuMouse("x0,y0,x1,y1,13,2,index,chosen;..." or ""): the end of the match's menu (the results movie) - its
+// items for the mouse. Returns whether the Windows pointer is shown ("1": the movie needn't show its own).
+const char* OnlineMenuMouse(const char* boxes) {
+    MouseBox b[6];
+    int n = ParseBoxes(boxes, b, 6);
+    AcquireSRWLockExclusive(&g_boxLock);
+    static int last = -1;
+    if ((n > 0) != (last > 0)) Log(L"Pause: end of the match menu mouse %s %S", n > 0 ? L"on" : L"off", boxes ? boxes : "");
+    last = n;
+    memcpy(g_listBoxes, b, sizeof(b));
+    g_listCount = n;
+    g_listAt = GetTickCount64();
+    ReleaseSRWLockExclusive(&g_boxLock);
+    bool shown = DisplayOsPointer(n > 0 && g_keyboard);
+    return shown ? "1" : "0";
 }
 
 // Out of sync (netplay.cpp, the same check on every PC): leave the match - back to the lobby.
