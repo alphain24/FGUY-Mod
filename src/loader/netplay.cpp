@@ -369,7 +369,8 @@ void WaitForQuiescence() {
 // ---- packets ------------------------------------------------------------------------------------------
 // All little-endian. 'R' ready: slot. 'I' inputs: slot, first tick, count, Pad[count]. 'H' hash: slot,
 // tick, hash (and its two parts: the players, the random numbers). 'M' the host's random numbers for a tick, in
-// three parts; 'Q' asks the host for them again. 'S' skip the scene that's holding the game: slot, sequence number. 'L' left the match (back to
+// three parts; 'Q' asks the host for them again. 'P' ping: slot, the sender's clock (ms); 'O' its echo: the echoing
+// slot, to whom, that clock - the round trip, shown in the match (FGUYMOD_NetStats). 'S' skip the scene that's holding the game: slot, sequence number. 'L' left the match (back to
 // the lobby): slot, the last tick with their input - from the next one on they're idle on every PC.
 #pragma pack(push, 1)
 struct PktHeader { char type; BYTE slot; };
@@ -380,6 +381,7 @@ struct PktRng { PktHeader h; unsigned tick; BYTE part; int next, left; unsigned 
 struct PktRngAsk { PktHeader h; unsigned tick; };
 struct PktSkip { PktHeader h; unsigned seq; };
 struct PktLeave { PktHeader h; unsigned last; };
+struct PktPing { PktHeader h; BYTE to; unsigned long long sent; };
 #pragma pack(pop)
 
 // Relay mode (online sessions): every packet goes to the lobby server, wrapped as
@@ -508,6 +510,7 @@ void CompareHash(int slot, unsigned tick, unsigned hash, unsigned players, unsig
 
 CRITICAL_SECTION g_netLock;  // Receive() runs on the game thread, and on the render thread during scenes
 unsigned g_goneFrom[4];      // a player who left the match: idle from this tick on (0: still playing)
+volatile LONG g_pingMs[4] = {-1, -1, -1, -1};   // the round trip to each player (ms; -1: not known yet)
 unsigned g_skipSeqSeen[4];
 void StartSkip(const wchar_t* why);
 
@@ -561,6 +564,16 @@ void Receive() {
             if (!g_goneFrom[slot] || p->last + 1 < g_goneFrom[slot]) {
                 g_goneFrom[slot] = p->last + 1;
                 Log(L"Netplay: player %d left the match (back to the lobby) - idle from tick %u", slot, p->last + 1);
+            }
+        } else if (h->type == 'P' && n >= (int)sizeof(PktPing)) {   // a ping: echoed back to its sender
+            auto p = reinterpret_cast<PktPing*>(buf);
+            PktPing echo{{'O', (BYTE)g_slot}, (BYTE)slot, p->sent};
+            SendAll(&echo, sizeof(echo));
+        } else if (h->type == 'O' && n >= (int)sizeof(PktPing)) {   // my ping's echo
+            auto p = reinterpret_cast<PktPing*>(buf);
+            if (p->to == g_slot) {
+                ULONGLONG now = GetTickCount64();
+                if (now >= p->sent && now - p->sent < 60000) InterlockedExchange(&g_pingMs[slot], (LONG)(now - p->sent));
             }
         } else if (h->type == 'S' && n >= (int)sizeof(PktSkip)) {
             auto p = reinterpret_cast<PktSkip*>(buf);
@@ -1176,6 +1189,15 @@ void Tick() {
                 Log(L"Netplay: check tick %u random numbers %08x", g_tick, g_hashed[k].rng);
             }
         }
+        {   // a ping to everyone once a second (the round trip: the match shows it - FGUYMOD_NetStats)
+            static ULONGLONG lastPing = 0;
+            ULONGLONG now = GetTickCount64();
+            if (now - lastPing >= 1000) {
+                lastPing = now;
+                PktPing ping{{'P', (BYTE)g_slot}, 0, now};
+                SendAll(&ping, sizeof(ping));
+            }
+        }
         g_clockNs += 1000000000LL / g_rate;   // the tick that just ended took 1 / its rate
         ++g_tick;
     }
@@ -1606,6 +1628,23 @@ void NetplayLogStacks() {
 }
 bool NetplayLevelLive() { return g_enabled && g_liveTick && g_tick >= g_liveTick; }
 bool NetplayStoryCoop() { return g_enabled && g_sessionStory; }
+
+// FGUYMOD_NetStats: the round trip to every other player still in the match - "name:ms|..." (ms -1: not known yet).
+std::string NetplayStats() {
+    std::string out;
+    if (!g_enabled || !g_inSession) return out;
+    for (int s = 0; s < g_players && s < 4; ++s) {
+        if (s == g_slot || g_gone[s] || g_goneFrom[s]) continue;
+        char part[96];
+        std::wstring name = PlayerName(s);
+        char n8[64];
+        WideCharToMultiByte(CP_UTF8, 0, name.c_str(), -1, n8, sizeof(n8), nullptr, nullptr);
+        for (char* c = n8; *c; ++c) if (*c == '|' || *c == ':') *c = ' ';
+        sprintf_s(part, "%s%s:%ld", out.empty() ? "" : "|", n8, g_pingMs[s]);
+        out += part;
+    }
+    return out;
+}
 
 void InitNetplay(HMODULE exe) {
     g_enabled = SettingInt(L"Netplay", L"Enable", L"FGUYMOD_NET", 0) != 0;

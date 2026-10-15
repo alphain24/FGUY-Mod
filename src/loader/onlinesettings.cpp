@@ -79,6 +79,14 @@ int Percent(float v) { return (int)(v * 100 + 0.5f); }
 
 void BackFile(DWORD lobbyPid, wchar_t* out) { swprintf_s(out, MAX_PATH, L"%s\\settings_back_%lu.txt", g_modDir, lobbyPid); }
 
+void SaveFlag(const wchar_t* name, bool on) {
+    wchar_t path[MAX_PATH];
+    swprintf_s(path, L"%s\\FGUYMod.ini", g_modDir);
+    WritePrivateProfileStringW(L"Online", name, on ? L"1" : L"0", path);
+}
+
+bool g_showPing = true;   // the match shows every player's ping (top right)
+
 void SaveVibration() {
     wchar_t path[MAX_PATH];
     swprintf_s(path, L"%s\\FGUYMod.ini", g_modDir);
@@ -88,10 +96,12 @@ void SaveVibration() {
 }  // namespace
 
 bool OnlineVibration() { return g_vibration; }
+bool OnlineShowPing() { return g_showPing; }
 
 // The session game, at start: the player's own settings from their lobby game.
 void OnlineSettingsInit() {
     g_vibration = SettingInt(L"Online", L"Vibration", nullptr, 1) != 0;
+    g_showPing = SettingInt(L"Online", L"ShowPing", nullptr, 1) != 0;
     char env[256];
     if (GetEnvironmentVariableA("FGUYMOD_MY_SETTINGS", env, sizeof(env)) && Parse(env, &g_mine))
         Log(L"Settings: mine for this match: %S", env);
@@ -199,7 +209,7 @@ void OnlineSettingsWriteBack(DWORD lobbyPid) {
 enum Row {
     kAudio, kMusic, kEffects, kDialog, kCinematic, kMovies, kSubs,
     kControls, kAim, kInvert, kVibration, kReticles, kInputInfo, kKeysInfo,
-    kScreen, kDisplay, kResolution, kFrameRate,
+    kScreen, kDisplay, kResolution, kFrameRate, kShowPing,
     kBack, kRowCount
 };
 
@@ -234,7 +244,9 @@ int OnlineSettingsRows(SettingsRow* out, int max) {
     sprintf_s(v, "%d x %d (main menu > Options)", w, h);
     // (read only: mid-level the game can't reset its graphics device for a new size - it dies)
     put(kResolution, "Resolution", v, 'i');
-    put(kFrameRate, "Frame rate", "60 (online matches)", 'i');
+    sprintf_s(v, "%d fps (the match's)", NetplayRate());
+    put(kFrameRate, "Frame rate", v, 'i');
+    put(kShowPing, "Show ping", onoff(g_showPing), 't');
     put(kBack, "BACK", "", 'b');
     return kRowCount;
 }
@@ -262,6 +274,9 @@ void OnlineSettingsChange(int row, int delta) {
     } else if (row == kVibration) {
         g_vibration = !g_vibration;
         SaveVibration();
+    } else if (row == kShowPing) {
+        g_showPing = !g_showPing;
+        SaveFlag(L"ShowPing", g_showPing);
     } else if (row == kDisplay) {
         int mode = DisplayMenuIndex();   // windowed <-> borderless (an online match never runs fullscreen)
         DisplayMenuSelect(mode == 0 ? 2 : 0);

@@ -314,6 +314,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         } else if (strcmp(fn, "PauseSettings") == 0) {   // (the game's pause menu: OPTIONS online -> my own settings)
             OnlinePauseSettings();
             ReturnBool(movie, true);
+        } else if (strcmp(fn, "NetStats") == 0) {        // (the HUD: the other players' pings, top right)
+            static std::string stats;
+            stats = OnlineShowPing() ? NetplayStats() : std::string();
+            ReturnString(movie, stats.c_str());
         } else if (strcmp(fn, "StoryCoop") == 0) {       // (the game's pause menu: an online story co-op?)
             ReturnBool(movie, NetplayStoryCoop());
         } else if (strcmp(fn, "MyPlayer") == 0) {     // online: my player's index (-1: not yet)

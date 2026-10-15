@@ -213,8 +213,33 @@ function FGUYTestAnnounce() {
             }
 }
 
+// Online: the other players' pings, small at the top right of the screen (SETTINGS > Show ping), twice a second.
+function FGUYPingPoll() {
+    FGUYPingWait = FGUYPingWait == undefined ? 0 : FGUYPingWait - 1;
+    if (FGUYPingWait > 0) return;
+    FGUYPingWait = 15;
+    var s = flash.external.ExternalInterface.call('FGUYMOD_NetStats');
+    if (s == undefined) return;   // (not our loader)
+    s = String(s);
+    if (s == FGUYPingLast && _root.FGUYPingUI != undefined) { FGUYMouseUnzoom(_root.FGUYPingUI); return; }
+    FGUYPingLast = s;
+    _root.FGUYPingUI.removeMovieClip();
+    if (s == '') return;
+    var ui = _root.createEmptyMovieClip('FGUYPingUI', 29990);
+    var r = FGUYPauseRect(), size = r.h / 720, parts = s.split('|');
+    FGUYPauseN = 0;
+    for (var i = 0; i < parts.length; i++) {
+        var f = parts[i].split(':'), ms = Number(f[1]);
+        var color = ms < 0 ? 0x9FB4D6 : (ms < 80 ? 0x7CE07C : (ms < 150 ? 0xF5D33A : 0xFF7B6B));
+        FGUYPauseText(ui, r.x + r.w - 260 * size, r.y + (6 + i * 18) * size, 250 * size, 20 * size,
+                      f[0] + '  ' + (ms < 0 ? '-' : ms + ' ms'), false, 13 * size, color, 'right');
+    }
+    FGUYMouseUnzoom(ui);
+}
+
 function FGUYPausePoll() {
     FGUYTestAnnounce();
+    FGUYPingPoll();
     if (FGUYHudDumpWait == undefined) FGUYHudDumpWait = 0;
     FGUYHudDump();
     FGUYHudZoom();
