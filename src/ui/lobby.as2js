@@ -1163,6 +1163,10 @@ function FGUYDrawLobby(ui) {
     FGUYPanel(ui, rx, 130, rw, 684, 28, FGUYC.panel, FGUYC.glow);
     FGUYTitle(ui, rx + 22, 148, 300, 46, 'PLAYERS', 32, FGUYC.title, 'left');
     FGUYText(ui, rx + rw - 140, 156, 118, 30, FGUYS.members.length + ' / 4', false, 21, FGUYC.soft, 'right');
+    var worst = FGUYWorstPing();   // (a long way apart: what that means, before the match)
+    if (worst[0] > 200)
+        FGUYText(ui, rx + 22, 182, rw - 44, 24, 'High ping to ' + worst[1] + ' (~' + worst[0] + ' ms): moves lag a little, your camera turns at once',
+                 false, 14, FGUYPingTone(worst[0]), 'left');
     var ry = 206;
     if (mode.teams) {
         for (var team = 0; team < 2; team++) {
@@ -1238,13 +1242,39 @@ function FGUYChatPoll() {
     FGUYDraw();
 }
 
+// Another player's round trip to me: through the server - theirs to it and mine.
+function FGUYPingTo(m) {
+    return Number(m.ping) + Number(FGUYS.ping);
+}
+
+// How a round trip will feel online: up to 120 ms fine (green), up to 200 a little delayed (yellow), more: a lot (red).
+function FGUYPingTone(ping) {
+    return ping <= 120 ? FGUYC.greenLine : (ping <= 200 ? FGUYC.yellow : 0xFF6B6B);
+}
+
+// The worst round trip to another player in my lobby (-1: nobody else yet), and who.
+function FGUYWorstPing() {
+    var worst = -1, who = '';
+    for (var i = 0; i < FGUYS.members.length; i++) {
+        var m = FGUYS.members[i];
+        if (m.slot == FGUYS.slot || m.away) continue;
+        var p = FGUYPingTo(m);
+        if (p > worst) { worst = p; who = m.name; }
+    }
+    return [worst, who];
+}
+
 function FGUYPlayerRow(ui, x, y, w, m) {
     var me = m.slot == FGUYS.slot;
     FGUYRect(ui, x, y, w, 72, 16, me ? FGUYC.rowHot : 0x174478, 100, me ? FGUYC.yellow : FGUYC.rowLine, 100, 2);
     FGUYPortrait(ui, FGUYCostumePic(m.character, m.costume), x + 36, y + 36, 26);
     FGUYText(ui, x + 74, y + 8, w - 230, 32, m.name, false, 22, FGUYC.white, 'left');
-    FGUYText(ui, x + 74, y + 38, w - 230, 26, FGUYCharName(m.character) + ' - ' + (m.input == 'k' ? 'Keyboard' : 'Controller') +
-             ' - ' + m.ping + ' ms', false, 16, FGUYC.muted2, 'left');
+    // (the ping: mine to the server; another player's to me - through the server, so theirs and mine together - in
+    //  the colour of how it'll feel: green fine, yellow a little delayed, red a lot)
+    var ping = me ? m.ping : FGUYPingTo(m), tone = me ? FGUYC.muted2 : FGUYPingTone(ping);
+    var info = FGUYCharName(m.character) + ' - ' + (m.input == 'k' ? 'Keyboard' : 'Controller') + ' - ';
+    var infoText = FGUYText(ui, x + 74, y + 38, w - 230, 26, info, false, 16, FGUYC.muted2, 'left');
+    FGUYText(ui, x + 76 + infoText.textWidth, y + 38, 150, 26, (me ? '' : '~') + ping + ' ms' + (me ? '' : ' to you'), false, 16, tone, 'left');
     var label = m.away ? 'IN MATCH' : (m.slot == 0 ? 'HOST' : (m.ready ? 'READY' : 'NOT READY'));
     var fill = m.slot == 0 ? FGUYC.yellow : (m.ready ? FGUYC.green : FGUYC.bg);
     var line = m.slot == 0 ? FGUYC.yellow : (m.ready ? FGUYC.greenLine : FGUYC.redLine);
