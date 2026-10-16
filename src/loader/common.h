@@ -95,6 +95,7 @@ void ReportOpenFolder();               //   FGUYMOD_OpenReports
 DWORD HandoffLobbyPid();               // handoff.cpp: the session game's lobby game (0: none)
 std::string NetplayStats();            //   FGUYMOD_NetStats: "name:ping ms|..." of the other players
 bool OnlineShowPing();                 // onlinesettings.cpp: the match shows the pings
+bool OnlineDirectConnection();         //   direct connections to players who have them on too (netplay.cpp)
 void SplitViewHudHas4Way(bool has);    //   the level's HUD: does it have the 4-way layout? (the story's has none)
 int SplitViewMyViewport();             //   online: my player's viewport (-1: offline / not in the level yet)
 int SplitViewShownViewport();          //   the one shown (spectating: a teammate's)

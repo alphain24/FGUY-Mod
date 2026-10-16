@@ -388,6 +388,9 @@ void WaitForQuiescence() {
 // 'N' a player waiting for my inputs from a tick on (a packet with them got lost): sent again. 'D' a player stopped
 // waiting for someone (10 s without their input): everyone plays on without them from that tick, and they go back to the
 // lobby (they can rejoin from there).
+// Direct connections ([Online] DirectConnection=1, both players): 'a' to the server - I'd like to; the server answers
+// 'A' (its slot 0xFE): where a player who'd like it too is, as it sees them; 'Y' straight to them, ack 1 when theirs
+// came - from then on everything goes to them straight as well as through the server (whichever comes first counts).
 #pragma pack(push, 1)
 struct PktHeader { char type; BYTE slot; };
 struct PktInputs { PktHeader h; unsigned first; BYTE count; Pad pads[16]; };
@@ -399,6 +402,8 @@ struct PktSkip { PktHeader h; unsigned seq; };
 struct PktLeave { PktHeader h; unsigned last; };
 struct PktResend { PktHeader h; BYTE to; unsigned from; };      // 'N': player `to`, send me your inputs again from `from`
 struct PktDropped { PktHeader h; BYTE who; unsigned from; };    // 'D': I play on without player `who` from tick `from`
+struct PktDirect { PktHeader h; BYTE ack; };                     // 'Y': straight to a player (no server) - 'a': to the
+struct PktPeerAt { PktHeader h; BYTE who; BYTE ip[4]; BYTE port[2]; };   //  server, I'd connect directly; 'A': from it
 struct PktPing { PktHeader h; BYTE to; unsigned long long sent; };
 struct PktHistAsk { PktHeader h; unsigned from, at; BYTE want; };
 struct PktHist { PktHeader h; BYTE to, hashes, last; unsigned first; WORD count; unsigned hostTick, word; unsigned goneFrom[4]; };
@@ -416,6 +421,14 @@ volatile ULONGLONG g_testStallUntil = 0;   // test pipe "netstall <ms>": this PC
 
 bool g_catchUpFailed = false;        // catching up: given up (this game quits; it says nothing to anyone any more)
 
+// Direct connections to the other players (opt-in: [Online] DirectConnection - and theirs too, the server checks).
+struct Direct {
+    sockaddr_in addr;                // where they are, as the server sees them
+    bool known, ok;                  // ok: their 'Y' came straight to me, and they've had mine
+    ULONGLONG punchUntil, nextPunch;
+};
+Direct g_direct[4];
+
 void SendAll(const void* data, int len) {
     if (g_testStallUntil && GetTickCount64() < g_testStallUntil) return;
     if (g_catchUpFailed) return;
@@ -428,6 +441,8 @@ void SendAll(const void* data, int len) {
         buf[10] = (char)g_slot;
         memcpy(buf + 11, data, len);
         sendto(g_sock, buf, len + 11, 0, (const sockaddr*)&g_peers[0], sizeof(g_peers[0]));
+        for (int s = 0; s < 4; ++s)   // (and straight to the players I have a direct connection with)
+            if (g_direct[s].ok) sendto(g_sock, buf, len + 11, 0, (const sockaddr*)&g_direct[s].addr, sizeof(sockaddr_in));
         return;
     }
     for (auto& p : g_peers) sendto(g_sock, (const char*)data, len, 0, (const sockaddr*)&p, sizeof(p));
@@ -897,6 +912,81 @@ void BackIn(unsigned tick) {
     }
 }
 
+// ---- direct connections ----------------------------------------------------------------------------------------
+bool g_directWanted = false;         // mine on ([Online] DirectConnection; the online settings change it mid-match)
+
+// The server: player `who` would like a direct connection too, and is at this address (as it sees them).
+void DirectPeerAt(const PktPeerAt* p) {
+    int who = p->who;
+    if (!g_directWanted || who < 0 || who >= g_players || who >= 4 || who == g_slot || g_direct[who].ok) return;
+    Direct& d = g_direct[who];
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    memcpy(&a.sin_addr, p->ip, 4);
+    memcpy(&a.sin_port, p->port, 2);
+    if (d.known && d.addr.sin_addr.s_addr == a.sin_addr.s_addr && d.addr.sin_port == a.sin_port) return;
+    d.addr = a;
+    d.known = true;
+    d.punchUntil = GetTickCount64() + 20000;
+    d.nextPunch = 0;
+    Log(L"Netplay: player %d would like a direct connection too - trying it", who);
+}
+
+// Their 'Y', straight from them: answer it; once they've had mine (ack), everything goes to them straight too.
+void DirectHello(int who, const sockaddr_in& from, bool ack) {
+    if (!g_directWanted || who >= 4) return;
+    Direct& d = g_direct[who];
+    d.addr = from;   // (where their packets really come from: what to send to)
+    d.known = true;
+    char buf[64];
+    buf[0] = 'F';
+    buf[1] = 'G';
+    memcpy(buf + 2, g_token, 8);
+    buf[10] = (char)g_slot;
+    PktDirect y{{'Y', (BYTE)g_slot}, 1};
+    memcpy(buf + 11, &y, sizeof(y));
+    if (!ack || !d.ok) sendto(g_sock, buf, 11 + (int)sizeof(y), 0, (const sockaddr*)&d.addr, sizeof(d.addr));
+    if (ack && !d.ok) {
+        d.ok = true;
+        Log(L"Netplay: direct connection to player %d - packets go straight to them now (and through the server)", who);
+    }
+}
+
+// Every tick: ask the server for the others' places now and then (while one isn't connected), and knock on theirs.
+void DirectTick() {
+    if (!g_relay || !g_inSession) return;
+    bool want = OnlineDirectConnection();
+    if (want != g_directWanted) {
+        g_directWanted = want;
+        if (!want) for (auto& d : g_direct) d = Direct{};
+        Log(L"Netplay: direct connections %s", want ? L"on (with players who have them on too)" : L"off");
+    }
+    if (!g_directWanted) return;
+    ULONGLONG now = GetTickCount64();
+    static ULONGLONG nextAsk = 0;
+    bool all = true;
+    for (int s = 0; s < g_players && s < 4; ++s)
+        if (s != g_slot && !Idle(s, g_tick) && !g_direct[s].ok) all = false;
+    if (!all && now >= nextAsk) {
+        nextAsk = now + 2000;
+        PktHeader a{'a', (BYTE)g_slot};
+        SendAll(&a, sizeof(a));
+    }
+    for (int s = 0; s < g_players && s < 4; ++s) {
+        Direct& d = g_direct[s];
+        if (s == g_slot || !d.known || d.ok || now > d.punchUntil || now < d.nextPunch) continue;
+        d.nextPunch = now + 100;
+        char buf[64];
+        buf[0] = 'F';
+        buf[1] = 'G';
+        memcpy(buf + 2, g_token, 8);
+        buf[10] = (char)g_slot;
+        PktDirect y{{'Y', (BYTE)g_slot}, 0};
+        memcpy(buf + 11, &y, sizeof(y));
+        sendto(g_sock, buf, 11 + (int)sizeof(y), 0, (const sockaddr*)&d.addr, sizeof(d.addr));
+    }
+}
+
 // A player asks for my inputs again from `from` on (one of my packets with them got lost): what I have, up to 64 ticks.
 void ResendFrom(unsigned from) {
     if (from > g_sampledUpTo || g_sampledUpTo - from > 1024) return;
@@ -944,20 +1034,31 @@ void Receive() {
     EnterCriticalSection(&g_netLock);
     struct Unlock { ~Unlock() { LeaveCriticalSection(&g_netLock); } } unlock;
     for (;;) {
-        int n = recvfrom(g_sock, buf, sizeof(buf), 0, nullptr, nullptr);
+        sockaddr_in from{};
+        int fromLen = sizeof(from);
+        int n = recvfrom(g_sock, buf, sizeof(buf), 0, (sockaddr*)&from, &fromLen);
         if (n == SOCKET_ERROR && WSAGetLastError() == WSAECONNRESET) continue;  // ICMP noise, not an error
         if (n == SOCKET_ERROR) return;  // nothing more to read
-        if (g_relay) {  // only our session's packets, through the server
+        bool straight = false;   // (not through the server: straight from a player)
+        if (g_relay) {  // only our session's packets, through the server (or straight from a player in it)
             if (n < 11 + (int)sizeof(PktHeader) || buf[0] != 'F' || buf[1] != 'G' || memcmp(buf + 2, g_token, 8) != 0)
                 continue;
+            straight = !g_peers.empty() && (from.sin_addr.s_addr != g_peers[0].sin_addr.s_addr ||
+                                            from.sin_port != g_peers[0].sin_port);
             memmove(buf, buf + 11, n - 11);
             n -= 11;
+            if ((BYTE)buf[1] == 0xFE && !straight) {   // the server's own word: where a player is (direct connections)
+                if (buf[0] == 'A' && n >= (int)sizeof(PktPeerAt)) DirectPeerAt(reinterpret_cast<PktPeerAt*>(buf));
+                continue;
+            }
         }
         if (n < (int)sizeof(PktHeader)) continue;
         auto h = reinterpret_cast<PktHeader*>(buf);
         int slot = h->slot;
         if (slot >= g_players || slot == g_slot) continue;  // not a peer's (our own inputs are never replaced)
-        if (h->type == 'R') {
+        if (h->type == 'Y' && n >= (int)sizeof(PktDirect)) {   // straight from them: the direct connection works that way
+            if (straight) DirectHello(slot, from, reinterpret_cast<PktDirect*>(buf)->ack != 0);
+        } else if (h->type == 'R') {
             if (!g_peerReady[slot]) Log(L"Netplay: peer with slot %d is ready", slot);
             g_peerReady[slot] = true;
         } else if (h->type == 'I' && n >= (int)offsetof(PktInputs, pads)) {
@@ -1004,11 +1105,16 @@ void Receive() {
             }
         } else if (h->type == 'P' && n >= (int)sizeof(PktPing)) {   // a ping: echoed back to its sender
             auto p = reinterpret_cast<PktPing*>(buf);
+            static unsigned long long echoed[4];   // (once: with a direct connection it comes twice)
+            if (p->sent == echoed[slot]) continue;
+            echoed[slot] = p->sent;
             PktPing echo{{'O', (BYTE)g_slot}, (BYTE)slot, p->sent};
             SendAll(&echo, sizeof(echo));
         } else if (h->type == 'O' && n >= (int)sizeof(PktPing)) {   // my ping's echo
             auto p = reinterpret_cast<PktPing*>(buf);
-            if (p->to == g_slot) {
+            static unsigned long long timed[4];   // (the first echo: the quicker way - the second comes the slower)
+            if (p->to == g_slot && p->sent != timed[slot]) {
+                timed[slot] = p->sent;
                 ULONGLONG now = GetTickCount64();
                 if (now >= p->sent && now - p->sent < 60000) {
                     InterlockedExchange(&g_pingMs[slot], (LONG)(now - p->sent));
@@ -1754,6 +1860,7 @@ void Tick() {
     struct Unlock { ~Unlock() { LeaveCriticalSection(&g_netLock); } } unlock;
     g_tickStartMs = nowMs;
     Receive();
+    DirectTick();
     if (g_phase == Phase::Boot) {
         Barrier();
     } else {

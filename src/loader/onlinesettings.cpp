@@ -87,6 +87,7 @@ void SaveFlag(const wchar_t* name, bool on) {
 
 bool g_showPing = true;   // the match shows every player's ping (top right)
 bool g_spectate = true;   // dead in Multiverse Madness: watch a teammate (splitview.cpp)
+bool g_directConn = false; // straight to players who have it on too (netplay.cpp) - off: my address stays private
 
 void SaveVibration() {
     wchar_t path[MAX_PATH];
@@ -99,12 +100,14 @@ void SaveVibration() {
 bool OnlineVibration() { return g_vibration; }
 bool OnlineShowPing() { return g_showPing; }
 bool OnlineSpectate() { return g_spectate; }
+bool OnlineDirectConnection() { return g_directConn; }
 
 // The session game, at start: the player's own settings from their lobby game.
 void OnlineSettingsInit() {
     g_vibration = SettingInt(L"Online", L"Vibration", nullptr, 1) != 0;
     g_showPing = SettingInt(L"Online", L"ShowPing", nullptr, 1) != 0;
     g_spectate = SettingInt(L"Online", L"Spectate", nullptr, 1) != 0;
+    g_directConn = SettingInt(L"Online", L"DirectConnection", L"FGUYMOD_DIRECT", 0) != 0;
     char env[256];
     if (GetEnvironmentVariableA("FGUYMOD_MY_SETTINGS", env, sizeof(env)) && Parse(env, &g_mine))
         Log(L"Settings: mine for this match: %S", env);
@@ -212,7 +215,7 @@ void OnlineSettingsWriteBack(DWORD lobbyPid) {
 enum Row {
     kAudio, kMusic, kEffects, kDialog, kCinematic, kMovies, kSubs,
     kControls, kAim, kInvert, kVibration, kReticles, kInputInfo, kKeysInfo,
-    kScreen, kDisplay, kResolution, kFrameRate, kShowPing, kSpectate,
+    kScreen, kDisplay, kResolution, kFrameRate, kShowPing, kSpectate, kDirect,
     kBack, kRowCount
 };
 
@@ -251,6 +254,8 @@ int OnlineSettingsRows(SettingsRow* out, int max) {
     put(kFrameRate, "Frame rate", v, 'i');
     put(kShowPing, "Show ping", onoff(g_showPing), 't');
     put(kSpectate, "Spectate when dead", onoff(g_spectate), 't');
+    // (the players see each other's internet address with it: off unless the player turns it on)
+    put(kDirect, "Direct connection (shows your IP to players)", onoff(g_directConn), 't');
     put(kBack, "BACK", "", 'b');
     return kRowCount;
 }
@@ -284,6 +289,9 @@ void OnlineSettingsChange(int row, int delta) {
     } else if (row == kSpectate) {
         g_spectate = !g_spectate;
         SaveFlag(L"Spectate", g_spectate);
+    } else if (row == kDirect) {
+        g_directConn = !g_directConn;
+        SaveFlag(L"DirectConnection", g_directConn);
     } else if (row == kDisplay) {
         int mode = DisplayMenuIndex();   // windowed <-> borderless (an online match never runs fullscreen)
         DisplayMenuSelect(mode == 0 ? 2 : 0);

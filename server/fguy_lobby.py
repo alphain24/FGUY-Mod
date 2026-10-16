@@ -60,6 +60,11 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
 
 Relay protocol (UDP): 'F' 'G' <8-byte session token> <slot> <payload>. The server remembers each
 slot's address from its packets and forwards every packet unchanged to the session's other players.
+Direct connections (opt-in, the players' own setting): a payload 'a' <slot> says "I'd like to connect straight to
+the others" and isn't forwarded; to every pair of the session's players who both said so, the server sends
+'F' 'G' <token> 0xFE 'A' 0xFE <other slot> <their IPv4, 4 bytes> <their port, 2 bytes, network order> - each one's
+address as the server sees it, only to the other one, only within the match. The players then try sending to
+each other straight; the relay goes on carrying everything too.
 """
 import argparse
 import asyncio
@@ -72,6 +77,7 @@ import random
 import re
 import secrets
 import socket
+import struct
 import threading
 import time
 
@@ -196,6 +202,7 @@ class Session:
         self.addrs = [None] * players
         self.heard = [0.0] * players   # when each slot's address last sent
         self.last = time.monotonic()
+        self.direct = set()            # slots that asked for direct connections (their own setting)
 
 
 class Server:
@@ -472,6 +479,19 @@ class Server:
             s.addrs[slot] = addr
         s.heard[slot] = now
         s.last = now
+        if data[11:12] == b'a':   # (they'd like direct connections: tell them, and the others who'd like them too)
+            s.direct.add(slot)
+            for other in s.direct:
+                if other != slot and s.addrs[other]:
+                    for to, about in ((slot, other), (other, slot)):
+                        ip, port = s.addrs[about]
+                        try:
+                            pkt = (b'FG' + data[2:10] + b'\xfe' + b'A\xfe' + bytes([about]) + socket.inet_aton(ip) +
+                                   struct.pack('>H', port))
+                            self.sock.sendto(pkt, s.addrs[to])
+                        except OSError:
+                            pass
+            return
         for i, a in enumerate(s.addrs):
             if a and i != slot:
                 if self.sim:
