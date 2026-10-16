@@ -200,6 +200,11 @@ def build(data):
     no_mouse = (A.Code(A.external('FGUYMOD_OnlineMatch'), A.pushes(True), A.op('Equals2'), A.op('Not')).if_true('offline') +
                 A.Code(A.pushes(False), A.op('Return')).label('offline'))
     insert_at_start(p, data, actions, 'NeedMouseControls', lambda r: no_mouse)
+    # The HUD shows keyboard prompts (the death menu's, ...) to player 1 only - offline only the first player can have
+    # the keyboard. Online any player can: the loader says who (FGUYMOD_KeyboardPlayer, the same on every PC).
+    insert_at_start(p, data, actions, 'IsKeyboardEnabled', lambda r: (
+        A.Code(A.external('FGUYMOD_OnlineMatch'), A.pushes(True), A.op('Equals2'), A.op('Not')).if_true('kbOffline') +
+        A.Code(A.external('FGUYMOD_KeyboardPlayer', Reg(r['playerIndex'])), A.op('Return')).label('kbOffline')))
     # ...so a keyboard player online sees which keys do what on the death menu (its buttons show no keys in
     # keyboard mode - they're for the mouse there): pause.as2js FGUYDeathHints.
     try:   # (the other HUD movie, PLYW, has no death menu)

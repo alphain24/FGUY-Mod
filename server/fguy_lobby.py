@@ -435,7 +435,7 @@ class Server:
         chosen = int(lobby.conf[5]) if len(lobby.conf) > 5 and lobby.conf[5].isdigit() else 0
         rate = snap_rate(chosen) if chosen else snap_rate(min(AUTO_MAX, min(m.rate for m in lobby.members)))
         tick_ms = 1000 / rate
-        delay = max(2, min(40, 1 + math.ceil((worst + 15) / tick_ms)))
+        delay = max(2, min(120, 1 + math.ceil((worst + 15) / tick_ms)))   # (the games follow the real pings from there)
         conf = ','.join(lobby.conf)
         picks = ';'.join(f'{m.char}:{m.costume}:{m.team}:{m.input}' for m in lobby.members)
         names = '|'.join(m.name for m in lobby.members)

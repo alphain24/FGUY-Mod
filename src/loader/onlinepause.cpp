@@ -113,6 +113,10 @@ bool BoxesShown() {
 int ListItemAt(SHORT cx, SHORT cy, int* cur, bool* row) {
     int x = cx * 10000 / 32767, y = cy * 10000 / 32767, item = -1;
     AcquireSRWLockShared(&g_boxLock);
+    if (GetTickCount64() - g_listAt < 300 && g_listCount > 0) {   // (the choice now: every box says it)
+        *cur = g_listBoxes[0].cur;
+        *row = g_listBoxes[0].kind == 3;
+    }
     if (GetTickCount64() - g_listAt < 300)
         for (int i = 0; i < g_listCount && item < 0; ++i) {
             const MouseBox& b = g_listBoxes[i];
@@ -229,16 +233,26 @@ void ListMouse(KbmRaw* kbm, bool click) {
     int item = ListItemAt(kbm->cursorX, kbm->cursorY, &cur, &row);
     if (!BoxesShown()) g_seqLen = g_seqPos = 0;   // (the menu went: what's left of the keys isn't for anything now)
     const int next = row ? VK_RIGHT : VK_DOWN, prev = row ? VK_LEFT : VK_UP;
-    if (g_seqPos >= g_seqLen && item >= 0) {
-        ULONGLONG now = GetTickCount64();
-        if (click) {
+    // Pointing chooses only when the pointer moves: the item it's on then. (Following it all the time, a pointer
+    // resting on an item's edge flipped the choice over and over - the chosen item draws bigger, the other smaller,
+    // so the pointer was on one, then the other.)
+    static SHORT lastX = -1, lastY = -1;
+    static int target = -1;
+    if (kbm->cursorX != lastX || kbm->cursorY != lastY) target = item;
+    if (!BoxesShown()) target = -1;   // (a menu that comes up later: only once the pointer moves over it)
+    lastX = kbm->cursorX;
+    lastY = kbm->cursorY;
+    if (g_seqPos >= g_seqLen && item >= 0 && click) {
+        g_seqLen = g_seqPos = g_seqTick = 0;
+        for (int k = cur; k != item && g_seqLen < 10; k += item > cur ? 1 : -1) g_seq[g_seqLen++] = item > cur ? next : prev;
+        g_seq[g_seqLen++] = VK_RETURN;
+        Log(L"Pause: game menu - item %d clicked (chosen %d)", item, cur);
+        target = item;
+    } else if (g_seqPos >= g_seqLen && target >= 0 && target != cur) {   // (one step, then look again: the menu says
+        ULONGLONG now = GetTickCount64();                                  //  where it is)
+        if (now >= g_hoverAt) {
             g_seqLen = g_seqPos = g_seqTick = 0;
-            for (int k = cur; k != item && g_seqLen < 10; k += item > cur ? 1 : -1) g_seq[g_seqLen++] = item > cur ? next : prev;
-            g_seq[g_seqLen++] = VK_RETURN;
-            Log(L"Pause: game menu - item %d clicked (chosen %d)", item, cur);
-        } else if (item != cur && now >= g_hoverAt) {   // (one step, then look again: the menu says where it is)
-            g_seqLen = g_seqPos = g_seqTick = 0;
-            g_seq[g_seqLen++] = item > cur ? next : prev;
+            g_seq[g_seqLen++] = target > cur ? next : prev;
             g_hoverAt = now + 150;
         }
     }
@@ -442,7 +456,9 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
             g_injectTicks = 4 * NetplayRate() / 60;
             Log(L"Pause: player %d paused the game (story co-op)", s);
         }
-    if (!g_gamePaused && here > 0 && open == here) {
+    // (two players at least: alone - the others gone - the online menu stays the menu; the game's own came up on top
+    //  of it the moment it opened)
+    if (!g_gamePaused && here > 1 && open == here) {
         g_gamePaused = true;
         g_open = false;
         g_injectSlot = first;

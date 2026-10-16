@@ -385,6 +385,9 @@ void WaitForQuiescence() {
 // Rejoining: 'J' a rejoining player asks the host for the match's record: from that tick on, how many packets (0: none -
 // just where I am), and the tick they're at. 'K' the host's answer, to that player: a stretch of ticks (each as its
 // difference from the one before), the host's sync checks in it, and where the host is.
+// 'N' a player waiting for my inputs from a tick on (a packet with them got lost): sent again. 'D' a player stopped
+// waiting for someone (10 s without their input): everyone plays on without them from that tick, and they go back to the
+// lobby (they can rejoin from there).
 #pragma pack(push, 1)
 struct PktHeader { char type; BYTE slot; };
 struct PktInputs { PktHeader h; unsigned first; BYTE count; Pad pads[16]; };
@@ -394,6 +397,8 @@ struct PktRng { PktHeader h; unsigned tick; BYTE part; int next, left; unsigned 
 struct PktRngAsk { PktHeader h; unsigned tick; };
 struct PktSkip { PktHeader h; unsigned seq; };
 struct PktLeave { PktHeader h; unsigned last; };
+struct PktResend { PktHeader h; BYTE to; unsigned from; };      // 'N': player `to`, send me your inputs again from `from`
+struct PktDropped { PktHeader h; BYTE who; unsigned from; };    // 'D': I play on without player `who` from tick `from`
 struct PktPing { PktHeader h; BYTE to; unsigned long long sent; };
 struct PktHistAsk { PktHeader h; unsigned from, at; BYTE want; };
 struct PktHist { PktHeader h; BYTE to, hashes, last; unsigned first; WORD count; unsigned hostTick, word; unsigned goneFrom[4]; };
@@ -530,6 +535,9 @@ void CompareHash(int slot, unsigned tick, unsigned hash, unsigned players, unsig
 CRITICAL_SECTION g_netLock;  // Receive() runs on the game thread, and on the render thread during scenes
 unsigned g_goneFrom[4];      // a player who left the match: idle from this tick on (0: still playing)
 volatile LONG g_pingMs[4] = {-1, -1, -1, -1};   // the round trip to each player (ms; -1: not known yet)
+const int kPingRecent = 8;
+int g_pingRecent[4][kPingRecent];    // the last few round trips to each player (2 s of them)
+unsigned g_pingAt[4];
 unsigned g_skipSeqSeen[4];
 void StartSkip(const wchar_t* why);
 
@@ -540,6 +548,7 @@ unsigned g_goneAgain[4];             //   and they left again from this tick on 
 unsigned g_lastSent = 0;             // the last tick our inputs went out for
 bool g_inSession = false;            // an online session (the lobby started it)
 void SendInputs(unsigned upTo);
+unsigned g_sentUpTo = 0;             // the furthest tick my inputs have gone out for
 
 // A player whose pad is idle at this tick on every PC (left the match, or not back yet).
 bool Idle(int s, unsigned tick) {
@@ -845,6 +854,7 @@ void CatchUpBackAt(unsigned at) {
     }
     g_sampledUpTo = upTo;
     g_paceMine = 0;   // (my pace while catching up said nothing: no 3D was drawn - measured again once I'm back)
+    g_sentUpTo = at - 1;   // (nothing of mine before it: idle for everyone)
     SendInputs(upTo);
     Log(L"Netplay: catching up - back in the match from tick %u (here %u, the match at %u)", at, g_tick, g_hostTick);
 }
@@ -884,6 +894,48 @@ void BackIn(unsigned tick) {
         g_rejoiners[s] = Rejoiner{};
         Log(L"Netplay: player %d is back in the match from tick %u", s, tick);
         if (g_inSession && s != g_slot && !g_catchUp) OverlayShow((PlayerName(s) + L" is back in the match").c_str(), 4000);
+    }
+}
+
+// A player asks for my inputs again from `from` on (one of my packets with them got lost): what I have, up to 64 ticks.
+void ResendFrom(unsigned from) {
+    if (from > g_sampledUpTo || g_sampledUpTo - from > 1024) return;
+    static ULONGLONG lastAt = 0;
+    static unsigned lastFrom = ~0u;
+    ULONGLONG now = GetTickCount64();
+    if (from == lastFrom && now - lastAt < 30) return;   // (asked again and again while it's on its way)
+    lastAt = now;
+    lastFrom = from;
+    unsigned upTo = g_sampledUpTo - from > 63 ? from + 63 : g_sampledUpTo;
+    for (unsigned first = from; first <= upTo;) {
+        unsigned last = upTo - first > 15 ? first + 15 : upTo;
+        PktInputs pk{};
+        pk.h = {'I', (BYTE)g_slot};
+        pk.first = first;
+        pk.count = (BYTE)(last - first + 1);
+        for (unsigned f = first; f <= last; ++f) pk.pads[f - first] = g_inputs[f % kRing][g_slot];
+        SendAll(&pk, (int)offsetof(PktInputs, pads) + pk.count * (int)sizeof(Pad));
+        first = last + 1;
+    }
+}
+
+// Player `by` gave up waiting for player `who` and plays on without them from tick `from`: everyone does the same - and
+// if that's me, my match is over (my game goes back to the lobby: the match can be rejoined from there).
+volatile LONG g_droppedMe = 0;
+void Dropped(int by, int who, unsigned from) {
+    if (who < 0 || who >= g_players || who >= 4 || by == who) return;
+    if (who == g_slot) {
+        if (!InterlockedExchange(&g_droppedMe, 1))
+            Log(L"Netplay: player %d stopped waiting for me at tick %u (my connection dropped) - back to the lobby", by, from);
+        return;
+    }
+    if (g_backAt[who] || g_gone[who] || (g_goneFrom[who] && g_goneFrom[who] <= from)) return;
+    if (from > g_tick) {
+        g_goneFrom[who] = from;
+        Log(L"Netplay: player %d dropped player %d from tick %u - so do I", by, who, from);
+    } else {   // (past it here already: from now on)
+        g_gone[who] = true;
+        Log(L"Netplay: player %d dropped player %d from tick %u (here %u) - so do I", by, who, from, g_tick);
     }
 }
 
@@ -933,6 +985,12 @@ void Receive() {
             RngReceive(reinterpret_cast<PktRng*>(buf));
         } else if (h->type == 'Q' && n >= (int)sizeof(PktRngAsk)) {
             RngAsked(reinterpret_cast<PktRngAsk*>(buf)->tick);
+        } else if (h->type == 'N' && n >= (int)sizeof(PktResend)) {   // my inputs again, from that tick
+            auto p = reinterpret_cast<PktResend*>(buf);
+            if (p->to == g_slot) ResendFrom(p->from);
+        } else if (h->type == 'D' && n >= (int)sizeof(PktDropped)) {
+            auto p = reinterpret_cast<PktDropped*>(buf);
+            Dropped(slot, p->who, p->from);
         } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
             auto p = reinterpret_cast<PktLeave*>(buf);
             if (g_backAt[slot] && p->last + 1 >= g_backAt[slot]) {   // rejoining, and gone again from then
@@ -952,7 +1010,10 @@ void Receive() {
             auto p = reinterpret_cast<PktPing*>(buf);
             if (p->to == g_slot) {
                 ULONGLONG now = GetTickCount64();
-                if (now >= p->sent && now - p->sent < 60000) InterlockedExchange(&g_pingMs[slot], (LONG)(now - p->sent));
+                if (now >= p->sent && now - p->sent < 60000) {
+                    InterlockedExchange(&g_pingMs[slot], (LONG)(now - p->sent));
+                    g_pingRecent[slot][g_pingAt[slot]++ % kPingRecent] = (int)(now - p->sent);
+                }
             }
         } else if (h->type == 'J' && n >= (int)sizeof(PktHistAsk)) {   // a player rejoining asks for the match so far
             if (g_slot == 0 && g_inSession) ServeHistory(slot, reinterpret_cast<PktHistAsk*>(buf));
@@ -985,13 +1046,19 @@ bool HaveAll(unsigned tick) {
 
 void SendInputs(unsigned upTo) {
     g_lastSent = upTo;
-    PktInputs p{};
-    p.h = {'I', (BYTE)g_slot};
     unsigned first = upTo >= 7 ? upTo - 7 : 0;  // resend the last 8 ticks (packet loss; ~27 KB/s per player)
-    p.first = first;
-    p.count = (BYTE)(upTo - first + 1);
-    for (unsigned f = first; f <= upTo; ++f) p.pads[f - first] = g_inputs[f % kRing][g_slot];
-    SendAll(&p, (int)offsetof(PktInputs, pads) + p.count * (int)sizeof(Pad));
+    if (g_sentUpTo + 1 < first) first = g_sentUpTo + 1;   // and every tick not sent yet (the delay grew a lot at once)
+    if (upTo > g_sentUpTo) g_sentUpTo = upTo;
+    while (first <= upTo) {   // (16 ticks a packet)
+        unsigned last = upTo - first > 15 ? first + 15 : upTo;
+        PktInputs p{};
+        p.h = {'I', (BYTE)g_slot};
+        p.first = first;
+        p.count = (BYTE)(last - first + 1);
+        for (unsigned f = first; f <= last; ++f) p.pads[f - first] = g_inputs[f % kRing][g_slot];
+        SendAll(&p, (int)offsetof(PktInputs, pads) + p.count * (int)sizeof(Pad));
+        first = last + 1;
+    }
 }
 
 // ---- local input ----------------------------------------------------------------------------------------
@@ -1665,10 +1732,11 @@ void Tick() {
                 Log(L"Netplay: check tick %u random numbers %08x", g_tick, g_hashed[k].rng);
             }
         }
-        {   // a ping to everyone once a second (the round trip: the match shows it - FGUYMOD_NetStats)
+        {   // a ping to everyone 4 times a second (the round trip: the input delay follows it, the match shows it -
+            // FGUYMOD_NetStats)
             static ULONGLONG lastPing = 0;
             ULONGLONG now = GetTickCount64();
-            if (now - lastPing >= 1000) {
+            if (now - lastPing >= 250) {
                 lastPing = now;
                 PktPing ping{{'P', (BYTE)g_slot}, 0, now};
                 SendAll(&ping, sizeof(ping));
@@ -1694,9 +1762,43 @@ void Tick() {
         delayNow = (int)std::ceil(g_delay * (double)g_rate / g_rateTarget - 1e-6);
         if (delayNow < 2) delayNow = 2;
         if (delayNow > 40) delayNow = 40;
+    }
+    // Online the delay follows the connection: my input must reach everyone before they play its tick - half the
+    // worst round trip of the last 2 s, plus room for its ups and downs - at this tick's rate. Up at once (a late
+    // input holds everyone up), down only after 3 s of better. The lobby's delay (above) until the first pings are
+    // back. (Only my own inputs depend on it: it needn't be the same on every PC.)
+    {
+        int worst = -1;
+        for (int s = 0; s < g_players && s < 4; ++s) {
+            if (s == g_slot || Idle(s, g_tick) || g_pingAt[s] == 0) continue;
+            for (int k = 0; k < kPingRecent && k < (int)g_pingAt[s]; ++k)   // (over 1.5 s: their game was busy - a load)
+                if (g_pingRecent[s][k] > worst && g_pingRecent[s][k] <= 1500) worst = g_pingRecent[s][k];
+        }
+        static int held = 0;
+        static ULONGLONG lowSince = 0;
+        // (from the level on: while the games boot and load, a busy game answers late and the pings say nothing)
+        if (g_inSession && NetplayLevelLive() && worst >= 0 && g_rate > 0) {
+            double needMs = worst * 0.6 + 20;
+            int want = (int)std::ceil(needMs * g_rate / 1000.0) + 1;
+            if (want < 2) want = 2;
+            if (want > 160) want = 160;
+            ULONGLONG t = GetTickCount64();
+            if (!held) held = delayNow;   // (from the lobby's)
+            if (want > held) {
+                held = want;
+                lowSince = 0;
+            } else if (want < held) {   // (a step a tick: the ticks catch up with what's already been sent)
+                if (!lowSince) lowSince = t;
+                else if (t - lowSince >= 3000) --held;
+            } else {
+                lowSince = 0;
+            }
+            delayNow = held;
+        }
         static int lastD = 0, logged = 0;
-        if (delayNow != lastD && ++logged <= 20)
-            Log(L"Netplay: tick %u - my input delay %d ticks (%.0f ms)", g_tick, delayNow, delayNow * 1000.0 / g_rate);
+        if (delayNow != lastD && ++logged <= 60)
+            Log(L"Netplay: tick %u - my input delay %d ticks (%.0f ms; worst round trip %d ms)", g_tick, delayNow,
+                delayNow * 1000.0 / g_rate, worst);
         lastD = delayNow;
     }
     unsigned future = g_tick + delayNow - 1;
@@ -1725,7 +1827,7 @@ void Tick() {
     LARGE_INTEGER s0, s1, s2;
     Real_QPC(&s0);
     ULONGLONG waitFrom = GetTickCount64(), until = waitFrom + 10000, nextNotice = waitFrom + 400;
-    ULONGLONG nextResend = GetTickCount64() + 5;
+    ULONGLONG nextResend = GetTickCount64() + 5, nextAsk = 0;
     bool noticed = false, lostHost = false, fromRecord = false;
     Row row{};
     if (g_catchUp) fromRecord = CatchUpInputs(&row);
@@ -1733,6 +1835,16 @@ void Tick() {
         Receive();
         ULONGLONG now = GetTickCount64();
         if (now >= nextResend) { SendInputs(future); nextResend = now + 5; }
+        if (now - waitFrom >= 150 && now >= nextAsk) {   // held up a while: a packet with their inputs may be lost
+            nextAsk = now + 100;
+            int q = g_tick % kRing;
+            for (int s = 0; s < g_players && s < 4; ++s)
+                if (s != g_slot && !Idle(s, g_tick) && (!g_have[q][s] || g_haveTick[q][s] != g_tick)) {
+                    PktResend ask{{'N', (BYTE)g_slot}, (BYTE)s, g_tick};
+                    SendAll(&ask, sizeof(ask));
+                }
+        }
+        if (g_droppedMe) break;   // (they've given up on me: below)
         if (g_inSession && now >= nextNotice) {   // held up: say who we're waiting for (the game draws nothing now)
             nextNotice = now + 250;
             noticed = true;
@@ -1752,6 +1864,8 @@ void Tick() {
                 if (!g_have[q][s] || g_haveTick[q][s] != g_tick) {
                     g_gone[s] = true;
                     Log(L"Netplay: no input from player %d for 10 s at tick %u - they left; their character stays idle", s, g_tick);
+                    PktDropped d{{'D', (BYTE)g_slot}, (BYTE)s, g_tick};   // (everyone - them too: they're out)
+                    for (int k = 0; k < 4; ++k) SendAll(&d, sizeof(d));
                     if (g_inSession) OverlayShow((PlayerName(s) + L" left the match").c_str(), 5000);
                     if (s == 0 && g_slot != 0) lostHost = true;
                 }
@@ -1762,6 +1876,16 @@ void Tick() {
         Real_Sleep(0);
     }
     if (noticed) OverlayHide();
+    if (g_droppedMe && g_inSession && !HaveAll(g_tick)) {   // (the others play on without me: their match isn't mine any
+        for (int s = 0; s < g_players && s < 4; ++s)        //  more - mine goes on idle until the level quits)
+            if (s != g_slot) g_gone[s] = true;
+        HaveAll(g_tick);
+    }
+    if (g_droppedMe == 1 && g_inSession) {
+        InterlockedExchange(&g_droppedMe, 2);
+        OverlayShow(L"Your connection to the match dropped - back to the lobby, where you can rejoin it", 8000);
+        OnlinePauseForceQuit();
+    }
     if (lostHost && g_inSession) {   // (a guest without the host: the match can't go on - back to its lobby, to rejoin)
         Log(L"Netplay: lost the connection to the host - back to the lobby (the match can be rejoined from there)");
         OverlayShow(L"Lost the connection to the match - back to the lobby, where you can rejoin it", 8000);
