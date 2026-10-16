@@ -592,6 +592,10 @@ const char* OnlinePauseRematch() {
 }
 
 // Out of sync (netplay.cpp, the same check on every PC): leave the match - back to the lobby.
+// netplay.cpp (my view turning at once): does a menu have my input now - my pause menu, the game's own pause, a HUD
+// menu (death, weapons wheel...), the end of the match?
+bool OnlinePauseMenusUp() { return g_open || g_gamePaused || BoxesShown() || ResultsShown(); }
+
 void OnlinePauseForceQuit() {
     g_open = false;
     InterlockedExchange(&g_leave, 1);   // (the HUD's next poll leaves the session and quits the level)

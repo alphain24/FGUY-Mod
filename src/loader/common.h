@@ -98,6 +98,10 @@ bool OnlineShowPing();                 // onlinesettings.cpp: the match shows th
 void SplitViewHudHas4Way(bool has);    //   the level's HUD: does it have the 4-way layout? (the story's has none)
 int SplitViewMyViewport();             //   online: my player's viewport (-1: offline / not in the level yet)
 int SplitViewShownViewport();          //   the one shown (spectating: a teammate's)
+void SplitViewPredict(bool on, float turn, float x, float z);   //   netplay: my view's turn still to come (display only)
+unsigned NetplayShownTick();           // netplay.cpp: the tick the frame being drawn shows
+float NetplayModelTurn(unsigned from, unsigned to);   //   the model's turn of my inputs of ticks (from, to]
+bool OnlinePauseMenusUp();             // onlinepause.cpp: a menu has my input (mine, the game's pause, a HUD menu)
 void SplitViewSpectateTick(int rate);  //   netplay, every tick: dead in Multiverse Madness - spectate
 const wchar_t* SplitViewSpectating();  //   FGUYMOD_Spectating: whose view ("" mine)
 float NetplayPlayerHealth(const unsigned char* player);   // netplay.cpp: a player's health (0: down)

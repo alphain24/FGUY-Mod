@@ -354,6 +354,101 @@ bool PatchJumpPadded(uintptr_t at, const unsigned char* expected, size_t n, void
     return true;
 }
 
+// ---- my camera turns at once (online: the input delay) ---------------------------------------------------------
+// Online my input reaches the game a little later (netplay.cpp's input delay - a quarter second on a long connection),
+// and with it the camera's turn: the mouse felt like it dragged. The view on my screen doesn't wait: it's drawn turned
+// already by what my inputs not played yet will turn it (netplay.cpp works that out every tick - SplitViewPredict),
+// orbiting my player as the game's own camera does; the game's camera then gets there itself as those inputs play.
+// Only the drawing changes - the game, its camera, my shots stay the match's.
+// The render thread works out each camera's matrices from its place and turn at +0x94 (3 x 4: the axes, the place
+// last), which the game hands it every frame: 0x48db10 (thiscall, the camera), starting
+//   push ebp; mov ebp, esp; mov eax, [ebp+8]
+// We turn that +0x94 first, for my view's two cameras. The game's camera never looks up or down (it stays level: the
+// reticle moves instead), so the turn is about the up axis only.
+const uintptr_t kCamUpdate = 0x48db10;   // back at 0x48db16
+const unsigned char kCamUpdateStart[] = {0x55, 0x8b, 0xec, 0x8b, 0x45, 0x08};
+volatile LONG g_predOn = 0;
+float g_predTurn = 0, g_predX = 0, g_predZ = 0;   // radians still to come, around my player at (x, z)
+SRWLOCK g_predLock = SRWLOCK_INIT;
+struct Predicted { float base[12], out[12]; bool have; };
+Predicted g_predicted[2];
+
+void __cdecl PredictCamera(void* camera) {
+    if (!g_predOn) return;
+    int v = ShownViewport();
+    if (v < 0 || v != MyViewport()) return;   // (spectating: their view as it is)
+    int k = camera == Camera(v, 0) ? 0 : camera == Camera(v, 1) ? 1 : -1;
+    if (k < 0) return;
+    float* m = reinterpret_cast<float*>(static_cast<unsigned char*>(camera) + 0x94);
+    Predicted& p = g_predicted[k];
+    // How far off the model is (netplay.cpp's: measured at one frame rate - the game's turn per count isn't the same at
+    // every one): each new place and turn from the game against the model's turn of the inputs played since the last.
+    static float gain = 1, seen = 0, modelled = 0, lastAngle = 0;
+    static unsigned lastTick = 0;
+    if (!p.have || memcmp(m, p.out, sizeof(p.out)) != 0) {   // (a new one: the game's)
+        memcpy(p.base, m, sizeof(p.base));
+        if (k == 0) {
+            float angle = std::atan2(p.base[2], p.base[0]);
+            unsigned t = NetplayShownTick();
+            if (lastTick && t > lastTick && t - lastTick < 32) {
+                float model = NetplayModelTurn(lastTick, t), turned = angle - lastAngle;
+                while (turned > 3.14159265f) turned -= 6.2831853f;
+                while (turned < -3.14159265f) turned += 6.2831853f;
+                if (std::fabs(model) > 0.003f && std::fabs(turned) < 1.0f) {
+                    seen = seen * 0.97f + turned;
+                    modelled = modelled * 0.97f + model;
+                    if (std::fabs(modelled) > 0.05f) {
+                        float g = seen / modelled;
+                        gain = g < 0.2f ? 0.2f : g > 3.0f ? 3.0f : g;
+                    }
+                }
+            }
+            lastAngle = angle;
+            lastTick = t;
+        }
+    }
+    AcquireSRWLockShared(&g_predLock);
+    float turn = g_predTurn * gain, px = g_predX, pz = g_predZ;
+    ReleaseSRWLockShared(&g_predLock);
+    memcpy(p.out, p.base, sizeof(p.out));
+    if (turn != 0) {   // each axis's (x, z), and the place's around my player, turned by `turn`
+        float c = std::cos(turn), s = std::sin(turn);
+        for (int a = 0; a < 3; ++a) {
+            float x = p.base[a], z = p.base[8 + a];
+            p.out[a] = x * c + z * s;
+            p.out[8 + a] = -x * s + z * c;
+        }
+        float x = p.base[3] - px, z = p.base[11] - pz;
+        p.out[3] = px + x * c + z * s;
+        p.out[11] = pz - x * s + z * c;
+    }
+    memcpy(m, p.out, sizeof(p.out));
+    p.have = true;
+    static int logged = 0;   // (the first turns: the game's angle and the one drawn, degrees)
+    static float lastTurn = 0;
+    if (k == 0 && std::fabs(turn - lastTurn) > 0.005f && logged < 12) {
+        ++logged;
+        Log(L"SplitView: view drawn turned %.2f degrees ahead (the game's camera at %.2f, drawn at %.2f; model x %.2f)", turn * 57.2958f,
+            std::atan2(p.base[2], p.base[0]) * 57.2958f, std::atan2(p.out[2], p.out[0]) * 57.2958f, gain);
+    }
+    if (k == 0) lastTurn = turn;
+}
+
+__declspec(naked) void CamUpdateStub() {
+    __asm {
+        pushad
+        push ecx
+        call PredictCamera
+        add esp, 4
+        popad
+        push ebp
+        mov ebp, esp
+        mov eax, dword ptr [ebp + 8]
+        push 0x48db16      // back
+        ret
+    }
+}
+
 // ---- players' names ------------------------------------------------------------------------------------------
 // On PC players have no gamertags (0x5549b0 "has a name" is a stub that says no), so the game names them
 // sprintf(buf, "=MNU_PLAYER%d", player + 1) - "PLAYER 2" over their heads and in the results. Online those two
@@ -475,6 +570,17 @@ void SplitViewMenuCheck() {
     }, nullptr, 0, nullptr));
 }
 
+// netplay.cpp, every tick: how far my view still turns from my inputs not played yet (radians - 0, or `on` false:
+// as it is), around my player at (x, z).
+void SplitViewPredict(bool on, float turn, float x, float z) {
+    AcquireSRWLockExclusive(&g_predLock);
+    g_predTurn = on ? turn : 0.0f;
+    g_predX = x;
+    g_predZ = z;
+    ReleaseSRWLockExclusive(&g_predLock);
+    InterlockedExchange(&g_predOn, on ? 1 : 0);
+}
+
 // FGUYMOD_MenuCamera: where the menus' 3D camera (view 0's) is - "x|y|z". The ONLINE screens check it's the Store's
 // (sometimes the Store camera didn't take: the lobby's panel showed the empty living room).
 const char* SplitViewMenuCamera() {
@@ -512,5 +618,9 @@ void InitSplitView() {
             PatchJumpPadded(kScenePass, kScenePassStart, sizeof(kScenePassStart), (void*)ScenePassStub) &&
             PatchJumpPadded(kEffectsPass, kEffectsPassStart, sizeof(kEffectsPassStart), (void*)EffectsPassStub))
             Log(L"SplitView: the other players' views aren't drawn");
+        // ([Online] InstantCamera=0: my view turns only as the match's camera does)
+        if (online && SettingInt(L"Online", L"InstantCamera", L"FGUYMOD_INSTANTCAMERA", 1) != 0 &&
+            PatchJumpPadded(kCamUpdate, kCamUpdateStart, sizeof(kCamUpdateStart), (void*)CamUpdateStub))
+            Log(L"SplitView: my view turns at once (not after the input delay)");
     }
 }

@@ -1686,6 +1686,60 @@ void CheckHostHash(unsigned tick, const Hashed& mine) {
     }
 }
 
+// ---- my view turns at once (display only) ----------------------------------------------------------------------
+// The frame being drawn now shows the match with this tick's input taken in already; my inputs after it, up to the
+// last one sampled, haven't turned the camera yet. How far they will (radians, the camera's own sense), for splitview.cpp to
+// draw my view turned that much already. Measured in the game (keyboard / mouse; sensitivity 1): 0.1069 degrees a
+// mouse count up to 20 counts a tick, a little more per count above that (0.1203 at 40, 0.1337 at 60), and the game
+// takes 60 a tick at most; times the player's sensitivity (0xbad810, by list index). The camera never looks up or
+// down. Controllers: not yet (their turn speeds up the longer the stick is held).
+float MouseTurnDegrees(int counts) {
+    int a = counts < 0 ? -counts : counts;
+    if (a > 60) a = 60;
+    float per = 0.1069f + (a > 20 ? 0.000668f * (a - 20) : 0.0f);
+    return (counts < 0 ? -1.0f : 1.0f) * a * per;
+}
+
+// The model's turn of each tick's input of mine (radians, by tick in the ring), and the tick the frame being drawn
+// shows: splitview.cpp compares the game's camera with them, frame by frame, to learn how far off the model is (the
+// game's turn per count isn't the same at every frame rate).
+float g_turnByTick[kRing];
+volatile LONG g_shownTick = 0;
+
+void PredictMyView() {
+    bool on = !g_catchUp && NetplayLevelLive() && KbmIsKeyboardSlot(g_slot) && !OnlinePauseMenusUp();
+    float turn = 0, x = 0, z = 0;
+    // (the frame drawn meanwhile has this tick's input in it already - measured: one tick's turn too far otherwise)
+    InterlockedExchange(&g_shownTick, (LONG)g_tick);
+    for (unsigned t = g_tick + 1; t <= g_sampledUpTo && t - g_tick < 512; ++t) g_turnByTick[t % kRing] = 0;   // (below, if on)
+    if (on) {
+        auto list = *reinterpret_cast<unsigned char* volatile*>(0xbad988);
+        unsigned char* me = nullptr;
+        float sensitivity = 0;
+        int count = list && !IsBadReadPtr(list, 0x24) ? *reinterpret_cast<int*>(list + 0x20) : 0;
+        for (int i = 0; i < count && i < 8; ++i) {
+            auto p = reinterpret_cast<unsigned char**>(list)[i];
+            if (p && LivePlayer(p) && *reinterpret_cast<int*>(p + 0xdf8) == g_slot) {
+                me = p;
+                sensitivity = reinterpret_cast<const float*>(0xbad810)[i];
+            }
+        }
+        const float* pos = me ? PlayerPos(me) : nullptr;
+        on = pos && PlayerHealth(me) > 0 && sensitivity > 0 && sensitivity <= 4;
+        if (on) {
+            for (unsigned t = g_tick + 1; t <= g_sampledUpTo && t - g_tick < 512; ++t) {
+                // (the camera's angle goes down as the mouse goes right)
+                float r = -MouseTurnDegrees(g_inputs[t % kRing][g_slot].kbm.dx) * sensitivity * 3.14159265f / 180.0f;
+                g_turnByTick[t % kRing] = r;
+                turn += r;
+            }
+            x = pos[0];
+            z = pos[2];
+        }
+    }
+    SplitViewPredict(on, turn, x, z);
+}
+
 // Called on the main thread at the start of every game tick (its first controller poll).
 void Tick() {
     LONGLONG paced = PaceTick();
@@ -2082,6 +2136,7 @@ void Tick() {
         }
     }
     KbmApply(kbm, g_players);  // keyboard / mouse players' devices, from their raw input (kbm.cpp)
+    if (g_inSession) PredictMyView();   // my view turns at once on my screen (splitview.cpp; display only)
     Real_QPC(&s1);
     {   // this PC's own pace: a quarter second's worth of ticks, minus the waiting (for the others' inputs, and
         // for the tick's time to come round)
@@ -2304,6 +2359,14 @@ void NetplayLogStacks() {
     Log(L"Netplay: game thread %lu:", g_mainThread);
     LogStack(g_mainThread);
     if (g_renderThread) { Log(L"Netplay: render thread %lu:", g_renderThread); LogStack(g_renderThread); }
+}
+// splitview.cpp (my view turning at once): the tick the frame being drawn shows, and the model's turn of my inputs of
+// the ticks after `from` up to `to`.
+unsigned NetplayShownTick() { return (unsigned)g_shownTick; }
+float NetplayModelTurn(unsigned from, unsigned to) {
+    float sum = 0;
+    for (unsigned t = from + 1; t <= to && to - t < kRing / 2; ++t) sum += g_turnByTick[t % kRing];
+    return sum;
 }
 bool NetplayLevelLive() { return g_enabled && g_liveTick && g_tick >= g_liveTick; }
 bool NetplayStoryCoop() { return g_enabled && g_sessionStory; }
