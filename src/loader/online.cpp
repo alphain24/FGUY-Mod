@@ -637,6 +637,10 @@ void StartSession(const std::vector<std::string>& f) {
         char forced[4];
         bool free = (conf.size() > 6 && conf[6] == "1") || GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", forced, sizeof(forced)) > 0;
         set(L"FGUYMOD_NET_FREE", free ? "1" : "0");
+        // rejoining a free-running match: no catching up on the host's record - the session game loads the level on its
+        // own and joins in (netplay.cpp FreeStart)
+        set(L"FGUYMOD_NET_REJOIN", g_catchUpStart && free ? "1" : "0");
+        if (g_catchUpStart && free) set(L"FGUYMOD_NET_CATCHUP", "0");
     }
     char testConf[64];   // test knob: FGUYMOD_TEST_CONF=mode,map,time,score,ff overrides the rules (every copy alike)
     if (GetEnvironmentVariableA("FGUYMOD_TEST_CONF", testConf, sizeof(testConf))) set(L"FGUYMOD_SESSION", testConf + ("|" + f[8]));

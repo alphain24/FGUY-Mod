@@ -8,8 +8,14 @@ param(
     [switch]$Story,
     [int]$Before = 40,    # seconds of match before the guest leaves
     [int]$After = 30,     # seconds of match after they're back
-    [switch]$NoCrash      # only the quit-and-rejoin part
+    [switch]$NoCrash,     # only the quit-and-rejoin part
+    [switch]$Free         # the new netcode (a free-running match): rejoining loads the level and joins in, no catching up
 )
+# what the logs say, by netcode
+$rejoinsText = if ($Free) { 'rejoining a free-running match' } else { 'rejoins a running match' }
+$caughtText = if ($Free) { 'rejoined the match' } else { 'caught up with the match' }
+$backText = if ($Free) { 'rejoined the match' } else { 'is back in the match from tick' }
+$goneText = if ($Free) { 'they left; their character stays idle' } else { 'they left; their character stays idle' }
 $P = Split-Path $PSScriptRoot -Parent
 function Log([int]$id) { Join-Path $GameDir "FGUYMod\FGUYMod_$id.log" }
 function Count([int]$id, [string]$text) { if (-not (Test-Path (Log $id))) { return 0 }; @(Select-String -Path (Log $id) -Pattern $text -SimpleMatch).Count }
@@ -41,11 +47,11 @@ function Rejoin([int]$cOwn, [int]$times) {
     $until = (Get-Date).AddSeconds(30); $new = 0
     while (-not $new -and (Get-Date) -lt $until) {
         Start-Sleep 1
-        $new = Pids | Where-Object { $before -notcontains $_ -and (Has $_ "rejoins a running match") } | Select-Object -Last 1
+        $new = Pids | Where-Object { $before -notcontains $_ -and (Has $_ $rejoinsText) } | Select-Object -Last 1
     }
     Step "a new session game rejoins ($new)" ([bool]$new)
     $t0 = Get-Date
-    $ok = WaitFor $new "caught up with the match" 600
+    $ok = WaitFor $new $caughtText 600
     if (-not $ok) { Lines $new "Netplay: (couldn't|catching up)" 6 }
     Step ("it caught up, in {0:N0} s" -f ((Get-Date) - $t0).TotalSeconds) $ok
     Lines $new "caught up|back in the match from|rejoins the match" 4
@@ -65,9 +71,11 @@ function SyncAfter([int]$h, [int]$c, [int]$seconds) {
 & "$PSScriptRoot\stop_tests.ps1" -GameDir $GameDir
 & "$PSScriptRoot\wait_gpu.ps1"
 $env:FGUYMOD_NET_SCRIPT = "1"   # (both players move about by themselves - the test bot's script)
+if ($Free) { $env:FGUYMOD_TEST_NETFREE = "1" }
 $extra = @{}; if ($Story) { $extra.Story = $true }
-$out = powershell -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\test_online_match.ps1" -GameDir $GameDir -Seconds 2 @extra
+$out = powershell -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\test_online_match.ps1" -GameDir $GameDir -Seconds 2 -Controls "controller,controller" @extra   # (the script drives pads)
 Remove-Item Env:FGUYMOD_NET_SCRIPT
+Remove-Item Env:FGUYMOD_TEST_NETFREE -ErrorAction SilentlyContinue
 $out | Where-Object { $_ -match "^lobby copies: host (\d+), guest (\d+)" } | Out-Null
 $hOwn = [int]$Matches[1]; $cOwn = [int]$Matches[2]
 $sess = @(Pids | Where-Object { $_ -ne $hOwn -and $_ -ne $cOwn -and (Get-Process -Id $_ -ErrorAction SilentlyContinue) })
@@ -80,7 +88,7 @@ Start-Sleep $Before
 Pipe $c "netleave"
 Step "the guest leaves the match" (WaitFor $h "left the match (back to the lobby)" 20)
 Rejoin $cOwn 1; $c2 = $script:rejoined
-Step "the host has them back" (WaitFor $h "is back in the match from tick" 20)
+Step "the host has them back" (WaitFor $h $backText 20)
 Lines $h "is rejoining|nearly caught up|is back in the match" 3
 SyncAfter $h $c2 $After
 if ($NoCrash) { return }
@@ -90,5 +98,5 @@ Pipe $c2 "crashexit"
 Step "the guest's own game sees it close" (WaitFor $cOwn "closed unexpectedly" 20)
 Step "the host plays on without them" (WaitFor $h "they left; their character stays idle" 20)
 Rejoin $cOwn 2; $c3 = $script:rejoined
-Step "the host has them back again" (WaitFor $h "is back in the match from tick" 20 2)
+Step "the host has them back again" (WaitFor $h $backText 20 2)
 SyncAfter $h $c3 $After

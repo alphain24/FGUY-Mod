@@ -134,6 +134,7 @@ srand_t Real_srand;
 
 bool g_allClock = false;   // research: FGUYMOD_TEST_ALLCLOCK - every thread but the render thread on the fixed clock
 extern bool g_free;        // the match runs free (no lockstep): real time, shifted (below)
+extern bool g_freeRejoin;  // (rejoining a free-running match: boots on its own)
 bool FixedClock() {
     if (g_phase == Phase::Off || g_free) return false;
     DWORD me = GetCurrentThreadId();
@@ -1031,6 +1032,7 @@ void Dropped(int by, int who, unsigned from) {
 }
 
 void FreeInputs(int s, const PktInputs* p, int count);   // the free-running match (below, before Tick)
+void FreeBack(int s);
 struct PktState;
 struct PktHit;
 void FreeState(int s, const PktState* p);
@@ -1083,6 +1085,7 @@ void Receive() {
                 g_haveTick[r][slot] = f;
             }
         } else if (h->type == 'H' && n >= (int)sizeof(PktHash)) {
+            if (g_free) continue;   // (sync checks: lockstep only - a rejoining game sends them while it loads)
             auto p = reinterpret_cast<PktHash*>(buf);
             int k = (p->tick / g_syncEvery) % 8;
             g_peerHash[slot][k] = p->hash;
@@ -1101,6 +1104,8 @@ void Receive() {
         } else if (h->type == 'D' && n >= (int)sizeof(PktDropped)) {
             auto p = reinterpret_cast<PktDropped*>(buf);
             Dropped(slot, p->who, p->from);
+        } else if (h->type == 'B') {   // a player rejoined a free-running match (a new game: their numbers start over)
+            if (g_free) FreeBack(slot);
         } else if (h->type == 'X' && n >= kPktStateSize) {
             if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf));
         } else if (h->type == 'Z' && n >= kPktHitSize) {
@@ -1595,6 +1600,19 @@ void Barrier() {
             L"(slot %d of %d players, input delay %d)", g_slot, g_players, g_delay);
         return;
     }
+    if (g_freeRejoin) {   // rejoining a free-running match: on my own until my level is up (FreeStart)
+        for (int s = 0; s < g_players && s < 4; ++s) if (s != g_slot) g_gone[s] = true;
+        for (unsigned f = 0; f < (unsigned)g_delay; ++f) {
+            g_inputs[f % kRing][g_slot] = Pad{};
+            g_have[f % kRing][g_slot] = true;
+            g_haveTick[f % kRing][g_slot] = f;
+        }
+        g_phase = Phase::Running;
+        CloseHandle(CreateThread(nullptr, 0, Watchdog, nullptr, 0, nullptr));
+        Log(L"Netplay: rejoining a free-running match - loading the level on my own first (slot %d of %d players)", g_slot,
+            g_players);
+        return;
+    }
     // Hold the game's first tick until every peer has reached it.
     Log(L"Netplay: first tick - waiting for the other players");
     g_peerReady[g_slot] = true;
@@ -1881,6 +1899,12 @@ bool g_freeWanted = false;
 bool g_free = false;
 unsigned g_freeFrom = 0;
 bool g_freeHostGone = false;                   // the host left: back to the lobby (once)
+// Rejoining a free-running match (FGUYMOD_NET_REJOIN, online.cpp): this game boots and loads the level on its own -
+// everyone else idle in it, no waiting for them (they're far into the match) - and from 2 s after its level is up joins
+// the match: 'B' tells the others I'm back (they start over with my numbers: this is a new game).
+bool g_freeRejoin = false;
+unsigned g_freeRejoinHud = 0;                  // the tick my level's HUD came up (rejoining)
+ULONGLONG g_freeBackUntil = 0;                 // rejoined: say 'B' until then (packets get lost)
 const unsigned kFreeAfterTicks = 120;          // after everyone's level is up (at the lockstep's 60)
 
 struct Remote {
@@ -1889,6 +1913,7 @@ struct Remote {
     WORD buttonsSince;                         // what went down since I last played their input
     BYTE keysSince[32], mouseSince;
     ULONGLONG heardAt;                         // their last packet
+    ULONGLONG backAt;                          // when they rejoined (their 'B')
     bool haveState;
     unsigned stateSeq;
     float pos[3], yaw, pitch, health;
@@ -2043,6 +2068,20 @@ char __fastcall Free_TakeDamage(void* self, void*, void* info) {
     return r;
 }
 
+// A player rejoined ('B'): a new game of theirs - its counts start over. Their character plays again here.
+void FreeBack(int s) {
+    if (s == g_slot || s < 0 || s >= 4) return;
+    Remote& r = g_remote[s];
+    ULONGLONG now = GetTickCount64();
+    if (r.backAt && now - r.backAt < 10000) { r.heardAt = now; return; }   // (the same "I'm back", again)
+    r = Remote{};
+    r.heardAt = r.backAt = now;
+    g_gone[s] = false;
+    g_lastHitOn[s] = 0;
+    Log(L"Netplay: free - player %d rejoined the match", s);
+    if (g_inSession) OverlayShow((PlayerName(s) + L" is back in the match").c_str(), 4000);
+}
+
 void FreeApplyHits() {
     std::vector<PktHit> hits;
     hits.swap(g_hitsIn);
@@ -2169,6 +2208,12 @@ void FreeStart() {
     }
     g_free = true;
     g_freeFrom = g_tick;
+    if (g_freeRejoin) {   // back in: everyone plays again here, and they hear I'm back
+        for (int s = 0; s < g_players && s < 4; ++s) if (s != g_slot) g_gone[s] = false;
+        g_freeBackUntil = now + 3000;
+        if (!g_liveTick) g_liveTick = g_tick;
+        Log(L"Netplay: tick %u - rejoined the match", g_tick);
+    }
     SplitViewPredict(false, 0, 0, 0);   // (no input delay to make up for any more)
     Log(L"Netplay: tick %u - the match runs free from here: no lockstep, real clock, my own frame rate", g_tick);
 }
@@ -2187,6 +2232,14 @@ void FreeTick() {
     DirectTick();
     ++g_tick;   // (just a count of my frames now)
     ULONGLONG nowMs = GetTickCount64();
+    {
+        static ULONGLONG lastBack = 0;   // (rejoined: "I'm back", 10 times a second for a while)
+        if (nowMs < g_freeBackUntil && nowMs - lastBack >= 100) {
+            lastBack = nowMs;
+            PktHeader b{'B', (BYTE)g_slot};
+            SendAll(&b, sizeof(b));
+        }
+    }
     {
         static ULONGLONG lastPing = 0;
         if (nowMs - lastPing >= 250) {
@@ -2269,7 +2322,13 @@ void FreeTick() {
 // Called on the main thread at the start of every game tick (its first controller poll).
 void Tick() {
     if (g_free) { FreeTick(); return; }
-    if (g_freeWanted && g_inSession && !g_sessionStory && !g_catchUp && g_liveTick && g_tick >= g_liveTick + kFreeAfterTicks) {
+    if (g_freeRejoin && !g_freeRejoinHud && HandoffHudUp()) {
+        g_freeRejoinHud = g_tick;
+        Log(L"Netplay: rejoining - my level is up (tick %u)", g_tick);
+    }
+    bool freeNow = g_freeRejoin ? g_freeRejoinHud && g_tick >= g_freeRejoinHud + kFreeAfterTicks
+                                : g_liveTick && g_tick >= g_liveTick + kFreeAfterTicks;
+    if (g_freeWanted && g_inSession && !g_sessionStory && !g_catchUp && freeNow) {
         EnterCriticalSection(&g_netLock);
         FreeStart();
         LeaveCriticalSection(&g_netLock);
@@ -2956,6 +3015,7 @@ void InitNetplay(HMODULE exe) {
     g_syncEvery = SettingInt(L"Netplay", L"SyncCheckFrames", L"FGUYMOD_TEST_SYNCEVERY", 30);
     g_allClock = SettingInt(L"Netplay", L"_", L"FGUYMOD_TEST_ALLCLOCK", 0) != 0;
     g_freeWanted = SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_FREE", 0) != 0;   // (being built: every copy alike)
+    g_freeRejoin = g_freeWanted && SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_REJOIN", 0) != 0;
     InitializeCriticalSection(&g_hitLock);
     if (g_freeWanted) {   // the players' TakeDamage (vtable slot 58): who decides a hit, once the match runs free
         auto slot = reinterpret_cast<void**>(kPlayerVtable) + 58;
