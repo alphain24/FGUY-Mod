@@ -83,6 +83,19 @@ WORD CurrentButtons(DWORD pad) {
 bool NetplayPad(DWORD pad, XINPUT_STATE* state, DWORD(WINAPI* real)(DWORD, XINPUT_STATE*));
 WORD VPadButtons(DWORD pad) { return CurrentButtons(pad); }
 
+// The test pipe's "hold" (sticks, triggers, buttons) for `pad`, while it lasts (netplay.cpp: my input in a session).
+bool VPadHeld(DWORD pad, XINPUT_GAMEPAD* g) {
+    if (pad >= 4) return false;
+    std::lock_guard<std::mutex> lock(g_lock);
+    const Hold& h = g_hold[pad];
+    if (h.until <= GetTickCount64()) return false;
+    g->wButtons = h.buttons;
+    g->sThumbLX = h.lx; g->sThumbLY = h.ly;
+    g->sThumbRX = h.rx; g->sThumbRY = h.ry;
+    g->bLeftTrigger = h.lt; g->bRightTrigger = h.rt;
+    return true;
+}
+
 // Is a real controller plugged in (pads 0-3)?
 bool VPadRealPadConnected() {
     if (!Real_XInputGetState) return false;

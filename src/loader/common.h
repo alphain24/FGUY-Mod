@@ -38,6 +38,8 @@ void InitNetSpy(HMODULE exe);          // winsock + debug-print logging        (
 void InitDisplay(HMODULE exe);         // windowed / borderless / resolution   (display.cpp)
 void InitVirtualPad(HMODULE exe);      // injected controller input for tests  (vpad.cpp)
 WORD VPadButtons(DWORD pad);           //   buttons the test pipe holds on a pad right now
+struct _XINPUT_GAMEPAD;
+bool VPadHeld(DWORD pad, _XINPUT_GAMEPAD* held);   //   the test pipe's "hold" on a pad, while it lasts
 void VPadPressLater(DWORD pad, WORD buttons, DWORD ms);
 bool VPadPressedWithin(WORD buttons, DWORD ms);
 bool VPadRealPadConnected();           //   a real controller is plugged in  //   a controller button went down just now
@@ -58,6 +60,7 @@ int GamePlayers(unsigned char** out, int max);  // the game's live players, by p
 
 void InitNetplay(HMODULE exe);         // lockstep online play core            (netplay.cpp)
 bool NetplayEnabled();
+bool NetplayFreeRun();                 //   the match runs free (no lockstep: client-server, being built)
 void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
 int NetplayLocalSlot();                //   my player slot, -1 when netplay is off

@@ -7,6 +7,8 @@
 
 #include "common.h"
 
+#include <intrin.h>
+
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -123,6 +125,10 @@ char __fastcall Spy_TakeDamage(void* self, void*, void* info) {
         L"dir (%.2f %.2f %.2f) +4 %d +8 %.2f +0x60 %d +0x64 %.2f; health %.1f -> %.1f, returned %d",
         PlayerIndexOf(self), src, srcVt, srcType, PlayerIndexOf(src), f[7], n[8], n[10], f[12], f[13], f[14],
         n[1], f[2], n[0x18], f[0x19], before, HealthOf(self), r);
+    wchar_t raw[600];
+    int len = 0;
+    for (int i = 0; i < 0x30 && len < 560; ++i) len += swprintf_s(raw + len, 600 - len, L" %08x", (unsigned)n[i]);
+    Log(L"DamageSpy:   called from %p, raw%s", _ReturnAddress(), raw);
     return r;
 }
 

@@ -133,8 +133,9 @@ using srand_t = void(__cdecl*)(unsigned);
 srand_t Real_srand;
 
 bool g_allClock = false;   // research: FGUYMOD_TEST_ALLCLOCK - every thread but the render thread on the fixed clock
+extern bool g_free;        // the match runs free (no lockstep): real time, shifted (below)
 bool FixedClock() {
-    if (g_phase == Phase::Off) return false;
+    if (g_phase == Phase::Off || g_free) return false;
     DWORD me = GetCurrentThreadId();
     return me == g_mainThread || (g_allClock && me != g_renderThread);
 }
@@ -148,7 +149,7 @@ LONGLONG TickTime(LONGLONG unit) {
 bool g_left = false;
 LONGLONG g_qpcOffset = 0;
 LONGLONG g_tickCountOffset = 0, g_timeGetTimeOffset = 0;
-bool Shifted() { return g_left && GetCurrentThreadId() == g_mainThread; }
+bool Shifted() { return (g_left || g_free) && GetCurrentThreadId() == g_mainThread; }
 
 BOOL WINAPI Hook_QPC(LARGE_INTEGER* out) {
     if (!FixedClock()) {
@@ -1029,6 +1030,13 @@ void Dropped(int by, int who, unsigned from) {
     }
 }
 
+void FreeInputs(int s, const PktInputs* p, int count);   // the free-running match (below, before Tick)
+struct PktState;
+struct PktHit;
+void FreeState(int s, const PktState* p);
+void FreeHitIn(int s, const PktHit* p);
+extern const int kPktStateSize, kPktHitSize;
+
 void Receive() {
     char buf[1500];
     EnterCriticalSection(&g_netLock);
@@ -1065,6 +1073,7 @@ void Receive() {
             auto p = reinterpret_cast<PktInputs*>(buf);
             int count = (n - (int)offsetof(PktInputs, pads)) / (int)sizeof(Pad);  // what actually arrived
             if (count > p->count) count = p->count;
+            if (g_free) { FreeInputs(slot, p, count); continue; }
             for (int i = 0; i < count && i < 16; ++i) {
                 unsigned f = p->first + i;
                 if (f + kRing / 2 < g_tick || f > g_tick + kRing / 2) continue;  // far too old / too far ahead
@@ -1092,9 +1101,16 @@ void Receive() {
         } else if (h->type == 'D' && n >= (int)sizeof(PktDropped)) {
             auto p = reinterpret_cast<PktDropped*>(buf);
             Dropped(slot, p->who, p->from);
+        } else if (h->type == 'X' && n >= kPktStateSize) {
+            if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf));
+        } else if (h->type == 'Z' && n >= kPktHitSize) {
+            if (g_free) FreeHitIn(slot, reinterpret_cast<PktHit*>(buf));
         } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
             auto p = reinterpret_cast<PktLeave*>(buf);
-            if (g_backAt[slot] && p->last + 1 >= g_backAt[slot]) {   // rejoining, and gone again from then
+            if (g_free) {   // (free-running: their tick count isn't mine - they're simply out)
+                if (!g_gone[slot]) Log(L"Netplay: free - player %d left the match (back to the lobby)", slot);
+                g_gone[slot] = true;
+            } else if (g_backAt[slot] && p->last + 1 >= g_backAt[slot]) {   // rejoining, and gone again from then
                 if (!g_goneAgain[slot] || p->last + 1 < g_goneAgain[slot]) {
                     g_goneAgain[slot] = p->last + 1;
                     Log(L"Netplay: player %d left again - idle from tick %u", slot, p->last + 1);
@@ -1361,6 +1377,12 @@ Pad SampleLocal(unsigned f) {
         p.ry = st.Gamepad.sThumbRY;
     }
     p.buttons |= VPadButtons(0);  // test tools press this player's buttons through the pipe
+    XINPUT_GAMEPAD held{};
+    if (VPadHeld(0, &held)) {     // (and hold sticks / triggers: "hold")
+        p.buttons |= held.wButtons;
+        p.lx = held.sThumbLX; p.ly = held.sThumbLY; p.rx = held.sThumbRX; p.ry = held.sThumbRY;
+        p.lt = held.bLeftTrigger; p.rt = held.bRightTrigger;
+    }
     if (KbmIsKeyboardSlot(g_slot)) KbmCapture(&p.kbm);  // keyboard / mouse players: the raw state (kbm.cpp)
     if (HandoffHudUp()) p.kbm.flags |= 1;              // my level's HUD is up (kbm.cpp waits for everyone's)
     if (g_inSession && OnlinePauseSample(&p.buttons, &p.lx, &p.ly, &p.kbm, KbmIsKeyboardSlot(g_slot))) {
@@ -1846,8 +1868,389 @@ void PredictMyView() {
     SplitViewPredict(on, turn, x, z);
 }
 
+// ---- free-running match (client-server, being built: FGUYMOD_NET_FREE=1 on every copy) ----------------------------
+// The session boots, walks its menus and loads the level in lockstep as above. Two seconds after everyone's level is up
+// (the same tick on every PC) every PC lets go: from then on each runs on its own - real clock, its own frame rate, no
+// waiting for anyone. My input plays at once here and goes to the others every frame; their characters are driven by
+// their latest input (a button tapped between two of my frames still counts) and pulled towards where their own PC has
+// them ('X', 30 times a second: position, camera angles, health). Hits: the PC of the player who caused one decides it
+// (a player's own PC for everything else) and sends it as the game made it ('Z'); every other PC plays it through the
+// game's own TakeDamage, so hit reactions, knockback and deaths happen everywhere; the victim's own PC has the last word
+// on their health. Research: RESEARCH_NOTES.md "Client-server research".
+bool g_freeWanted = false;
+bool g_free = false;
+unsigned g_freeFrom = 0;
+const unsigned kFreeAfterTicks = 120;          // after everyone's level is up (at the lockstep's 60)
+
+struct Remote {
+    unsigned lastTick;                         // their newest input's tick (their own count)
+    Pad latest;
+    WORD buttonsSince;                         // what went down since I last played their input
+    BYTE keysSince[32], mouseSince;
+    ULONGLONG heardAt;                         // their last packet
+    bool haveState;
+    unsigned stateSeq;
+    float pos[3], yaw, pitch, health;
+    bool alive;
+    unsigned hitSeen[32];                      // their last hits' numbers (a hit comes twice)
+    // stats for the log
+    double errSum;
+    float errMax;
+    int errCount, teleports, slides;
+};
+Remote g_remote[4];
+
+#pragma pack(push, 1)
+struct PktState { PktHeader h; unsigned seq; float pos[3]; float yaw, pitch, health; BYTE alive; };
+const int kHitInfo = 0x68;                     // the game's damage info (DamageInfo, see the notes)
+struct PktHit { PktHeader h; unsigned seq; BYTE victim, source, part; float lost, after; unsigned partOffset; BYTE info[kHitInfo]; };
+#pragma pack(pop)
+const int kPktStateSize = (int)sizeof(PktState), kPktHitSize = (int)sizeof(PktHit);
+
+const int kCamYaw = 0xf3b4, kCamPitch = 0xf3b8;    // the player's camera's own angles (radians)
+const int kProxy = 0x104c, kProxyShape = 0x60, kShapePos = 0xe0;   // Havok character proxy -> its shape -> position
+
+unsigned char* PlayerBySlot(int slot) {
+    unsigned char* list[8];
+    int n = GamePlayers(list, 8);
+    for (int i = 0; i < n; ++i)
+        if (*reinterpret_cast<int*>(list[i] + 0xdf8) == slot) return list[i];
+    return nullptr;
+}
+
+float* HealthField(unsigned char* player) {
+    auto h = *reinterpret_cast<unsigned char**>(player + 0x105c);
+    return h && !IsBadWritePtr(h + 0x50, 4) ? reinterpret_cast<float*>(h + 0x50) : nullptr;
+}
+
+// A real teleport: the transform and the Havok shape together (the transform alone slides the character there).
+bool TeleportPlayer(unsigned char* player, const float* to) {
+    auto xform = *reinterpret_cast<unsigned char**>(player + kXform);
+    auto proxy = *reinterpret_cast<unsigned char**>(player + kProxy);
+    auto shape = proxy && !IsBadReadPtr(proxy + kProxyShape, 4) ? *reinterpret_cast<unsigned char**>(proxy + kProxyShape) : nullptr;
+    if (!xform || !shape || IsBadWritePtr(xform + kXformPos, 12) || IsBadWritePtr(shape + kShapePos, 12)) return false;
+    float* tp = reinterpret_cast<float*>(xform + kXformPos);
+    float* sp = reinterpret_cast<float*>(shape + kShapePos);
+    float lift = sp[1] - tp[1];   // (the shape sits a little above the feet)
+    sp[0] = to[0]; sp[1] = to[1] + lift; sp[2] = to[2];
+    tp[0] = to[0]; tp[1] = to[1]; tp[2] = to[2];
+    return true;
+}
+
+float WrapAngle(float a) {
+    const float kPi = 3.14159265f;
+    while (a > kPi) a -= 2 * kPi;
+    while (a < -kPi) a += 2 * kPi;
+    return a;
+}
+
+// Their inputs, as they come (Receive): the newest one, and every button / key / mouse button that went down meanwhile.
+void FreeInputs(int s, const PktInputs* p, int count) {
+    Remote& r = g_remote[s];
+    for (int i = 0; i < count && i < 16; ++i) {
+        unsigned f = p->first + i;
+        if (f <= r.lastTick) continue;   // (each packet repeats the last few)
+        const Pad& in = p->pads[i];
+        r.lastTick = f;
+        r.latest = in;
+        r.buttonsSince |= in.buttons;
+        for (int k = 0; k < 32; ++k) r.keysSince[k] |= in.kbm.keys[k];
+        r.mouseSince |= in.kbm.buttons;
+    }
+    r.heardAt = GetTickCount64();
+}
+
+void FreeState(int s, const PktState* p) {
+    Remote& r = g_remote[s];
+    r.heardAt = GetTickCount64();
+    if (r.haveState && p->seq <= r.stateSeq) return;
+    r.haveState = true;
+    r.stateSeq = p->seq;
+    memcpy(r.pos, p->pos, sizeof(r.pos));
+    r.yaw = p->yaw;
+    r.pitch = p->pitch;
+    r.health = p->health;
+    r.alive = p->alive != 0;
+}
+
+std::vector<PktHit> g_hitsIn;                  // hits from the others, played at the start of my next tick
+void FreeHitIn(int s, const PktHit* p) {
+    Remote& r = g_remote[s];
+    for (unsigned seen : r.hitSeen) if (seen == p->seq) return;
+    r.hitSeen[p->seq % 32] = p->seq;
+    if (p->victim >= 4 || p->victim >= g_players) return;
+    g_hitsIn.push_back(*p);
+}
+
+// The players' damage (zFamilyGuyPlayer vtable slot 58, 0x6901a0), while the match runs free.
+using TakeDamage_t = char(__thiscall*)(void* self, void* info);
+TakeDamage_t Real_TakeDamage = nullptr;
+volatile LONG g_replayingHit = 0;
+CRITICAL_SECTION g_hitLock;
+unsigned g_hitSeq = 0;
+int g_hitsBlocked = 0, g_hitsMine = 0;
+
+char __fastcall Free_TakeDamage(void* self, void*, void* info) {
+    if (!g_free || g_replayingHit) return Real_TakeDamage(self, info);
+    auto victimObj = static_cast<unsigned char*>(self);
+    auto src = *static_cast<unsigned char**>(info);
+    int victim = *reinterpret_cast<int*>(victimObj + 0xdf8);
+    int source = src && !IsBadReadPtr(src, 0xe00) && *reinterpret_cast<ULONG_PTR*>(src) == kPlayerVtable
+                     ? *reinterpret_cast<int*>(src + 0xdf8) : -1;
+    if (source >= g_players) source = -1;
+    int decides = source >= 0 ? source : (victim >= 0 && victim < g_players ? victim : 0);
+    if (decides != g_slot) {   // another PC decides this one: it comes from there ('Z')
+        ++g_hitsBlocked;
+        return 0;
+    }
+    float before = PlayerHealth(victimObj);
+    char r = Real_TakeDamage(self, info);
+    float after = PlayerHealth(victimObj);
+    if (victim < 0 || victim >= g_players || (!r && after == before)) return r;
+    PktHit h{};
+    h.h = {'Z', (BYTE)g_slot};
+    h.victim = (BYTE)victim;
+    h.source = (BYTE)(source < 0 ? 0xff : source);
+    h.lost = before - after;
+    h.after = after;
+    memcpy(h.info, info, kHitInfo);
+    auto part = *reinterpret_cast<unsigned char**>(h.info + 0x58);   // the body part hit: inside the victim's object
+    if (part >= victimObj && part < victimObj + 0x11000) {
+        h.part = 1;
+        h.partOffset = (unsigned)(part - victimObj);
+    }
+    memset(h.info, 0, 4);
+    memset(h.info + 0x58, 0, 4);
+    EnterCriticalSection(&g_hitLock);
+    h.seq = ++g_hitSeq;
+    LeaveCriticalSection(&g_hitLock);
+    SendAll(&h, sizeof(h));
+    SendAll(&h, sizeof(h));   // (twice: a lost hit would be gone for good)
+    if (++g_hitsMine <= 40)
+        Log(L"Netplay: free - my hit #%u: player %d hit by %d, health %.1f -> %.1f (type %d)", h.seq, victim, source,
+            before, after, *reinterpret_cast<int*>(h.info + 0x20));
+    return r;
+}
+
+void FreeApplyHits() {
+    std::vector<PktHit> hits;
+    hits.swap(g_hitsIn);
+    for (const PktHit& h : hits) {
+        unsigned char* victim = PlayerBySlot(h.victim);
+        if (!victim) continue;
+        unsigned char* source = h.source < 4 ? PlayerBySlot(h.source) : nullptr;
+        alignas(16) BYTE info[0x80] = {};
+        memcpy(info, h.info, kHitInfo);
+        *reinterpret_cast<unsigned char**>(info) = source;
+        *reinterpret_cast<unsigned char**>(info + 0x58) = h.part ? victim + h.partOffset : nullptr;
+        float before = PlayerHealth(victim);
+        InterlockedExchange(&g_replayingHit, 1);
+        char r = Real_TakeDamage(victim, info);
+        InterlockedExchange(&g_replayingHit, 0);
+        static int logged = 0;
+        if (++logged <= 60)
+            Log(L"Netplay: free - hit #%u from player %d's PC: player %d hit by %d, health %.1f -> %.1f here (%.1f -> %.1f "
+                L"there)%s", h.seq, h.h.slot, h.victim, h.source == 0xff ? -1 : h.source, before, PlayerHealth(victim),
+                h.after + h.lost, h.after, r ? L"" : L" - not taken here");
+    }
+}
+
+// Everyone else's characters: towards where their own PC has them.
+void FreeApplyRemotes(float dt) {
+    for (int s = 0; s < g_players && s < 4; ++s) {
+        Remote& r = g_remote[s];
+        if (s == g_slot || g_gone[s] || !r.haveState) continue;
+        unsigned char* p = PlayerBySlot(s);
+        if (!p) continue;
+        float health = PlayerHealth(p);
+        if (!r.alive || health <= 0) continue;   // (down, or respawning: their own input brings them back)
+        float* yaw = reinterpret_cast<float*>(p + kCamYaw);
+        float* pitch = reinterpret_cast<float*>(p + kCamPitch);
+        float k = dt * 20 < 1 ? dt * 20 : 1;
+        *yaw = WrapAngle(*yaw + WrapAngle(r.yaw - *yaw) * k);
+        *pitch += (r.pitch - *pitch) * k;
+        float* pos = const_cast<float*>(PlayerPos(p));
+        if (!pos) continue;
+        float dx = r.pos[0] - pos[0], dy = r.pos[1] - pos[1], dz = r.pos[2] - pos[2];
+        float dist = sqrtf(dx * dx + dy * dy + dz * dz);
+        r.errSum += dist;
+        if (dist > r.errMax) r.errMax = dist;
+        ++r.errCount;
+        if (dist > 4) {   // far off (a respawn, a big lag): straight there - unless someone's standing there
+            bool clear = true;
+            unsigned char* list[8];
+            int n = GamePlayers(list, 8);
+            for (int i = 0; i < n; ++i) {
+                const float* o = list[i] == p ? nullptr : PlayerPos(list[i]);
+                if (o && fabsf(o[0] - r.pos[0]) < 1.6f && fabsf(o[2] - r.pos[2]) < 1.6f && fabsf(o[1] - r.pos[1]) < 2.5f) clear = false;
+            }
+            if (clear && TeleportPlayer(p, r.pos)) ++r.teleports;
+        } else if (dist > 0.05f) {   // close: slide the rest of the way (the game's own collision on the way)
+            float m = dt * 8 < 1 ? dt * 8 : 1;
+            pos[0] += dx * m;
+            pos[1] += dy * m;
+            pos[2] += dz * m;
+            ++r.slides;
+        }
+        if (r.health > 0 && fabsf(r.health - health) > 0.5f)   // their health: as their PC has it
+            if (float* hf = HealthField(p)) *hf = r.health;
+    }
+}
+
+void FreeSendState() {
+    static ULONGLONG last = 0;
+    static unsigned seq = 0;
+    ULONGLONG now = GetTickCount64();
+    if (now - last < 33) return;
+    last = now;
+    unsigned char* me = PlayerBySlot(g_slot);
+    const float* pos = me ? PlayerPos(me) : nullptr;
+    if (!pos) return;
+    PktState st{};
+    st.h = {'X', (BYTE)g_slot};
+    st.seq = ++seq;
+    memcpy(st.pos, pos, sizeof(st.pos));
+    st.yaw = *reinterpret_cast<float*>(me + kCamYaw);
+    st.pitch = *reinterpret_cast<float*>(me + kCamPitch);
+    st.health = PlayerHealth(me);
+    st.alive = st.health > 0 ? 1 : 0;
+    SendAll(&st, sizeof(st));
+}
+
+// Their input to play this frame: the newest, plus whatever went down since my last frame. Their camera doesn't turn
+// from it here (it follows their PC's angles: FreeApplyRemotes).
+Pad FreeRemotePad(int s) {
+    Remote& r = g_remote[s];
+    if (g_gone[s]) return Pad{};
+    Pad p = r.latest;
+    p.buttons |= r.buttonsSince;
+    r.buttonsSince = 0;
+    for (int k = 0; k < 32; ++k) { p.kbm.keys[k] |= r.keysSince[k]; r.keysSince[k] = 0; }
+    p.kbm.buttons |= r.mouseSince;
+    r.mouseSince = 0;
+    p.rx = p.ry = 0;
+    p.kbm.dx = p.kbm.dy = 0;
+    p.kbm.sync = 0;
+    return p;
+}
+
+// Everyone lets go of the lockstep at this tick (the same one on every PC).
+void FreeStart() {
+    LARGE_INTEGER real;
+    Real_QPC(&real);   // the game thread's clock carries on from the fixed one, in real time from here
+    g_qpcOffset = kClockBaseSeconds * g_freq.QuadPart + TickTime(g_freq.QuadPart) + (++g_callsThisTick) - real.QuadPart;
+    g_tickCountOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_GetTickCount();
+    g_timeGetTimeOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_timeGetTime();
+    ULONGLONG now = GetTickCount64();
+    for (int s = 0; s < 4; ++s) {
+        Remote& r = g_remote[s];
+        r = Remote{};
+        r.lastTick = g_tick;   // (their lockstep inputs ahead of here: not played)
+        r.latest = g_current[s];
+        r.heardAt = now;
+    }
+    g_free = true;
+    g_freeFrom = g_tick;
+    SplitViewPredict(false, 0, 0, 0);   // (no input delay to make up for any more)
+    Log(L"Netplay: tick %u - the match runs free from here: no lockstep, real clock, my own frame rate", g_tick);
+}
+
+void FreeTick() {
+    EnterCriticalSection(&g_netLock);
+    struct Unlock { ~Unlock() { LeaveCriticalSection(&g_netLock); } } unlock;
+    static LARGE_INTEGER lastAt{};
+    LARGE_INTEGER now;
+    Real_QPC(&now);
+    float dt = lastAt.QuadPart ? (float)(now.QuadPart - lastAt.QuadPart) / g_freq.QuadPart : 1.0f / 60;
+    if (dt > 0.1f) dt = 0.1f;
+    lastAt = now;
+    g_tickStartMs = GetTickCount64();
+    Receive();
+    DirectTick();
+    ++g_tick;   // (just a count of my frames now)
+    ULONGLONG nowMs = GetTickCount64();
+    {
+        static ULONGLONG lastPing = 0;
+        if (nowMs - lastPing >= 250) {
+            lastPing = nowMs;
+            PktPing ping{{'P', (BYTE)g_slot}, 0, nowMs};
+            SendAll(&ping, sizeof(ping));
+        }
+    }
+    Pad mine = SampleLocal(g_tick);
+    int ring = g_tick % kRing;
+    g_inputs[ring][g_slot] = mine;
+    g_have[ring][g_slot] = true;
+    g_haveTick[ring][g_slot] = g_tick;
+    g_sampledUpTo = g_tick;
+    static ULONGLONG lastSend = 0;
+    if (nowMs - lastSend >= 8) {   // (each packet has my last 8 frames: 125 a second at most)
+        lastSend = nowMs;
+        SendInputs(g_tick);
+    }
+    g_current[g_slot] = mine;
+    for (int s = 0; s < g_players && s < 4; ++s) {
+        if (s == g_slot) continue;
+        if (!g_gone[s] && nowMs - g_remote[s].heardAt > 10000) {
+            g_gone[s] = true;
+            Log(L"Netplay: free - nothing from player %d for 10 s - they left; their character stays idle", s);
+            if (g_inSession) OverlayShow((PlayerName(s) + L" left the match").c_str(), 5000);
+            if (s == 0 && g_inSession) {
+                OverlayShow(L"Lost the connection to the match - back to the lobby", 8000);
+                OnlinePauseForceQuit();
+            }
+        }
+        g_current[s] = FreeRemotePad(s);
+    }
+    TakeSessionPresses();
+    KbmRaw kbm[4] = {};
+    for (int s = 0; s < g_players && s < 4; ++s) kbm[s] = g_current[s].kbm;
+    {   // everyone's pause menu open: pause the game (onlinepause.cpp)
+        BYTE flags[4] = {};
+        bool gone[4] = {};
+        for (int s = 0; s < g_players && s < 4; ++s) {
+            flags[s] = g_current[s].kbm.flags;
+            gone[s] = g_gone[s];
+        }
+        bool keyboard = false;
+        int at = OnlinePauseTick(flags, gone, g_players, &keyboard);
+        if (at >= 0 && at < 4) {
+            if (keyboard) g_current[at].kbm.keys[VK_ESCAPE >> 3] |= (BYTE)(1 << (VK_ESCAPE & 7));
+            else g_current[at].buttons |= XINPUT_GAMEPAD_START;
+            kbm[at] = g_current[at].kbm;
+        }
+    }
+    OnlineSettingsApply(kbm, g_players);
+    KbmApply(kbm, g_players);
+    FreeApplyHits();
+    FreeApplyRemotes(dt);
+    FreeSendState();
+    static ULONGLONG lastLog = 0;
+    if (nowMs - lastLog >= 5000) {   // how far off the others' characters were here (the corrections), every 5 s
+        lastLog = nowMs;
+        for (int s = 0; s < g_players && s < 4; ++s) {
+            Remote& r = g_remote[s];
+            if (s == g_slot || !r.errCount) continue;
+            Log(L"Netplay: free - player %d: %.2f off on average, %.2f at most; %d slides, %d teleports; ping %ld ms; %d hits "
+                L"left to other PCs, %d decided here", s, r.errSum / r.errCount, r.errMax, r.slides, r.teleports, g_pingMs[s],
+                g_hitsBlocked, g_hitsMine);
+            r.errSum = 0;
+            r.errMax = 0;
+            r.errCount = r.slides = r.teleports = 0;
+        }
+    }
+}
+
 // Called on the main thread at the start of every game tick (its first controller poll).
 void Tick() {
+    if (g_free) { FreeTick(); return; }
+    if (g_freeWanted && g_inSession && !g_sessionStory && !g_catchUp && g_liveTick && g_tick >= g_liveTick + kFreeAfterTicks) {
+        EnterCriticalSection(&g_netLock);
+        FreeStart();
+        LeaveCriticalSection(&g_netLock);
+        FreeTick();
+        return;
+    }
     LONGLONG paced = PaceTick();
     static ULONGLONG lastStart = 0;
     ULONGLONG nowMs = GetTickCount64();
@@ -2332,6 +2735,7 @@ void NetplayOnFrame() {
 }
 
 bool NetplayEnabled() { return g_enabled; }
+bool NetplayFreeRun() { return g_enabled && g_free; }
 
 bool g_levelLaunched = false;   // this session's level was launched (from then on, the front end = the match is over)
 
@@ -2353,13 +2757,16 @@ void NetplayLeave(const wchar_t* why) {
             SendAll(&p, sizeof(p));
             Real_Sleep(4);
         }
-        LARGE_INTEGER real;
-        Real_QPC(&real);
-        g_qpcOffset = kClockBaseSeconds * g_freq.QuadPart + TickTime(g_freq.QuadPart) +
-                      (++g_callsThisTick) - real.QuadPart;
-        g_tickCountOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_GetTickCount();
-        g_timeGetTimeOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_timeGetTime();
+        if (!g_free) {   // (a free-running match is on the shifted real clock already)
+            LARGE_INTEGER real;
+            Real_QPC(&real);
+            g_qpcOffset = kClockBaseSeconds * g_freq.QuadPart + TickTime(g_freq.QuadPart) +
+                          (++g_callsThisTick) - real.QuadPart;
+            g_tickCountOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_GetTickCount();
+            g_timeGetTimeOffset = (LONGLONG)FixedMs() - (LONGLONG)Real_timeGetTime();
+        }
         g_left = true;
+        g_free = false;      // (the game's own damage again)
         g_tickStartMs = 0;   // (the watchdog: no more ticks)
         g_phase = Phase::Off;
         g_enabled = false;
@@ -2523,6 +2930,17 @@ void InitNetplay(HMODULE exe) {
     if (g_rateTarget < 30 || g_rateTarget > 240) g_rateTarget = 60;
     g_syncEvery = SettingInt(L"Netplay", L"SyncCheckFrames", L"FGUYMOD_TEST_SYNCEVERY", 30);
     g_allClock = SettingInt(L"Netplay", L"_", L"FGUYMOD_TEST_ALLCLOCK", 0) != 0;
+    g_freeWanted = SettingInt(L"Netplay", L"_", L"FGUYMOD_NET_FREE", 0) != 0;   // (being built: every copy alike)
+    InitializeCriticalSection(&g_hitLock);
+    if (g_freeWanted) {   // the players' TakeDamage (vtable slot 58): who decides a hit, once the match runs free
+        auto slot = reinterpret_cast<void**>(kPlayerVtable) + 58;
+        DWORD old;
+        VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old);
+        Real_TakeDamage = reinterpret_cast<TakeDamage_t>(*slot);
+        *slot = reinterpret_cast<void*>(&Free_TakeDamage);
+        VirtualProtect(slot, sizeof(void*), old, &old);
+        Log(L"Netplay: the match will run free (no lockstep) once everyone's level is up");
+    }
     for (int s = 0; s < 4; ++s)
         for (int k = 0; k < 8; ++k) g_peerHashTick[s][k] = ~0u;
     for (int k = 0; k < 8; ++k) g_myHashTick[k] = ~0u;
