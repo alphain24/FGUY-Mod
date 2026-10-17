@@ -35,7 +35,7 @@
 namespace {
 
 const int kProto = 3;
-const char* kModVersion = "0.8.9";   // (a test build: the new netcode - 0.9 comes after it)
+const char* kModVersion = "0.8.10";   // (a test build: the new netcode - 0.9 comes after it)
 
 struct Member {
     std::string name, character = "Peter", costume = "0", team = "0", input = "c";  // input: k keyboard, c controller
@@ -636,6 +636,8 @@ void StartSession(const std::vector<std::string>& f) {
         auto conf = Split(f[7], ',');   // FGUYMOD_TEST_NETFREE=1 forces it (every copy of a test alike)
         char forced[4];
         bool free = (conf.size() > 6 && conf[6] == "1") || GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", forced, sizeof(forced)) > 0;
+        if (conf.empty() || conf[0] != "DM") free = false;   // (Deathmatch only, for now: the other modes' enemies,
+                                                             //  flags and goals aren't shared yet)
         set(L"FGUYMOD_NET_FREE", free ? "1" : "0");
         // rejoining a free-running match: no catching up on the host's record - the session game loads the level on its
         // own and joins in (netplay.cpp FreeStart)

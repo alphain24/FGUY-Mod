@@ -1558,6 +1558,7 @@ struct SessionPress { int pad; WORD buttons; int delay; unsigned from; };
 CRITICAL_SECTION g_pressLock;
 std::vector<SessionPress> g_pressQueue, g_pressActive;
 bool g_sessionStory = false;     // story co-op session: guests drop in once the level runs
+bool g_sessionDM = false;        // a Deathmatch session (the only mode the free-running match is for, so far)
 volatile LONG g_sessionLevelAsked = 0;  // the menu launched the level (taken at the next tick)
 unsigned g_levelTick = 0;
 
@@ -1927,6 +1928,7 @@ struct Remote {
     unsigned hitSeen[32];                      // their last hits' numbers (a hit comes twice)
     unsigned hitApplied;                       // the last of their hits I've played here
     unsigned pickupSeen[16];                   // their last pickups' numbers (each comes twice)
+    bool rescue;                               // the game here wanted to put their character back in the level
     // stats for the log
     double errSum, yawErrSum;
     float errMax, yawErrMax;
@@ -2037,6 +2039,9 @@ char __fastcall Free_TakeDamage(void* self, void*, void* info) {
     int decides = source >= 0 ? source : (victim >= 0 && victim < g_players ? victim : 0);
     if (decides != g_slot) {   // another PC decides this one: it comes from there ('Z')
         ++g_hitsBlocked;
+        // (no source: the level's own - out of the world, a kill volume: their character here is somewhere it isn't on
+        // their PC - put it where their PC has it at once, FreeApplyRemotes)
+        if (source < 0 && victim >= 0 && victim < 4 && victim != g_slot) g_remote[victim].rescue = true;
         return 0;
     }
     float before = PlayerHealth(victimObj);
@@ -2267,7 +2272,12 @@ void FreeApplyRemotes(float dt) {
         r.errSum += dist;
         if (dist > r.errMax) r.errMax = dist;
         ++r.errCount;
-        if (dist > 4) {   // far off (a respawn, a big lag): straight there - unless someone's standing there
+        // Far off (a respawn, a big lag), or above / below where their PC has them (fell somewhere they didn't - a slide
+        // can't come back up through the floor - or the game wanted to put them back in the level: that's their PC's call,
+        // FreeRescue): straight there - unless someone's standing there.
+        bool jump = dist > 4 || fabsf(dy) > 1.5f || r.rescue;
+        r.rescue = false;
+        if (jump) {
             bool clear = true;
             unsigned char* list[8];
             int n = GamePlayers(list, 8);
@@ -2439,9 +2449,31 @@ void FreeTick() {
     FreeApplyPickups();
     FreeApplyRemotes(dt);
     FreeSendState();
+    static int frames = 0, moveFrames = 0;   // (my own input and character, for the log below)
+    ++frames;
+    {
+        bool keyMove = false;   // W A S D or the arrows
+        static const int kMoveKeys[] = {'W', 'A', 'S', 'D', VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN};
+        for (int vk : kMoveKeys)
+            keyMove |= (mine.kbm.keys[vk >> 3] >> (vk & 7) & 1) != 0;
+        if (keyMove || abs(mine.lx) > 8000 || abs(mine.ly) > 8000) ++moveFrames;
+    }
     static ULONGLONG lastLog = 0;
     if (nowMs - lastLog >= 5000) {   // how far off the others' characters were here (the corrections), every 5 s
         lastLog = nowMs;
+        static float lastPos[3];
+        static bool havePos = false;
+        unsigned char* me = PlayerBySlot(g_slot);
+        const float* pos = me ? PlayerPos(me) : nullptr;
+        float moved = 0;
+        if (pos && havePos) moved = sqrtf((pos[0] - lastPos[0]) * (pos[0] - lastPos[0]) + (pos[2] - lastPos[2]) * (pos[2] - lastPos[2]));
+        if (pos) { memcpy(lastPos, pos, sizeof(lastPos)); havePos = true; }
+        XINPUT_STATE st{};
+        bool pad = g_realXInput && g_realXInput(0, &st) == ERROR_SUCCESS;
+        Log(L"Netplay: free - me (player %d): moved %.1f in 5 s, movement input in %d of %d frames; %s, controller %s, "
+            L"health %.0f", g_slot, moved, moveFrames, frames, KbmIsKeyboardSlot(g_slot) ? L"keyboard / mouse player" :
+            L"controller player", pad ? L"connected" : L"not connected (XInput pad 0)", me ? PlayerHealth(me) : -1.0f);
+        frames = moveFrames = 0;
         for (int s = 0; s < g_players && s < 4; ++s) {
             Remote& r = g_remote[s];
             if (s == g_slot || !r.errCount) continue;
@@ -2465,7 +2497,7 @@ void Tick() {
     }
     bool freeNow = g_freeRejoin ? g_freeRejoinHud && g_tick >= g_freeRejoinHud + kFreeAfterTicks
                                 : g_liveTick && g_tick >= g_liveTick + kFreeAfterTicks;
-    if (g_freeWanted && g_inSession && !g_sessionStory && !g_catchUp && freeNow) {
+    if (g_freeWanted && g_inSession && g_sessionDM && !g_catchUp && freeNow) {
         EnterCriticalSection(&g_netLock);
         FreeStart();
         LeaveCriticalSection(&g_netLock);
@@ -3215,6 +3247,7 @@ void InitNetplay(HMODULE exe) {
     char session[512];  // (too small a buffer gets nothing copied)
     DWORD sessionLen = GetEnvironmentVariableA("FGUYMOD_SESSION", session, sizeof(session));
     g_sessionStory = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "ST,", 3) == 0;
+    g_sessionDM = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "DM,", 3) == 0;
     g_inSession = sessionLen > 0 && sessionLen < sizeof(session);
     KbmSessionStart(g_inSession ? session : nullptr);
     if (g_inSession) OnlineSettingsInit();   // my own settings (onlinesettings.cpp)

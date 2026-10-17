@@ -1301,6 +1301,7 @@ function FGUYRulesParts(short) {
     else parts.push(t + (short ? '' : ' min'));
     if (!short && mode.score != '') parts.push('to ' + FGUYRules[mode.score][FGUYS.score]);
     if (!short) parts.push('Friendly fire ' + FGUYRules.FriendlyFire[FGUYS.ff]);
+    if (mode.code == 'DM' && FGUYS.net == 1) parts.push(short ? 'New netcode' : 'New netcode (test)');
     return parts;
 }
 
@@ -1400,7 +1401,7 @@ function FGUYSettingRows() {
         rows.push('ff');
     }
     rows.push('rate');
-    if (mode.code != 'ST') rows.push('net');   // (story co-op: the classic netcode only, for now)
+    if (mode.code == 'DM') rows.push('net');   // (the other modes: the classic netcode only, for now)
     return rows;
 }
 
@@ -1410,7 +1411,7 @@ function FGUYSettingValue(r) {
     if (r == 'map') return [mode.code == 'ST' ? 'LEVEL' : 'MAP', FGUYMapName(FGUYS.map, FGUYS.mode)];
     if (r == 'time') return ['TIME LIMIT', FGUYRules.TimeLimit[FGUYS.time]];
     if (r == 'score') return [mode.score == 'FlagLimit' ? 'FLAG LIMIT' : 'WINNING SCORE', FGUYRules[mode.score][FGUYS.score]];
-    if (r == 'rate') return ['FRAME RATE', FGUYS.net == 1 ? 'Your own' : (FGUYS.rate > 0 ? FGUYS.rate + ' FPS' : 'Auto (' + FGUYAutoRate() + ' FPS)')];
+    if (r == 'rate') return ['FRAME RATE', FGUYS.net == 1 && FGUYS.mode == 'DM' ? 'Your own' : (FGUYS.rate > 0 ? FGUYS.rate + ' FPS' : 'Auto (' + FGUYAutoRate() + ' FPS)')];
     if (r == 'net') return ['NETCODE', FGUYS.net == 1 ? 'New (test)' : 'Classic'];
     return ['FRIENDLY FIRE', FGUYRules.FriendlyFire[FGUYS.ff]];
 }
@@ -1422,7 +1423,7 @@ function FGUYSettingHelp(r) {
     if (r == 'time') return 'How long a match lasts.';
     if (r == 'score') return mode.score == 'FlagLimit' ? 'The match ends when a team captures this many flags.' : 'The match ends when a team reaches this score.';
     if (r == 'net') return 'New (test): your moves and camera never wait for the others, everyone plays at their own frame rate, and the shooter\'s PC decides its hits. Classic: every PC plays the exact same frames, so the slowest connection holds everyone up.';
-    if (r == 'rate' && FGUYS.net == 1) return 'With the new netcode everyone plays at the frame rate they picked in their own Options > Screen.';
+    if (r == 'rate' && FGUYS.net == 1 && FGUYS.mode == 'DM') return 'With the new netcode everyone plays at the frame rate they picked in their own Options > Screen.';
     if (r == 'rate') return 'Everyone plays at the same frame rate. Auto: the best every player\'s screen shows (up to 240). If a PC can\'t keep up, the match follows it: fewer frames for a while, never slow motion.';
     return 'On: you can hurt your own team. Off: you can only hurt the other team.';
 }
