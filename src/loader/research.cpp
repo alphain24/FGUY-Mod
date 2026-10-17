@@ -94,7 +94,48 @@ HANDLE WINAPI Hook_CreateThread(LPSECURITY_ATTRIBUTES sa, SIZE_T stack, LPTHREAD
 
 }  // namespace
 
+// Damage spy ([Debug] DamageSpy=1 or env FGUYMOD_DAMAGESPY=1): logs every call of the players' TakeDamage
+// (vtable slot 58, 0x6901a0) - victim, source, amount, type, flags, direction, health before and after.
+using TakeDamage_t = char(__thiscall*)(void* self, void* info);
+TakeDamage_t Real_TakeDamage;
+
+int PlayerIndexOf(const void* entity) {
+    if (!entity || IsBadReadPtr(entity, 0xe00)) return -99;
+    if (*reinterpret_cast<const uintptr_t*>(entity) != kPlayerVtable) return -1;
+    return *reinterpret_cast<const int*>(static_cast<const char*>(entity) + 0xdf8);
+}
+
+float HealthOf(const void* player) {
+    auto h = *reinterpret_cast<const char* const*>(static_cast<const char*>(player) + 0x105c);
+    return h ? *reinterpret_cast<const float*>(h + 0x50) : -1.f;
+}
+
+char __fastcall Spy_TakeDamage(void* self, void*, void* info) {
+    const char* d = static_cast<const char*>(info);
+    const void* src = *reinterpret_cast<void* const*>(d);
+    float before = HealthOf(self);
+    char r = Real_TakeDamage(self, info);
+    const float* f = reinterpret_cast<const float*>(d);
+    const int* n = reinterpret_cast<const int*>(d);
+    unsigned srcVt = src && !IsBadReadPtr(src, 0x24) ? *reinterpret_cast<const unsigned*>(src) : 0;
+    int srcType = src && !IsBadReadPtr(src, 0x24) ? *reinterpret_cast<const int*>(static_cast<const char*>(src) + 0x20) : 0;
+    Log(L"DamageSpy: player %d hit by %p (vtable %#x, type %#x, player %d): amount %.2f type %d flags %#x "
+        L"dir (%.2f %.2f %.2f) +4 %d +8 %.2f +0x60 %d +0x64 %.2f; health %.1f -> %.1f, returned %d",
+        PlayerIndexOf(self), src, srcVt, srcType, PlayerIndexOf(src), f[7], n[8], n[10], f[12], f[13], f[14],
+        n[1], f[2], n[0x18], f[0x19], before, HealthOf(self), r);
+    return r;
+}
+
 void InitResearch() {
+    if (SettingInt(L"Debug", L"DamageSpy", L"FGUYMOD_DAMAGESPY", 0)) {
+        auto slot = reinterpret_cast<void**>(kPlayerVtable) + 58;
+        DWORD old;
+        VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old);
+        Real_TakeDamage = reinterpret_cast<TakeDamage_t>(*slot);
+        *slot = reinterpret_cast<void*>(&Spy_TakeDamage);
+        VirtualProtect(slot, sizeof(void*), old, &old);
+        Log(L"Research: damage spy on (TakeDamage %p)", Real_TakeDamage);
+    }
     if (SettingInt(L"Debug", L"ThreadLog", L"FGUYMOD_THREADLOG", 0)) {
         HookSpec hooks[] = {{"kernel32.dll", "CreateThread", (void*)Hook_CreateThread, (void**)&Real_CreateThread},
                             {"msvcr100.dll", "_beginthreadex", (void*)Hook_beginthreadex, (void**)&Real_beginthreadex}};

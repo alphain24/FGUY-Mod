@@ -11,7 +11,7 @@ New-Item -ItemType Directory -Force $dir | Out-Null
 Copy-Item $Save $dir -Force
 $env:FGUYMOD_SAVEDIR = "testsave0"
 if ($FullView -ge 0) { $env:FGUYMOD_FULLVIEW = "$FullView" }
-$id = & (Join-Path $PSScriptRoot "start_test.ps1") -Res "960x540"
+$id = & (Join-Path $PSScriptRoot "start_test.ps1") -GameDir $GameDir -Res "960x540"
 Remove-Item Env:FGUYMOD_SAVEDIR, Env:FGUYMOD_FULLVIEW -ErrorAction SilentlyContinue
 $pad = Join-Path $PSScriptRoot "pad.ps1"
 function P([int]$p, [string[]]$b) { & $pad -Id $id -Pad $p @b | Out-Null }

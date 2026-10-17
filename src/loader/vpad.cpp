@@ -6,6 +6,8 @@
 // Test tools talk to us over a named pipe, \\.\pipe\FGUYMod_<pid>, one command per line:
 //   press <pad 0-3> <button> [<button> ...]    buttons: a b x y start back up down left right lb rb
 //   quit                                        exit the game cleanly (test tools)
+//   hold <pad> <ms> [lx= ly= rx= ry= lt= rt=] [<button> ...]   sticks (-32768..32767), triggers (0..255) and
+//                                               buttons held for <ms> (research: moving, aiming, firing)
 // Each button is held for kHoldMs, then released for kGapMs before the next one.
 // Off unless FGUYMod.ini [Debug] TestInput=1 (or env FGUYMOD_TESTINPUT=1).
 //
@@ -33,6 +35,12 @@ struct Press {
 
 std::mutex g_lock;
 std::deque<Press> g_queue;
+struct Hold {
+    ULONGLONG until;
+    SHORT lx, ly, rx, ry;
+    BYTE lt, rt;
+    WORD buttons;
+} g_hold[4];
 ULONGLONG g_pressStart = 0;      // when the front press started
 bool g_padActive[4] = {};        // pads we report as connected
 DWORD g_packet = 1;
@@ -136,6 +144,17 @@ DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
         Log(L"VPad: pad %lu buttons -> %04x (poll #%ld)", pad, buttons, calls[pad]);
     }
     state->Gamepad.wButtons |= buttons;
+    {
+        std::lock_guard<std::mutex> lock(g_lock);
+        const Hold& h = g_hold[pad];
+        if (h.until > GetTickCount64()) {
+            state->Gamepad.wButtons |= h.buttons;
+            state->Gamepad.sThumbLX = h.lx; state->Gamepad.sThumbLY = h.ly;
+            state->Gamepad.sThumbRX = h.rx; state->Gamepad.sThumbRY = h.ry;
+            state->Gamepad.bLeftTrigger = h.lt; state->Gamepad.bRightTrigger = h.rt;
+            ++g_packet;
+        }
+    }
     state->dwPacketNumber += g_packet;
     NoteButtons(pad, state->Gamepad.wButtons);
     return ERROR_SUCCESS;
@@ -280,6 +299,18 @@ void HandleCommand(char* line) {
         Log(L"%s", text);
         return;
     }
+    if (cmd && (_stricmp(cmd, "poke") == 0 || _stricmp(cmd, "pokef") == 0)) {   // research: poke <hex address> <hex dword>
+        bool asFloat = _stricmp(cmd, "pokef") == 0;                                 //      pokef <hex address> <float> [...]
+        char* a = strtok_s(nullptr, " \t\r\n", &ctx);
+        DWORD at = a ? strtoul(a, nullptr, 16) : 0;
+        for (char* v; (v = strtok_s(nullptr, " \t\r\n", &ctx)) != nullptr; at += 4) {
+            if (IsBadWritePtr((void*)at, 4)) { Log(L"Poke: %#lx can't be written", at); return; }
+            if (asFloat) *reinterpret_cast<float*>(at) = (float)atof(v);
+            else *reinterpret_cast<DWORD*>(at) = strtoul(v, nullptr, 16);
+            Log(L"Poke: %#lx = %S", at, v);
+        }
+        return;
+    }
     if (cmd && _stricmp(cmd, "watch") == 0) {   // research: which code writes there (up to 4 hex addresses)
         while (char* p = strtok_s(nullptr, " \t\r\n", &ctx))
             WatchAddress(reinterpret_cast<void*>(strtoul(p, nullptr, 16)), L"the watched address");
@@ -305,6 +336,33 @@ void HandleCommand(char* line) {
         char* b = strtok_s(nullptr, " \t\r\n", &ctx);
         char* c = strtok_s(nullptr, " \t\r\n", &ctx);
         if (what) KbmTestCommand(what, a ? atoi(a) : 0, b ? atoi(b) : 0, c ? atoi(c) : 0);
+        return;
+    }
+    if (cmd && _stricmp(cmd, "hold") == 0) {   // research: hold <pad> <ms> [lx=.. ly=.. rx=.. ry=.. lt=.. rt=..] [buttons]
+        char* padStr = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* ms = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (!padStr || !ms) return;
+        DWORD pad = (DWORD)atoi(padStr) & 3;
+        Hold h = {GetTickCount64() + (ULONGLONG)atoi(ms)};
+        while (char* t = strtok_s(nullptr, " \t\r\n", &ctx)) {
+            char* eq = strchr(t, '=');
+            if (!eq) {
+                if (WORD bit = ButtonFromName(t)) h.buttons |= bit;
+                else Log(L"VPad: unknown button \"%S\"", t);
+                continue;
+            }
+            *eq = 0;
+            int v = atoi(eq + 1);
+            SHORT stick = (SHORT)max(-32768, min(32767, v));
+            BYTE trig = (BYTE)max(0, min(255, v));
+            if (!_stricmp(t, "lx")) h.lx = stick; else if (!_stricmp(t, "ly")) h.ly = stick;
+            else if (!_stricmp(t, "rx")) h.rx = stick; else if (!_stricmp(t, "ry")) h.ry = stick;
+            else if (!_stricmp(t, "lt")) h.lt = trig; else if (!_stricmp(t, "rt")) h.rt = trig;
+            else Log(L"VPad: unknown hold value \"%S\"", t);
+        }
+        std::lock_guard<std::mutex> lock(g_lock);
+        g_padActive[pad] = true;
+        g_hold[pad] = h;
         return;
     }
     if (!cmd || _stricmp(cmd, "press") != 0) return;

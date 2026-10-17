@@ -250,3 +250,35 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   sliders step by 0.1 per press (`OnSliderHandleInput`), 0.01 while held.
 - **Split-screen cover** (`cover.gfx` in BULK.ho) lays itself out from `SYST_GetNumViewports` and
   `OPTN_GetSplitScreenOrientation`; side by side (`Viewports2V`) draws a line down the middle.
+
+## Client-server research: health, damage, moving a player (2026-10-17)
+- **Health**: `[player+0x105c]+0x50` = health, `+0x54` = max health (floats; 200 / 200 in Deathmatch). Player vtable
+  `+0x16c` GetHealth, `+0x174` GetMaxHealth, `+0x178` SetHealth(float), `+0xbc` IsDefeated (health at 0, or
+  state 7). Writing the health directly works (the screen goes red when low) but the HUD bar only updates through
+  the damage path (`0x99a940(health, max)`).
+- **Damage**: player vtable slot 58 (`+0xe8`) = `0x6901a0` TakeDamage(DamageInfo*): invincibility checks, hit
+  reactions, knockback, the damaged sound, HUD, defeat; it calls `0x9855a0` (apply: computes the amount with
+  `0x9812a0`, then SetHealth). DamageInfo: `+0x00` source entity (players have type `0x6f` at entity `+0x20`),
+  `+0x1c` amount, `+0x20` damage type, `+0x28` flags, `+0x30` direction (3 floats), `+0x60`/`+0x64` more.
+- **Moving a player**: writing the position at `[player+0x38]+0x30` teleports it for good (the Havok character
+  proxy follows the transform; collision pushes it out of walls). Walking afterwards continues from there.
+- The unused `FGUYPlayerLocalAuthorityUpdateMessage` (built in `0x647d50`) shows what the developers meant to send
+  for a player whose own PC is in charge of it: player index (`+0xdf8`), `+0x1a34` (a move state: 0 idle, 2
+  walking), a one-shot flag (`+0x10b3c`), position, facing (atan2 of `[player+0x5c]+0x88`), `[+0x2240]+0x18`,
+  whether `+0xeb70` is 2 or 3, and the aim (vtable `+0x20c`: `+0x14d4` vector unless `+0x14d0` = 2).
+- Research tools: `tools/re/statewatch.py` (whole player objects: snap / diff / find), `tools/re/pipe.ps1`
+  (send a pipe command), new pipe commands `hold` (sticks, triggers, buttons for a time) and `poke` / `pokef`.
+  Research copies run from `A:\Games\FGUY-Research` (hard links and junctions to the game, its own
+  dinput8.dll and FGUYMod folder), never from the real game folder: pass `-GameDir` to the test scripts.
+- **Shots seen by the damage spy** (`[Debug] DamageSpy=1` / env `FGUYMOD_DAMAGESPY=1`, research.cpp): Lois's gun in
+  Deathmatch = TakeDamage per bullet, source = the shooting player (type `0x6f`), amount 15, damage type 28, flags
+  `0x400440`, direction set, `+0x60` = 1. 200 health = 14 bullets; the kill gave the shooter 350 points. A defeated
+  player respawns at a random spawn point. An instant kill arrived as amount 1000, type 1, no source, flags 0,
+  right after a test teleport put player 0 into player 1 (the game's own "stuck / out of the world" kill):
+  corrections must never drop a player inside another one.
+- **Cameras**: each player carries its camera inside its object (a camera at `+0xf0c0`, updated by `0x588c40`, the
+  zCamDriver / zCamThirdPerson update): the yaw at `+0xf32c` (radians) and `+0xed64` (degrees), pitch `+0xed5c`,
+  and the matrix at `[player+0xf88]+0x9c` are all outputs, recomputed every frame from the camera's eye and target
+  points (`0x4ac8e0`, atan2 / asin) - writing them does nothing. The orbit state that the right stick / mouse
+  turns is still to be found (for showing other players' aim).
+- Facing: the transform at `[player+0x38]` is a 4x4 matrix, rows right / up / forward / position.
