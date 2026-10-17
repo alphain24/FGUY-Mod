@@ -225,6 +225,25 @@ void Choose(int item) {
     }
 }
 
+// The presses this file makes (a click's key, the list's keys, the flags) last a number of 1/60 s steps - real time, not
+// samples: my input is sampled every tick, which was 60 a second, but in a free-running match it's every frame (at
+// 240 fps a click's Enter was down for 25 ms and the death menu missed it: no respawn). How many steps have gone by since
+// the last sample (in lockstep one a tick, as before).
+int g_steps = 0;
+int StepsSinceLast() {
+    static LARGE_INTEGER freq{}, last{};
+    static LONGLONG carry = 0;
+    if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    if (!NetplayFreeRun() || !last.QuadPart || now.QuadPart < last.QuadPart) { last = now; carry = 0; return 1; }
+    LONGLONG span = (now.QuadPart - last.QuadPart) * 60 + carry;
+    last = now;
+    int steps = (int)(span / freq.QuadPart);
+    carry = span % freq.QuadPart;
+    return steps > 60 ? 60 : steps;
+}
+
 // The game's menu lists by mouse (FGUYMOD_MenuMouse's boxes): pointing moves the choice, a click moves it and picks -
 // keys into my input, one at a time.
 void ListMouse(KbmRaw* kbm, bool click) {
@@ -256,10 +275,11 @@ void ListMouse(KbmRaw* kbm, bool click) {
             g_hoverAt = now + 150;
         }
     }
-    if (g_seqPos < g_seqLen) {   // each key down 4 ticks, then up 4
+    if (g_seqPos < g_seqLen) {   // each key down 4 steps (1/15 s), then up 4
         int key = g_seq[g_seqPos];
         if (g_seqTick < 4) kbm->keys[key >> 3] |= (BYTE)(1 << (key & 7));
-        if (++g_seqTick >= 8) { g_seqTick = 0; ++g_seqPos; }
+        g_seqTick += g_steps;
+        if (g_seqTick >= 8) { g_seqTick = 0; ++g_seqPos; }
     }
 }
 
@@ -268,6 +288,7 @@ void ListMouse(KbmRaw* kbm, bool click) {
 // netplay.cpp, every tick, with this PC's input for the tick being sent: run the menu and hide the input
 // that belongs to it. Returns true while the menu is open (the input is then sent empty).
 bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool keyboardPlayer) {
+    g_steps = StepsSinceLast();
     if (!NetplayLevelLive()) return false;
     g_keyboard = keyboardPlayer;
     const BYTE* keys = kbm->keys;
@@ -321,8 +342,8 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
             g_clickTicks = 6;
             Log(L"Pause: menu clicked - key %d", vk);
         }
-        if (g_clickTicks > 0) {
-            --g_clickTicks;
+        if (g_clickTicks > 0) {   // (down 6 steps: 1/10 s)
+            g_clickTicks -= g_steps;
             kbm->keys[g_clickVk >> 3] |= (BYTE)(1 << (g_clickVk & 7));
         }
         ListMouse(kbm, click);
@@ -361,8 +382,8 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
             g_settings = false;
             Log(L"Pause: menu open (the match goes on)");
         } else {
-            if (g_partyTicks > 0) { --g_partyTicks; kbm->flags |= 4; }
-            if (g_storyPauseTicks > 0) { --g_storyPauseTicks; kbm->flags |= 8; }
+            if (g_partyTicks > 0) { g_partyTicks -= g_steps; kbm->flags |= 4; }
+            if (g_storyPauseTicks > 0) { g_storyPauseTicks -= g_steps; kbm->flags |= 8; }
             *buttons &= ~XINPUT_GAMEPAD_START;   // (only the menu answers the pause button online)
             if (keyboardPlayer) kbm->keys[VK_ESCAPE >> 3] &= ~(1 << (VK_ESCAPE & 7));
             return false;
