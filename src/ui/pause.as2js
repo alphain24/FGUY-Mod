@@ -269,6 +269,8 @@ function FGUYSpectatePoll() {
 }
 
 function FGUYPausePoll() {
+    // (the game hides the HUD for cutscenes: then, and in the menus, the frame rate stays at 60 at most - d3d9.cpp)
+    flash.external.ExternalInterface.call('FGUYMOD_HudShown', Visible == false ? 0 : 1);
     FGUYTestAnnounce();
     FGUYPingPoll();
     FGUYSpectatePoll();

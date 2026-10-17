@@ -263,6 +263,8 @@ int g_statFrames = 0;
 using DwmFlush_t = HRESULT(WINAPI*)();
 DwmFlush_t g_dwmFlush = nullptr;
 
+volatile ULONGLONG g_hudShownAt = 0;   // the level's HUD last said it shows (0: hidden)
+
 void PaceFrame() {
     // Netplay runs the game on a fixed 1/60 s clock, so real time must match: always 60 fps - except while an
     // online session boots hidden (title, menus, level load: nobody watches), which runs as fast as the PCs
@@ -273,6 +275,12 @@ void PaceFrame() {
     }
     int fps = NetplayEnabled() ? 60 : kFrameRates[g_frameRate].fps;
     if (fps < 0) fps = 500;  // "uncapped": see the top of this file
+    // Menus and cutscenes at 60 at most: some of their scripts count frames (above 60 a menu's slide-in stopped
+    // halfway - Story Mode's, shifted up, its buttons' help gone - and cutscenes went wrong). The chosen rate only
+    // while the game is played: the level's HUD up and showing (the HUD says so, VideoHudShown; it hides itself for
+    // cutscenes, and there's none in the menus).
+    bool playing = GetTickCount64() - g_hudShownAt < 400;
+    if (!playing && (fps <= 0 || fps > 60)) fps = 60;
     if (OnlineStartingMatch() && (fps <= 0 || fps > 60)) fps = 60;   // only the loading screen: leave the GPU to
                                                                     // the match's game, booting meanwhile
     if (fps == 0 && !g_fullscreen && g_dwmFlush) {
@@ -305,6 +313,9 @@ LONG CALLBACK ExitCrashHandler(EXCEPTION_POINTERS* e) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 }  // namespace
+
+// The level's HUD, 30 times a second (pause.as2js FGUYPausePoll): is it showing? (the game hides it for cutscenes)
+void VideoHudShown(bool shown) { g_hudShownAt = shown ? GetTickCount64() : 0; }
 
 void QuitGame() {
     static volatile LONG once = 0;

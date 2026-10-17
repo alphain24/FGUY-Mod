@@ -197,6 +197,15 @@ def build(data):
            push(Reg(2), 'text', 'FRAME RATE') + action('SetMember') +
            push(Reg(2), 1, Reg(3), 'push') + action('CallMethod') + action('Pop'))
     p.replace(at, 0, row)
+    #    ...and once the rows are laid out, the game fills each list row's value by name (UpdateButtonList for
+    #    ScreenResolution, DisplayMode): ours too, right after DisplayMode's - else it read SELECT until hovered.
+    dm, dm_total = find_action(inner, 0x96, lambda q, t: texts(q) == ['DisplayMode', 'OPTN', None, 'UpdateButtonList'])
+    after = dm + dm_total + 2                                            # its CallFunction, Pop
+    assert data[dm + dm_total] == 0x3D and data[dm + dm_total + 1] == 0x17, 'UpdateButtonList call not as expected'
+    fill = (push(Reg(1), 'subMenu') + action('GetMember') + push('buttonContainer') + action('GetMember') +
+            push('FrameRate') + action('GetMember') + push('button') + action('GetMember') +
+            push('FrameRate', 'OPTN', 3, 'UpdateButtonList') + action('CallFunction') + action('Pop'))
+    p.replace(after, 0, fill)
     p.fix_top_level_jumps(inner)
     p.replace(size_field, 2, struct.pack('<H', code_end - code_start + p.delta_between(code_start, code_end)))
 

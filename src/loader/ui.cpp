@@ -378,6 +378,9 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnNumber(movie, (double)GetTickCount64());
         } else if (strcmp(fn, "OnlineMatch") == 0) {   // the game's pause menu (pause patch): an online match?
             ReturnBool(movie, NetplayEnabled());
+        } else if (strcmp(fn, "HudShown") == 0) {   // the level's HUD (pause.as2js): showing? (frame rate: d3d9.cpp)
+            VideoHudShown(ArgNumber(args, argc, 0) != 0);
+            ReturnBool(movie, true);
         } else if (strcmp(fn, "KeyboardPlayer") == 0) {   // online HUD: does this player play with keyboard and mouse?
             bool given = argc > 0 && (args[0].type & 0x0F) == kNumber;   // (none given: the game means its first player -
             int player = given ? (int)ArgNumber(args, argc, 0) : 0;      //  as offline)
