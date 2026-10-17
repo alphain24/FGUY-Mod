@@ -49,7 +49,7 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     OWN <list>                       the host's characters and costumes (also sent on joining)
     SAVE <base64>                    sent right before START when the host shared a save
     START <token> <slot> <players> <input delay> <udp port> <lang> <conf> <picks> <rate> [catchup <names>]
-                                     conf = mode,map,time,score,ff; picks = char:costume:team:input;... by slot
+                                     conf = mode,map,time,score,ff,rate,netcode; picks = char:costume:team:input;... by slot
                                      (a snapshot, so every player starts from exactly the same choices);
                                      catchup: back into a running match (BACKIN) - names: everyone's, | separated
     SAID <slot> <name> <text...>     someone in my lobby said something (chat)
@@ -165,7 +165,7 @@ class Lobby:
         self.members = [host]
         self.save = None
         self.lang = '-'
-        self.conf = ['DM', 'FR', '0', '0', '0', '0']  # mode, map, time, score, friendly fire, rate (0 auto)
+        self.conf = ['DM', 'FR', '0', '0', '0', '0', '0']  # mode, map, time, score, friendly fire, rate (0 auto), netcode (1 new)
         self.own = None                           # the host's characters and costumes
         self.token = None                         # the running match's session token (hex)
         self.playing = False                      # its match runs and the host isn't back yet
@@ -319,8 +319,8 @@ class Server:
                 c.input = 'k' if len(args) == 4 and args[3] == 'k' else 'c'
                 c.lobby.broadcast_members()
         elif cmd == 'CONF' and c.lobby and c is c.lobby.host:
-            if len(args) in (5, 6) and all(TOKEN_RE.match(a) for a in args):
-                c.lobby.conf = list(args) + (['0'] if len(args) == 5 else [])
+            if len(args) in (5, 6, 7) and all(TOKEN_RE.match(a) for a in args):   # (older mods send 5 or 6)
+                c.lobby.conf = list(args) + ['0'] * (7 - len(args))
                 c.lobby.broadcast_conf()
         elif cmd == 'OWN' and c.lobby and c is c.lobby.host:
             if len(args) == 1 and OWN_RE.match(args[0]):

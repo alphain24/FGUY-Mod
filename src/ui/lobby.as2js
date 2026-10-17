@@ -482,7 +482,7 @@ function FGUYCostumeName(c, costume) {
 // ---- lobby state from the loader ---------------------------------------------------------------------------
 function FGUYParse(blob) {
     var st = {state: 'off', status: '', code: '', slot: -1, priv: false, name: '', server: '', ping: 0, matchOpen: false, progress: '',
-              mode: 'DM', map: 'FR', time: 0, score: 0, ff: 0, own: '', members: [], lobbies: [], chat: []};
+              mode: 'DM', map: 'FR', time: 0, score: 0, ff: 0, net: 0, own: '', members: [], lobbies: [], chat: []};
     var lines = String(blob).split('\n');
     for (var i = 0; i < lines.length; i++) {
         var f = lines[i].split('|');
@@ -494,6 +494,7 @@ function FGUYParse(blob) {
         } else if (f[0] == 'C') {
             st.mode = f[1]; st.map = f[2]; st.time = Number(f[3]); st.score = Number(f[4]); st.ff = Number(f[5]);
             st.rate = Number(f[6]);
+            st.net = f[7] == '1' ? 1 : 0;   // the netcode: 1 the new one (being built)
         } else if (f[0] == 'O') {
             st.own = f[1];
         } else if (f[0] == 'M') {
@@ -1399,6 +1400,7 @@ function FGUYSettingRows() {
         rows.push('ff');
     }
     rows.push('rate');
+    if (mode.code != 'ST') rows.push('net');   // (story co-op: the classic netcode only, for now)
     return rows;
 }
 
@@ -1408,7 +1410,8 @@ function FGUYSettingValue(r) {
     if (r == 'map') return [mode.code == 'ST' ? 'LEVEL' : 'MAP', FGUYMapName(FGUYS.map, FGUYS.mode)];
     if (r == 'time') return ['TIME LIMIT', FGUYRules.TimeLimit[FGUYS.time]];
     if (r == 'score') return [mode.score == 'FlagLimit' ? 'FLAG LIMIT' : 'WINNING SCORE', FGUYRules[mode.score][FGUYS.score]];
-    if (r == 'rate') return ['FRAME RATE', FGUYS.rate > 0 ? FGUYS.rate + ' FPS' : 'Auto (' + FGUYAutoRate() + ' FPS)'];
+    if (r == 'rate') return ['FRAME RATE', FGUYS.net == 1 ? 'Your own' : (FGUYS.rate > 0 ? FGUYS.rate + ' FPS' : 'Auto (' + FGUYAutoRate() + ' FPS)')];
+    if (r == 'net') return ['NETCODE', FGUYS.net == 1 ? 'New (test)' : 'Classic'];
     return ['FRIENDLY FIRE', FGUYRules.FriendlyFire[FGUYS.ff]];
 }
 
@@ -1418,6 +1421,8 @@ function FGUYSettingHelp(r) {
     if (r == 'map') return mode.code == 'ST' ? 'Which story level you play together.' : "Where you play. You can pick the maps the host's save has unlocked.";
     if (r == 'time') return 'How long a match lasts.';
     if (r == 'score') return mode.score == 'FlagLimit' ? 'The match ends when a team captures this many flags.' : 'The match ends when a team reaches this score.';
+    if (r == 'net') return 'New (test): your moves and camera never wait for the others, everyone plays at their own frame rate, and the shooter\'s PC decides its hits. Classic: every PC plays the exact same frames, so the slowest connection holds everyone up.';
+    if (r == 'rate' && FGUYS.net == 1) return 'With the new netcode everyone plays at the frame rate they picked in their own Options > Screen.';
     if (r == 'rate') return 'Everyone plays at the same frame rate. Auto: the best every player\'s screen shows (up to 240). If a PC can\'t keep up, the match follows it: fewer frames for a while, never slow motion.';
     return 'On: you can hurt your own team. Off: you can only hurt the other team.';
 }
@@ -1770,6 +1775,10 @@ function FGUYInputSettings(key) {
         FGUYDo('rate', FGUYS.rate);
         var rv = FGUYSettingValue('rate');
         FGUYToast('Frame rate: ' + rv[1]);
+    } else if (r == 'net') {
+        FGUYS.net = FGUYS.net == 1 ? 0 : 1;
+        FGUYDo('net', FGUYS.net);
+        FGUYToast('Netcode: ' + (FGUYS.net == 1 ? 'New (test)' : 'Classic'));
     } else {
         var list = r == 'time' ? FGUYRules.TimeLimit : (r == 'score' ? FGUYRules[mode.score] : FGUYRules.FriendlyFire);
         var field = r == 'time' ? 'time' : (r == 'score' ? 'score' : 'ff');

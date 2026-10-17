@@ -64,6 +64,7 @@ int g_chatSeq = 0;
 std::vector<LobbyInfo> g_lobbies;
 std::string g_conf = "DM|FR|0|0|0";  // mode|map|time|score|ff, as the menu uses it
 std::string g_confRate = "0";        // the match's frames per second (0 = auto: the lowest monitor among us)
+std::string g_confNet = "0";         // the match's netcode: 0 classic (lockstep), 1 new (free-running, being built)
 std::string g_own;                  // the host's characters and costumes: Peter:0.1.3;Lois:0.2 (the session
                                     // plays on the host's save, so everyone picks from it)
 bool g_ready = false;
@@ -300,6 +301,7 @@ void HandleLine(const std::string& line) {
     } else if (cmd == "CONF" && f.size() >= 6) {
         g_conf = f[1] + "|" + f[2] + "|" + f[3] + "|" + f[4] + "|" + f[5];
         g_confRate = f.size() >= 7 ? CleanToken(f[6]) : "0";
+        g_confNet = f.size() >= 8 && f[7] == "1" ? "1" : "0";
     } else if (cmd == "CLOSED") {
         g_returning = false;
         g_matchOpen = false;
@@ -630,6 +632,12 @@ void StartSession(const std::vector<std::string>& f) {
     if (GetEnvironmentVariableA("FGUYMOD_TEST_RATE", testRate, sizeof(testRate))) set(L"FGUYMOD_NET_RATE", testRate);
     set(L"FGUYMOD_NET_LANG", f[6]);
     set(L"FGUYMOD_SESSION", f[7] + "|" + f[8]);  // conf: mode,map,time,score,ff | picks: char:costume:team;...
+    {   // the netcode the host picked (conf's 7th field): the new one runs the match free (netplay.cpp) - test knob
+        auto conf = Split(f[7], ',');   // FGUYMOD_TEST_NETFREE=1 forces it (every copy of a test alike)
+        char forced[4];
+        bool free = (conf.size() > 6 && conf[6] == "1") || GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", forced, sizeof(forced)) > 0;
+        set(L"FGUYMOD_NET_FREE", free ? "1" : "0");
+    }
     char testConf[64];   // test knob: FGUYMOD_TEST_CONF=mode,map,time,score,ff overrides the rules (every copy alike)
     if (GetEnvironmentVariableA("FGUYMOD_TEST_CONF", testConf, sizeof(testConf))) set(L"FGUYMOD_SESSION", testConf + ("|" + f[8]));
     keep(L"FGUYMOD_SAVEDIR");
@@ -745,7 +753,7 @@ void OnlineExit() {
 //   S|<state>|<status>|<code>|<my slot>|<private>|<my name>|<server>|<my ping>|<match open>|<catching up>
 //        match open 1: my lobby's match still runs and I can get back into it; catching up: how far, rejoining
 //        state: off, connecting, online, lobby, starting, failed, returning (back from a match)
-//   C|<mode>|<map>|<time>|<score>|<ff>                      the lobby's match settings
+//   C|<mode>|<map>|<time>|<score>|<ff>|<rate>|<net>         the lobby's match settings (net 1: the new netcode)
 //   O|<char>:<costume>.<costume>;...                         what the host's save has (in a lobby)
 //   M|<slot>|<name>|<ready>|<ping>|<character>|<costume>|<team>|<input k/c>   one per player in my lobby
 //   L|<code>|<host>|<players>|<max>|<mode>|<map>|<mods>     one per open lobby (when not in one; mods: names + -)
@@ -757,7 +765,7 @@ const char* LobbyState() {
              "|" + (g_private ? "1" : "0") + "|" + Field(g_name) + "|" + Field(g_serverHost) + "|" +
              std::to_string(g_rtt) + "|" + (g_matchOpen && g_state == State::InLobby ? "1" : "0") + "|" +
              Field(g_state == State::Starting ? g_progress : std::string()) + "\n";
-    g_text += "C|" + g_conf + "|" + g_confRate + "\n";
+    g_text += "C|" + g_conf + "|" + g_confRate + "|" + g_confNet + "\n";
     if (inLobby && !g_own.empty()) g_text += "O|" + g_own + "\n";
     if (inLobby) {
         for (size_t i = 0; i < g_members.size(); ++i) {
@@ -829,7 +837,7 @@ void LobbyDo(const char* command, const char* a, const char* b, const char* c, c
     } else if (cmd == "conf" && g_state == State::InLobby && g_mySlot == 0) {
         g_conf = CleanToken(a) + "|" + CleanToken(b) + "|" + CleanToken(c) + "|" + CleanToken(d) + "|" + CleanToken(e);
         SendLine("CONF " + CleanToken(a) + " " + CleanToken(b) + " " + CleanToken(c) + " " + CleanToken(d) + " " +
-                 CleanToken(e) + " " + g_confRate);
+                 CleanToken(e) + " " + g_confRate + " " + g_confNet);
     } else if (cmd == "say" && g_state == State::InLobby && a) {   // a chat line (UTF-8)
         std::string text;
         for (const char* p = a; *p && text.size() < 300; ++p)
@@ -839,7 +847,12 @@ void LobbyDo(const char* command, const char* a, const char* b, const char* c, c
         g_confRate = CleanToken(a);
         std::string line = "CONF";
         for (auto& v : Split(g_conf, '|')) line += " " + v;
-        SendLine(line + " " + g_confRate);
+        SendLine(line + " " + g_confRate + " " + g_confNet);
+    } else if (cmd == "net" && g_state == State::InLobby && g_mySlot == 0) {   // the match's netcode (0 classic, 1 new)
+        g_confNet = a && a[0] == '1' ? "1" : "0";
+        std::string line = "CONF";
+        for (auto& v : Split(g_conf, '|')) line += " " + v;
+        SendLine(line + " " + g_confRate + " " + g_confNet);
     }
 }
 

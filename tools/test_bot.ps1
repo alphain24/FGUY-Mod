@@ -10,7 +10,9 @@ param(
     [string]$Controls = "controller",  # the host copy: controller (virtual pad) / keyboard
     [string]$HostRes = "960x540",
     [int]$MapLefts = 0,                # MAP: this many steps left (2 = AIRPORT'12)
-    [int]$ModeRights = 0               # GAME MODE: this many steps right (1 = MULTIVERSE MADNESS)
+    [int]$ModeRights = 0,              # GAME MODE: this many steps right (1 = MULTIVERSE MADNESS)
+    [switch]$NewNet,                   # MATCH SETTINGS > NETCODE: New (test) - the free-running match
+    [switch]$FriendlyFire              # MATCH SETTINGS > FRIENDLY FIRE: on (the bot's team is random)
 )
 $pad = Join-Path $PSScriptRoot "pad.ps1"
 function Press([int]$id, [string]$button) { & $pad -Id $id $button | Out-Null; Start-Sleep -Milliseconds 600 }
@@ -30,6 +32,13 @@ Start-Sleep 3
 if ($Story) { Press $hostId down; Press $hostId left }           # GAME MODE: back one = STORY CO-OP
 elseif ($ModeRights) { Press $hostId down; foreach ($k in 1..$ModeRights) { Press $hostId right } }
 elseif ($MapLefts) { Press $hostId down; Press $hostId down; foreach ($k in 1..$MapLefts) { Press $hostId left } }
+if ($NewNet -or $FriendlyFire) {   # (Deathmatch's rows: mode, map, time, score, friendly fire, frame rate, netcode)
+    Press $hostId down; Press $hostId down; Press $hostId down; Press $hostId a   # MATCH SETTINGS
+    $row = 0
+    if ($FriendlyFire) { foreach ($k in 1..4) { Press $hostId down }; Press $hostId right; $row = 4 }
+    if ($NewNet) { foreach ($k in ($row + 1)..6) { Press $hostId down }; Press $hostId right }
+    Press $hostId b
+}
 
 Start-Process -FilePath (Join-Path $GameDir "FGUYMod\Start test bot.bat") -WindowStyle Hidden
 $until = (Get-Date).AddSeconds(150)
