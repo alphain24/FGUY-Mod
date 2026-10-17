@@ -1366,6 +1366,28 @@ void HostWord(Pad* p, unsigned f) {
     }
 }
 
+// The player's own controller: the first one Windows has plugged in (XInput slots 0..3 - not always slot 0: a tester's
+// was elsewhere, and their match read nothing; the lobby's "auto" looks at all four too). Looked for again every 2 s
+// while there's none, and when the one in use goes.
+DWORD MyPadState(XINPUT_STATE* st) {
+    static int at = -1;
+    static ULONGLONG nextLook = 0;
+    if (!g_realXInput) return ERROR_DEVICE_NOT_CONNECTED;
+    if (at >= 0 && g_realXInput((DWORD)at, st) == ERROR_SUCCESS) return ERROR_SUCCESS;
+    ULONGLONG now = GetTickCount64();
+    if (at >= 0 || now >= nextLook) {
+        nextLook = now + 2000;
+        int was = at;
+        at = -1;
+        for (DWORD i = 0; i < 4 && at < 0; ++i)
+            if (g_realXInput(i, st) == ERROR_SUCCESS) at = (int)i;
+        if (at != was) Log(L"Netplay: my controller: %s", at < 0 ? L"none" : at == 0 ? L"slot 1" : at == 1 ? L"slot 2" : at == 2 ? L"slot 3" : L"slot 4");
+        if (at >= 0) return ERROR_SUCCESS;
+    }
+    ZeroMemory(st, sizeof(*st));
+    return ERROR_DEVICE_NOT_CONNECTED;
+}
+
 Pad SampleLocal(unsigned f) {
     if (g_script) {
         Pad sp = ScriptPad(f);
@@ -1377,7 +1399,7 @@ Pad SampleLocal(unsigned f) {
     }
     Pad p{};
     XINPUT_STATE st{};
-    if (g_realXInput && g_realXInput(0, &st) == ERROR_SUCCESS) {  // the player's own controller
+    if (MyPadState(&st) == ERROR_SUCCESS) {  // the player's own controller
         p.buttons = st.Gamepad.wButtons;
         p.lt = st.Gamepad.bLeftTrigger;
         p.rt = st.Gamepad.bRightTrigger;
@@ -1689,7 +1711,7 @@ WORD ScenePad() {
             if (g_slot == 0 && (now - start) % 2000 > 1500) buttons = XINPUT_GAMEPAD_A;  // tap every 2 s
         } else if (g_realXInput) {
             XINPUT_STATE st{};
-            if (g_realXInput(0, &st) == ERROR_SUCCESS) buttons = st.Gamepad.wButtons;
+            if (MyPadState(&st) == ERROR_SUCCESS) buttons = st.Gamepad.wButtons;
             buttons |= VPadButtons(0);
         }
         if (!g_catchUp && KbmSkipPressed()) buttons |= XINPUT_GAMEPAD_A;  // Space / Enter / Esc skip too
@@ -2182,6 +2204,8 @@ __declspec(naked) void __fastcall CollectOriginal(void*, void*, void*) {
     }
 }
 
+void PickupKind(void* pickup, unsigned* id, unsigned* type);
+
 void __fastcall Free_Collect(void* pickup, void* edx, void* player) {
     if (!g_free || g_replayingPickup || !player || IsBadReadPtr(player, 0xe00) ||
         *static_cast<ULONG_PTR*>(player) != kPlayerVtable) {
@@ -2197,7 +2221,9 @@ void __fastcall Free_Collect(void* pickup, void* edx, void* player) {
     PktPickup u{{'U', (BYTE)g_slot}, ++g_pickupSeq, *reinterpret_cast<unsigned*>(static_cast<char*>(pickup) + kPickupId)};
     SendAll(&u, sizeof(u));
     SendAll(&u, sizeof(u));   // (twice: a lost one would leave it there for the others)
-    if (++g_pickupsMine <= 40) Log(L"Netplay: free - I took pickup %#x", u.id);
+    unsigned kindId, kindType;
+    PickupKind(pickup, &kindId, &kindType);
+    if (++g_pickupsMine <= 60) Log(L"Netplay: free - I took pickup %#x (kind %#x/%08x)", u.id, kindId, kindType);
 }
 
 void FreePickupIn(int s, const PktPickup* p) {
@@ -2207,19 +2233,42 @@ void FreePickupIn(int s, const PktPickup* p) {
     g_pickupsIn.push_back(*p);
 }
 
+// What kind of pickup it is (its asset's id and type word, the same on every PC), for the log.
+void PickupKind(void* pickup, unsigned* id, unsigned* type) {
+    auto asset = *reinterpret_cast<unsigned**>(static_cast<char*>(pickup) + 0x68);
+    *id = *type = 0;
+    if (asset && !IsBadReadPtr(asset, 12)) { *id = asset[0]; *type = asset[2]; }
+}
+
+// A pickup taken on another PC, played here with their character taking it. A crash inside (it closed a tester's game
+// twice, at the same spot, and didn't here: which kind shows there differs by PC) is caught: the pickup is skipped.
+bool SafeCollect(void* pickup, void* player) {
+    __try {
+        CollectOriginal(pickup, nullptr, player);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 void FreeApplyPickups() {
     std::vector<PktPickup> in;
     in.swap(g_pickupsIn);
     for (const PktPickup& u : in) {
         void* pickup = PickupById(u.id);
         unsigned char* player = PlayerBySlot(u.h.slot);
+        unsigned kindId = 0, kindType = 0;
+        if (pickup) PickupKind(pickup, &kindId, &kindType);
         static int logged = 0;
-        if (++logged <= 40)
-            Log(L"Netplay: free - player %d took pickup %#x%s", u.h.slot, u.id, pickup ? L"" : L" (nothing showing there here)");
+        if (++logged <= 60)
+            Log(L"Netplay: free - player %d took pickup %#x%s (kind here %#x/%08x)", u.h.slot, u.id,
+                pickup ? L"" : L" (nothing showing there here)", kindId, kindType);
         if (!pickup || !player) continue;
         InterlockedExchange(&g_replayingPickup, 1);
-        CollectOriginal(pickup, nullptr, player);
+        bool ok = SafeCollect(pickup, player);
         InterlockedExchange(&g_replayingPickup, 0);
+        if (!ok) Log(L"Netplay: free - taking pickup %#x (kind %#x/%08x) for player %d crashed here - skipped", u.id, kindId,
+                     kindType, u.h.slot);
     }
 }
 
@@ -2469,10 +2518,10 @@ void FreeTick() {
         if (pos && havePos) moved = sqrtf((pos[0] - lastPos[0]) * (pos[0] - lastPos[0]) + (pos[2] - lastPos[2]) * (pos[2] - lastPos[2]));
         if (pos) { memcpy(lastPos, pos, sizeof(lastPos)); havePos = true; }
         XINPUT_STATE st{};
-        bool pad = g_realXInput && g_realXInput(0, &st) == ERROR_SUCCESS;
+        bool pad = MyPadState(&st) == ERROR_SUCCESS;
         Log(L"Netplay: free - me (player %d): moved %.1f in 5 s, movement input in %d of %d frames; %s, controller %s, "
             L"health %.0f", g_slot, moved, moveFrames, frames, KbmIsKeyboardSlot(g_slot) ? L"keyboard / mouse player" :
-            L"controller player", pad ? L"connected" : L"not connected (XInput pad 0)", me ? PlayerHealth(me) : -1.0f);
+            L"controller player", pad ? L"connected" : L"not connected (none in any of the 4 controller slots)", me ? PlayerHealth(me) : -1.0f);
         frames = moveFrames = 0;
         for (int s = 0; s < g_players && s < 4; ++s) {
             Remote& r = g_remote[s];
