@@ -1033,6 +1033,9 @@ void Dropped(int by, int who, unsigned from) {
 
 void FreeInputs(int s, const PktInputs* p, int count);   // the free-running match (below, before Tick)
 void FreeBack(int s);
+struct PktPickup;
+void FreePickupIn(int s, const PktPickup* p);
+extern const int kPktPickupSize;
 struct PktState;
 struct PktHit;
 void FreeState(int s, const PktState* p);
@@ -1106,6 +1109,8 @@ void Receive() {
             Dropped(slot, p->who, p->from);
         } else if (h->type == 'B') {   // a player rejoined a free-running match (a new game: their numbers start over)
             if (g_free) FreeBack(slot);
+        } else if (h->type == 'U' && n >= kPktPickupSize) {   // a pickup they took
+            if (g_free) FreePickupIn(slot, reinterpret_cast<PktPickup*>(buf));
         } else if (h->type == 'X' && n >= kPktStateSize) {
             if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf));
         } else if (h->type == 'Z' && n >= kPktHitSize) {
@@ -1921,6 +1926,7 @@ struct Remote {
     unsigned hitAck[4];                        // the last hit from each PC their own PC had counted (their state)
     unsigned hitSeen[32];                      // their last hits' numbers (a hit comes twice)
     unsigned hitApplied;                       // the last of their hits I've played here
+    unsigned pickupSeen[16];                   // their last pickups' numbers (each comes twice)
     // stats for the log
     double errSum, yawErrSum;
     float errMax, yawErrMax;
@@ -2105,6 +2111,136 @@ void FreeApplyHits() {
                 L"there)%s", h.seq, h.h.slot, h.victim, h.source == 0xff ? -1 : h.source, before, PlayerHealth(victim),
                 h.after + h.lost, h.after, r ? L"" : L" - not taken here");
     }
+}
+
+// ---- pickups (ammo, health, ...: zFloatingCollectible, vtable 0xa8deb4) ----
+// A pickup starts flying to the player who touched it in 0x9beee0 (thiscall: the pickup, the player - it gives them the
+// item by an event). While the match runs free only my own player takes pickups here; every one I take goes to the others
+// ('U': the pickup's id, which is the same on every PC - the level loads the same way) and they let my character take
+// it there, so it's gone (and comes back) everywhere. The pickups' update (vtable method 0x9c0f40) keeps a table of
+// them by id for that.
+#pragma pack(push, 1)
+struct PktPickup { PktHeader h; unsigned seq, id; };
+#pragma pack(pop)
+const int kPktPickupSize = (int)sizeof(PktPickup);
+const uintptr_t kPickupVtable = 0xa8deb4, kCollect = 0x9beee0, kPickupUpdate = 0x9c0f40;
+const int kPickupId = 0x18;
+using PickupUpdate_t = void(__thiscall*)(void* self, float dt);
+PickupUpdate_t Real_PickupUpdate = nullptr;
+// The id (+0x18) is the pickup's spot, not the pickup: a spot has one pickup object per kind it can show, and each PC picks
+// which kind shows by its own random numbers - so a spot can show health here and ammo there (to be shared: later). A
+// pickup taken somewhere takes whatever shows at that spot here.
+const int kPickupSlots = 512, kPickupKinds = 12;
+void* volatile g_pickups[kPickupSlots][kPickupKinds];   // by spot (hashed; checked on use)
+volatile LONG g_replayingPickup = 0;
+unsigned g_pickupSeq = 0;
+std::vector<PktPickup> g_pickupsIn;            // taken on other PCs, played at the start of my next frame
+int g_pickupsMine = 0, g_pickupsBlocked = 0;
+
+void __fastcall Free_PickupUpdate(void* self, void*, float dt) {
+    unsigned id = *reinterpret_cast<unsigned*>(static_cast<char*>(self) + kPickupId);
+    void* volatile* kinds = g_pickups[id % kPickupSlots];
+    int free = -1;
+    for (int k = 0; k < kPickupKinds; ++k) {
+        void* p = kinds[k];
+        if (p == self) { free = -2; break; }
+        if (free == -1 && (!p || IsBadReadPtr(p, 0xb0) || *static_cast<uintptr_t*>(p) != kPickupVtable)) free = k;
+    }
+    if (free >= 0) kinds[free] = self;
+    Real_PickupUpdate(self, dt);
+}
+
+bool PickupShowing(void* p) {   // out to be taken (+0xa3), not flying to anyone yet (+0x74)
+    return *(static_cast<char*>(p) + 0xa3) != 0 && *(static_cast<char*>(p) + 0x74) == 0;
+}
+
+// What shows at that spot here (nullptr: nothing).
+void* PickupById(unsigned id) {
+    for (int k = 0; k < kPickupKinds; ++k) {
+        void* p = g_pickups[id % kPickupSlots][k];
+        if (!p || IsBadReadPtr(p, 0xb0) || *static_cast<uintptr_t*>(p) != kPickupVtable ||
+            *reinterpret_cast<unsigned*>(static_cast<char*>(p) + kPickupId) != id)
+            continue;
+        if (PickupShowing(p)) return p;
+    }
+    return nullptr;
+}
+
+// The original 0x9beee0 (its first 9 bytes, then the rest of it).
+__declspec(naked) void __fastcall CollectOriginal(void*, void*, void*) {
+    __asm {
+        push esi
+        mov esi, ecx
+        mov eax, dword ptr [esi + 0x84]
+        push 0x9beee9
+        ret
+    }
+}
+
+void __fastcall Free_Collect(void* pickup, void* edx, void* player) {
+    if (!g_free || g_replayingPickup || !player || IsBadReadPtr(player, 0xe00) ||
+        *static_cast<ULONG_PTR*>(player) != kPlayerVtable) {
+        CollectOriginal(pickup, edx, player);
+        return;
+    }
+    int slot = *reinterpret_cast<int*>(static_cast<char*>(player) + 0xdf8);
+    if (slot != g_slot) {   // someone else's character here: their own PC says if they take it ('U')
+        ++g_pickupsBlocked;
+        return;
+    }
+    CollectOriginal(pickup, edx, player);
+    PktPickup u{{'U', (BYTE)g_slot}, ++g_pickupSeq, *reinterpret_cast<unsigned*>(static_cast<char*>(pickup) + kPickupId)};
+    SendAll(&u, sizeof(u));
+    SendAll(&u, sizeof(u));   // (twice: a lost one would leave it there for the others)
+    if (++g_pickupsMine <= 40) Log(L"Netplay: free - I took pickup %#x", u.id);
+}
+
+void FreePickupIn(int s, const PktPickup* p) {
+    Remote& r = g_remote[s];
+    for (unsigned seen : r.pickupSeen) if (seen == p->seq) return;
+    r.pickupSeen[p->seq % 16] = p->seq;
+    g_pickupsIn.push_back(*p);
+}
+
+void FreeApplyPickups() {
+    std::vector<PktPickup> in;
+    in.swap(g_pickupsIn);
+    for (const PktPickup& u : in) {
+        void* pickup = PickupById(u.id);
+        unsigned char* player = PlayerBySlot(u.h.slot);
+        static int logged = 0;
+        if (++logged <= 40)
+            Log(L"Netplay: free - player %d took pickup %#x%s", u.h.slot, u.id, pickup ? L"" : L" (nothing showing there here)");
+        if (!pickup || !player) continue;
+        InterlockedExchange(&g_replayingPickup, 1);
+        CollectOriginal(pickup, nullptr, player);
+        InterlockedExchange(&g_replayingPickup, 0);
+    }
+}
+
+bool InstallPickupHooks() {
+    const unsigned char start[] = {0x56, 0x8b, 0xf1, 0x8b, 0x86, 0x84, 0x00, 0x00, 0x00};
+    auto at = reinterpret_cast<unsigned char*>(kCollect);
+    if (IsBadReadPtr(at, sizeof(start)) || memcmp(at, start, sizeof(start)) != 0) {
+        Log(L"Netplay: the pickups' code isn't what we expect - pickups not shared");
+        return false;
+    }
+    auto vt = reinterpret_cast<void**>(kPickupVtable);
+    int slot = -1;
+    for (int i = 0; i < 40 && slot < 0; ++i) if (vt[i] == reinterpret_cast<void*>(kPickupUpdate)) slot = i;
+    if (slot < 0) { Log(L"Netplay: no pickup update in its vtable - pickups not shared"); return false; }
+    DWORD old;
+    VirtualProtect(vt + slot, sizeof(void*), PAGE_READWRITE, &old);
+    Real_PickupUpdate = reinterpret_cast<PickupUpdate_t>(vt[slot]);
+    vt[slot] = reinterpret_cast<void*>(&Free_PickupUpdate);
+    VirtualProtect(vt + slot, sizeof(void*), old, &old);
+    VirtualProtect(at, sizeof(start), PAGE_EXECUTE_READWRITE, &old);
+    at[0] = 0xE9;
+    *reinterpret_cast<int*>(at + 1) = (int)(reinterpret_cast<uintptr_t>(&Free_Collect) - (kCollect + 5));
+    memset(at + 5, 0x90, sizeof(start) - 5);
+    VirtualProtect(at, sizeof(start), old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, sizeof(start));
+    return true;
 }
 
 // Everyone else's characters: towards where their own PC has them.
@@ -2300,6 +2436,7 @@ void FreeTick() {
     OnlineSettingsApply(kbm, g_players);
     KbmApply(kbm, g_players);
     FreeApplyHits();
+    FreeApplyPickups();
     FreeApplyRemotes(dt);
     FreeSendState();
     static ULONGLONG lastLog = 0;
@@ -3025,6 +3162,7 @@ void InitNetplay(HMODULE exe) {
         *slot = reinterpret_cast<void*>(&Free_TakeDamage);
         VirtualProtect(slot, sizeof(void*), old, &old);
         Log(L"Netplay: the match will run free (no lockstep) once everyone's level is up");
+        if (InstallPickupHooks()) Log(L"Netplay: pickups shared (only my own player takes them here)");
     }
     for (int s = 0; s < 4; ++s)
         for (int k = 0; k < 8; ++k) g_peerHashTick[s][k] = ~0u;
