@@ -279,6 +279,22 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
 - **Cameras**: each player carries its camera inside its object (a camera at `+0xf0c0`, updated by `0x588c40`, the
   zCamDriver / zCamThirdPerson update): the yaw at `+0xf32c` (radians) and `+0xed64` (degrees), pitch `+0xed5c`,
   and the matrix at `[player+0xf88]+0x9c` are all outputs, recomputed every frame from the camera's eye and target
-  points (`0x4ac8e0`, atan2 / asin) - writing them does nothing. The orbit state that the right stick / mouse
-  turns is still to be found (for showing other players' aim).
+  points (`0x4ac8e0`, atan2 / asin) - writing them does nothing. **The camera's own state** is the orbit block at
+  `player+0xf3a8` (camera `+0xf148` = zFGUYCamThirdPerson, block at camera `+0x260`): pivot (3 floats), **yaw**
+  `+0xf3b4` and **pitch** `+0xf3b8` (radians), distance `+0xf3bc`, eye (3 floats) `+0xf3c0`. The stick adds to the
+  yaw every frame (`0x580ab0`); writing yaw / pitch turns the camera for good, and the player's shots follow it
+  (aim = the viewport's view through the screen centre, `0x6568c0`): tested, a shooter turned only by writing its
+  yaw hit its target. View direction on the ground = (-sin yaw, -cos yaw).
+- **Teleporting**: writing only the transform position makes the character *slide* there (the Havok character
+  proxy sweeps to it and stops at obstacles - that's what happened at the crates). A true teleport writes the proxy's
+  shape too: `[player+0x104c]` = hkpCharacterProxy, `[proxy+0x60]` = its shape phantom (hkpCachingShapePhantom),
+  position at phantom `+0xe0` (a little above the feet: keep the difference). Writing both together (pipe command
+  `teleport <player> x y z`) moved a player across the map through the crates, and it landed on the ground. Give a
+  real height: a point under the ground makes the game put the player back. The transform pointer can change
+  (respawn): read it fresh. The respawn itself is `0x69d5a0` (spawn point chosen through `0x69bfb0`).
+- **Final damage differs from the hit's amount**: point blank, Lois's bullets said 15 but took 45 each (the apply
+  step scales it, `0x9812a0`). The shooter's PC must send the health actually lost.
+- **Melee** (B): amount 10, type 30, flags `0x401240`, source = the player. **Grenade** (LT): 150, type 28, flags
+  `0x20348`, direction = the blast vector; it hit the thrower too (self damage) - source = the thrower for both.
+  LB gave a 0-damage hit, type 1, flags `0x40`. Every player-caused hit names the player as its source.
 - Facing: the transform at `[player+0x38]` is a 4x4 matrix, rows right / up / forward / position.

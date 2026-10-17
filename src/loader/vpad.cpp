@@ -311,6 +311,30 @@ void HandleCommand(char* line) {
         }
         return;
     }
+    if (cmd && _stricmp(cmd, "teleport") == 0) {   // research: teleport <player> <x> <y> <z> - the player's transform and
+        char* who = strtok_s(nullptr, " \t\r\n", &ctx);   // its Havok collision shape (phantom) together
+        float v[3] = {};
+        for (float& f : v) {
+            char* t = strtok_s(nullptr, " \t\r\n", &ctx);
+            if (!t) return;
+            f = (float)atof(t);
+        }
+        auto list = *reinterpret_cast<char***>(0xbad988);
+        int index = who ? atoi(who) : -1;
+        if (!list || index < 0 || index >= *reinterpret_cast<int*>(reinterpret_cast<char*>(list) + 0x20)) return;
+        char* player = list[index];
+        char* transform = *reinterpret_cast<char**>(player + 0x38);
+        char* proxy = *reinterpret_cast<char**>(player + 0x104c);
+        char* phantom = proxy ? *reinterpret_cast<char**>(proxy + 0x60) : nullptr;
+        if (!transform || !phantom) return;
+        float* tp = reinterpret_cast<float*>(transform + 0x30);
+        float* pp = reinterpret_cast<float*>(phantom + 0xe0);
+        float lift = pp[1] - tp[1];   // the shape sits a little above the feet
+        pp[0] = v[0]; pp[1] = v[1] + lift; pp[2] = v[2];
+        tp[0] = v[0]; tp[1] = v[1]; tp[2] = v[2];
+        Log(L"Teleport: player %d to (%.2f %.2f %.2f)", index, v[0], v[1], v[2]);
+        return;
+    }
     if (cmd && _stricmp(cmd, "watch") == 0) {   // research: which code writes there (up to 4 hex addresses)
         while (char* p = strtok_s(nullptr, " \t\r\n", &ctx))
             WatchAddress(reinterpret_cast<void*>(strtoul(p, nullptr, 16)), L"the watched address");
