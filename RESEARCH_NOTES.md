@@ -298,3 +298,18 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   `0x20348`, direction = the blast vector; it hit the thrower too (self damage) - source = the thrower for both.
   LB gave a 0-damage hit, type 1, flags `0x40`. Every player-caused hit names the player as its source.
 - Facing: the transform at `[player+0x38]` is a 4x4 matrix, rows right / up / forward / position.
+
+## Pickups, and the free-running match (2026-10-17)
+- Deathmatch maps have pickups (Frat Row's level file: PU_Ammo_*, PU_HealthFull_*, FRDM_SupplyCrate1-3, FRDM_Pickup1-5
+  for the MP power-ups: DoomBear, GiantChicken, Ipecac, JoeTurret, StewieTurret, TubeMan). Ammo and health are
+  `zFloatingCollectible` objects (vtable `0xa8deb4`, entity type `0x8d`): `+0x18` = the pickup's *spot* id (the same
+  on every PC), `+0x68` its kind (asset), byte `+0xa3` = out to be taken, `+0x70` = the player taking it, `+0x74` =
+  flying to them. A spot has one object per kind it can show and each PC picks which kind shows with its own random
+  numbers. A pickup is only taken if the player needs it (full health / ammo: nothing happens); health pickups give 50.
+  They come back after about a minute.
+- `0x9beee0` (thiscall: the pickup, the player) starts the taking (sets `+0x70` / `+0x74`, sends the player event
+  `0x1d05330b`, which gives the item); the pickups' update is vtable method `0x9c0f40` (`ret 4`).
+- The free-running match (netplay.cpp, MATCH SETTINGS > NETCODE: New): tested against the scripted bot through a local
+  lobby server with 150 ms each way, +-20..30 ms jitter, 2% loss - remote players ~0.1-0.15 units off on average,
+  hits identical on both PCs, kills, respawns (one teleport), match end, rematch, quitting, rejoining (back in ~14 s),
+  pickups (spot by spot). Story co-op stays on the classic netcode for now.
