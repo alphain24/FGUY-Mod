@@ -520,6 +520,7 @@ function FGUYPoll() {
     if (FGUYToastUntil > 0 && FGUYNow() > FGUYToastUntil) { FGUYToastUntil = 0; FGUYDraw(); }
     if (FGUYChatQuick == undefined) { FGUYChatQuick = 0; FGUYChatTyping = false; FGUYChatDraft = ''; FGUYChatSeen = 0; }
     if (FGUYChatTyping) FGUYChatPoll();
+    FGUYPadCheck();
     FGUYUpdateWait = FGUYUpdateWait == undefined ? 0 : FGUYUpdateWait - 1;
     if (FGUYUpdateWait <= 0 && FGUYScreen == 'hub') {
         FGUYUpdateWait = 7;
@@ -1647,7 +1648,28 @@ function FGUYToggleInput() {
     FGUYPickInput = FGUYPickInput == 'k' ? 'c' : 'k';
     FGUYSendPick();
     FGUYSound('change');
-    FGUYToast('You play with ' + (FGUYPickInput == 'k' ? 'keyboard and mouse' : 'a controller') + ' (your own key bindings)');
+    var noPad = FGUYPickInput == 'c' && flash.external.ExternalInterface.call('FGUYMOD_PadConnected') != true;
+    FGUYToast(noPad ? 'No controller is plugged in - plug one in, or you\'ll be switched back to keyboard and mouse' :
+              'You play with ' + (FGUYPickInput == 'k' ? 'keyboard and mouse' : 'a controller') + ' (your own key bindings)');
+    FGUYPadMissing = 0;
+}
+
+// Set to controller with none plugged in (for a few seconds): back to keyboard and mouse - in the match the game only
+// listens to the one picked here (a tester couldn't move: keyboard and mouse in hand, "controller" picked).
+function FGUYPadCheck() {
+    if (FGUYBot || FGUYS.state != 'lobby' || FGUYPickInput != 'c') { FGUYPadMissing = 0; return; }
+    var now = FGUYNow();
+    if (FGUYPadNext != undefined && now < FGUYPadNext) return;
+    FGUYPadNext = now + 1000;
+    if (flash.external.ExternalInterface.call('FGUYMOD_PadConnected') == true) { FGUYPadMissing = 0; return; }
+    FGUYPadMissing = (FGUYPadMissing == undefined ? 0 : FGUYPadMissing) + 1;
+    if (FGUYPadMissing < 4) return;
+    FGUYPadMissing = 0;
+    FGUYPickInput = 'k';
+    FGUYSendPick();
+    FGUYToast('No controller found - you\'ll play with keyboard and mouse (CONTROLS to change)');
+    FGUYToastUntil = FGUYNow() + 6000;
+    FGUYDraw();
 }
 
 function FGUYPrimary() {

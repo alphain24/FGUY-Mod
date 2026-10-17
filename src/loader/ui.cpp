@@ -399,6 +399,11 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             if (NetplayEnabled()) ReturnNumber(movie, 1);    //   (offline: no answer, the game's own count)
         } else if (strcmp(fn, "TypedText") == 0) {  // letters / digits / \b typed on the ONLINE screens
             ReturnString(movie, OnlineMenuTyped());
+        } else if (strcmp(fn, "PadConnected") == 0) {   // a controller is plugged in (any of Windows' 4 slots)
+            // (test copies: their virtual pad - unless FGUYMOD_TEST_NOPAD: as if none were plugged in)
+            bool testPad = SettingInt(L"Debug", L"TestInput", L"FGUYMOD_TESTINPUT", 0) != 0 &&
+                           !SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NOPAD", 0);
+            ReturnBool(movie, testPad || (VPadRealPadConnected() && !SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NOPAD", 0)));
         } else if (strcmp(fn, "FromWASD") == 0) {   // (direction key): it came from W A S D
             ReturnBool(movie, OnlineMenuFromWASD((int)ArgNumber(args, argc, 0)));
         } else if (strcmp(fn, "TurnPreview") == 0) {  // (radians): turn the 3D character preview

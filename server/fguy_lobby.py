@@ -339,8 +339,9 @@ class Server:
             c.lobby.save = args[0] if 0 < len(data) <= MAX_SAVE else None
         elif cmd == 'LANG' and c.lobby and c is c.lobby.host:
             c.lobby.lang = re.sub(r'[^A-Za-z_]', '', args[0])[:8] if args else '-'
-        elif cmd == 'START' and c.lobby and c is c.lobby.host and not c.away:   # (a repeat while its match runs: ignored)
-            self.start(c.lobby)
+        elif cmd == 'START':
+            if c.lobby and c is c.lobby.host and not c.away:   # (a repeat while its match runs - pressed twice: ignored)
+                self.start(c.lobby)
         elif cmd == 'MODS':
             c.mods = args[0] if args and MODS_RE.match(args[0]) else '-'
         elif cmd == 'SAY' and c.lobby:
