@@ -2,7 +2,7 @@
 #   pad.ps1 down down a          -> pad 0: d-pad down twice, then A
 #   pad.ps1 -Pad 1 start         -> pad 1: Start
 #   pad.ps1 -Id 1234 a           -> the copy with process id 1234
-# Buttons: a b x y start back up down left right lb rb
+# Buttons: a b x y start back up down left right lb rb ls rs
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$Buttons,

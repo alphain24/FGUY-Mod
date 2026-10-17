@@ -35,6 +35,7 @@ int g_openCount = 0, g_players = 0;
 int g_injectSlot = -1, g_injectTicks = 0;
 int g_storyPauseTicks = 0;     // story co-op: my pause goes out with the next few inputs
 bool g_swallowBack = false;    // my SETTINGS closed over the game's pause menu: its back press stays mine
+volatile bool g_hudTakesStart = false;   // my weapons screen is up (the HUD): START is its own (leaves it), not ours
 // The end of the match's rematch vote: Y votes (KbmRaw.flags bit 4, with my input - every PC sees everyone's); once
 // everyone has, the host's input picks the menu's first item (RETRY) by itself. The host can still pick either.
 ULONGLONG g_resultsAt = 0;     // the end of the match's menu last said it's up (FGUYMOD_MenuMouse "results")
@@ -307,6 +308,8 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
     if (keyboardPlayer) { g_cursorX = kbm->cursorX; g_cursorY = kbm->cursorY; }
 
     bool pausePress = (down & XINPUT_GAMEPAD_START) || pressed(VK_ESCAPE);
+    bool startToGame = g_hudTakesStart && !g_open;   // (START leaves my weapons screen: it goes to the game, as offline)
+    if (startToGame && !pressed(VK_ESCAPE)) pausePress = false;
     if (g_gamePaused) g_storyPauseTicks = 0;   // (my pause did it: the rest of its presses would pause again after RESUME)
     if (g_gamePaused && !(g_open && g_settings)) {   // the game's own pause menu is up: everything goes to it
         if (g_swallowBack) {   // (the Esc / B that closed my SETTINGS: not the game's menu's back too)
@@ -384,7 +387,7 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
         } else {
             if (g_partyTicks > 0) { g_partyTicks -= g_steps; kbm->flags |= 4; }
             if (g_storyPauseTicks > 0) { g_storyPauseTicks -= g_steps; kbm->flags |= 8; }
-            *buttons &= ~XINPUT_GAMEPAD_START;   // (only the menu answers the pause button online)
+            if (!startToGame) *buttons &= ~XINPUT_GAMEPAD_START;   // (only the menu answers the pause button online)
             if (keyboardPlayer) kbm->keys[VK_ESCAPE >> 3] &= ~(1 << (VK_ESCAPE & 7));
             return false;
         }
@@ -610,6 +613,12 @@ const char* OnlinePauseRematch() {
     sprintf_s(head, "%d|%d|%d|", voted, g_votePlayers, g_vote ? 1 : 0);
     out = head + names;
     return out.c_str();
+}
+
+// FGUYMOD_HudTakesStart: my death menu's CHANGE WEAPONS screen came up / went.
+void OnlinePauseHudTakesStart(bool up) {
+    if (up != g_hudTakesStart) Log(L"Pause: the weapons screen is %s (START %s)", up ? L"up" : L"gone", up ? L"leaves it" : L"pauses");
+    g_hudTakesStart = up;
 }
 
 // Out of sync (netplay.cpp, the same check on every PC): leave the match - back to the lobby.

@@ -319,6 +319,14 @@ function FGUYDeathMouse() {
     var layer = _root.FGUYMouseUI;
     var screen = v != undefined && CurScreen != undefined ? CurScreen[v] : undefined;
     var mouseScreen = (screen == 'DeathMenu' || screen == 'CharacterCustomize') && IsKeyboardEnabled(p);
+    // The death menu's CHANGE WEAPONS screen is left with START (it respawns you with the weapon chosen) - online the
+    // loader gives START to our pause menu, so it hears when this screen is up (a controller couldn't leave it). (A
+    // supply crate's store is the same screen, left with B too: START stays our pause there.)
+    var takesStart = screen == 'CharacterCustomize' && !IsInGameWeaponSelect(p);
+    if (takesStart != FGUYTakesStart) {
+        FGUYTakesStart = takesStart;
+        flash.external.ExternalInterface.call('FGUYMOD_HudTakesStart', takesStart ? 1 : 0);
+    }
     if (mouseScreen) {
         if (layer == undefined) {
             layer = _root.createEmptyMovieClip('FGUYMouseUI', 30001);

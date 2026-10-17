@@ -61,6 +61,9 @@ int GamePlayers(unsigned char** out, int max);  // the game's live players, by p
 void InitNetplay(HMODULE exe);         // lockstep online play core            (netplay.cpp)
 bool NetplayEnabled();
 bool NetplayFreeRun();                 //   the match runs free (no lockstep: client-server, being built)
+bool NetplayStoreAllowed(int player);  //   the store (ui.cpp): may this purchase for that player go through here?
+void NetplayStoreBought(int player, int weapon);  // my player bought a weapon (sent to the others)
+bool NetplayStoreTake(int* player, int* weapon);  // a weapon someone bought on their PC, to mark bought here
 void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
 int NetplayLocalSlot();                //   my player slot, -1 when netplay is off
@@ -177,6 +180,7 @@ void OnlinePauseCommand(const char* command);  //   ui.cpp: a menu command ran
 const char* OnlinePauseMenu();                 //   FGUYMOD_PauseMenu (the HUD)
 const char* OnlinePauseCursor();
 const char* OnlinePauseDeathMouse(const char* boxes);   //   FGUYMOD_DeathMouse (the HUD): my death menu's buttons
+void OnlinePauseHudTakesStart(bool up);                 //   FGUYMOD_HudTakesStart (the HUD): my weapons screen is up
 const char* OnlineMenuMouse(const char* boxes, const char* who);   //   FGUYMOD_MenuMouse (the game's menus): their lists
 void OnlinePauseSettings();                     //   FGUYMOD_PauseSettings (the game's pause menu: OPTIONS)
 const char* OnlinePauseRematch();               //   FGUYMOD_Rematch (the end of the match: the votes)

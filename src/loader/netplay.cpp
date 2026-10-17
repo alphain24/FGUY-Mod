@@ -46,6 +46,7 @@
 #include <intrin.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
@@ -1036,9 +1037,13 @@ void FreeBack(int s);
 struct PktPickup;
 void FreePickupIn(int s, const PktPickup* p);
 extern const int kPktPickupSize;
+struct PktBuy;
+void FreeBuyIn(int s, const PktBuy* p);
+extern const int kPktBuySize;
 struct PktState;
+extern const int kPktStateSizeOld;
 struct PktHit;
-void FreeState(int s, const PktState* p);
+void FreeState(int s, const PktState* p, bool withMoney);
 void FreeHitIn(int s, const PktHit* p);
 extern const int kPktStateSize, kPktHitSize;
 
@@ -1111,8 +1116,10 @@ void Receive() {
             if (g_free) FreeBack(slot);
         } else if (h->type == 'U' && n >= kPktPickupSize) {   // a pickup they took
             if (g_free) FreePickupIn(slot, reinterpret_cast<PktPickup*>(buf));
-        } else if (h->type == 'X' && n >= kPktStateSize) {
-            if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf));
+        } else if (h->type == 'W' && n >= kPktBuySize) {   // a weapon they bought at a supply crate
+            if (g_free) FreeBuyIn(slot, reinterpret_cast<PktBuy*>(buf));
+        } else if (h->type == 'X' && n >= kPktStateSizeOld) {   // (0.8.12 and older: no money in it)
+            if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSize);
         } else if (h->type == 'Z' && n >= kPktHitSize) {
             if (g_free) FreeHitIn(slot, reinterpret_cast<PktHit*>(buf));
         } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
@@ -1946,10 +1953,13 @@ struct Remote {
     unsigned stateSeq;
     float pos[3], yaw, pitch, health;
     bool alive;
+    bool haveMoney;
+    int money;                                 // their money (what the store's prices are checked against)
     unsigned hitAck[4];                        // the last hit from each PC their own PC had counted (their state)
     unsigned hitSeen[32];                      // their last hits' numbers (a hit comes twice)
     unsigned hitApplied;                       // the last of their hits I've played here
     unsigned pickupSeen[16];                   // their last pickups' numbers (each comes twice)
+    unsigned buySeen[8];                       // their last purchases' numbers (each comes twice)
     bool rescue;                               // the game here wanted to put their character back in the level
     // stats for the log
     double errSum, yawErrSum;
@@ -1959,13 +1969,15 @@ struct Remote {
 Remote g_remote[4];
 
 #pragma pack(push, 1)
-struct PktState { PktHeader h; unsigned seq; float pos[3]; float yaw, pitch, health; BYTE alive; unsigned hitAck[4]; };
+struct PktState { PktHeader h; unsigned seq; float pos[3]; float yaw, pitch, health; BYTE alive; unsigned hitAck[4]; int money; };
 const int kHitInfo = 0x68;                     // the game's damage info (DamageInfo, see the notes)
 struct PktHit { PktHeader h; unsigned seq; BYTE victim, source, part; float lost, after; unsigned partOffset; BYTE info[kHitInfo]; };
 #pragma pack(pop)
 const int kPktStateSize = (int)sizeof(PktState), kPktHitSize = (int)sizeof(PktHit);
+const int kPktStateSizeOld = (int)offsetof(PktState, money);
 
 const int kCamYaw = 0xf3b4, kCamPitch = 0xf3b8;    // the player's camera's own angles (radians)
+const int kMoney = 0xbc + 0x224;                   // the player's wallet (PlayerMoney)
 const int kProxy = 0x104c, kProxyShape = 0x60, kShapePos = 0xe0;   // Havok character proxy -> its shape -> position
 
 unsigned char* PlayerBySlot(int slot) {
@@ -2018,7 +2030,7 @@ void FreeInputs(int s, const PktInputs* p, int count) {
     r.heardAt = GetTickCount64();
 }
 
-void FreeState(int s, const PktState* p) {
+void FreeState(int s, const PktState* p, bool withMoney) {
     Remote& r = g_remote[s];
     r.heardAt = GetTickCount64();
     if (r.haveState && p->seq <= r.stateSeq) return;
@@ -2030,6 +2042,8 @@ void FreeState(int s, const PktState* p) {
     r.health = p->health;
     r.alive = p->alive != 0;
     memcpy(r.hitAck, p->hitAck, sizeof(r.hitAck));
+    r.haveMoney = withMoney;
+    if (withMoney) r.money = p->money;
 }
 
 std::vector<PktHit> g_hitsIn;                  // hits from the others, played at the start of my next tick
@@ -2275,6 +2289,43 @@ void FreeApplyPickups() {
     }
 }
 
+// ---- the supply crates' store (weapons, paid with the money kills bring) ----
+// The store is a menu: buying calls STOR_SubtractCurrency(player, cost) and STOR_SetMultiplayerWeaponBought(player,
+// weapon) (ui.cpp sees them). While the match runs free only my own player buys here: everyone's presses reach their
+// character on every PC, so someone else's store opens here too - what it would buy here is dropped
+// (NetplayStoreAllowed). What I buy goes to the others ('W'), and their game marks it bought for my character there
+// (at its next menu call - before the weapons wheel asks: ui.cpp, NetplayStoreTake). The money itself comes with
+// everyone's state ('X'). Research: RESEARCH_NOTES.md "Supply crates".
+struct PktBuy { PktHeader h; unsigned seq; int weapon; };
+const int kPktBuySize = (int)sizeof(PktBuy);
+SRWLOCK g_buyLock = SRWLOCK_INIT;
+std::vector<int> g_buysOut;                    // what I bought (the menu's thread) - sent from my next frame
+std::vector<std::pair<int, int>> g_buysIn;     // (player, weapon) bought on other PCs - for the menu's thread
+unsigned g_buySeq = 0;
+
+void FreeSendBuys() {
+    std::vector<int> out;
+    AcquireSRWLockExclusive(&g_buyLock);
+    out.swap(g_buysOut);
+    ReleaseSRWLockExclusive(&g_buyLock);
+    for (int weapon : out) {
+        PktBuy b{{'W', (BYTE)g_slot}, ++g_buySeq, weapon};
+        SendAll(&b, sizeof(b));
+        SendAll(&b, sizeof(b));   // (twice: a lost one would leave them without it on the others' PCs)
+        Log(L"Netplay: free - I bought weapon %d", weapon);
+    }
+}
+
+void FreeBuyIn(int s, const PktBuy* p) {
+    Remote& r = g_remote[s];
+    for (unsigned seen : r.buySeen) if (seen == p->seq) return;
+    r.buySeen[p->seq % 8] = p->seq;
+    Log(L"Netplay: free - player %d bought weapon %d", s, p->weapon);
+    AcquireSRWLockExclusive(&g_buyLock);
+    g_buysIn.push_back({s, p->weapon});
+    ReleaseSRWLockExclusive(&g_buyLock);
+}
+
 bool InstallPickupHooks() {
     const unsigned char start[] = {0x56, 0x8b, 0xf1, 0x8b, 0x86, 0x84, 0x00, 0x00, 0x00};
     auto at = reinterpret_cast<unsigned char*>(kCollect);
@@ -2307,6 +2358,9 @@ void FreeApplyRemotes(float dt) {
         if (s == g_slot || g_gone[s] || !r.haveState) continue;
         unsigned char* p = PlayerBySlot(s);
         if (!p) continue;
+        // their money: as their PC has it (kills pay there; what they spend at a supply crate comes off there)
+        int* money = reinterpret_cast<int*>(p + kMoney);
+        if (r.haveMoney && !IsBadWritePtr(money, 4)) *money = r.money;
         float health = PlayerHealth(p);
         if (!r.alive || health <= 0) continue;   // (down, or respawning: their own input brings them back)
         float* yaw = reinterpret_cast<float*>(p + kCamYaw);
@@ -2369,6 +2423,7 @@ void FreeSendState() {
     st.health = PlayerHealth(me);
     st.alive = st.health > 0 ? 1 : 0;
     for (int s = 0; s < 4; ++s) st.hitAck[s] = g_remote[s].hitApplied;   // (the hits my health has in it)
+    st.money = PlayerMoney(me);
     SendAll(&st, sizeof(st));
 }
 
@@ -2386,6 +2441,10 @@ Pad FreeRemotePad(int s) {
     p.rx = p.ry = 0;
     p.kbm.dx = p.kbm.dy = 0;
     p.kbm.sync = 0;
+    // START: only for their death menu's weapons screen (it respawns them - their PC sends it only then). Their character
+    // here may not be at the same point (it isn't down here yet, or is up already): then it would pause my game.
+    unsigned char* them = PlayerBySlot(s);
+    if (!them || PlayerHealth(them) > 0) p.buttons &= ~XINPUT_GAMEPAD_START;
     return p;
 }
 
@@ -2404,6 +2463,10 @@ void FreeStart() {
         r.latest = g_current[s];
         r.heardAt = now;
     }
+    AcquireSRWLockExclusive(&g_buyLock);   // (nothing left over from a match before)
+    g_buysIn.clear();
+    g_buysOut.clear();
+    ReleaseSRWLockExclusive(&g_buyLock);
     g_free = true;
     g_freeFrom = g_tick;
     if (g_freeRejoin) {   // back in: everyone plays again here, and they hear I'm back
@@ -2499,6 +2562,7 @@ void FreeTick() {
     KbmApply(kbm, g_players);
     FreeApplyHits();
     FreeApplyPickups();
+    FreeSendBuys();
     FreeApplyRemotes(dt);
     FreeSendState();
     static int frames = 0, moveFrames = 0;   // (my own input and character, for the log below)
@@ -3041,6 +3105,26 @@ void NetplayOnFrame() {
 
 bool NetplayEnabled() { return g_enabled; }
 bool NetplayFreeRun() { return g_enabled && g_free; }
+
+// The store (ui.cpp): may this purchase for that player go through here? (Free-running: only my own player's.)
+bool NetplayStoreAllowed(int player) { return !NetplayFreeRun() || player == g_slot; }
+void NetplayStoreBought(int player, int weapon) {
+    if (!NetplayFreeRun() || player != g_slot) return;
+    AcquireSRWLockExclusive(&g_buyLock);
+    g_buysOut.push_back(weapon);
+    ReleaseSRWLockExclusive(&g_buyLock);
+}
+bool NetplayStoreTake(int* player, int* weapon) {
+    AcquireSRWLockExclusive(&g_buyLock);
+    bool any = !g_buysIn.empty();
+    if (any) {
+        *player = g_buysIn.front().first;
+        *weapon = g_buysIn.front().second;
+        g_buysIn.erase(g_buysIn.begin());
+    }
+    ReleaseSRWLockExclusive(&g_buyLock);
+    return any;
+}
 
 bool g_levelLaunched = false;   // this session's level was launched (from then on, the front end = the match is over)
 

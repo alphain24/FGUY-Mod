@@ -246,6 +246,34 @@ const char* ArgString(const GFxValue* args, unsigned argc, unsigned i) {
 
 void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, const GFxValue* args,
                               unsigned argc) {
+    // The supply crates' store in a free-running match (netplay.cpp): someone else's store opens here too (from their
+    // presses), but only my own player buys here - theirs is marked bought when their PC says so.
+    if (NetplayFreeRun()) {
+        int player, weapon;
+        while (NetplayStoreTake(&player, &weapon)) {   // (before this call: it may be the weapons wheel asking)
+            GFxValue a[2] = {};
+            a[0].type = kNumber;
+            a[0].number = player;
+            a[1].type = kNumber;
+            a[1].number = weapon;
+            Real_Callback(self, movie, "STOR_SetMultiplayerWeaponBought", a, 2);
+            Log(L"UI: player %d's weapon %d marked bought here (bought on their PC)", player, weapon);
+        }
+        bool buy = name && strcmp(name, "STOR_SetMultiplayerWeaponBought") == 0;
+        if (name && (buy || strcmp(name, "STOR_SubtractCurrency") == 0)) {
+            player = (int)ArgNumber(args, argc, 0);
+            if (!NetplayStoreAllowed(player)) {
+                static int logged = 0;
+                if (++logged <= 20) Log(L"UI: %S for player %d dropped here (their own PC buys it)", name, player);
+                return;
+            }
+            if (buy) {
+                Real_Callback(self, movie, name, args, argc);
+                NetplayStoreBought(player, (int)ArgNumber(args, argc, 1));
+                return;
+            }
+        }
+    }
     if (name && strncmp(name, "FGUYMOD_", 8) == 0) {
         const char* fn = name + 8;
         static int logged = 0;
@@ -321,6 +349,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnString(movie, OnlinePauseMenu());
         } else if (strcmp(fn, "PauseCursor") == 0) {
             ReturnString(movie, OnlinePauseCursor());
+        } else if (strcmp(fn, "HudTakesStart") == 0) {   // (1 / 0): my weapons screen is up - START is its own
+            OnlinePauseHudTakesStart(ArgNumber(args, argc, 0) != 0);
         } else if (strcmp(fn, "DeathMouse") == 0) {   // (my death menu's buttons) -> the pointer
             ReturnString(movie, OnlinePauseDeathMouse(ArgString(args, argc, 0)));
         } else if (strcmp(fn, "MenuMouse") == 0) {    // (the end of the match's menu) -> the Windows pointer shown?

@@ -337,5 +337,29 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   `HudElements::InventoryPickup`, vtable `0x9f5524`, probably drives it). To share them: find the call that uses the
   item for a player, send it ('P': player, kind), make the same call for their character on the other PCs - and the
   AI character it makes needs syncing like the other modes' enemies (where it is, who it attacks, its damage).
-- Tools: `vtcount.py` (every object in the heap by class, snapshot / compare), `vtpick.py` (the count of given classes),
-  `vtname.py` (a vtable's class name from RTTI), `countscan.py` (find a counter by how it changes, like a cheat finder).
+## Supply crates (2026-10-18)
+- A supply crate is a store portal: `zInteraction` (vtable `0xa8d6fc`, `+0x18` id, `+0x28` -> its menu,
+  "=MNU_GLOBAL_SUPPLYCRATE") with a `zTrigger`, scripts, a map icon and a `zPlatform` (`0xa19844`, where it is) of the
+  same id (`crates.py`). Frat Row: `0x4e30` (35.9 7.4 112.0), `0x4d39` (118.0 8.0 88.5), `0x5155` (40.7 8.4 201.0).
+  Some maps also have `=GLOBAL_AMMO_DEPOT` interactions (ammo, no menu involved).
+- "PRESS X TO ACCESS STORE" opens the HUD's CharacterCustomize screen as the in-match weapon select (the wheel of the
+  multiplayer weapons; left stick picks, X buys, B or START leaves: `FGUY_WeaponSelectDone`). Buying: the HUD calls
+  `STOR_SubtractCurrency(player, cost)` then `STOR_SetMultiplayerWeaponBought(player, weapon)` (the game's player
+  number; weapon 21 = SVG, 1000). Money = player `+0xbc+0x224` (kills pay it).
+- A bought weapon is used from the next life: the death menu's CHANGE WEAPONS (Y) is the same wheel, left stick picks,
+  START respawns with it (B goes back). In the match a short Y swaps between the two weapons; a held Y opens the wheel
+  (LB / RB its inventory page). Pad bindings: `0xadbac8 + action*8` {context, buttons - XInput's bits for A B X Y},
+  the keyboard's `0xadc290`; action 28 (the weapon wheel) = Y / `` ` ``.
+- Online the HUD runs every player's screens on every PC: someone's store opens on the others' PCs too (not shown -
+  their HUD has no viewport there), driven by their relayed presses. In the free-running match money wasn't shared,
+  so it refused there - now money comes with the state ('X'), what their store would buy on another PC is dropped,
+  and the purchase itself goes out ('W': weapon) and is marked bought for them with the same menu call (ui.cpp).
+- Online the loader gave START to its pause menu always, so a controller couldn't leave CHANGE WEAPONS (any netcode).
+  The HUD now tells it when that screen is up (`FGUYMOD_HudTakesStart`): START goes to the game. Another PC's START
+  only reaches their character here while it's down (else, at a different point here, it paused this game).
+- Tested (free-running, host on the virtual pad): buy (host 5000 -> 4000, the guest the same), die, CHANGE WEAPONS,
+  SVG, START, respawn on both PCs, tap Y - the SVG in hand on both.
+- Tools (power-ups and crates): `vtcount.py` (every object in the heap by class, snapshot / compare), `vtpick.py` (the
+  count of given classes), `vtname.py` (a vtable's class name from RTTI), `countscan.py` (find a counter by how it
+  changes, like a cheat finder), `crates.py` (a level's supply crates), `lookat.py` (a test copy's camera turned onto
+  another player, for screenshots); the test pad's `hold` / `press` also know `ls` / `rs` (the sticks' buttons).
