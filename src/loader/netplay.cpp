@@ -2147,16 +2147,17 @@ void FreeApplyHits() {
 // it there, so it's gone (and comes back) everywhere. The pickups' update (vtable method 0x9c0f40) keeps a table of
 // them by id for that.
 #pragma pack(push, 1)
-struct PktPickup { PktHeader h; unsigned seq, id; };
+struct PktPickup { PktHeader h; unsigned seq, id, kind; };
 #pragma pack(pop)
 const int kPktPickupSize = (int)sizeof(PktPickup);
 const uintptr_t kPickupVtable = 0xa8deb4, kCollect = 0x9beee0, kPickupUpdate = 0x9c0f40;
 const int kPickupId = 0x18;
 using PickupUpdate_t = void(__thiscall*)(void* self, float dt);
 PickupUpdate_t Real_PickupUpdate = nullptr;
-// The id (+0x18) is the pickup's spot, not the pickup: a spot has one pickup object per kind it can show, and each PC picks
-// which kind shows by its own random numbers - so a spot can show health here and ammo there (to be shared: later). A
-// pickup taken somewhere takes whatever shows at that spot here.
+// The id (+0x18) is the pickup's spot, not the pickup: a spot has one pickup object per kind it can show (+0xa1: the one
+// switched on). Which kind it is gets picked once, as the level loads - in lockstep, so the same on every PC (checked,
+// also for a game that rejoined) - and a pickup that comes back is the same kind again. A pickup taken somewhere takes
+// what shows at that spot here; 'U' says which kind it was there, so a difference would show in the log.
 const int kPickupSlots = 512, kPickupKinds = 12;
 void* volatile g_pickups[kPickupSlots][kPickupKinds];   // by spot (hashed; checked on use)
 volatile LONG g_replayingPickup = 0;
@@ -2217,12 +2218,12 @@ void __fastcall Free_Collect(void* pickup, void* edx, void* player) {
         ++g_pickupsBlocked;
         return;
     }
-    CollectOriginal(pickup, edx, player);
-    PktPickup u{{'U', (BYTE)g_slot}, ++g_pickupSeq, *reinterpret_cast<unsigned*>(static_cast<char*>(pickup) + kPickupId)};
-    SendAll(&u, sizeof(u));
-    SendAll(&u, sizeof(u));   // (twice: a lost one would leave it there for the others)
     unsigned kindId, kindType;
     PickupKind(pickup, &kindId, &kindType);
+    CollectOriginal(pickup, edx, player);
+    PktPickup u{{'U', (BYTE)g_slot}, ++g_pickupSeq, *reinterpret_cast<unsigned*>(static_cast<char*>(pickup) + kPickupId), kindId};
+    SendAll(&u, sizeof(u));
+    SendAll(&u, sizeof(u));   // (twice: a lost one would leave it there for the others)
     if (++g_pickupsMine <= 60) Log(L"Netplay: free - I took pickup %#x (kind %#x/%08x)", u.id, kindId, kindType);
 }
 
@@ -2240,8 +2241,8 @@ void PickupKind(void* pickup, unsigned* id, unsigned* type) {
     if (asset && !IsBadReadPtr(asset, 12)) { *id = asset[0]; *type = asset[2]; }
 }
 
-// A pickup taken on another PC, played here with their character taking it. A crash inside (it closed a tester's game
-// twice, at the same spot, and didn't here: which kind shows there differs by PC) is caught: the pickup is skipped.
+// A pickup taken on another PC, played here with their character taking it. A crash inside (a tester's game closed right
+// after one, twice - it didn't come back, and didn't happen here) is caught: the pickup is skipped.
 bool SafeCollect(void* pickup, void* player) {
     __try {
         CollectOriginal(pickup, nullptr, player);
@@ -2260,9 +2261,11 @@ void FreeApplyPickups() {
         unsigned kindId = 0, kindType = 0;
         if (pickup) PickupKind(pickup, &kindId, &kindType);
         static int logged = 0;
-        if (++logged <= 60)
-            Log(L"Netplay: free - player %d took pickup %#x%s (kind here %#x/%08x)", u.h.slot, u.id,
-                pickup ? L"" : L" (nothing showing there here)", kindId, kindType);
+        bool otherKind = pickup && kindId != u.kind;
+        if (++logged <= 60 || otherKind)
+            Log(L"Netplay: free - player %d took pickup %#x%s (kind %#x there, %#x/%08x here)%s", u.h.slot, u.id,
+                pickup ? L"" : L" (nothing showing there here)", u.kind, kindId, kindType,
+                otherKind ? L" - A DIFFERENT KIND HERE" : L"");
         if (!pickup || !player) continue;
         InterlockedExchange(&g_replayingPickup, 1);
         bool ok = SafeCollect(pickup, player);

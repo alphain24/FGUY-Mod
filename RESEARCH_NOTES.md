@@ -304,9 +304,14 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   for the MP power-ups: DoomBear, GiantChicken, Ipecac, JoeTurret, StewieTurret, TubeMan). Ammo and health are
   `zFloatingCollectible` objects (vtable `0xa8deb4`, entity type `0x8d`): `+0x18` = the pickup's *spot* id (the same
   on every PC), `+0x68` its kind (asset), byte `+0xa3` = out to be taken, `+0x70` = the player taking it, `+0x74` =
-  flying to them. A spot has one object per kind it can show and each PC picks which kind shows with its own random
-  numbers. A pickup is only taken if the player needs it (full health / ammo: nothing happens); health pickups give 50.
-  They come back after about a minute.
+  flying to them. A spot has one object per kind it can show (some spots 6 kinds, most one); byte `+0xa1` = the kind
+  switched on there. It's picked once, as the level loads, and a taken pickup comes back as the same kind (~110 s
+  later) - the pickup's own timer, `0x9ba730` resets it, nothing picks again. Online the level loads in lockstep, so the
+  kinds are the same on every PC: checked spot by spot, host vs guest and host vs a game that rejoined (it loads the
+  level alone - same kinds). Active = `+0xa1` and `+0xa2` set, `+0x75` (taken) clear (`0x9719a0`); `0x9bcfb0` shows /
+  hides it by that. A pickup is only taken if the player needs it (full health / ammo: nothing happens); health
+  pickups give 50. Kind ids seen: `0x42`, `0x103`, `0x1b9`, `0x2363` (single-kind spots), `0x80`, `0x83`, `0x89`,
+  `0x240e`, `0x2412`, `0x3630` (the 6-kind spots).
 - `0x9beee0` (thiscall: the pickup, the player) starts the taking (sets `+0x70` / `+0x74`, sends the player event
   `0x1d05330b`, which gives the item); the pickups' update is vtable method `0x9c0f40` (`ret 4`).
 - The free-running match (netplay.cpp, MATCH SETTINGS > NETCODE: New): tested against the scripted bot through a local
