@@ -26,7 +26,7 @@ foreach ($slot in 0..($Players - 1)) {
     New-Item -ItemType Directory -Force $dir | Out-Null
     Get-ChildItem $dir -Filter *.sav | Remove-Item
     if ($Save) { Copy-Item $Save $dir }
-    $ids += & $start -Ini $Ini -Res "960x540"
+    $ids += & $start -GameDir $GameDir -Ini $Ini -Res "960x540"
     Start-Sleep -Seconds 1
 }
 foreach ($v in "FGUYMOD_NET", "FGUYMOD_NET_SLOT", "FGUYMOD_NET_PLAYERS", "FGUYMOD_NET_PORT", "FGUYMOD_NET_PEERS",

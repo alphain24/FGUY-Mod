@@ -1880,6 +1880,7 @@ void PredictMyView() {
 bool g_freeWanted = false;
 bool g_free = false;
 unsigned g_freeFrom = 0;
+bool g_freeHostGone = false;                   // the host left: back to the lobby (once)
 const unsigned kFreeAfterTicks = 120;          // after everyone's level is up (at the lockstep's 60)
 
 struct Remote {
@@ -1892,16 +1893,18 @@ struct Remote {
     unsigned stateSeq;
     float pos[3], yaw, pitch, health;
     bool alive;
+    unsigned hitAck[4];                        // the last hit from each PC their own PC had counted (their state)
     unsigned hitSeen[32];                      // their last hits' numbers (a hit comes twice)
+    unsigned hitApplied;                       // the last of their hits I've played here
     // stats for the log
-    double errSum;
-    float errMax;
-    int errCount, teleports, slides;
+    double errSum, yawErrSum;
+    float errMax, yawErrMax;
+    int errCount, teleports, slides, healthFixes;
 };
 Remote g_remote[4];
 
 #pragma pack(push, 1)
-struct PktState { PktHeader h; unsigned seq; float pos[3]; float yaw, pitch, health; BYTE alive; };
+struct PktState { PktHeader h; unsigned seq; float pos[3]; float yaw, pitch, health; BYTE alive; unsigned hitAck[4]; };
 const int kHitInfo = 0x68;                     // the game's damage info (DamageInfo, see the notes)
 struct PktHit { PktHeader h; unsigned seq; BYTE victim, source, part; float lost, after; unsigned partOffset; BYTE info[kHitInfo]; };
 #pragma pack(pop)
@@ -1971,6 +1974,7 @@ void FreeState(int s, const PktState* p) {
     r.pitch = p->pitch;
     r.health = p->health;
     r.alive = p->alive != 0;
+    memcpy(r.hitAck, p->hitAck, sizeof(r.hitAck));
 }
 
 std::vector<PktHit> g_hitsIn;                  // hits from the others, played at the start of my next tick
@@ -1988,6 +1992,7 @@ TakeDamage_t Real_TakeDamage = nullptr;
 volatile LONG g_replayingHit = 0;
 CRITICAL_SECTION g_hitLock;
 unsigned g_hitSeq = 0;
+unsigned g_lastHitOn[4];                       // my last hit on each player (their health from their PC counts once it has it)
 int g_hitsBlocked = 0, g_hitsMine = 0;
 
 char __fastcall Free_TakeDamage(void* self, void*, void* info) {
@@ -2006,6 +2011,11 @@ char __fastcall Free_TakeDamage(void* self, void*, void* info) {
     float before = PlayerHealth(victimObj);
     char r = Real_TakeDamage(self, info);
     float after = PlayerHealth(victimObj);
+    static int calls = 0;
+    if (++calls <= 80)
+        Log(L"Netplay: free - damage call: player %d by %d, amount %.1f type %d flags %#x, returned %d, health %.1f -> %.1f",
+            victim, source, *reinterpret_cast<float*>(static_cast<char*>(info) + 0x1c), *reinterpret_cast<int*>(static_cast<char*>(info) + 0x20),
+            *reinterpret_cast<unsigned*>(static_cast<char*>(info) + 0x28), r, before, after);
     if (victim < 0 || victim >= g_players || (!r && after == before)) return r;
     PktHit h{};
     h.h = {'Z', (BYTE)g_slot};
@@ -2023,6 +2033,7 @@ char __fastcall Free_TakeDamage(void* self, void*, void* info) {
     memset(h.info + 0x58, 0, 4);
     EnterCriticalSection(&g_hitLock);
     h.seq = ++g_hitSeq;
+    g_lastHitOn[victim] = h.seq;
     LeaveCriticalSection(&g_hitLock);
     SendAll(&h, sizeof(h));
     SendAll(&h, sizeof(h));   // (twice: a lost hit would be gone for good)
@@ -2047,6 +2058,8 @@ void FreeApplyHits() {
         InterlockedExchange(&g_replayingHit, 1);
         char r = Real_TakeDamage(victim, info);
         InterlockedExchange(&g_replayingHit, 0);
+        Remote& from = g_remote[h.h.slot];
+        if (h.seq > from.hitApplied) from.hitApplied = h.seq;
         static int logged = 0;
         if (++logged <= 60)
             Log(L"Netplay: free - hit #%u from player %d's PC: player %d hit by %d, health %.1f -> %.1f here (%.1f -> %.1f "
@@ -2067,6 +2080,9 @@ void FreeApplyRemotes(float dt) {
         float* yaw = reinterpret_cast<float*>(p + kCamYaw);
         float* pitch = reinterpret_cast<float*>(p + kCamPitch);
         float k = dt * 20 < 1 ? dt * 20 : 1;
+        float yawErr = fabsf(WrapAngle(r.yaw - *yaw));   // (before this frame's step: how far their aim was off)
+        r.yawErrSum += yawErr;
+        if (yawErr > r.yawErrMax) r.yawErrMax = yawErr;
         *yaw = WrapAngle(*yaw + WrapAngle(r.yaw - *yaw) * k);
         *pitch += (r.pitch - *pitch) * k;
         float* pos = const_cast<float*>(PlayerPos(p));
@@ -2092,8 +2108,9 @@ void FreeApplyRemotes(float dt) {
             pos[2] += dz * m;
             ++r.slides;
         }
-        if (r.health > 0 && fabsf(r.health - health) > 0.5f)   // their health: as their PC has it
-            if (float* hf = HealthField(p)) *hf = r.health;
+        // their health: as their PC has it - once it has counted my last hit on them (before that it's behind mine)
+        if (r.health > 0 && fabsf(r.health - health) > 0.5f && r.hitAck[g_slot] >= g_lastHitOn[s])
+            if (float* hf = HealthField(p)) { *hf = r.health; ++r.healthFixes; }
     }
 }
 
@@ -2114,6 +2131,7 @@ void FreeSendState() {
     st.pitch = *reinterpret_cast<float*>(me + kCamPitch);
     st.health = PlayerHealth(me);
     st.alive = st.health > 0 ? 1 : 0;
+    for (int s = 0; s < 4; ++s) st.hitAck[s] = g_remote[s].hitApplied;   // (the hits my health has in it)
     SendAll(&st, sizeof(st));
 }
 
@@ -2194,11 +2212,17 @@ void FreeTick() {
         if (!g_gone[s] && nowMs - g_remote[s].heardAt > 10000) {
             g_gone[s] = true;
             Log(L"Netplay: free - nothing from player %d for 10 s - they left; their character stays idle", s);
-            if (g_inSession) OverlayShow((PlayerName(s) + L" left the match").c_str(), 5000);
+            if (g_inSession && s != 0) OverlayShow((PlayerName(s) + L" left the match").c_str(), 5000);
             if (s == 0 && g_inSession) {
+                g_freeHostGone = true;
                 OverlayShow(L"Lost the connection to the match - back to the lobby", 8000);
                 OnlinePauseForceQuit();
             }
+        } else if (g_gone[s] && s == 0 && g_inSession && !g_freeHostGone) {   // the host quit ('L'): the match is over
+            g_freeHostGone = true;
+            Log(L"Netplay: free - the host left the match - back to the lobby");
+            OverlayShow((PlayerName(0) + L" (the host) left the match - back to the lobby").c_str(), 8000);
+            OnlinePauseForceQuit();
         }
         g_current[s] = FreeRemotePad(s);
     }
@@ -2231,12 +2255,13 @@ void FreeTick() {
         for (int s = 0; s < g_players && s < 4; ++s) {
             Remote& r = g_remote[s];
             if (s == g_slot || !r.errCount) continue;
-            Log(L"Netplay: free - player %d: %.2f off on average, %.2f at most; %d slides, %d teleports; ping %ld ms; %d hits "
-                L"left to other PCs, %d decided here", s, r.errSum / r.errCount, r.errMax, r.slides, r.teleports, g_pingMs[s],
+            Log(L"Netplay: free - player %d: %.2f off on average, %.2f at most; %d slides, %d teleports, %d health fixes; ping %ld "
+                L"ms; aim %.1f deg off on average, %.1f at most; %d hits left to other PCs, %d decided here", s, r.errSum / r.errCount,
+                r.errMax, r.slides, r.teleports, r.healthFixes, g_pingMs[s], r.yawErrSum / r.errCount * 57.2958, r.yawErrMax * 57.2958,
                 g_hitsBlocked, g_hitsMine);
-            r.errSum = 0;
-            r.errMax = 0;
-            r.errCount = r.slides = r.teleports = 0;
+            r.errSum = r.yawErrSum = 0;
+            r.errMax = r.yawErrMax = 0;
+            r.errCount = r.slides = r.teleports = r.healthFixes = 0;
         }
     }
 }

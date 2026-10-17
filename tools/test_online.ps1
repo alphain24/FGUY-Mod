@@ -24,7 +24,7 @@ foreach ($i in 0..($Players - 1)) {
     $env:FGUYMOD_SAVEDIR = "testsave$i"; $env:FGUYMOD_ONLINE_NAME = $names[$i]; $env:FGUYMOD_ONLINE_SERVER = $Server
     $env:FGUYMOD_TEST_AUTOMENU = "online"
     if ($Controls.Count -gt $i) { $env:FGUYMOD_ONLINE_CONTROLS = $Controls[$i] } else { Remove-Item Env:FGUYMOD_ONLINE_CONTROLS -ErrorAction SilentlyContinue }
-    $ids += & $start -Res $Res
+    $ids += & $start -GameDir $GameDir -Res $Res
     Start-Sleep -Seconds 1
 }
 foreach ($v in "FGUYMOD_SAVEDIR", "FGUYMOD_ONLINE_NAME", "FGUYMOD_ONLINE_SERVER", "FGUYMOD_TEST_AUTOMENU", "FGUYMOD_ONLINE_CONTROLS") { Remove-Item "Env:$v" -ErrorAction SilentlyContinue }
