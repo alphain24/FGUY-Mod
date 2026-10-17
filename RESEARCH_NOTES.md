@@ -318,3 +318,24 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   lobby server with 150 ms each way, +-20..30 ms jitter, 2% loss - remote players ~0.1-0.15 units off on average,
   hits identical on both PCs, kills, respawns (one teleport), match end, rematch, quitting, rejoining (back in ~14 s),
   pickups (spot by spot). Story co-op stays on the classic netcode for now.
+
+## Power-ups (2026-10-18)
+- The power-ups are the pickup spots with six kinds (`powerups.py`): Frat Row has five (`0x4ba9`, `0x4bb0`..`0x4bb3`
+  = FRDM_Pickup1-5), each with kinds `0x80`, `0x83`, `0x89`, `0x240e`, `0x2412`, `0x3630`. The kind switched on at each
+  was the same in every match (3630, 89, 3630, 2412, 240e). They come back 60 s after being taken. Taking them is
+  already shared (they're `zFloatingCollectible`s, see above). `0x2412` = the Giant Chicken (HUD icon under the
+  portrait, "x n" = how many held).
+- Using one: D-pad left / right picks the held power-up (the HUD icon changes), D-pad down uses it (Peter makes a
+  summoning gesture). On keyboard: the weapon wheel (`` ` ``), then Ctrl = the inventory page (8 slots), by W/A/S/D.
+  The first D-pad down after taking one sometimes did nothing; after D-pad up, down worked.
+- Using the chicken creates an AI character (`vtcount.py` before / after: behavior tree nodes `zNPCBT...`,
+  `zNPCRegulatorRuleGroup`, `hkpGskBaseAgent`, ~45 new classes), gone again about a minute later. "IsGiantChicken"
+  (`0x5a839e`) is a UI condition; `0x698a10` registers the names Ipecac / GiantChicken / TubeMan with a number each.
+- **In the free-running match a power-up used on one PC shows only there**: the other PC gave the pickup to its copy of
+  the player, and the D-pad press reaches it (remote inputs keep every button that went down), but its copy never
+  used it - none of the new classes appeared there. So using one is local-player only (the HUD's inventory,
+  `HudElements::InventoryPickup`, vtable `0x9f5524`, probably drives it). To share them: find the call that uses the
+  item for a player, send it ('P': player, kind), make the same call for their character on the other PCs - and the
+  AI character it makes needs syncing like the other modes' enemies (where it is, who it attacks, its damage).
+- Tools: `vtcount.py` (every object in the heap by class, snapshot / compare), `vtpick.py` (the count of given classes),
+  `vtname.py` (a vtable's class name from RTTI), `countscan.py` (find a counter by how it changes, like a cheat finder).
