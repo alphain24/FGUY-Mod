@@ -359,6 +359,11 @@ void HandleCommand(char* line) {
             WatchAddress(reinterpret_cast<void*>(strtoul(p, nullptr, 16)), L"the watched address", true);
         return;
     }
+    if (cmd && _stricmp(cmd, "spymark") == 0) {   // research: each player's method calls since the last mark (player spy)
+        char* label = strtok_s(nullptr, " \t\r\n", &ctx);
+        ResearchSpyMark(label ? label : "");
+        return;
+    }
     if (cmd && _stricmp(cmd, "watchaim") == 0) {   // research: which code writes a player's aim point
         char* p = strtok_s(nullptr, " \t\r\n", &ctx);
         NetplayWatchAim(p ? atoi(p) : 0);

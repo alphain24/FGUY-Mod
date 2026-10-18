@@ -19,6 +19,7 @@ const uintptr_t kPlayerVtable = 0xa1af14;
 const int kPlayerSlots = 167;
 
 LONG g_calls[kPlayerSlots];
+LONG g_callsBy[8][kPlayerSlots];   // by player (g_players' order), since the last "spymark"
 void* volatile g_players[8];
 bool g_spy = false;      // stubs installed
 bool g_spyLog = false;   // periodic research log
@@ -34,7 +35,7 @@ void __cdecl Record(int slot, void* self) {
         if (!g_callerTids[i] && InterlockedCompareExchange(&g_callerTids[i], me, 0) == 0) { g_callerCounts[i] = 1; break; }
     }
     for (int i = 0; i < 8; ++i) {
-        if (g_players[i] == self) return;
+        if (g_players[i] == self) { InterlockedIncrement(&g_callsBy[i][slot]); return; }
         if (!g_players[i] &&
             InterlockedCompareExchangePointer(reinterpret_cast<void* volatile*>(&g_players[i]), self, nullptr) == nullptr)
             return;
@@ -132,7 +133,61 @@ char __fastcall Spy_TakeDamage(void* self, void*, void* info) {
     return r;
 }
 
+// Input spy ([Debug] InputSpy=<action> or env FGUYMOD_INPUTSPY=<action>, 999 = every action): the players' input queries
+// (zPlayerInputHuman, vtable 0xa1a29c, methods 21..23: thiscall (action, flag, flag) -> pressed?) - who asks (the code
+// that acts on it), which player's input, and the answer: each new asker of an action once, then each time its answer
+// turns to "yes" (up to 400).
+const uintptr_t kInputVtable = 0xa1a29c;
+using InputQuery_t = char(__thiscall*)(void* self, int action, int a, int b);
+InputQuery_t Real_InputQuery[3];
+int g_spyAction = -1;
+struct SpyAsker { void* caller; int action; char last; };
+SpyAsker g_spyCallers[512];
+int g_spyYes = 0;
+
+void SpyInput(int m, void* self, int action, int a, int b, char r, void* caller) {
+    if (g_spyAction != 999 && action != g_spyAction) return;
+    bool seen = false, rose = false;
+    for (int i = 0; i < 512 && !seen; ++i) {
+        SpyAsker& e = g_spyCallers[i];
+        if (e.caller == caller && e.action == action) { seen = true; rose = r && !e.last; e.last = r; }
+        else if (!e.caller) { e = {caller, action, r}; break; }
+    }
+    if (seen && (!rose || g_spyYes >= 400)) return;
+    if (r) ++g_spyYes;
+    Log(L"InputSpy: method %d action %d (%d, %d) on input %p -> %d, asked from %p%s", 21 + m, action, a, b, self, r, caller,
+        seen ? L"" : L" (new)");
+}
+char __fastcall Spy_Input0(void* self, void*, int action, int a, int b) {
+    char r = Real_InputQuery[0](self, action, a, b);
+    SpyInput(0, self, action, a, b, r, _ReturnAddress());
+    return r;
+}
+char __fastcall Spy_Input1(void* self, void*, int action, int a, int b) {
+    char r = Real_InputQuery[1](self, action, a, b);
+    SpyInput(1, self, action, a, b, r, _ReturnAddress());
+    return r;
+}
+char __fastcall Spy_Input2(void* self, void*, int action, int a, int b) {
+    char r = Real_InputQuery[2](self, action, a, b);
+    SpyInput(2, self, action, a, b, r, _ReturnAddress());
+    return r;
+}
+
 void InitResearch() {
+    g_spyAction = SettingInt(L"Debug", L"InputSpy", L"FGUYMOD_INPUTSPY", -1);
+    if (g_spyAction >= 0) {
+        auto vt = reinterpret_cast<void**>(kInputVtable);
+        void* spies[3] = {(void*)&Spy_Input0, (void*)&Spy_Input1, (void*)&Spy_Input2};
+        DWORD old;
+        VirtualProtect(vt + 21, 3 * sizeof(void*), PAGE_READWRITE, &old);
+        for (int i = 0; i < 3; ++i) {
+            Real_InputQuery[i] = reinterpret_cast<InputQuery_t>(vt[21 + i]);
+            vt[21 + i] = spies[i];
+        }
+        VirtualProtect(vt + 21, 3 * sizeof(void*), old, &old);
+        Log(L"Research: input spy on (action %d)", g_spyAction);
+    }
     if (SettingInt(L"Debug", L"DamageSpy", L"FGUYMOD_DAMAGESPY", 0)) {
         auto slot = reinterpret_cast<void**>(kPlayerVtable) + 58;
         DWORD old;
@@ -156,6 +211,23 @@ void InitResearch() {
     for (int i = 0; i < kPlayerSlots; ++i) vt[i] = MakeStub(i, vt[i]);
     VirtualProtect(vt, kPlayerSlots * sizeof(void*), old, &old);
     Log(L"Research: player spy on (%d methods wrapped)", kPlayerSlots);
+}
+
+// Test pipe "spymark <label>" (with the player spy on): each player's method calls since the last mark - then from zero.
+// Marks around one action (before / after a button) show the methods it runs.
+void ResearchSpyMark(const char* label) {
+    if (!g_spy) { Log(L"Research: spymark needs the player spy (FGUYMOD_PLAYERSPY=1)"); return; }
+    for (int i = 0; i < 8 && g_players[i]; ++i) {
+        auto self = static_cast<unsigned char*>(g_players[i]);
+        int index = Readable(self, 0xe00) ? *reinterpret_cast<int*>(self + 0xdf8) : -1;
+        wchar_t line[2048];
+        int len = swprintf_s(line, L"Research: mark %S - player %d:", label, index);
+        for (int m = 0; m < kPlayerSlots; ++m) {
+            LONG n = InterlockedExchange(&g_callsBy[i][m], 0);
+            if (n && len < 2000) len += swprintf_s(line + len, 2048 - len, L" [%d]x%ld", m, n);
+        }
+        Log(L"%s", line);
+    }
 }
 
 int ResearchPlayers(void** out, int max) {

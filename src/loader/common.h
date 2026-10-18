@@ -55,7 +55,8 @@ void QuitGame();                       //   exit now (the game's own exit-time c
 void InitUi();                         // menu movie patches + menu calls      (ui.cpp)
 void InitResearch();                   // optional research hooks              (research.cpp)
 void ResearchOnFrame(unsigned frame);
-int ResearchPlayers(void** out, int max);  // player objects the research spy has seen
+int ResearchPlayers(void** out, int max);
+void ResearchSpyMark(const char* label);   //   test pipe "spymark": each player's method calls since the last mark  // player objects the research spy has seen
 int GamePlayers(unsigned char** out, int max);  // the game's live players, by player index (netplay.cpp)
 
 void InitNetplay(HMODULE exe);         // lockstep online play core            (netplay.cpp)

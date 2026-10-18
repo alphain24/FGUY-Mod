@@ -337,6 +337,20 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   `HudElements::InventoryPickup`, vtable `0x9f5524`, probably drives it). To share them: find the call that uses the
   item for a player, send it ('P': player, kind), make the same call for their character on the other PCs - and the
   AI character it makes needs syncing like the other modes' enemies (where it is, who it attacks, its damage).
+- Looking for the code that uses one (2026-10-18, not found yet):
+  - The pad's buttons in the game's bits (`0x4b5670` -> table `0x9fc4a0`): Start 1, Back 2, D-pad left 4, right 8,
+    up 0x10, down 0x20, then the rest; A B X Y as XInput's 0x1000.. 0x8000. So D-pad down = action 14 (ctx 2), but
+    nothing asks the player's input for action 14 through its queries (zPlayerInputHuman slots 21..23, the input spy:
+    FGUYMOD_INPUTSPY=<action> or 999 for all) - neither on the PC that used it nor elsewhere.
+  - The player's weapons / inventory input: `0x69b5f0` (each frame). Actions 40 / 41 (D-pad right / left) cycle the
+    selected slot, player `+0xef70` (`0x698190` next, `0x698250` back, both `0x697ff0(item)` to select it). Consumables
+    are weapon ids (`0x698a10` registers GetConsumablesWeaponIDs: Ipecac, GiantChicken, TubeMan, DoomBear, Joe,
+    SentryTurret, Health), next to ThrowBegin.
+  - Player method counts around the press (FGUYMOD_PLAYERSPY=1, pipe "spymark <label>"): only slot 24 (a getter) more,
+    on both PCs alike. Using it on cue was unreliable in the tests: often only Peter's gesture and nothing more, the
+    count staying (twice the chicken came - facing open ground; facing a wall or a gate it didn't).
+  - Ghidra (headless, the analyzed project): `tools/re/ghidra/decompile.ps1 <out> <hex> | callers:<hex>`.
+
 ## Supply crates (2026-10-18)
 - A supply crate is a store portal: `zInteraction` (vtable `0xa8d6fc`, `+0x18` id, `+0x28` -> its menu,
   "=MNU_GLOBAL_SUPPLYCRATE") with a `zTrigger`, scripts, a map icon and a `zPlatform` (`0xa19844`, where it is) of the
