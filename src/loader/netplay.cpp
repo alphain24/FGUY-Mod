@@ -3590,6 +3590,10 @@ void InitNetplay(HMODULE exe) {
     DWORD sessionLen = GetEnvironmentVariableA("FGUYMOD_SESSION", session, sizeof(session));
     g_sessionStory = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "ST,", 3) == 0;
     g_sessionDM = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "DM,", 3) == 0;
+    {   // (research: FGUYMOD_TEST_NETFREE=all - the free-running match in any mode, to look at its enemies)
+        char all[8] = "";
+        if (GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", all, sizeof(all)) && strcmp(all, "all") == 0) g_sessionDM = true;
+    }
     g_inSession = sessionLen > 0 && sessionLen < sizeof(session);
     KbmSessionStart(g_inSession ? session : nullptr);
     if (g_inSession) OnlineSettingsInit();   // my own settings (onlinesettings.cpp)

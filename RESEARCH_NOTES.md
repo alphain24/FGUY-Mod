@@ -407,6 +407,16 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
 - The match clock: `0xbadcc0` (elapsed; the HUD's timer is the limit `0xbadcac` minus it). Both PCs within ~0.02 s
   after 4 minutes (both count real time from the same tick); it's compared with the host's, not corrected.
 
+## Enemies / NPCs (2026-10-18, research - toward syncing them)
+- `zNPCNetworking` (vtable `0x9f2960`, a cut network mode's) is stubs in the shipped game - its methods return at once.
+- NPC classes: `zNPCEntity` (`0xa1a8dc`), `zNPCGeneric` (Multiverse Madness' enemies), `zNPCManager`, `zNPCSpawner` with
+  `zNPCSpawnerLogicWave` / `Queue` / `Populate`, `zNPCLogic`, steering, perception, behavior trees (`zNPCBT...`).
+  `npcs.py <pid> ...` lists a game's NPCs (class, id +0x18, entity type +0x20, kind +0x10 - 0x11f, owner +0x8e4).
+- Multiverse Madness, free-running (research: `FGUYMOD_TEST_NETFREE=all` lets any mode run free), 20 s in: both PCs had
+  14 enemies, all `zNPCGeneric` type 0x48, ids from one pool (0x1d3-0x1e1) - but the same id stood somewhere else on
+  each PC, and the pools didn't hold quite the same ids. Each PC's spawner picks its own spawn points and order, so the
+  host has to decide the spawns (and say what spawned where), then their states (where, facing, health, down).
+
 ## Supply crates (2026-10-18)
 - A supply crate is a store portal: `zInteraction` (vtable `0xa8d6fc`, `+0x18` id, `+0x28` -> its menu,
   "=MNU_GLOBAL_SUPPLYCRATE") with a `zTrigger`, scripts, a map icon and a `zPlatform` (`0xa19844`, where it is) of the

@@ -634,10 +634,11 @@ void StartSession(const std::vector<std::string>& f) {
     set(L"FGUYMOD_SESSION", f[7] + "|" + f[8]);  // conf: mode,map,time,score,ff | picks: char:costume:team;...
     {   // the netcode the host picked (conf's 7th field): the new one runs the match free (netplay.cpp) - test knob
         auto conf = Split(f[7], ',');   // FGUYMOD_TEST_NETFREE=1 forces it (every copy of a test alike)
-        char forced[4];
+        char forced[8] = "";
         bool free = (conf.size() > 6 && conf[6] == "1") || GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", forced, sizeof(forced)) > 0;
-        if (conf.empty() || conf[0] != "DM") free = false;   // (Deathmatch only, for now: the other modes' enemies,
-                                                             //  flags and goals aren't shared yet)
+        bool anyMode = free && strcmp(forced, "all") == 0;   // (research: FGUYMOD_TEST_NETFREE=all - any mode)
+        if ((conf.empty() || conf[0] != "DM") && !anyMode) free = false;   // (Deathmatch only, for now: the other
+                                                             //  modes' enemies, flags and goals aren't shared yet)
         set(L"FGUYMOD_NET_FREE", free ? "1" : "0");
         // rejoining a free-running match: no catching up on the host's record - the session game loads the level on its
         // own and joins in (netplay.cpp FreeStart)
