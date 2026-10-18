@@ -304,6 +304,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             SplitViewHudHas4Way(argc < 2 || ArgNumber(args, argc, 1) != 0);   // (mode, has a 4-way layout)
             Log(L"UI: HUD split mode %d -> %d", (int)ArgNumber(args, argc, 0), SplitViewHudMode((int)ArgNumber(args, argc, 0)));
             ReturnNumber(movie, SplitViewHudMode((int)ArgNumber(args, argc, 0)));
+        } else if (strcmp(fn, "KeyPlayer") == 0) {   // (key code): whose key it is - online keyboard players (kbm.cpp)
+            ReturnNumber(movie, KbmKeyPlayer((int)ArgNumber(args, argc, 0)));
         } else if (strcmp(fn, "HudZoom") == 0) {   // online: which quarter of the 4-way HUD is mine (-1: none)
             ReturnNumber(movie, SplitViewHudZoomViewport());
         } else if (strcmp(fn, "HudViewport") == 0) {
@@ -443,6 +445,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         } else if (strcmp(fn, "BotTeam") == 0) {   // test: the bot's team (FGUYMOD_BOT_TEAM 0 Good / 1 Evil; -1: at random)
             char team[8] = "";
             ReturnNumber(movie, GetEnvironmentVariableA("FGUYMOD_BOT_TEAM", team, sizeof(team)) ? atoi(team) : -1);
+        } else if (strcmp(fn, "TestChar") == 0) {   // test: who I play in online lobbies (FGUYMOD_TEST_CHAR=Brian; "")
+            static char who[32] = "";
+            if (!GetEnvironmentVariableA("FGUYMOD_TEST_CHAR", who, sizeof(who))) who[0] = 0;
+            ReturnString(movie, who);
         } else if (strcmp(fn, "BotJoin") == 0) {
             ReturnString(movie, BotJoinCode());
         } else if (strcmp(fn, "LoadingSound") == 0) {  // (mode, map): the lobby shows its loading screen

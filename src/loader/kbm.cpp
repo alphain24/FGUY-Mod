@@ -87,6 +87,7 @@ unsigned char* g_device[4];                 // one keyboard / mouse device per k
 // ---- the raw poll: ours in sessions --------------------------------------------------------------------
 const KbmRaw* g_feed = nullptr;             // set while we poll a keyboard player's device
 KbmRaw g_menuKeys;                          // every keyboard player's keys this tick (DirectInput keyboard)
+BYTE g_slotKeys[4][32], g_slotKeysBefore[4][32];   // each keyboard player's, this tick and the one before
 bool g_menuKeysLive = false;
 KbmRaw g_menuFeed;                          // the game's own keyboard slot (menus, "click to start" prompts):
 bool g_menuFeedReady = false;               //   all keyboard players together, from the previous tick
@@ -389,6 +390,26 @@ bool KbmCursorScreen(POINT* pt) {
 
 bool KbmIsKeyboardSlot(int slot) { return slot >= 0 && slot < 4 && g_kbmSlot[slot]; }
 
+// The HUD's key events (its Key listener: the in-match menus - the store, the death menu's screens) all come as
+// controller 0's (the keyboard's), and its screens take that as player 1 - online a keyboard player in another slot
+// couldn't leave the store (Backspace, Esc, Enter). Whose key it is: the keyboard player who has it down this tick
+// (or had, for a release) - with the keys the game makes it of (Esc from Backspace: back; Home and Space from
+// Enter), from everyone's synced keys, so the same on every PC; -1: nobody's (a controller's: as it was).
+int KbmKeyPlayer(int code) {
+    if (!g_session || !g_menuKeysLive || code <= 0 || code >= 256) return -1;
+    int from[3] = {code, -1, -1};
+    if (code == VK_ESCAPE) from[1] = VK_BACK;
+    if (code == VK_HOME || code == VK_SPACE) from[1] = VK_RETURN;
+    for (int pass = 0; pass < 2; ++pass)
+        for (int s = 0; s < 4; ++s) {
+            if (!g_kbmSlot[s]) continue;
+            const BYTE* keys = pass == 0 ? g_slotKeys[s] : g_slotKeysBefore[s];
+            for (int k : from)
+                if (k > 0 && (keys[k >> 3] >> (k & 7)) & 1) return s;
+        }
+    return -1;
+}
+
 // Back in the lobby after a match (session.as2js, right after the game's own CTRL_SetKeyboardMouseInputEnabled
 // with this player's controls): a controller player whose pad the game didn't find there would stay in
 // keyboard mode - controller mode anyway (what this game ran in before the session).
@@ -557,6 +578,8 @@ void KbmApply(const KbmRaw* bySlot, int players) {
         if (!g_kbmSlot[s] || !g_device[s]) continue;
         const KbmRaw& r = bySlot[s];
         for (int k = 0; k < 32; ++k) menu.keys[k] |= r.keys[k];
+        memcpy(g_slotKeysBefore[s], g_slotKeys[s], 32);
+        memcpy(g_slotKeys[s], r.keys, 32);
         menu.dx = (SHORT)(menu.dx + r.dx);
         menu.dy = (SHORT)(menu.dy + r.dy);
         menu.dz = (SHORT)(menu.dz + r.dz);

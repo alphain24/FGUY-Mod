@@ -12,6 +12,68 @@ function FGUYPauseStart() {
     FGUYPauseQuitting = false;
     FGUYFitCount = 0;
     FGUYPauseTimer = setInterval(FGUYPausePoll, 33);
+    if (FGUYOrigEnableLocalInput == undefined && EnableLocalInput != undefined) {
+        FGUYOrigEnableLocalInput = EnableLocalInput;
+        EnableLocalInput = FGUYEnableLocalInput;
+    }
+    FGUYKeyWrap();
+}
+
+// The HUD's in-match menus (the store, the death menu's screens) hear keys through one Key listener, as
+// onKeyDown(controller): its handlers take that as the player, and ask Key.getCode(player) for the key. The game
+// gives every key of the keyboard as controller 0's - online a keyboard player in another slot couldn't leave the
+// store (Backspace / Esc / Enter went to player 1's screens, and theirs saw no key). So a key that's a keyboard
+// player's (FGUYMOD_KeyPlayer, from everyone's synced keys: the same on every PC) goes to their screens, and
+// Key.getCode answers it for them while it does. The rest as it was. The listener is wrapped as the HUD makes it
+// (EnableLocalInput, wrapped here) - and, for one made before, from the poll.
+function FGUYEnableLocalInput(keyHandler, keyUpHandler) {
+    var made = FGUYOrigEnableLocalInput(keyHandler, keyUpHandler);
+    FGUYKeyWrap();
+    return made;
+}
+
+function FGUYKeyPlayer(code) {
+    var p = Number(flash.external.ExternalInterface.call('FGUYMOD_KeyPlayer', code));
+    return isNaN(p) ? -1 : p;
+}
+
+function FGUYKeyWrap() {
+    if (Key.fguyGetCode == undefined) {
+        Key.fguyGetCode = Key.getCode;
+        Key.getCode = function (i) {
+            if (FGUYKeyFor != undefined && FGUYKeyFor >= 0 && i == FGUYKeyFor) return FGUYKeyCode;
+            return this.fguyGetCode(i);
+        };
+    }
+    var l = KeyListener;
+    if (l == undefined || l.fguyWrapped) return;
+    l.fguyWrapped = true;
+    l.fguyDown = l.onKeyDown;
+    l.fguyUp = l.onKeyUp;
+    l.onKeyDown = function (idx) {
+        if (this.fguyDown == undefined) return;
+        var code = Key.fguyGetCode(idx), p = FGUYKeyPlayer(code);
+        if (p < 0 || p == idx) {
+            this.fguyDown(idx);
+            return;
+        }
+        FGUYKeyFor = p;
+        FGUYKeyCode = code;
+        this.fguyDown(p);
+        FGUYKeyFor = -1;
+    };
+    l.onKeyUp = function (idx) {
+        if (this.fguyUp == undefined) return;
+        var code = Key.fguyGetCode(idx), p = FGUYKeyPlayer(code);
+        if (p < 0 || p == idx) {
+            this.fguyUp(idx);
+            return;
+        }
+        FGUYKeyFor = p;
+        FGUYKeyCode = code;
+        this.fguyUp(p);
+        FGUYKeyFor = -1;
+    };
 }
 
 // Online the HUD is the 4-way split screen's on every PC (every player's menus run everywhere, as they must:
@@ -50,6 +112,37 @@ function FGUYHudShift(name) {
     return 0;
 }
 
+// The sniper rifle's / rail gun's scope (frames: 1 SniperRifle43, 2 RailGun43, 3 / 4 their Widescreen, 5 / 6 their
+// Widescreen1680 - for 16:10): a split screen's quarter has the 4:3 one, and placed like the other whole-screen pieces
+// it was a small box in one corner (Brian's rail gun). So mine takes the one for this screen's shape, and is fitted to
+// cover the screen - evenly (the lens stays round), centred on it.
+function FGUYScopeFrame(c, r) {
+    var f = c._currentframe;
+    if (f == 1 || f == 2) {
+        var aspect = r.w / r.h;
+        if (aspect >= 1.7) c.gotoAndStop(f + 2);
+        else if (aspect >= 1.45) c.gotoAndStop(f + 4);
+    }
+    if (!c._visible) return;
+    var b = c.getBounds(_root);
+    var bw = b.xMax - b.xMin, bh = b.yMax - b.yMin;
+    if (b == undefined || !(bw > 1) || !(bh > 1) || bw > 100000) return;
+    var z = _root._xscale / 100;
+    var tw = r.w / z, th = r.h / z;   // (the screen, in my zoomed HUD's units)
+    var tx = (r.x + r.w / 2 - _root._x) / z, ty = (r.y + r.h / 2 - _root._y) / z;
+    var k = Math.max(tw / bw, th / bh);
+    if (Math.abs(k - 1) > 0.005) {
+        c._xscale = c._xscale * k;
+        c._yscale = c._yscale * k;
+        b = c.getBounds(_root);
+    }
+    var dx = tx - (b.xMin + b.xMax) / 2, dy = ty - (b.yMin + b.yMax) / 2;
+    if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        c._x += dx;
+        c._y += dy;
+    }
+}
+
 function FGUYHudZoom() {
     var q = flash.external.ExternalInterface.call('FGUYMOD_HudZoom');
     if (q == undefined) return;   // (not our loader)
@@ -85,6 +178,7 @@ function FGUYHudZoom() {
                 for (var p = 0; p < 4; p++) {
                     var c = _root[names[i] + '_' + v + '_4_' + p];
                     if (c == undefined) continue;
+                    if (v == q && names[i] == 'Icon_Scope') FGUYScopeFrame(c, r);
                     if (v != q) {
                         if (c._visible) c._visible = false;
                     } else if (c.fguyScaled == undefined) {   // (once: the HUD may animate it afterwards)
@@ -277,6 +371,7 @@ function FGUYPausePoll() {
     if (FGUYHudDumpWait == undefined) FGUYHudDumpWait = 0;
     FGUYHudDump();
     FGUYHudZoom();
+    FGUYKeyWrap();
     if (++FGUYFitCount >= 15) {   // (twice a second: the HUD may have moved the damage frame again)
         FGUYFitCount = 0;
         FGUYFitDamageFx();

@@ -712,7 +712,16 @@ function OnOnlineEnter() {
     FGUYCodeLen = 0;
     FGUYCodePos = 0;
     FGUYCodeChars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // as the server's codes (no I O 0 1)
-    if (FGUYPickChar == undefined) { FGUYPickChar = 'Peter'; FGUYPickCostume = 0; FGUYPickTeam = 0; }
+    if (FGUYPickChar == undefined) {
+        FGUYPickChar = 'Peter';
+        FGUYPickCostume = 0;
+        FGUYPickTeam = 0;
+        var testChar = String(flash.external.ExternalInterface.call('FGUYMOD_TestChar'));   // (a test can choose it)
+        if (testChar != '' && testChar != 'undefined' && testChar != 'null') {
+            FGUYPickChar = testChar;
+            FGUYTestCharSend = true;   // (sent once in a lobby: FGUYPadCheck)
+        }
+    }
     FGUYLastBlob = '';
     FGUYS = FGUYParse('');
     FGUYBot = flash.external.ExternalInterface.call('FGUYMOD_IsBot') == true;
@@ -1658,6 +1667,10 @@ function FGUYToggleInput() {
 // Set to controller with none plugged in (for a few seconds): back to keyboard and mouse - in the match the game only
 // listens to the one picked here (a tester couldn't move: keyboard and mouse in hand, "controller" picked).
 function FGUYPadCheck() {
+    if (FGUYTestCharSend && FGUYS.state == 'lobby') {
+        FGUYTestCharSend = false;
+        FGUYSendPick();
+    }
     if (FGUYBot || FGUYS.state != 'lobby' || FGUYPickInput != 'c') { FGUYPadMissing = 0; return; }
     var now = FGUYNow();
     if (FGUYPadNext != undefined && now < FGUYPadNext) return;
