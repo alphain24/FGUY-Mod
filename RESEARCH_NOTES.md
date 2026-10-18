@@ -440,7 +440,7 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   stdcall broke the stack: 0xc0000409). The final damage is worked out a little differently on each PC (the same hit:
   10 on one, 20 on the other), so the PC of the player who hit sends the health it took.
 - Synced (research switch `FGUYMOD_TEST_NPCSYNC=1`): spawns ('E'), state 10 a second ('G': where, health), players'
-  hits ('V', with the health lost), down ('K'); the others follow the host's position each frame (its last + speed x
+  hits ('V', with the health lost), down ('k' - 'K' is the catch-up record); the others follow the host's position each frame (its last + speed x
   age). Measured (Multiverse Madness, 220 ms ping, 2% loss): 0.25 off on average along the ground, 1.5-2.5 at most;
   health and who's up the same on both. Deathmatch: the Giant Chicken (900 health) thrown by either PC made by the
   host's game, the same on both, its damage the same on both, its kill and medals counted for its owner on both.
@@ -490,3 +490,19 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   count of given classes), `vtname.py` (a vtable's class name from RTTI), `countscan.py` (find a counter by how it
   changes, like a cheat finder), `crates.py` (a level's supply crates), `lookat.py` (a test copy's camera turned onto
   another player, for screenshots); the test pad's `hold` / `press` also know `ls` / `rs` (the sticks' buttons).
+
+## The end of a match in the new netcode (2026-10-19)
+- A real 3-player match (220-390 ms): 10 minutes in sync (others 0.07 off on average). At its end each PC's results
+  menu was its own (RESTART MAP / NEXT MAP / MAIN MENU: `GAME_Reload`, `GAME_Portal` + the level, `GAME_Quit`) - a
+  pick reloaded one PC: the host's restarted alone (its match clock went on from where it was), a guest's dropped to
+  the title screen and its lobby (it had to rejoin, and its clock was then 626 s behind the host's).
+- Now (free-running only): the host's pick, or everyone's rematch vote, goes to everyone (`'r'`), every PC goes
+  back to its lobby (the pick becomes the menu's `GAME_Quit`; a vote's leave runs from the results movie's poll -
+  the HUD doesn't run there), with a file for its lobby game (`FGUYModematch_<lobby pid>.txt`), whose lobby then
+  readies (guests) / takes the next map and starts once everyone is back (the host). Tested: vote, NEXT MAP (FR ->
+  AM), MAIN MENU (back, no new match) - the next match running 16 s after the pick. The results menu follows the
+  host's controller (a guest's A does nothing there; Y votes).
+- A rejoined game takes the host's match clock (2+ s off).
+- Message letters: `'R'` is "ready" (the session's first tick) and `'K'` the host's catch-up record - 0.8.15/0.8.16
+  used `'K'` for an enemy down too, which swallowed the record: rejoining a classic-netcode match broke. Enemy down
+  is `'k'` now, the rematch `'r'` (the server only reads `'a'`).

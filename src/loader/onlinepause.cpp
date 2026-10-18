@@ -469,7 +469,8 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
     if (!ResultsShown()) g_rematchDone = false;
     else if (here > 1 && voted == here && !g_rematchDone && NetplayLocalSlot() == 0) {
         g_rematchDone = true;
-        g_rematchGo = true;
+        if (NetplayFreeRun()) NetplayRematchVoted();   // (free-running: everyone back and the next match, together)
+        else g_rematchGo = true;
     }
     for (int s = 0; s < players && !g_gamePaused; ++s)   // story co-op: someone paused - everyone's game, theirs to drive
         if (!gone[s] && (flags[s] & 8)) {
@@ -625,6 +626,9 @@ void OnlinePauseHudTakesStart(bool up) {
 // netplay.cpp (my view turning at once): does a menu have my input now - my pause menu, the game's own pause, a HUD
 // menu (death, weapons wheel...), the end of the match?
 bool OnlinePauseMenusUp() { return g_open || g_gamePaused || BoxesShown() || ResultsShown(); }
+
+bool OnlinePauseResultsShown() { return ResultsShown(); }
+bool OnlinePauseTakeLeave() { return InterlockedExchange(&g_leave, 0) != 0; }
 
 void OnlinePauseForceQuit() {
     g_open = false;

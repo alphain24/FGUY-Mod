@@ -31,6 +31,13 @@ MENU_DRAW = os.path.join(HERE, '..', '..', 'src', 'ui', 'menudraw.as2js')   # (i
 # The rematch vote (src/loader/onlinepause.cpp): Y votes; the bar at the bottom says who has.
 REMATCH = r'''
 function FGUYRematchDraw() {
+    // (online, the match running free: everyone back to the lobby together - the host's pick or everyone's vote
+    //  (netplay.cpp NetplayResultsLeave). The HUD that quits the level in the match doesn't run here: this does.)
+    if (_root.FGUYResultsQuitting != true && flash.external.ExternalInterface.call('FGUYMOD_ResultsLeave') == true) {
+        _root.FGUYResultsQuitting = true;
+        getURL('FSCommand:CTRL_DisableButtonInput', '');
+        getURL('FSCommand:GAME_Quit', '');
+    }
     var s = String(flash.external.ExternalInterface.call('FGUYMOD_Rematch'));
     if (s == _root.FGUYRematchLast) return;
     _root.FGUYRematchLast = s;

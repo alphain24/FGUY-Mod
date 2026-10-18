@@ -434,6 +434,11 @@ void StartLobbyThread() {
 }
 
 // Back into our lobby (a rejoin that didn't work, or our session game closed mid-match): `notice` is what it says then.
+// Back from a match whose end everyone picked to play on (netplay.cpp RematchWrite: the session game's file for this
+// game): "restart" / "next" for the lobby (lobby.as2js FGUYRematchTick readies / starts by itself), a minute at most.
+std::string g_rematch;
+ULONGLONG g_rematchAt = 0;
+
 void BackToLobby(const std::string& notice, bool unpark) {
     bool connected;
     {
@@ -875,3 +880,24 @@ const char* SessionConfig() {
 
 // The mod's version (updater.cpp compares it with the latest release).
 const char* ModVersion() { return kModVersion; }
+
+const char* OnlineRematchPending() {
+    wchar_t path[MAX_PATH];
+    swprintf_s(path, L"%s\\rematch_%lu.txt", g_modDir, GetCurrentProcessId());
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path, L"rb") == 0 && f) {
+        char buf[16] = {};
+        fread(buf, 1, sizeof(buf) - 1, f);
+        fclose(f);
+        DeleteFileW(path);
+        g_rematch = strcmp(buf, "next") == 0 ? "next" : "restart";
+        g_rematchAt = GetTickCount64();
+        Log(L"Online: back for the next match (%S) - the lobby readies / starts it by itself", g_rematch.c_str());
+    }
+    if (!g_rematch.empty() && GetTickCount64() - g_rematchAt > 60000) g_rematch.clear();
+    return g_rematch.c_str();
+}
+void OnlineRematchDone() {
+    if (!g_rematch.empty()) Log(L"Online: the next match's start - done here");
+    g_rematch.clear();
+}

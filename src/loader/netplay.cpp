@@ -1040,6 +1040,9 @@ extern const int kPktPickupSize;
 struct PktBuy;
 void FreeBuyIn(int s, const PktBuy* p);
 extern const int kPktBuySize;
+struct PktRematch;
+void FreeRematchIn(int s, const PktRematch* p);
+extern const int kPktRematchSize;
 struct PktState;
 extern const int kPktStateSizeOld, kPktStateSizeMoney;
 struct PktHit;
@@ -1137,12 +1140,14 @@ void Receive() {
             if (g_free) FreeNpcStatesIn(slot, reinterpret_cast<PktNpcStates*>(buf), n);
         } else if (h->type == 'V' && n >= kPktNpcHitSize) {   // a player's hit on an enemy, for the host's game
             if (g_free) FreeNpcHitIn(slot, reinterpret_cast<PktNpcHit*>(buf));
-        } else if (h->type == 'K' && n >= kPktNpcDownSize) {   // an enemy the host's game has down
+        } else if (h->type == 'k' && n >= kPktNpcDownSize) {   // an enemy the host's game has down ('K' is the host's record)
             if (g_free) FreeNpcDownIn(slot, reinterpret_cast<PktNpcDown*>(buf));
         } else if (h->type == 'T' && n >= kPktStatsSize) {   // the host's scoreboard
             if (g_free) FreeStatsIn(slot, reinterpret_cast<PktStats*>(buf));
         } else if (h->type == 'W' && n >= kPktBuySize) {   // a weapon they bought at a supply crate
             if (g_free) FreeBuyIn(slot, reinterpret_cast<PktBuy*>(buf));
+        } else if (h->type == 'r' && n >= kPktRematchSize) {   // the host's pick at the end of the match ('R': ready)
+            if (g_free) FreeRematchIn(slot, reinterpret_cast<PktRematch*>(buf));
         } else if (h->type == 'X' && n >= kPktStateSizeOld) {   // (0.8.12 and older: no money in it)
             if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSizeMoney, n >= kPktStateSize);
         } else if (h->type == 'Z' && n >= kPktHitSizeOld) {   // (0.8.13 and older: no credit in it)
@@ -2497,6 +2502,12 @@ void FreeStats() {
             lastSaid = GetTickCount64();
             Log(L"Netplay: free - the match clock here is %.2f s %s the host's", fabsf(off), off > 0 ? L"ahead of" : L"behind");
         }
+        // (seconds off: a game that rejoined - its clock started with its level - the timer the host's, and the end
+        //  of the match with it; a tester's was 626 s behind)
+        if (fabsf(off) > 2.f && host > 0) {
+            *reinterpret_cast<float*>(kMatchClock) = host;
+            Log(L"Netplay: free - the match clock here set to the host's (%.1f s)", host);
+        }
     }
     for (int s = 0; s < g_players && s < 4; ++s) {
         unsigned char* p = PlayerBySlot(s);
@@ -2518,6 +2529,55 @@ void FreeStatsIn(int s, const PktStats* p) {
     g_statsSeqIn = p->seq;
     g_statsIn = *p;
     g_haveStatsIn = true;
+}
+
+// The end of the match, while it runs free: its menu (RESTART MAP / NEXT MAP / MAIN MENU, and the rematch vote) is
+// every PC's own - picked on one it reloaded only that one (the others played on, a guest's dropped to the title and
+// its lobby: a tester had to rejoin). So the host's pick (or everyone's vote) goes to everyone ('R'), every PC goes
+// back to the lobby together (the results menu's own quit, NetplayResultsLeave), and the lobby starts the next match
+// by itself: the same players and settings - the next map for NEXT MAP (online.cpp OnlineRematchPending, lobby.as2js
+// FGUYRematchTick). A guest's RESTART / NEXT MAP is their vote; their MAIN MENU still takes only them back.
+#pragma pack(push, 1)
+struct PktRematch { PktHeader h; unsigned seq; BYTE choice; };   // 'r': 1 restart, 2 next map, 3 back to the lobby
+#pragma pack(pop)
+const int kPktRematchSize = (int)sizeof(PktRematch);
+volatile LONG g_resultsLeave = 0;     // go back to the lobby now (the results menu's poll does)
+bool g_resultsQuitting = false;       // (then its own quit - not a pick)
+bool g_rematchSent = false;
+unsigned g_rematchSeqIn = 0;
+
+void RematchWrite(int choice) {   // (for my lobby game: it starts / readies for the next match by itself)
+    DWORD pid = HandoffLobbyPid();
+    if (!pid || (choice != 1 && choice != 2)) return;
+    wchar_t path[MAX_PATH];
+    swprintf_s(path, L"%s\\rematch_%lu.txt", g_modDir, pid);
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path, L"wb") == 0 && f) {
+        fputs(choice == 2 ? "next" : "restart", f);
+        fclose(f);
+    }
+}
+
+const wchar_t* RematchName(int choice) {
+    return choice == 1 ? L"restart the map" : choice == 2 ? L"the next map" : L"back to the lobby";
+}
+
+void FreeRematchGo(int choice) {   // (the host)
+    if (g_slot != 0 || g_rematchSent) return;
+    g_rematchSent = true;
+    PktRematch r{{'r', (BYTE)g_slot}, 1, (BYTE)choice};
+    for (int k = 0; k < 3; ++k) SendAll(&r, sizeof(r));   // (three times: everyone has to get it)
+    RematchWrite(choice);
+    Log(L"Netplay: free - end of the match: %s, everyone together", RematchName(choice));
+    InterlockedExchange(&g_resultsLeave, 1);
+}
+
+void FreeRematchIn(int s, const PktRematch* p) {
+    if (s != 0 || g_slot == 0 || p->seq == g_rematchSeqIn || p->choice < 1 || p->choice > 3) return;
+    g_rematchSeqIn = p->seq;
+    RematchWrite(p->choice);
+    Log(L"Netplay: free - the host's pick at the end of the match: %s", RematchName(p->choice));
+    InterlockedExchange(&g_resultsLeave, 1);
 }
 
 void FreeSendBuys() {
@@ -2836,7 +2896,7 @@ void NpcSendDown(unsigned char* npc, float before) {   // (the host: one of its 
     float* hp = NpcHealthField(npc);
     if (g_slot != 0 || !hp || before <= 0 || *hp > 0) return;
     PktNpcDown k{};
-    k.h = {'K', (BYTE)g_slot};
+    k.h = {'k', (BYTE)g_slot};
     k.seq = ++g_npcDownSeq;
     k.hostNpc = *reinterpret_cast<unsigned*>(npc + 0x18);
     SendAll(&k, sizeof(k));
@@ -3267,6 +3327,9 @@ void FreeStart() {
     g_spawnsIn.clear();
     g_npcOfHost.clear();
     g_npcTrack.clear();
+    g_rematchSent = false;
+    g_resultsQuitting = false;
+    InterlockedExchange(&g_resultsLeave, 0);
     AcquireSRWLockExclusive(&g_buyLock);   // (nothing left over from a match before)
     g_buysIn.clear();
     g_buysOut.clear();
@@ -3917,6 +3980,45 @@ void NetplayOnFrame() {
 
 bool NetplayEnabled() { return g_enabled; }
 bool NetplayFreeRun() { return g_enabled && g_free; }
+// ui.cpp, a menu command: the end of the match's pick while the match runs free. 0: run it; 2: run the menu's quit to
+// the lobby instead (GAME_Quit - the pick stopped the menu, so its poll can't). RESTART MAP / NEXT MAP picked on a PC
+// takes it back to the lobby for the next match (its lobby readies by itself); picked on the host's, everyone (the
+// host's pick goes out); the host's MAIN MENU takes everyone back to the lobby, a guest's only them.
+int NetplayResultsCommand(const char* command) {
+    if (!command || !NetplayFreeRun() || g_resultsQuitting || !OnlinePauseResultsShown()) return 0;
+    int choice = !strcmp(command, "GAME_Reload") ? 1 : !strcmp(command, "GAME_Portal") ? 2 : !strcmp(command, "GAME_Quit") ? 3 : 0;
+    if (!choice) return 0;
+    EnterCriticalSection(&g_netLock);
+    struct Unlock { ~Unlock() { LeaveCriticalSection(&g_netLock); } } unlock;
+    if (choice == 3 && g_slot != 0) return 0;
+    if (g_slot == 0) {
+        FreeRematchGo(choice);
+    } else {
+        RematchWrite(choice);
+        Log(L"Netplay: free - end of the match: %s picked here - back to the lobby, ready for it", RematchName(choice));
+    }
+    InterlockedExchange(&g_resultsLeave, 0);
+    g_resultsQuitting = true;
+    NetplayLeave(L"back to the lobby together");
+    return choice == 3 ? 0 : 2;
+}
+// onlinepause.cpp: everyone voted for a rematch (the host's PC).
+void NetplayRematchVoted() {
+    if (!NetplayFreeRun()) return;
+    EnterCriticalSection(&g_netLock);
+    FreeRematchGo(1);
+    LeaveCriticalSection(&g_netLock);
+}
+// The results menu's poll (FGUYMOD_ResultsLeave): true once when this PC goes back to the lobby - the session left
+// here, the menu then quits the level (on the results screen the HUD that does it in the match doesn't run).
+bool NetplayResultsLeave() {
+    bool go = InterlockedExchange(&g_resultsLeave, 0) != 0;
+    if (!go && g_enabled && OnlinePauseTakeLeave()) go = true;   // (out of the match otherwise: the host left...)
+    if (!go) return false;
+    g_resultsQuitting = true;
+    NetplayLeave(L"back to the lobby together");
+    return true;
+}
 
 // The store (ui.cpp): may this purchase for that player go through here? (Free-running: only my own player's.)
 bool NetplayStoreAllowed(int player) { return !NetplayFreeRun() || player == g_slot; }

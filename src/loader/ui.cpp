@@ -304,6 +304,12 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             SplitViewHudHas4Way(argc < 2 || ArgNumber(args, argc, 1) != 0);   // (mode, has a 4-way layout)
             Log(L"UI: HUD split mode %d -> %d", (int)ArgNumber(args, argc, 0), SplitViewHudMode((int)ArgNumber(args, argc, 0)));
             ReturnNumber(movie, SplitViewHudMode((int)ArgNumber(args, argc, 0)));
+        } else if (strcmp(fn, "ResultsLeave") == 0) {   // the results menu: go back to the lobby now? (netplay.cpp)
+            ReturnBool(movie, NetplayResultsLeave());
+        } else if (strcmp(fn, "RematchPending") == 0) {   // the lobby: back for the next match? (online.cpp)
+            ReturnString(movie, OnlineRematchPending());
+        } else if (strcmp(fn, "RematchDone") == 0) {
+            OnlineRematchDone();
         } else if (strcmp(fn, "KeyPlayer") == 0) {   // (key code): whose key it is - online keyboard players (kbm.cpp)
             ReturnNumber(movie, KbmKeyPlayer((int)ArgNumber(args, argc, 0)));
         } else if (strcmp(fn, "HudZoom") == 0) {   // online: which quarter of the 4-way HUD is mine (-1: none)
@@ -526,6 +532,11 @@ using Command_t = void(__fastcall*)(void* self, void* edx, void* movie, const ch
 Command_t Real_Command = nullptr;
 
 void __fastcall Hook_Command(void* self, void* edx, void* movie, const char* command, const char* args) {
+    if (NetplayResultsCommand(command) == 2) {   // (the end of the match's pick, free-running: netplay.cpp)
+        Log(L"UI: command %S(%S) - online, back to the lobby for the next match instead (GAME_Quit)", command, args ? args : "");
+        Real_Command(self, edx, movie, "GAME_Quit", "");
+        return;
+    }
     if (command && (strncmp(command, "CTRL_", 5) == 0 || strncmp(command, "GAME_", 5) == 0 || NetplayEnabled())) {
         static int logged = 0;
         if (logged < 200 || NetplayEnabled()) {   // (online: every one, with its tick - the same on every PC)

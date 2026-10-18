@@ -190,7 +190,14 @@ void OnlinePauseSettings();                     //   FGUYMOD_PauseSettings (the 
 const char* OnlinePauseRematch();               //   FGUYMOD_Rematch (the end of the match: the votes)
 bool OnlinePauseBotVotes();                     //   the test bot's scripted input votes for the rematch
 void OnlinePauseQuitDone();
-void OnlinePauseForceQuit();                    //   netplay: out of sync - everyone back to the lobby
+void OnlinePauseForceQuit();
+bool OnlinePauseResultsShown();                 //   the end of the match's menu is up
+bool OnlinePauseTakeLeave();                    //   a back-to-the-lobby asked (taken)
+int NetplayResultsCommand(const char* command);    // netplay.cpp: the end of the match's pick, free-running (2: quit)
+void NetplayRematchVoted();
+bool NetplayResultsLeave();
+const char* OnlineRematchPending();             // online.cpp: "restart" / "next" - back from a match for the next one
+void OnlineRematchDone();                    //   netplay: out of sync - everyone back to the lobby
 
 // online.cpp: lobby + the in-game ONLINE screens
 void OnlineEnter();

@@ -521,6 +521,7 @@ function FGUYPoll() {
     if (FGUYChatQuick == undefined) { FGUYChatQuick = 0; FGUYChatTyping = false; FGUYChatDraft = ''; FGUYChatSeen = 0; }
     if (FGUYChatTyping) FGUYChatPoll();
     FGUYPadCheck();
+    FGUYRematchTick();
     FGUYUpdateWait = FGUYUpdateWait == undefined ? 0 : FGUYUpdateWait - 1;
     if (FGUYUpdateWait <= 0 && FGUYScreen == 'hub') {
         FGUYUpdateWait = 7;
@@ -1662,6 +1663,51 @@ function FGUYToggleInput() {
     FGUYToast(noPad ? 'No controller is plugged in - plug one in, or you\'ll be switched back to keyboard and mouse' :
               'You play with ' + (FGUYPickInput == 'k' ? 'keyboard and mouse' : 'a controller') + ' (your own key bindings)');
     FGUYPadMissing = 0;
+}
+
+// Back from a match whose end everyone picked to play on (the new netcode: RESTART MAP / NEXT MAP / the rematch vote -
+// netplay.cpp): the next match starts by itself - a guest readies, the host takes the next map for NEXT MAP and starts
+// once everyone is back and ready (45 s at most: then it's the host's START as usual).
+function FGUYRematchTick() {
+    var now = FGUYNow();
+    if (FGUYRematchNext != undefined && now < FGUYRematchNext) return;
+    FGUYRematchNext = now + 500;
+    if (FGUYS.state != 'lobby') return;
+    var r = String(flash.external.ExternalInterface.call('FGUYMOD_RematchPending'));
+    if (r != 'restart' && r != 'next') {
+        FGUYRematchSince = undefined;
+        return;
+    }
+    var me = FGUYMe();
+    if (me == undefined) return;
+    if (FGUYS.slot > 0) {
+        if (me.ready) {
+            flash.external.ExternalInterface.call('FGUYMOD_RematchDone');
+            FGUYRematchReadyAt = undefined;
+        } else if (FGUYRematchReadyAt == undefined || now - FGUYRematchReadyAt > 3000) {   // (it toggles: time to take)
+            FGUYRematchReadyAt = now;
+            FGUYDo('ready');
+            FGUYToast("Rematch: you're ready - the next match starts when everyone is back");
+        }
+        return;
+    }
+    if (FGUYRematchSince == undefined) {
+        FGUYRematchSince = now;
+        if (r == 'next') FGUYCycleMap(1);
+        FGUYToast('Rematch: the next match starts when everyone is back');
+    }
+    var all = FGUYS.members.length > 1;
+    for (var i = 0; i < FGUYS.members.length; i++)
+        if (FGUYS.members[i].slot != 0 && !FGUYS.members[i].ready) all = false;
+    if (all) {
+        flash.external.ExternalInterface.call('FGUYMOD_RematchDone');
+        FGUYRematchSince = undefined;
+        FGUYDo('start');
+    } else if (now - FGUYRematchSince > 45000) {
+        flash.external.ExternalInterface.call('FGUYMOD_RematchDone');
+        FGUYRematchSince = undefined;
+        FGUYToast('Not everyone came back for the rematch - START when they are');
+    }
 }
 
 // Set to controller with none plugged in (for a few seconds): back to keyboard and mouse - in the match the game only
