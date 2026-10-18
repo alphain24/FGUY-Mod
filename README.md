@@ -52,3 +52,6 @@ lobby server. Most display settings are also in the game's own Options > Screen.
 - `RESEARCH_NOTES.md`: what we've learned about the game's internals.
 
 DXVK (`dist/FGUYMod/dxvk`) is by Philip Rebohle and contributors, under the zlib licence.
+
+The online loading screen's music (a re-recording, in the release downloads only - not in this repository) is by
+Andrew Stockton.

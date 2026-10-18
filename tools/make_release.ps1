@@ -68,6 +68,10 @@ Problems? If a match goes out of sync or the game crashes, a report is saved in 
 
 DXVK (FGUYMod\dxvk) is by Philip Rebohle and contributors, zlib licence (FGUYMod\dxvk\LICENSE.txt).
 "@ | Set-Content "$stage\INSTALL.txt" -Encoding ascii
+if (Test-Path "$stage\FGUYMod\sounds") {   # (the music's credit, when it's in this release)
+    "The online loading screen's music (FGUYMod\sounds) is a re-recording by Andrew Stockton." |
+        Add-Content "$stage\INSTALL.txt" -Encoding ascii
+}
 $bad = Get-ChildItem $stage -Recurse -File | Where-Object { $_.Extension -in '.ho', '.gfx', '.sav', '.log', '.bat' -or
     ($_.Extension -eq '.wav' -and $_.DirectoryName -ne "$stage\FGUYMod\sounds") }
 if ($bad) { Write-Output "not releasing - these don't belong in it:"; $bad.FullName; exit 1 }
