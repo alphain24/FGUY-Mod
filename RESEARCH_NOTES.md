@@ -390,6 +390,13 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
 - Respawns: a player who died and pressed A (once, mashed, or after X / B on the death menu) was back up on both PCs at
   the same moment (`hurt <player> <amount>` on the test pipe: a hit nobody caused, decided on their PC). The bot's 5 s
   gap earlier didn't come back with two test copies driven by the pipe (the bot presses on its own).
+- 3 and 4 players, free-running (`test_online_match.ps1 -Players 3|4` with FGUYMOD_TEST_NETFREE=1 and
+  FGUYMOD_TEST_CONF=DM,FR,1,0,1, through the server with 100 ms each way): everyone walking, each PC had each of the
+  others 0.02-0.07 off on average (0.34 at most); a hit between two guests went to all three PCs alike; the scoreboards
+  the same on every PC; the 5-minute match ended on all four within 85 ms. In the 4-player run the lockstep part before
+  it lets go had sync check mismatches (tick 150 on one PC, 810-870 on another: the slowest to load, 4 games on one PC
+  - the players 0.04 lower while falling into the level, 3 random numbers more); from tick 900 the free-running match
+  corrects it. With the classic netcode such a start would end the match - worth a look there (4 copies on one PC).
 - The match clock: `0xbadcc0` (elapsed; the HUD's timer is the limit `0xbadcac` minus it). Both PCs within ~0.02 s
   after 4 minutes (both count real time from the same tick); it's compared with the host's, not corrected.
 

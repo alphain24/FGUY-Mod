@@ -1,7 +1,7 @@
 """Research / tests: a test copy's player 0 shoots at another player - teleported a few units from them, its camera
 turned onto them every 50 ms (pipe "pokef" on the camera's yaw) while the trigger is held (pipe "hold").
 
-  aimat.py <pid> [<target player>] [<seconds>] [<distance>]
+  aimat.py <pid> [<target player>] [<seconds>] [<distance>] [<my player>]
 Uses the game's own player list (read only) and the copy's test pipe (needs [Debug] TestInput=1).
 """
 import math
@@ -29,12 +29,13 @@ def main():
     target = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     seconds = float(sys.argv[3]) if len(sys.argv) > 3 else 3
     dist = float(sys.argv[4]) if len(sys.argv) > 4 else 6
+    mine = int(sys.argv[5]) if len(sys.argv) > 5 else 0   # (the copy's own player: 0 on the host)
     read = reader(pid)
 
     def by_index():
         out = {}
-        for p in players(read):
-            out[struct.unpack('<i', read(p + 0xdf8, 4))[0]] = p
+        for i, p in enumerate(players(read)):
+            out[struct.unpack('<i', read(p + 0xdf8, 4))[0]] = (i, p)
         return out
 
     def pos(p):
@@ -42,12 +43,12 @@ def main():
         return struct.unpack('<3f', read(t + 0x30, 12))
 
     ps = by_index()
-    me, them = ps[0], ps[target]
+    (li, me), (_, them) = ps[mine], ps[target]
     a, b = pos(me), pos(them)
     dx, dz = a[0] - b[0], a[2] - b[2]
     d = math.hypot(dx, dz) or 1
     spot = (b[0] + dx / d * dist, b[1] + 0.3, b[2] + dz / d * dist)
-    send(pid, 'teleport 0 %.2f %.2f %.2f' % spot)
+    send(pid, 'teleport %d %.2f %.2f %.2f' % ((li,) + spot))
     time.sleep(0.4)
     until = time.time() + seconds
     k = 0
