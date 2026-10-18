@@ -2603,7 +2603,7 @@ char __fastcall Free_NpcActivate(unsigned char* npc, void*, int flag) {
     return r;
 }
 
-// Spawning (FGUYMOD_TEST_NPCSYNC, being built): every enemy - a wave's, a power-up's chicken - comes from 0x60d080 (cdecl:
+// Spawning (on in the free-running match; FGUYMOD_TEST_NPCSYNC=0 turns it off, research): every enemy - a wave's, a power-up's chicken - comes from 0x60d080 (cdecl:
 // a spawn request -> the enemy, or 0: none free...). Its request (0x6c bytes) is all values the same on every PC - who
 // spawns it ([2],[3]: an entity's id), its kind ([4],[5]), where ([0xc..0xe]) and how it faces, flags - but [10], a
 // pointer to its team (or none). While the match runs free the host's game spawns them: what it spawns goes out ('E': the
@@ -2709,7 +2709,7 @@ void FreeApplySpawns() {
     }
 }
 
-// The enemies' state (being built): the host's game sends where its enemies are and their health ('G', 10 a second);
+// The enemies' state: the host's game sends where its enemies are and their health ('G', 10 a second);
 // the others pull theirs there (a far one straight there), take its health, and one down there goes down here.
 // Their damage: an enemy (entity type 0x48) is hurt in the game's damage 0x99eec0 (cdecl: the victim, the hit). A hit
 // counts on the PC of the player who made it - at once there, and the host's game gets it ('V'); one another player
@@ -4150,9 +4150,12 @@ void InitNetplay(HMODULE exe) {
         if (InstallPickupHooks()) Log(L"Netplay: pickups shared (only my own player takes them here)");
         g_npcLog = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NPCLOG", 0);
         g_npcBlock = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NPCBLOCK", 0);
-        g_npcSync = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NPCSYNC", 0);
-        if (g_npcSync && InstallNpcSpawnHook() && InstallEntityDamageHook())
-            Log(L"Netplay: being built - the host's game spawns the enemies, their state and damage the host's");
+        // (the enemies - Multiverse Madness' waves, the power-ups' characters: the host's game makes them, the others
+        // show the host's; research: FGUYMOD_TEST_NPCSYNC=0 leaves each PC its own, as before)
+        g_npcSync = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NPCSYNC", 1);
+        if (g_npcSync && !(InstallNpcSpawnHook() && InstallEntityDamageHook())) g_npcSync = 0;
+        Log(L"Netplay: enemies %s", g_npcSync ? L"shared: the host's game makes them, the others show the host's"
+                                              : L"not shared: each PC its own");
         if ((g_npcLog || g_npcBlock) && InstallNpcHooks())
             Log(L"Netplay: research - enemies going in watched%s", g_npcBlock ? L", the others' PCs place none" : L"");
     }

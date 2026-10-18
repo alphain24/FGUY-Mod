@@ -457,6 +457,10 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   second short on the guest - not the waves but a player hit counted twice: the victim's state came before the hit
   (its health already had it), and the hit took it again - a death a second early there. Fixed: a hit decided on the
   victim's own PC plays from the health it had there before it. After: the same results on both (0:46, 0.08 s apart).
+- **On by default** in the free-running match (2026-10-18, after 4-player tests at 220 ms ping / 2% loss: Deathmatch -
+  kills, deaths, scores, health the same on all four PCs every round, a power-up's character made by the host's game
+  and shown on the three others within 0.1 s; Multiverse Madness - the same 14 enemies on all four, 0.2 off on average,
+  facing 2-3 deg). `FGUYMOD_TEST_NPCSYNC=0` (research) leaves each PC its own. The classic netcode doesn't load it.
 - Test tools: pipe `killnpcs` (the host: every enemy down), `vtfind.py` (a class's vtable by name), `objdiff.py` (a
   class's object in two games, field by field).
 
