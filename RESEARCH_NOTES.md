@@ -416,6 +416,14 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   14 enemies, all `zNPCGeneric` type 0x48, ids from one pool (0x1d3-0x1e1) - but the same id stood somewhere else on
   each PC, and the pools didn't hold quite the same ids. Each PC's spawner picks its own spawn points and order, so the
   host has to decide the spawns (and say what spawned where), then their states (where, facing, health, down).
+- The class spy (`FGUYMOD_VTSPY=a1aafc:63` - zNPCGeneric's vtable, 63 methods - then pipe "spymark <label>": each
+  method's calls, from how many objects and, for rare ones, from where) at a wave's start: methods 30, 31, 32, 55, 56
+  once per enemy spawned (12, then 2: the wave's 14), 19 / 34 three times, 54 twice; later 50 (from `0x5e132f`) a few
+  times a second while the bot shot them, 49 now and then.
+- The spawn chain: `0x5f2ff0(?, type)` makes an enemy from its type (a pool object; `0x5f0aa0` sets it up: model,
+  type data at +0x21c, its +0x218 template) -> slot 31 `0x5fb4a0` (its set-up: entity type 0x48, `rand()` for its
+  looks), slot 55 `0x5fc310`; `0x60ce30` puts it in the world (its spawn transform at +0x22c, the spawn events, `rand()`
+  again) - from `0x60cff0` and the pool's update `0x4c1600` (by state flags). Who picks the spawn point is next.
 
 ## Supply crates (2026-10-18)
 - A supply crate is a store portal: `zInteraction` (vtable `0xa8d6fc`, `+0x18` id, `+0x28` -> its menu,

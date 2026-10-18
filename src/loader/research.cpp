@@ -27,7 +27,7 @@ bool g_spyLog = false;   // periodic research log
 volatile DWORD g_callerTids[6];
 volatile LONG g_callerCounts[6];
 
-void __cdecl Record(int slot, void* self) {
+void __cdecl Record(int slot, void* self, void*) {
     InterlockedIncrement(&g_calls[slot]);
     DWORD me = GetCurrentThreadId();
     for (int i = 0; i < 6; ++i) {
@@ -42,8 +42,33 @@ void __cdecl Record(int slot, void* self) {
     }
 }
 
-// pushad; pushfd; push ecx; push slot; call Record; add esp,8; popfd; popad; jmp original
-void* MakeStub(int slot, void* original) {
+// Class spy ([Debug] VtSpy=<vtable hex>:<methods> or env FGUYMOD_VTSPY): that class's methods counted the same way -
+// calls and how many objects made them, since the last "spymark" (rare ones: what happens once per object - a spawn).
+const int kClassSlots = 256;
+LONG g_classCalls[kClassSlots];
+void* volatile g_classSelves[kClassSlots][8];   // (the first few objects that called each since the last mark)
+void* volatile g_classCallers[kClassSlots][4];  // (and where from: the first few return addresses)
+int g_classSlots = 0;
+uintptr_t g_classVtable = 0;
+
+void __cdecl RecordClass(int slot, void* self, void* from) {
+    InterlockedIncrement(&g_classCalls[slot]);
+    for (int i = 0; i < 4; ++i) {
+        if (g_classCallers[slot][i] == from) break;
+        if (!g_classCallers[slot][i] &&
+            InterlockedCompareExchangePointer(reinterpret_cast<void* volatile*>(&g_classCallers[slot][i]), from, nullptr) == nullptr)
+            break;
+    }
+    for (int i = 0; i < 8; ++i) {
+        if (g_classSelves[slot][i] == self) return;
+        if (!g_classSelves[slot][i] &&
+            InterlockedCompareExchangePointer(reinterpret_cast<void* volatile*>(&g_classSelves[slot][i]), self, nullptr) == nullptr)
+            return;
+    }
+}
+
+// pushad; pushfd; push [the return address]; push ecx; push slot; call Record; add esp,12; popfd; popad; jmp original
+void* MakeStub(int slot, void* original, void(__cdecl* record)(int, void*, void*) = Record) {
     static unsigned char* page = nullptr;
     static size_t used = 0;
     const size_t size = 32;
@@ -57,12 +82,13 @@ void* MakeStub(int slot, void* original) {
     unsigned char* p = s;
     *p++ = 0x60;                                   // pushad
     *p++ = 0x9C;                                   // pushfd
+    *p++ = 0xFF; *p++ = 0x74; *p++ = 0x24; *p++ = 0x24;   // push dword ptr [esp+0x24] (the caller's return address)
     *p++ = 0x51;                                   // push ecx
     *p++ = 0x68; memcpy(p, &slot, 4); p += 4;      // push slot
     *p++ = 0xE8;                                   // call Record
-    int32_t rel = (int32_t)((uintptr_t)&Record - ((uintptr_t)p + 4));
+    int32_t rel = (int32_t)((uintptr_t)record - ((uintptr_t)p + 4));
     memcpy(p, &rel, 4); p += 4;
-    *p++ = 0x83; *p++ = 0xC4; *p++ = 0x08;         // add esp, 8
+    *p++ = 0x83; *p++ = 0xC4; *p++ = 0x0C;         // add esp, 12
     *p++ = 0x9D;                                   // popfd
     *p++ = 0x61;                                   // popad
     *p++ = 0xE9;                                   // jmp original
@@ -202,6 +228,23 @@ void InitResearch() {
                             {"msvcr100.dll", "_beginthreadex", (void*)Hook_beginthreadex, (void**)&Real_beginthreadex}};
         InstallHooks(GetModuleHandleW(nullptr), hooks);
     }
+    {   // the class spy
+        char spec[64] = "";
+        if (GetEnvironmentVariableA("FGUYMOD_VTSPY", spec, sizeof(spec))) {
+            unsigned vt = 0;
+            int n = 0;
+            if (sscanf_s(spec, "%x:%d", &vt, &n) == 2 && vt >= 0x9dc000 && vt < 0xac1000 && n > 0 && n <= kClassSlots) {
+                auto table = reinterpret_cast<void**>(vt);
+                DWORD old;
+                VirtualProtect(table, n * sizeof(void*), PAGE_READWRITE, &old);
+                for (int i = 0; i < n; ++i) table[i] = MakeStub(i, table[i], RecordClass);
+                VirtualProtect(table, n * sizeof(void*), old, &old);
+                g_classVtable = vt;
+                g_classSlots = n;
+                Log(L"Research: class spy on %#x (%d methods wrapped)", vt, n);
+            }
+        }
+    }
     g_spyLog = SettingInt(L"Debug", L"PlayerSpy", L"FGUYMOD_PLAYERSPY", 0) != 0;
     g_spy = g_spyLog;
     if (!g_spy) return;
@@ -216,7 +259,28 @@ void InitResearch() {
 // Test pipe "spymark <label>" (with the player spy on): each player's method calls since the last mark - then from zero.
 // Marks around one action (before / after a button) show the methods it runs.
 void ResearchSpyMark(const char* label) {
-    if (!g_spy) { Log(L"Research: spymark needs the player spy (FGUYMOD_PLAYERSPY=1)"); return; }
+    if (g_classSlots) {   // the class spy: each method's calls, and from how many objects
+        wchar_t line[4096];
+        int len = swprintf_s(line, L"Research: mark %S - class %#x:", label, (unsigned)g_classVtable);
+        for (int m = 0; m < g_classSlots; ++m) {
+            LONG n = InterlockedExchange(&g_classCalls[m], 0);
+            int objs = 0;
+            for (int i = 0; i < 8; ++i)
+                if (InterlockedExchangePointer(reinterpret_cast<void* volatile*>(&g_classSelves[m][i]), nullptr)) ++objs;
+            if (n && len < 4000) len += swprintf_s(line + len, 4096 - len, L" [%d]x%ld/%d%s", m, n, objs, objs == 8 ? L"+" : L"");
+            if (n && n < 100 && len < 3900) {   // (a rare one: from where)
+                len += swprintf_s(line + len, 4096 - len, L" from");
+                for (int i = 0; i < 4; ++i)
+                    if (void* f = g_classCallers[m][i]) len += swprintf_s(line + len, 4096 - len, L" %p", f);
+            }
+            for (int i = 0; i < 4; ++i) InterlockedExchangePointer(reinterpret_cast<void* volatile*>(&g_classCallers[m][i]), nullptr);
+        }
+        Log(L"%s", line);
+    }
+    if (!g_spy) {
+        if (!g_classSlots) Log(L"Research: spymark needs the player spy (FGUYMOD_PLAYERSPY=1) or the class spy (FGUYMOD_VTSPY)");
+        return;
+    }
     for (int i = 0; i < 8 && g_players[i]; ++i) {
         auto self = static_cast<unsigned char*>(g_players[i]);
         int index = Readable(self, 0xe00) ? *reinterpret_cast<int*>(self + 0xdf8) : -1;
