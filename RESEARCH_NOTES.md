@@ -350,6 +350,12 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
     on both PCs alike. Using it on cue was unreliable in the tests: often only Peter's gesture and nothing more, the
     count staying (twice the chicken came - facing open ground; facing a wall or a gate it didn't).
   - Ghidra (headless, the analyzed project): `tools/re/ghidra/decompile.ps1 <out> <hex> | callers:<hex>`.
+- **LB uses the selected power-up** (pad 0x40, action 22 / 38, keyboard Q) - D-pad down didn't (six tries, the count
+  stayed; it plays a gesture). How many are held: player `+0x2aac` for the chicken (`countscan.py`), the selected slot
+  `+0xef70` - the same on both PCs (the pickup replay gives it to their character, the D-pad presses select alike).
+  In the free-running match LB on the host took the count 2 -> 1 on **both** PCs, and both show what it threw (a red
+  chicken bucket on the ground, same place). So using one already reaches the others through the relayed press. What
+  the bucket does next (and the big yellow thing seen twice after D-pad down) isn't known yet.
 
 ## Supply crates (2026-10-18)
 - A supply crate is a store portal: `zInteraction` (vtable `0xa8d6fc`, `+0x18` id, `+0x28` -> its menu,
