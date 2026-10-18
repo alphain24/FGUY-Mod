@@ -2616,7 +2616,7 @@ const int kPktSpawnSize = (int)sizeof(PktSpawn);
 std::vector<PktSpawn> g_spawnsIn;              // the host's spawns, played at my next frame
 unsigned g_spawnSeen[128], g_spawnSeq = 0;
 std::map<unsigned, unsigned char*> g_npcOfHost;   // the host's enemy (its id) -> mine
-struct NpcTrack { float pos[3], vel[3]; double sentMs; ULONGLONG at; };
+struct NpcTrack { float pos[3], vel[3], yaw, yawVel; double sentMs; ULONGLONG at; };
 std::map<unsigned, NpcTrack> g_npcTrack;          // the host's enemy (its id) -> where it was, how fast, when
 int g_spawnsTurnedDown = 0;
 
@@ -2707,7 +2707,7 @@ EntityDamage_t EntityDamageOriginal = nullptr;
 volatile LONG g_replayingNpcHit = 0;
 const int kNpcHealthObj = 0x420, kNpcHealth = 0x60;
 #pragma pack(push, 1)
-struct NpcState { unsigned hostNpc; float pos[3]; float health; };
+struct NpcState { unsigned hostNpc; float pos[3]; float health; float yaw; };
 struct PktNpcStates { PktHeader h; unsigned seq; unsigned sentMs; BYTE count; NpcState s[48]; };
 struct PktNpcHit { PktHeader h; unsigned seq; unsigned hostNpc; float lost; BYTE info[kHitInfo]; };
 struct PktNpcDown { PktHeader h; unsigned seq; unsigned hostNpc; };
@@ -2754,6 +2754,42 @@ void NpcMoveBy(unsigned char* npc, float dx, float dy, float dz) {
     if (unsigned char* steer = NpcObj(npc, 0x418, kNpcSteeringVtable, 0xd0)) NpcShift(steer + 0xc4, dx, dy, dz);
     for (int at : {0x38, 0x5c})
         if (unsigned char* m = NpcObj(npc, at, 0, 0x3c)) NpcShift(m + 0x30, dx, dy, dz);
+}
+// Which way it faces: its transform's forward row (+0x20), turned each frame toward its steering's heading (+0xbc /
+// +0xc0, 0..2 pi; forward +0xa0); so turning one = turning the rows of both transforms (+0x38, +0x5c) about up, and
+// the steering's with them. Yaw = atan2(forward x, forward z).
+float NpcYaw(unsigned char* npc) {
+    unsigned char* m = NpcObj(npc, 0x38, 0, 0x3c);
+    if (!m) return 0;
+    auto f = reinterpret_cast<float*>(m + 0x20);
+    return atan2f(f[0], f[2]);
+}
+void NpcTurnBy(unsigned char* npc, float a) {
+    float c = cosf(a), s = sinf(a);
+    for (int at : {0x38, 0x5c}) {
+        unsigned char* m = NpcObj(npc, at, 0, 0x3c);
+        if (!m || IsBadWritePtr(m, 0x30)) continue;
+        for (int row = 0; row < 3; ++row) {
+            auto v = reinterpret_cast<float*>(m + row * 0x10);
+            float x = v[0], z = v[2];
+            v[0] = x * c + z * s;
+            v[2] = -x * s + z * c;
+        }
+    }
+    if (unsigned char* st = NpcObj(npc, 0x418, kNpcSteeringVtable, 0xd0)) {   // (its steering's heading too - it turns
+        if (IsBadWritePtr(st + 0xa0, 0x24)) return;                           // it back to that one otherwise)
+        auto v = reinterpret_cast<float*>(st + 0xa0);
+        float x = v[0], z = v[2];
+        v[0] = x * c + z * s;
+        v[2] = -x * s + z * c;
+        for (int at : {0xbc, 0xc0}) {   // (0..2 pi)
+            auto h = reinterpret_cast<float*>(st + at);
+            float t = *h + a;
+            while (t >= 6.2831853f) t -= 6.2831853f;
+            while (t < 0) t += 6.2831853f;
+            *h = t;
+        }
+    }
 }
 unsigned HostNpcOf(unsigned char* npc) {   // (mine -> the host's id)
     for (auto& kv : g_npcOfHost) if (kv.second == npc) return kv.first;
@@ -2904,11 +2940,12 @@ void FreeSendNpcStates() {
         e.hostNpc = kv.first;
         memcpy(e.pos, pos, 12);
         e.health = *hp;
+        e.yaw = NpcYaw(npc);
     }
     if (g.count) SendAll(&g, kPktNpcStatesHead + g.count * (int)sizeof(NpcState));
 }
 
-float g_npcOffSum = 0, g_npcOffMax = 0, g_npcOffY = 0;   // (how far off the enemies were when the host's came: the log's, 5 s)
+float g_npcOffSum = 0, g_npcOffMax = 0, g_npcOffY = 0, g_npcOffYaw = 0;   // (how far off the enemies were when the host's came: the log's, 5 s)
 unsigned g_npcOffCount = 0;
 void FreeNpcStatesIn(int s, const PktNpcStates* p, int n) {
     if (s != 0 || g_slot == 0 || p->seq <= g_npcStatesSeqIn) return;
@@ -2917,9 +2954,10 @@ void FreeNpcStatesIn(int s, const PktNpcStates* p, int n) {
     if (now - lastLog >= 5000) {
         if (g_npcOffCount)
             Log(L"Netplay: free - enemies: %.2f off on average along the ground, %.2f at most, height %.2f off on "
-                L"average (%u updates)", g_npcOffSum / g_npcOffCount, g_npcOffMax, g_npcOffY / g_npcOffCount, g_npcOffCount);
+                L"average, facing %.1f deg off on average (%u updates)", g_npcOffSum / g_npcOffCount, g_npcOffMax,
+                g_npcOffY / g_npcOffCount, g_npcOffYaw / g_npcOffCount * 57.2958f, g_npcOffCount);
         lastLog = now;
-        g_npcOffSum = g_npcOffMax = g_npcOffY = 0;
+        g_npcOffSum = g_npcOffMax = g_npcOffY = g_npcOffYaw = 0;
         g_npcOffCount = 0;
     }
     g_npcStatesSeqIn = p->seq;
@@ -2937,8 +2975,11 @@ void FreeNpcStatesIn(int s, const PktNpcStates* p, int n) {
         float gap = (float)(p->sentMs - t.sentMs) / 1000.f;   // (how fast: from the host's last one, its clock)
         float jump = sqrtf((e.pos[0] - t.pos[0]) * (e.pos[0] - t.pos[0]) + (e.pos[1] - t.pos[1]) * (e.pos[1] - t.pos[1]) +
                            (e.pos[2] - t.pos[2]) * (e.pos[2] - t.pos[2]));
-        for (int k = 0; k < 3; ++k)
-            t.vel[k] = t.at && gap > 0.02f && gap < 1.f && jump < 8 ? (e.pos[k] - t.pos[k]) / gap : 0.f;
+        bool steady = t.at && gap > 0.02f && gap < 1.f;
+        for (int k = 0; k < 3; ++k) t.vel[k] = steady && jump < 8 ? (e.pos[k] - t.pos[k]) / gap : 0.f;
+        float turn = WrapAngle(e.yaw - t.yaw);
+        t.yawVel = steady && fabsf(turn) < 1.5f ? turn / gap : 0.f;
+        t.yaw = e.yaw;
         memcpy(t.pos, e.pos, 12);
         t.sentMs = p->sentMs;
         t.at = now;
@@ -2949,6 +2990,7 @@ void FreeNpcStatesIn(int s, const PktNpcStates* p, int n) {
         float d = sqrtf(dx * dx + dz * dz);
         g_npcOffSum += d;
         g_npcOffY += fabsf(dy);
+        g_npcOffYaw += fabsf(WrapAngle(e.yaw + t.yawVel * ahead - NpcYaw(npc)));
         g_npcOffMax = d > g_npcOffMax ? d : g_npcOffMax;
         ++g_npcOffCount;
         if (e.health <= 0 && *hp > 0) {   // down there: down here
@@ -2961,7 +3003,7 @@ void FreeNpcStatesIn(int s, const PktNpcStates* p, int n) {
 
 // Each frame (not the host): each enemy pulled toward where the host's is by now (its last place, on at its speed for
 // that long and half the ping, a quarter second at most) - a part of the way each frame along the ground, a far one
-// straight there.
+// straight there; and turned the way it faces there (on at its turning speed, for a shorter guess).
 void FreeNpcFollow(float dt) {
     if (g_slot == 0 || g_npcTrack.empty()) return;
     ULONGLONG now = GetTickCount64();
@@ -2983,6 +3025,9 @@ void FreeNpcFollow(float dt) {
         if (d > 8) NpcMoveBy(npc, dx, dy, dz);
         else if (dx * dx + dz * dz > 0.0004f) NpcMoveBy(npc, dx * k, 0, dz * k);   // (along the ground: its height its
                                                                                   // physics' - pulled, it sinks in)
+        float ahYaw = ahead > 0.15f ? 0.15f : ahead;   // (turning on: a shorter guess)
+        float turn = WrapAngle(t.yaw + t.yawVel * ahYaw - NpcYaw(npc));
+        if (fabsf(turn) > 0.002f) NpcTurnBy(npc, turn);   // (all the way: its AI here aims it its own way each frame)
     }
 }
 
