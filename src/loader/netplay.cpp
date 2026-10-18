@@ -2258,6 +2258,12 @@ void FreeApplyHits() {
         // then no body part either: with one, a hit that kills picks its fall from where the source stands, [source+0x38],
         // and crashed on the null. Without one it goes down as from a fall; the victim's PC has the last word on health)
         *reinterpret_cast<unsigned char**>(info + 0x58) = h.part && source ? victim + h.partOffset : nullptr;
+        // (decided on the victim's own PC - its health is theirs: their state can come here before the hit and has it in
+        // already; played on that it would count twice - a second hit's health off, a death there wasn't. So from the
+        // health it had there before the hit, to where it went there)
+        float* hf = h.h.slot == h.victim ? HealthField(victim) : nullptr;
+        float thereBefore = h.after + h.lost;
+        if (hf && *hf > 0 && *hf < thereBefore - 0.5f) *hf = thereBefore;
         float before = PlayerHealth(victim);
         memcpy(g_lastHitInfo, info, kHitInfo);   // (test "hurt": a shape to copy)
         g_haveLastHitInfo = true;
@@ -2266,6 +2272,7 @@ void FreeApplyHits() {
         InterlockedExchange(&g_replayingHit, 1);
         char r = Real_TakeDamage(victim, info);
         InterlockedExchange(&g_replayingHit, 0);
+        if (hf && *hf > 0 && h.after > 0 && fabsf(*hf - h.after) > 0.5f) *hf = h.after;
         // A power-up's kill: the death's event credits a kill's medals (FIRST BLOOD...) to the source only when it's the
         // character itself, as on the victim's PC (0x99eec0 by the damage type) - played here with its owner it didn't,
         // so their medals go here as they did there (0x66eb90: the killer, the hit, the victim; unless it ran after all).
@@ -2616,7 +2623,7 @@ const int kPktSpawnSize = (int)sizeof(PktSpawn);
 std::vector<PktSpawn> g_spawnsIn;              // the host's spawns, played at my next frame
 unsigned g_spawnSeen[128], g_spawnSeq = 0;
 std::map<unsigned, unsigned char*> g_npcOfHost;   // the host's enemy (its id) -> mine
-struct NpcTrack { float pos[3], vel[3], yaw, yawVel; double sentMs; ULONGLONG at; };
+struct NpcTrack { float pos[3], vel[3], yaw, yawVel; double sentMs; ULONGLONG at, myHitAt; };
 std::map<unsigned, NpcTrack> g_npcTrack;          // the host's enemy (its id) -> where it was, how fast, when
 int g_spawnsTurnedDown = 0;
 
@@ -2678,6 +2685,14 @@ void FreeApplySpawns() {
         if (npc) g_npcOfHost[e.hostNpc] = npc;
         else if (old) g_npcOfHost.erase(was);
         g_npcTrack.erase(e.hostNpc);
+        for (auto it = g_npcOfHost.begin(); npc && it != g_npcOfHost.end();) {   // (a pool object here too: the host's
+            if (it->first != e.hostNpc && it->second == npc) {                  // one it was before is gone here)
+                g_npcTrack.erase(it->first);
+                it = g_npcOfHost.erase(it);
+            } else {
+                ++it;
+            }
+        }
         bool oldInUse = false;
         for (auto& kv : g_npcOfHost) oldInUse |= kv.second == old;
         float* oldHp = old && !oldInUse && NpcAlive(old) ? NpcHealthField(old) : nullptr;
@@ -2861,6 +2876,7 @@ void __cdecl Free_EntityDamage(unsigned char* victim, unsigned char* info) {
             Log(L"Netplay: free - my hit on enemy %x (the host's %x): health %.1f -> %.1f", *reinterpret_cast<unsigned*>(victim + 0x18),
                 host, before, hp ? *hp : -1);
         if (host) {
+            g_npcTrack[host].myHitAt = GetTickCount64();
             PktNpcHit v{};
             v.h = {'V', (BYTE)g_slot};
             v.seq = ++g_npcHitSeq;
@@ -2901,7 +2917,10 @@ void FreeNpcHitIn(int s, const PktNpcHit* p) {
     float* hp = NpcHealthField(npc);
     if (!hp) return;
     float before = *hp, after = before - p->lost;
-    if (before <= 0) return;
+    if (before <= 0) {
+        Log(L"Netplay: free - player %d's hit on enemy %x: already down here", s, p->hostNpc);
+        return;
+    }
     if (after <= 0) {
         float amount = before + 1000;
         memcpy(info + 4, &amount, 4);
@@ -2995,8 +3014,8 @@ void FreeNpcStatesIn(int s, const PktNpcStates* p, int n) {
         ++g_npcOffCount;
         if (e.health <= 0 && *hp > 0) {   // down there: down here
             NpcKill(npc);
-        } else if (e.health > 0) {
-            *hp = e.health;
+        } else if (e.health > 0 && *hp > 0 && (e.health <= *hp || now - t.myHitAt > 1000)) {
+            *hp = e.health;   // (not up again: one down here by my hit, or my hit not there yet - the host's one before it)
         }
     }
 }
@@ -3029,6 +3048,24 @@ void FreeNpcFollow(float dt) {
         float turn = WrapAngle(t.yaw + t.yawVel * ahYaw - NpcYaw(npc));
         if (fabsf(turn) > 0.002f) NpcTurnBy(npc, turn);   // (all the way: its AI here aims it its own way each frame)
     }
+}
+
+// Test pipe "killnpcs" (the host): every enemy here down, as the level's - and so on every PC (to get through a wave).
+volatile LONG g_testKillNpcs = 0;
+void FreeTestKillNpcs() {
+    if (!InterlockedExchange(&g_testKillNpcs, 0)) return;
+    if (g_slot != 0) { Log(L"Netplay: test - killnpcs: the host's game only"); return; }
+    int n = 0;
+    for (auto& kv : g_npcOfHost) {
+        unsigned char* npc = kv.second;
+        float* hp = NpcAlive(npc) ? NpcHealthField(npc) : nullptr;
+        if (!hp || *hp <= 0) continue;
+        float before = *hp;
+        NpcKill(npc);
+        NpcSendDown(npc, before);
+        ++n;
+    }
+    Log(L"Netplay: test - killnpcs: %d enemies down", n);
 }
 
 bool InstallEntityDamageHook() {
@@ -3334,6 +3371,7 @@ void FreeTick() {
     FreeSendBuys();
     FreeStats();
     if (g_npcSync) {
+        FreeTestKillNpcs();
         FreeSendNpcStates();
         FreeNpcFollow(dt);
     }
@@ -3974,6 +4012,7 @@ void NetplayTestHurt(int player, float amount) {
     g_testHurtAmount = amount;
     InterlockedExchange(&g_testHurtWho, player);
 }
+void NetplayTestKillNpcs() { InterlockedExchange(&g_testKillNpcs, 1); }
 void NetplayTestNudge() { InterlockedExchange(&g_testNudge, 1); Log(L"Netplay: test - nudging my player on this PC"); }
 void NetplayTestStall(DWORD ms) {
     g_testStallUntil = GetTickCount64() + ms;

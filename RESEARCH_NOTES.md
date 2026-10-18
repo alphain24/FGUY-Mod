@@ -444,6 +444,21 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   age). Measured (Multiverse Madness, 220 ms ping, 2% loss): 0.25 off on average along the ground, 1.5-2.5 at most;
   health and who's up the same on both. Deathmatch: the Giant Chicken (900 health) thrown by either PC made by the
   host's game, the same on both, its damage the same on both, its kill and medals counted for its owner on both.
+- **Facing**: the transform's forward row (`+0x20`; yaw = atan2(x, z)), turned each frame toward the steering's heading
+  (`[npc+0x418]` `+0xbc` / `+0xc0`, 0..2 pi, forward `+0xa0`): writing the steering alone does nothing, the transform
+  alone is turned back to the steering's. Turning both - all the way each frame (a part of the way left them 25 deg
+  off: the AI here aims them its own way every frame) - 2-4 deg off on average at 220 ms ping (`npcfacing.py`).
+- **Pool objects are used again**: the guest's object for one of the host's enemies later becomes another's - the old
+  entry pointing at it has to go (else a hit was sent for the wrong enemy, and the state of a dead one moved it).
+- **Multiverse Madness' waves**: one `zNPCSpawner` (`0xa1abfc`) with a `zNPCSpawnerLogicPopulate` (`0xa197f0`) - no
+  wave object; the events "NPC Spawner: Wave Spawned / Defeated". With the host's game spawning, the waves come the
+  same on both PCs. The match ends on each PC when it sees everyone down; the results screen (round, round time,
+  kills, score, deaths) is filled once then (the clock written later doesn't change it). Seen there: the round time a
+  second short on the guest - not the waves but a player hit counted twice: the victim's state came before the hit
+  (its health already had it), and the hit took it again - a death a second early there. Fixed: a hit decided on the
+  victim's own PC plays from the health it had there before it. After: the same results on both (0:46, 0.08 s apart).
+- Test tools: pipe `killnpcs` (the host: every enemy down), `vtfind.py` (a class's vtable by name), `objdiff.py` (a
+  class's object in two games, field by field).
 
 ## Supply crates (2026-10-18)
 - A supply crate is a store portal: `zInteraction` (vtable `0xa8d6fc`, `+0x18` id, `+0x28` -> its menu,
