@@ -379,6 +379,11 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   and the others replay it with that player as the source - then the same. A medal for a power-up's kill still comes
   only where its character made the kill, so the host's count is everyone's ('T', on change and every second).
   Tested: the bot's PC had 100 bonus more, took the host's.
+- A kill's medals: the death's event (`0x99eec0`, by the damage type) calls `0x66eb90` (thiscall: the killer, the hit,
+  the victim; it counts the killer's kills at +0xeb24 - the first: FIRST BLOOD, medal 0 - and queues medals with
+  `0x97e760(medal, player)`). For a power-up's damage type it credits the source only when that's the character
+  itself, so a replay with its owner as the source got no medal. Replays of a power-up's kill now call it for the
+  owner (if the game didn't). Tested: the chicken's first kill - 100 bonus on both PCs.
 - Others' aim (2026-10-18, `aimsmooth.py`: the owner turns with the stick held at full, 270 deg/s, the other PC's copy
   sampled every 4 ms; a scratch script timed quick stops). Through the local server with 100 ms each way +-20, 2% loss
   (ping 219 ms): before, the copy followed each state ('X', 30 a second) with easing - 43.7 deg behind while turning,

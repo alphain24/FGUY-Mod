@@ -1989,6 +1989,8 @@ const int kPktStateSizeOld = (int)offsetof(PktState, money), kPktStateSizeMoney 
 
 const int kCamYaw = 0xf3b4, kCamPitch = 0xf3b8;    // the player's camera's own angles (radians)
 const int kMoney = 0xbc + 0x224;                   // the player's wallet (PlayerMoney)
+const uintptr_t kKillMedals = 0x66eb90;            // thiscall (killer, hit, victim): a kill's medals (FIRST BLOOD...)
+const int kKillsForMedals = 0xeb24;                //   the killer's kills it counts (its first: FIRST BLOOD)
 const int kProxy = 0x104c, kProxyShape = 0x60, kShapePos = 0xe0;   // Havok character proxy -> its shape -> position
 
 unsigned char* PlayerBySlot(int slot) {
@@ -2185,6 +2187,17 @@ void FreeBack(int s) {
     if (g_inSession) OverlayShow((PlayerName(s) + L" is back in the match").c_str(), 4000);
 }
 
+// A hit played here (from another PC, or the test's) gets its damage info from here, not the stack: the game keeps
+// a pointer to it past TakeDamage - the death's event, handled later, reads the killer from it (their kill's medals:
+// FIRST BLOOD..., 0x99eec0 -> 0x66eb90). A ring: each stays as it was for the next 31 hits.
+BYTE* ReplayInfo() {
+    alignas(16) static BYTE ring[32][0x80];
+    static unsigned at = 0;
+    BYTE* info = ring[at++ % 32];
+    memset(info, 0, 0x80);
+    return info;
+}
+
 // Test pipe "hurt <player> <amount>": that player - mine - takes a hit nobody caused, as the level's own (a fall, a kill
 // volume) - decided here and sent like any other. Its shape is the last hit's (one has to have happened).
 void FreeTestHurt() {
@@ -2195,7 +2208,7 @@ void FreeTestHurt() {
         Log(L"Netplay: test - hurt player %ld: %s", who, victim ? L"no hit yet to copy" : L"no such player");
         return;
     }
-    alignas(16) BYTE info[0x80] = {};
+    BYTE* info = ReplayInfo();
     memcpy(info, g_lastHitInfo, kHitInfo);
     memset(info, 0, 4);
     memset(info + 0x58, 0, 4);
@@ -2215,7 +2228,7 @@ void FreeApplyHits() {
         // (a power-up's character's: its owner as the source here - the kill is theirs, as on the victim's PC, where the
         // character itself was)
         if (!source && h.credit < 4) source = PlayerBySlot(h.credit);
-        alignas(16) BYTE info[0x80] = {};
+        BYTE* info = ReplayInfo();
         memcpy(info, h.info, kHitInfo);
         *reinterpret_cast<unsigned char**>(info) = source;
         // (no source here - a power-up's character, Rupert's darts, the chicken: each PC has its own, so it isn't sent -
@@ -2225,9 +2238,17 @@ void FreeApplyHits() {
         float before = PlayerHealth(victim);
         memcpy(g_lastHitInfo, info, kHitInfo);   // (test "hurt": a shape to copy)
         g_haveLastHitInfo = true;
+        bool credited = h.source == 0xff && h.credit < 4 && source;   // (a power-up's: its owner as the source)
+        int killsBefore = credited ? *reinterpret_cast<int*>(source + kKillsForMedals) : 0;
         InterlockedExchange(&g_replayingHit, 1);
         char r = Real_TakeDamage(victim, info);
         InterlockedExchange(&g_replayingHit, 0);
+        // A power-up's kill: the death's event credits a kill's medals (FIRST BLOOD...) to the source only when it's the
+        // character itself, as on the victim's PC (0x99eec0 by the damage type) - played here with its owner it didn't,
+        // so their medals go here as they did there (0x66eb90: the killer, the hit, the victim; unless it ran after all).
+        if (credited && before > 0 && PlayerHealth(victim) <= 0 &&
+            *reinterpret_cast<int*>(source + kKillsForMedals) == killsBefore)
+            reinterpret_cast<void(__thiscall*)(void*, void*, void*)>(kKillMedals)(source, info, victim);
         Remote& from = g_remote[h.h.slot];
         if (h.seq > from.hitApplied) from.hitApplied = h.seq;
         static int logged = 0;
