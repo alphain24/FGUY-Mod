@@ -73,6 +73,7 @@ void NetplayTestStall(DWORD ms);       //   test pipe: this PC goes quiet (a dro
 void NetplayProfileRender(DWORD ms);   //   research (test pipe "profile <ms>"): the render thread's hot spots
 void NetplayTestLeave();               //   test pipe "netleave": quit the match to the lobby (as the pause menu does)
 void NetplayTestNudge();
+void NetplayTestHurt(int player, float amount);   //   test pipe "hurt": my player there takes a hit nobody caused
 void OnlineMenuLogYaw();               //   test pipe "yaw": the lobby preview's facing (onlinemenu.cpp)
 void NetplayTestResolution(int w, int h);   //   test pipe: the game changes resolution (Options > Screen)               //   test pipe: my player moves a little here only (out of sync)
 int NetplaySessionSlot();              //   my player slot in this game's session (also after leaving it)

@@ -379,6 +379,17 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   and the others replay it with that player as the source - then the same. A medal for a power-up's kill still comes
   only where its character made the kill, so the host's count is everyone's ('T', on change and every second).
   Tested: the bot's PC had 100 bonus more, took the host's.
+- Others' aim (2026-10-18, `aimsmooth.py`: the owner turns with the stick held at full, 270 deg/s, the other PC's copy
+  sampled every 4 ms; a scratch script timed quick stops). Through the local server with 100 ms each way +-20, 2% loss
+  (ping 219 ms): before, the copy followed each state ('X', 30 a second) with easing - 43.7 deg behind while turning,
+  its speed frame to frame 61% spread (the owner's own 33%); at a stop behind up to 32 deg, settled in ~0.2 s. Now
+  it's aimed where they are by now (their turn speed from the last states, by their clock - `sentMs` in 'X' - times
+  the state's age + a quarter of the ping + the easing's 1/20 s, at most 0.15 s): 14 deg behind, 52%; a stop swings
+  past by up to ~20 deg, settled in ~0.23 s. All of the ping: 8 deg behind but more past at stops. Without ping: 1 deg.
+  `FGUYMOD_TEST_NOAIMPREDICT=1`: as before (to compare).
+- Respawns: a player who died and pressed A (once, mashed, or after X / B on the death menu) was back up on both PCs at
+  the same moment (`hurt <player> <amount>` on the test pipe: a hit nobody caused, decided on their PC). The bot's 5 s
+  gap earlier didn't come back with two test copies driven by the pipe (the bot presses on its own).
 - The match clock: `0xbadcc0` (elapsed; the HUD's timer is the limit `0xbadcac` minus it). Both PCs within ~0.02 s
   after 4 minutes (both count real time from the same tick); it's compared with the host's, not corrected.
 

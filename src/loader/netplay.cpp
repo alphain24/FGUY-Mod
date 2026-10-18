@@ -1041,12 +1041,12 @@ struct PktBuy;
 void FreeBuyIn(int s, const PktBuy* p);
 extern const int kPktBuySize;
 struct PktState;
-extern const int kPktStateSizeOld;
+extern const int kPktStateSizeOld, kPktStateSizeMoney;
 struct PktHit;
 struct PktStats;
 void FreeStatsIn(int s, const PktStats* p);
 extern const int kPktStatsSize;
-void FreeState(int s, const PktState* p, bool withMoney);
+void FreeState(int s, const PktState* p, bool withMoney, bool withClock);
 void FreeHitIn(int s, const PktHit* p, bool withCredit);
 extern const int kPktStateSize, kPktHitSize, kPktHitSizeOld;
 
@@ -1124,7 +1124,7 @@ void Receive() {
         } else if (h->type == 'W' && n >= kPktBuySize) {   // a weapon they bought at a supply crate
             if (g_free) FreeBuyIn(slot, reinterpret_cast<PktBuy*>(buf));
         } else if (h->type == 'X' && n >= kPktStateSizeOld) {   // (0.8.12 and older: no money in it)
-            if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSize);
+            if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSizeMoney, n >= kPktStateSize);
         } else if (h->type == 'Z' && n >= kPktHitSizeOld) {   // (0.8.13 and older: no credit in it)
             if (g_free) FreeHitIn(slot, reinterpret_cast<PktHit*>(buf), n >= kPktHitSize);
         } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
@@ -1960,6 +1960,9 @@ struct Remote {
     bool alive;
     bool haveMoney;
     int money;                                 // their money (what the store's prices are checked against)
+    float yawVel, pitchVel;                    // how fast they're turning (radians a second, from their last states)
+    double stateAt;                            // when their last state came (PreciseMs)
+    unsigned stateSentMs;                      //   and their clock then (0: their PC doesn't say)
     unsigned hitAck[4];                        // the last hit from each PC their own PC had counted (their state)
     unsigned hitSeen[32];                      // their last hits' numbers (a hit comes twice)
     unsigned hitApplied;                       // the last of their hits I've played here
@@ -1974,14 +1977,15 @@ struct Remote {
 Remote g_remote[4];
 
 #pragma pack(push, 1)
-struct PktState { PktHeader h; unsigned seq; float pos[3]; float yaw, pitch, health; BYTE alive; unsigned hitAck[4]; int money; };
+struct PktState { PktHeader h; unsigned seq; float pos[3]; float yaw, pitch, health; BYTE alive; unsigned hitAck[4]; int money;
+                  unsigned sentMs; };   // sentMs: their clock as it went (how fast they turn: between two of them)
 const int kHitInfo = 0x68;                     // the game's damage info (DamageInfo, see the notes)
 struct PktHit { PktHeader h; unsigned seq; BYTE victim, source, part; float lost, after; unsigned partOffset; BYTE info[kHitInfo];
                 BYTE credit; };   // credit: whose kill it is when no player caused it (a power-up's character: its owner)
 #pragma pack(pop)
 const int kPktStateSize = (int)sizeof(PktState), kPktHitSize = (int)sizeof(PktHit);
 const int kPktHitSizeOld = (int)offsetof(PktHit, credit);
-const int kPktStateSizeOld = (int)offsetof(PktState, money);
+const int kPktStateSizeOld = (int)offsetof(PktState, money), kPktStateSizeMoney = (int)offsetof(PktState, sentMs);
 
 const int kCamYaw = 0xf3b4, kCamPitch = 0xf3b8;    // the player's camera's own angles (radians)
 const int kMoney = 0xbc + 0x224;                   // the player's wallet (PlayerMoney)
@@ -2037,10 +2041,32 @@ void FreeInputs(int s, const PktInputs* p, int count) {
     r.heardAt = GetTickCount64();
 }
 
-void FreeState(int s, const PktState* p, bool withMoney) {
+// Milliseconds by the real clock, to a fraction (GetTickCount64 steps by ~16 ms: no good for 33 ms apart).
+double PreciseMs() {
+    LARGE_INTEGER t;
+    Real_QPC(&t);
+    return t.QuadPart * 1000.0 / g_freq.QuadPart;
+}
+
+void FreeState(int s, const PktState* p, bool withMoney, bool withClock) {
     Remote& r = g_remote[s];
+    double now = PreciseMs();
     r.heardAt = GetTickCount64();
     if (r.haveState && p->seq <= r.stateSeq) return;
+    if (r.haveState) {   // how fast they're turning: from their last state to this (by their clock, else by when they came)
+        double ms = withClock && r.stateSentMs ? (double)(unsigned)(p->sentMs - r.stateSentMs) : now - r.stateAt;
+        if (ms >= 10 && ms < 250) {
+            float vy = WrapAngle(p->yaw - r.yaw) * 1000.f / (float)ms, vp = (p->pitch - r.pitch) * 1000.f / (float)ms;
+            // (speeding up: smoothed, so one late packet doesn't jerk it; slowing down or the other way: at once - a
+            // turn that stops shouldn't carry on here)
+            r.yawVel = fabsf(vy) < fabsf(r.yawVel) || vy * r.yawVel < 0 ? vy : 0.5f * r.yawVel + 0.5f * vy;
+            r.pitchVel = fabsf(vp) < fabsf(r.pitchVel) || vp * r.pitchVel < 0 ? vp : 0.5f * r.pitchVel + 0.5f * vp;
+        } else {
+            r.yawVel = r.pitchVel = 0;   // (a gap: no guessing)
+        }
+    }
+    r.stateAt = now;
+    r.stateSentMs = withClock ? p->sentMs : 0;
     r.haveState = true;
     r.stateSeq = p->seq;
     memcpy(r.pos, p->pos, sizeof(r.pos));
@@ -2085,8 +2111,15 @@ int HitCredit(unsigned char* src) {
     return s >= 0 && s < g_players ? s : -1;
 }
 
+BYTE g_lastHitInfo[kHitInfo];                  // (test "hurt": the last hit's shape, for a hit of its own)
+bool g_haveLastHitInfo = false;
+volatile LONG g_testHurtWho = -1;
+float g_testHurtAmount = 0;
+
 char __fastcall Free_TakeDamage(void* self, void*, void* info) {
     if (!g_free || g_replayingHit) return Real_TakeDamage(self, info);
+    memcpy(g_lastHitInfo, info, kHitInfo);
+    g_haveLastHitInfo = true;
     auto victimObj = static_cast<unsigned char*>(self);
     auto src = *static_cast<unsigned char**>(info);
     int victim = *reinterpret_cast<int*>(victimObj + 0xdf8);
@@ -2152,6 +2185,26 @@ void FreeBack(int s) {
     if (g_inSession) OverlayShow((PlayerName(s) + L" is back in the match").c_str(), 4000);
 }
 
+// Test pipe "hurt <player> <amount>": that player - mine - takes a hit nobody caused, as the level's own (a fall, a kill
+// volume) - decided here and sent like any other. Its shape is the last hit's (one has to have happened).
+void FreeTestHurt() {
+    LONG who = InterlockedExchange(&g_testHurtWho, -1);
+    if (who < 0) return;
+    unsigned char* victim = PlayerBySlot(who);
+    if (!victim || !g_haveLastHitInfo) {
+        Log(L"Netplay: test - hurt player %ld: %s", who, victim ? L"no hit yet to copy" : L"no such player");
+        return;
+    }
+    alignas(16) BYTE info[0x80] = {};
+    memcpy(info, g_lastHitInfo, kHitInfo);
+    memset(info, 0, 4);
+    memset(info + 0x58, 0, 4);
+    memcpy(info + 4, &g_testHurtAmount, 4);
+    memcpy(info + 0x1c, &g_testHurtAmount, 4);
+    Log(L"Netplay: test - hurting player %ld by %.0f", who, g_testHurtAmount);
+    Free_TakeDamage(victim, nullptr, info);
+}
+
 void FreeApplyHits() {
     std::vector<PktHit> hits;
     hits.swap(g_hitsIn);
@@ -2170,6 +2223,8 @@ void FreeApplyHits() {
         // and crashed on the null. Without one it goes down as from a fall; the victim's PC has the last word on health)
         *reinterpret_cast<unsigned char**>(info + 0x58) = h.part && source ? victim + h.partOffset : nullptr;
         float before = PlayerHealth(victim);
+        memcpy(g_lastHitInfo, info, kHitInfo);   // (test "hurt": a shape to copy)
+        g_haveLastHitInfo = true;
         InterlockedExchange(&g_replayingHit, 1);
         char r = Real_TakeDamage(victim, info);
         InterlockedExchange(&g_replayingHit, 0);
@@ -2477,11 +2532,21 @@ void FreeApplyRemotes(float dt) {
         float* yaw = reinterpret_cast<float*>(p + kCamYaw);
         float* pitch = reinterpret_cast<float*>(p + kCamPitch);
         float k = dt * 20 < 1 ? dt * 20 : 1;
-        float yawErr = fabsf(WrapAngle(r.yaw - *yaw));   // (before this frame's step: how far their aim was off)
+        // Where their aim is by now: their last state on at the speed they were turning - its age, half its way here (a
+        // quarter of the ping: all of it overshot a quick stop by 20-30 degrees at 220 ms) and the easing's own 1/20 s -
+        // at most 0.15 s ahead. Followed smoothly, so a turn shows as a turn, not steps 30 times a second.
+        LONG ping = InterlockedCompareExchange(&g_pingMs[s], 0, 0);
+        float ahead = (float)(PreciseMs() - r.stateAt) / 1000.f + (ping > 0 ? ping / 4000.f : 0) + 0.05f;
+        if (ahead > 0.15f) ahead = 0.15f;
+        static int predict = -1;   // (test: FGUYMOD_TEST_NOAIMPREDICT - followed as before, to compare)
+        if (predict < 0) predict = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NOAIMPREDICT", 0) ? 0 : 1;
+        if (!predict) ahead = 0;
+        float wantYaw = WrapAngle(r.yaw + r.yawVel * ahead), wantPitch = r.pitch + r.pitchVel * ahead;
+        float yawErr = fabsf(WrapAngle(wantYaw - *yaw));   // (before this frame's step: how far their aim was off)
         r.yawErrSum += yawErr;
         if (yawErr > r.yawErrMax) r.yawErrMax = yawErr;
-        *yaw = WrapAngle(*yaw + WrapAngle(r.yaw - *yaw) * k);
-        *pitch += (r.pitch - *pitch) * k;
+        *yaw = WrapAngle(*yaw + WrapAngle(wantYaw - *yaw) * k);
+        *pitch += (wantPitch - *pitch) * k;
         float* pos = const_cast<float*>(PlayerPos(p));
         if (!pos) continue;
         float dx = r.pos[0] - pos[0], dy = r.pos[1] - pos[1], dz = r.pos[2] - pos[2];
@@ -2535,6 +2600,7 @@ void FreeSendState() {
     st.alive = st.health > 0 ? 1 : 0;
     for (int s = 0; s < 4; ++s) st.hitAck[s] = g_remote[s].hitApplied;   // (the hits my health has in it)
     st.money = PlayerMoney(me);
+    st.sentMs = (unsigned)(ULONGLONG)PreciseMs();
     SendAll(&st, sizeof(st));
 }
 
@@ -2674,6 +2740,7 @@ void FreeTick() {
     OnlineSettingsApply(kbm, g_players);
     KbmApply(kbm, g_players);
     FreeApplyHits();
+    FreeTestHurt();
     FreeApplyPickups();
     FreeSendBuys();
     FreeStats();
@@ -3310,6 +3377,10 @@ const wchar_t* NetplayLobbyName(int slot) {   // a player's lobby name, or "" (n
     return slot >= 0 && slot < 4 ? g_names[slot] : L"";
 }
 void NetplayTestResolution(int w, int h) { InterlockedExchange(&g_testResH, h); InterlockedExchange(&g_testResW, w); }
+void NetplayTestHurt(int player, float amount) {
+    g_testHurtAmount = amount;
+    InterlockedExchange(&g_testHurtWho, player);
+}
 void NetplayTestNudge() { InterlockedExchange(&g_testNudge, 1); Log(L"Netplay: test - nudging my player on this PC"); }
 void NetplayTestStall(DWORD ms) {
     g_testStallUntil = GetTickCount64() + ms;

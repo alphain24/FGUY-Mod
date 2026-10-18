@@ -290,6 +290,12 @@ void HandleCommand(char* line) {
         OnlineMenuLogYaw();
         return;
     }
+    if (cmd && _stricmp(cmd, "hurt") == 0) {   // test tools: hurt <player> <amount> - a hit nobody caused (free-running)
+        char* who = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* amount = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (who && amount) NetplayTestHurt(atoi(who), (float)atof(amount));
+        return;
+    }
     if (cmd && _stricmp(cmd, "nudge") == 0) {   // test tools: this PC's game goes out of sync with the others
         NetplayTestNudge();
         return;
