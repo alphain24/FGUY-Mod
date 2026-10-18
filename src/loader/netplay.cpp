@@ -1043,9 +1043,12 @@ extern const int kPktBuySize;
 struct PktState;
 extern const int kPktStateSizeOld;
 struct PktHit;
+struct PktStats;
+void FreeStatsIn(int s, const PktStats* p);
+extern const int kPktStatsSize;
 void FreeState(int s, const PktState* p, bool withMoney);
-void FreeHitIn(int s, const PktHit* p);
-extern const int kPktStateSize, kPktHitSize;
+void FreeHitIn(int s, const PktHit* p, bool withCredit);
+extern const int kPktStateSize, kPktHitSize, kPktHitSizeOld;
 
 void Receive() {
     char buf[1500];
@@ -1116,12 +1119,14 @@ void Receive() {
             if (g_free) FreeBack(slot);
         } else if (h->type == 'U' && n >= kPktPickupSize) {   // a pickup they took
             if (g_free) FreePickupIn(slot, reinterpret_cast<PktPickup*>(buf));
+        } else if (h->type == 'T' && n >= kPktStatsSize) {   // the host's scoreboard
+            if (g_free) FreeStatsIn(slot, reinterpret_cast<PktStats*>(buf));
         } else if (h->type == 'W' && n >= kPktBuySize) {   // a weapon they bought at a supply crate
             if (g_free) FreeBuyIn(slot, reinterpret_cast<PktBuy*>(buf));
         } else if (h->type == 'X' && n >= kPktStateSizeOld) {   // (0.8.12 and older: no money in it)
             if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSize);
-        } else if (h->type == 'Z' && n >= kPktHitSize) {
-            if (g_free) FreeHitIn(slot, reinterpret_cast<PktHit*>(buf));
+        } else if (h->type == 'Z' && n >= kPktHitSizeOld) {   // (0.8.13 and older: no credit in it)
+            if (g_free) FreeHitIn(slot, reinterpret_cast<PktHit*>(buf), n >= kPktHitSize);
         } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
             auto p = reinterpret_cast<PktLeave*>(buf);
             if (g_free) {   // (free-running: their tick count isn't mine - they're simply out)
@@ -1971,9 +1976,11 @@ Remote g_remote[4];
 #pragma pack(push, 1)
 struct PktState { PktHeader h; unsigned seq; float pos[3]; float yaw, pitch, health; BYTE alive; unsigned hitAck[4]; int money; };
 const int kHitInfo = 0x68;                     // the game's damage info (DamageInfo, see the notes)
-struct PktHit { PktHeader h; unsigned seq; BYTE victim, source, part; float lost, after; unsigned partOffset; BYTE info[kHitInfo]; };
+struct PktHit { PktHeader h; unsigned seq; BYTE victim, source, part; float lost, after; unsigned partOffset; BYTE info[kHitInfo];
+                BYTE credit; };   // credit: whose kill it is when no player caused it (a power-up's character: its owner)
 #pragma pack(pop)
 const int kPktStateSize = (int)sizeof(PktState), kPktHitSize = (int)sizeof(PktHit);
+const int kPktHitSizeOld = (int)offsetof(PktHit, credit);
 const int kPktStateSizeOld = (int)offsetof(PktState, money);
 
 const int kCamYaw = 0xf3b4, kCamPitch = 0xf3b8;    // the player's camera's own angles (radians)
@@ -2047,12 +2054,13 @@ void FreeState(int s, const PktState* p, bool withMoney) {
 }
 
 std::vector<PktHit> g_hitsIn;                  // hits from the others, played at the start of my next tick
-void FreeHitIn(int s, const PktHit* p) {
+void FreeHitIn(int s, const PktHit* p, bool withCredit) {
     Remote& r = g_remote[s];
     for (unsigned seen : r.hitSeen) if (seen == p->seq) return;
     r.hitSeen[p->seq % 32] = p->seq;
     if (p->victim >= 4 || p->victim >= g_players) return;
     g_hitsIn.push_back(*p);
+    if (!withCredit) g_hitsIn.back().credit = 0xff;
 }
 
 // The players' damage (zFamilyGuyPlayer vtable slot 58, 0x6901a0), while the match runs free.
@@ -2063,6 +2071,19 @@ CRITICAL_SECTION g_hitLock;
 unsigned g_hitSeq = 0;
 unsigned g_lastHitOn[4];                       // my last hit on each player (their health from their PC counts once it has it)
 int g_hitsBlocked = 0, g_hitsMine = 0;
+
+// Whose kill a hit is that no player caused (the deciding PC - the victim's - has the real source): a summoned character's
+// (a power-up's chicken, Joe, Rupert: type 0x11f) is its owner's - the game credits the kill that way (0x968940 in the kill
+// credit, 0x5d6450) - and a player's is their own. -1: nobody's (the level's own).
+int HitCredit(unsigned char* src) {
+    if (!src || IsBadReadPtr(src, 0x14)) return -1;
+    unsigned char* owner = src;
+    if (*reinterpret_cast<int*>(src + 0x10) == 0x11f)
+        owner = IsBadReadPtr(src + 0x8e4, 4) ? nullptr : *reinterpret_cast<unsigned char**>(src + 0x8e4);
+    if (!owner || IsBadReadPtr(owner, 0xe00) || *reinterpret_cast<ULONG_PTR*>(owner) != kPlayerVtable) return -1;
+    int s = *reinterpret_cast<int*>(owner + 0xdf8);
+    return s >= 0 && s < g_players ? s : -1;
+}
 
 char __fastcall Free_TakeDamage(void* self, void*, void* info) {
     if (!g_free || g_replayingHit) return Real_TakeDamage(self, info);
@@ -2093,6 +2114,8 @@ char __fastcall Free_TakeDamage(void* self, void*, void* info) {
     h.h = {'Z', (BYTE)g_slot};
     h.victim = (BYTE)victim;
     h.source = (BYTE)(source < 0 ? 0xff : source);
+    int credit = source < 0 ? HitCredit(src) : source;
+    h.credit = (BYTE)(credit < 0 ? 0xff : credit);
     h.lost = before - after;
     h.after = after;
     memcpy(h.info, info, kHitInfo);
@@ -2110,8 +2133,8 @@ char __fastcall Free_TakeDamage(void* self, void*, void* info) {
     SendAll(&h, sizeof(h));
     SendAll(&h, sizeof(h));   // (twice: a lost hit would be gone for good)
     if (++g_hitsMine <= 40)
-        Log(L"Netplay: free - my hit #%u: player %d hit by %d, health %.1f -> %.1f (type %d)", h.seq, victim, source,
-            before, after, *reinterpret_cast<int*>(h.info + 0x20));
+        Log(L"Netplay: free - my hit #%u: player %d hit by %d (the kill's: %d), health %.1f -> %.1f (type %d)", h.seq, victim,
+            source, credit, before, after, *reinterpret_cast<int*>(h.info + 0x20));
     return r;
 }
 
@@ -2136,6 +2159,9 @@ void FreeApplyHits() {
         unsigned char* victim = PlayerBySlot(h.victim);
         if (!victim) continue;
         unsigned char* source = h.source < 4 ? PlayerBySlot(h.source) : nullptr;
+        // (a power-up's character's: its owner as the source here - the kill is theirs, as on the victim's PC, where the
+        // character itself was)
+        if (!source && h.credit < 4) source = PlayerBySlot(h.credit);
         alignas(16) BYTE info[0x80] = {};
         memcpy(info, h.info, kHitInfo);
         *reinterpret_cast<unsigned char**>(info) = source;
@@ -2151,8 +2177,9 @@ void FreeApplyHits() {
         if (h.seq > from.hitApplied) from.hitApplied = h.seq;
         static int logged = 0;
         if (++logged <= 60)
-            Log(L"Netplay: free - hit #%u from player %d's PC: player %d hit by %d, health %.1f -> %.1f here (%.1f -> %.1f "
-                L"there)%s", h.seq, h.h.slot, h.victim, h.source == 0xff ? -1 : h.source, before, PlayerHealth(victim),
+            Log(L"Netplay: free - hit #%u from player %d's PC: player %d hit by %d%s, health %.1f -> %.1f here (%.1f -> %.1f "
+                L"there)%s", h.seq, h.h.slot, h.victim, h.source == 0xff ? -1 : h.source,
+                h.source == 0xff && h.credit < 4 ? L" (a power-up's: its owner's kill)" : L"", before, PlayerHealth(victim),
                 h.after + h.lost, h.after, r ? L"" : L" - not taken here");
     }
 }
@@ -2305,6 +2332,87 @@ SRWLOCK g_buyLock = SRWLOCK_INIT;
 std::vector<int> g_buysOut;                    // what I bought (the menu's thread) - sent from my next frame
 std::vector<std::pair<int, int>> g_buysIn;     // (player, weapon) bought on other PCs - for the menu's thread
 unsigned g_buySeq = 0;
+
+// ---- the scoreboard: the host's count ----
+// Kills, deaths, score and medal bonuses, as the scoreboard shows them (the game's UpdateMultiPlayerStats: kills player
+// +0xe20 and +0xe30, deaths +0xe2c, score +0xe84, bonus +0xe88). Every PC counts them itself from the same hits, but not
+// always alike: a medal for a power-up's kill (FIRST BLOOD...) comes only where its character made the kill - the
+// victim's PC. So while the match runs free the host's count is everyone's: it goes out ('T') whenever it changes and
+// every second, and the others take it. The match clock (elapsed, 0xbadcc0) counts real time on every PC from the same
+// tick, so it goes along only to be compared: a PC whose clock is off by more than a quarter of a second says so.
+#pragma pack(push, 1)
+struct PktStats { PktHeader h; unsigned seq; int v[4][5]; float clock; };
+#pragma pack(pop)
+const int kPktStatsSize = (int)sizeof(PktStats);
+const int kStatField[5] = {0xe20, 0xe30, 0xe2c, 0xe84, 0xe88};
+const uintptr_t kMatchClock = 0xbadcc0;   // seconds since the match began (the HUD's timer: the limit minus this)
+const wchar_t* const kStatName[5] = {L"kills", L"kills", L"deaths", L"score", L"bonus"};
+PktStats g_statsIn{};
+bool g_haveStatsIn = false;
+unsigned g_statsSeqIn = 0;
+
+void ReadStats(int v[4][5]) {
+    for (int s = 0; s < 4; ++s) {
+        unsigned char* p = s < g_players ? PlayerBySlot(s) : nullptr;
+        for (int k = 0; k < 5; ++k)
+            v[s][k] = p && !IsBadReadPtr(p + kStatField[k], 4) ? *reinterpret_cast<int*>(p + kStatField[k]) : 0;
+    }
+}
+
+void FreeStats() {
+    if (g_slot == 0) {   // the host: mine go out
+        static ULONGLONG last = 0;
+        static int sent[4][5];
+        static unsigned seq = 0;
+        int v[4][5];
+        ReadStats(v);
+        ULONGLONG now = GetTickCount64();
+        bool changed = memcmp(v, sent, sizeof(v)) != 0;
+        if (changed || now - last >= 1000) {
+            PktStats t{};
+            t.h = {'T', (BYTE)g_slot};
+            t.seq = ++seq;
+            memcpy(t.v, v, sizeof(v));
+            t.clock = *reinterpret_cast<float*>(kMatchClock);
+            SendAll(&t, sizeof(t));
+            if (changed) SendAll(&t, sizeof(t));   // (twice: a lost one waits a second for the next)
+            memcpy(sent, v, sizeof(v));
+            last = now;
+        }
+        return;
+    }
+    if (!g_haveStatsIn) return;
+    g_haveStatsIn = false;
+    {   // (the clock: compared, half the ping on the way)
+        float host = g_statsIn.clock + InterlockedCompareExchange(&g_pingMs[0], 0, 0) / 2000.f;
+        float off = *reinterpret_cast<float*>(kMatchClock) - host;
+        static ULONGLONG lastSaid = 0;
+        if (fabsf(off) > 0.25f && GetTickCount64() - lastSaid > 30000) {
+            lastSaid = GetTickCount64();
+            Log(L"Netplay: free - the match clock here is %.2f s %s the host's", fabsf(off), off > 0 ? L"ahead of" : L"behind");
+        }
+    }
+    for (int s = 0; s < g_players && s < 4; ++s) {
+        unsigned char* p = PlayerBySlot(s);
+        if (!p) continue;
+        for (int k = 0; k < 5; ++k) {
+            int* f = reinterpret_cast<int*>(p + kStatField[k]);
+            if (IsBadWritePtr(f, 4) || *f == g_statsIn.v[s][k]) continue;
+            static int logged = 0;
+            if (++logged <= 40)
+                Log(L"Netplay: free - player %d's %s %d here, %d on the host's scoreboard - the host's", s, kStatName[k], *f,
+                    g_statsIn.v[s][k]);
+            *f = g_statsIn.v[s][k];
+        }
+    }
+}
+
+void FreeStatsIn(int s, const PktStats* p) {
+    if (s != 0 || p->seq <= g_statsSeqIn) return;   // (the host's only; the newest)
+    g_statsSeqIn = p->seq;
+    g_statsIn = *p;
+    g_haveStatsIn = true;
+}
 
 void FreeSendBuys() {
     std::vector<int> out;
@@ -2466,6 +2574,8 @@ void FreeStart() {
         r.latest = g_current[s];
         r.heardAt = now;
     }
+    g_statsSeqIn = 0;
+    g_haveStatsIn = false;
     AcquireSRWLockExclusive(&g_buyLock);   // (nothing left over from a match before)
     g_buysIn.clear();
     g_buysOut.clear();
@@ -2566,6 +2676,7 @@ void FreeTick() {
     FreeApplyHits();
     FreeApplyPickups();
     FreeSendBuys();
+    FreeStats();
     FreeApplyRemotes(dt);
     FreeSendState();
     static int frames = 0, moveFrames = 0;   // (my own input and character, for the log below)
