@@ -55,3 +55,5 @@ DXVK (`dist/FGUYMod/dxvk`) is by Philip Rebohle and contributors, under the zlib
 
 The online loading screen's music (a re-recording, in the release downloads only - not in this repository) is by
 Andrew Stockton.
+
+This mod was made using AI (Claude, by Anthropic).
