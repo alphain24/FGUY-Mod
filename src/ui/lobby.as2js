@@ -874,7 +874,8 @@ function FGUYBotStep() {
             FGUYPickChar = FGUYChars[Math.floor(Math.random() * FGUYChars.length)];
             var list = FGUYCostumeList(FGUYPickChar);
             FGUYPickCostume = list.length > 0 ? list[Math.floor(Math.random() * list.length)].CostumeIndex : 0;
-            FGUYPickTeam = Math.random() < 0.5 ? 0 : 1;
+            var team = Number(flash.external.ExternalInterface.call('FGUYMOD_BotTeam'));   // (a test can choose it)
+            FGUYPickTeam = team == 0 || team == 1 ? team : (Math.random() < 0.5 ? 0 : 1);
             FGUYPickInput = 'c';
             FGUYSendPick();
         } else if (FGUYS.matchOpen) { FGUYDo('rejoin'); FGUYBotNext = now + 10000; }   // (its match still runs: back in)

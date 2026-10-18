@@ -2139,7 +2139,10 @@ void FreeApplyHits() {
         alignas(16) BYTE info[0x80] = {};
         memcpy(info, h.info, kHitInfo);
         *reinterpret_cast<unsigned char**>(info) = source;
-        *reinterpret_cast<unsigned char**>(info + 0x58) = h.part ? victim + h.partOffset : nullptr;
+        // (no source here - a power-up's character, Rupert's darts, the chicken: each PC has its own, so it isn't sent -
+        // then no body part either: with one, a hit that kills picks its fall from where the source stands, [source+0x38],
+        // and crashed on the null. Without one it goes down as from a fall; the victim's PC has the last word on health)
+        *reinterpret_cast<unsigned char**>(info + 0x58) = h.part && source ? victim + h.partOffset : nullptr;
         float before = PlayerHealth(victim);
         InterlockedExchange(&g_replayingHit, 1);
         char r = Real_TakeDamage(victim, info);

@@ -12,7 +12,8 @@ param(
     [int]$MapLefts = 0,                # MAP: this many steps left (2 = AIRPORT'12)
     [int]$ModeRights = 0,              # GAME MODE: this many steps right (1 = MULTIVERSE MADNESS)
     [switch]$NewNet,                   # MATCH SETTINGS > NETCODE: New (test) - the free-running match
-    [switch]$FriendlyFire              # MATCH SETTINGS > FRIENDLY FIRE: on (the bot's team is random)
+    [switch]$FriendlyFire,             # MATCH SETTINGS > FRIENDLY FIRE: on (the bot's team is random)
+    [int]$BotTeam = -1                 # the bot's team: 0 Good, 1 Evil (the host's stays Good); -1 at random
 )
 $pad = Join-Path $PSScriptRoot "pad.ps1"
 function Press([int]$id, [string]$button) { & $pad -Id $id $button | Out-Null; Start-Sleep -Milliseconds 600 }
@@ -40,7 +41,9 @@ if ($NewNet -or $FriendlyFire) {   # (Deathmatch's rows: mode, map, time, score,
     Press $hostId b
 }
 
+if ($BotTeam -ge 0) { $env:FGUYMOD_BOT_TEAM = "$BotTeam" }
 Start-Process -FilePath (Join-Path $GameDir "FGUYMod\Start test bot.bat") -WindowStyle Hidden
+Remove-Item Env:FGUYMOD_BOT_TEAM -ErrorAction SilentlyContinue
 $until = (Get-Date).AddSeconds(150)
 $botId = 0
 while ((Get-Date) -lt $until) {   # the bot readies up: the host's lobby shows it ready

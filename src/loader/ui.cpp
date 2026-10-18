@@ -440,6 +440,9 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             OnlineMenuTurnPreview((float)ArgNumber(args, argc, 0));
         } else if (strcmp(fn, "IsBot") == 0) {
             ReturnBool(movie, IsBot());
+        } else if (strcmp(fn, "BotTeam") == 0) {   // test: the bot's team (FGUYMOD_BOT_TEAM 0 Good / 1 Evil; -1: at random)
+            char team[8] = "";
+            ReturnNumber(movie, GetEnvironmentVariableA("FGUYMOD_BOT_TEAM", team, sizeof(team)) ? atoi(team) : -1);
         } else if (strcmp(fn, "BotJoin") == 0) {
             ReturnString(movie, BotJoinCode());
         } else if (strcmp(fn, "LoadingSound") == 0) {  // (mode, map): the lobby shows its loading screen

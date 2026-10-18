@@ -356,6 +356,18 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   In the free-running match LB on the host took the count 2 -> 1 on **both** PCs, and both show what it threw (a red
   chicken bucket on the ground, same place). So using one already reaches the others through the relayed press. What
   the bucket does next (and the big yellow thing seen twice after D-pad down) isn't known yet.
+- **All six tested in the free-running match** (host on the virtual pad, the bot on the other team - `test_bot.ps1
+  -BotTeam 1` - held next to the throw): `0x2412` Giant Chicken (a giant chicken fights the enemy), `0x89` Boom Bear
+  (explodes), `0x240e` Joe Swanson (Joe in his wheelchair shoots), `0x3630` Rupert-In-The-Box (a turret, darts),
+  `0x80` Wacky Waving Inflatable Arm-Flailing Tube Man (a decoy, no damage), `0x83` Ipecac (a burning vomit plume).
+  Frat Row only has the first four; the other two were tested by switching a spot's kind on both PCs (+0xa0..a3 state
+  bytes, `switchkind.py`, research). Each appears on both PCs (each PC its own copy, from the relayed LB), and their
+  damage is "no source" (player -1): decided on the victim's PC, the same health on both (checked hit by hit).
+- **Crash found and fixed**: a no-source hit that kills, replayed on another PC, crashed there (`0x647563`, the death
+  fall's direction from `[source+0x38]`, source null - Rupert's darts carry a body part). Replays of no-source hits
+  now go without the body part (as a fall), tested: Rupert and the chicken killing the bot, no crash.
+- Seen on the way (for the polish): after the chicken's kill the host's copy of the bot was up again 5 s before the
+  bot's own PC had it respawn.
 
 ## Supply crates (2026-10-18)
 - A supply crate is a store portal: `zInteraction` (vtable `0xa8d6fc`, `+0x18` id, `+0x28` -> its menu,
