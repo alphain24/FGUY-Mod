@@ -369,6 +369,19 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
 - Seen on the way (for the polish): after the chicken's kill the host's copy of the bot was up again 5 s before the
   bot's own PC had it respawn.
 
+## Scoreboard and clock (2026-10-18)
+- The game fills the scoreboard with `UpdateMultiPlayerStats(team, player, name, score, bonus, kills, deaths)`
+  (`0x6673b5`): the player's +0xe84 score, +0xe88 bonus (medals), +0xe20 + +0xe30 kills, +0xe2c deaths, +0xe90 name
+  (`scores.py`). A kill is credited in `0x5d6450`: the hit's source -> `0x968940` (a summoned character, type 0x11f:
+  its owner at +0x8e4) -> the player; +1 kill, + the kill's points. Medals (FIRST BLOOD: 100) go out in `0x9a4fa0`.
+- Free-running, before: a power-up's kill counted only on the victim's PC (the others replayed it without a source):
+  host 3 kills / 525 there, 6 / 1050 on the bot's PC. Now the deciding PC sends whose kill it is (the hit's `credit`)
+  and the others replay it with that player as the source - then the same. A medal for a power-up's kill still comes
+  only where its character made the kill, so the host's count is everyone's ('T', on change and every second).
+  Tested: the bot's PC had 100 bonus more, took the host's.
+- The match clock: `0xbadcc0` (elapsed; the HUD's timer is the limit `0xbadcac` minus it). Both PCs within ~0.02 s
+  after 4 minutes (both count real time from the same tick); it's compared with the host's, not corrected.
+
 ## Supply crates (2026-10-18)
 - A supply crate is a store portal: `zInteraction` (vtable `0xa8d6fc`, `+0x18` id, `+0x28` -> its menu,
   "=MNU_GLOBAL_SUPPLYCRATE") with a `zTrigger`, scripts, a map icon and a `zPlatform` (`0xa19844`, where it is) of the
