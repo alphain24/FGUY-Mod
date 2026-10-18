@@ -424,6 +424,26 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   type data at +0x21c, its +0x218 template) -> slot 31 `0x5fb4a0` (its set-up: entity type 0x48, `rand()` for its
   looks), slot 55 `0x5fc310`; `0x60ce30` puts it in the world (its spawn transform at +0x22c, the spawn events, `rand()`
   again) - from `0x60cff0` and the pool's update `0x4c1600` (by state flags). Who picks the spawn point is next.
+- **Spawning**: `0x60d080` (cdecl, a 0x6c-byte request from `0x5b14f0`: [2],[3] the context entity's id, [4],[5] the
+  kind, [10] -> the team, [0xc..0xe] where, [0xf..0x11] rotation, [0x12] scale) returns the NPC or 0 (0 is safe - turning
+  down `0x60ce30` instead crashed in the clean-up `0x5e0ec0`). Its one caller `0x60f490` is called by the spawners and
+  by the player's animation events (`0x698430` case 6: the power-ups' summons, context = the player, team = player
+  `+0x1018`). So with the host deciding the spawns ('E': the request), the power-up characters come from the host's
+  game too.
+- **Where an enemy is**: its physics body - a Havok `hkpRigidBody` (vtable `0xa5ae74`) at `[[npc+0x124] +8]` (`+0x124` =
+  its `zNPCCombatCollisionRigidBodyListener`, `0x9f2308`): position at `+0x140` (with copies at `+0x120`, `+0x130`,
+  `+0x1d0`, `+0x1e0`); the game copies it to the transform (`[npc+0x38]+0x30`, also `[npc+0x5c]+0x30`) each frame, so
+  writing the transform alone does nothing. The steering (`zNPCSingleSteering`, `0x9f5644`, at `+0x418`) has it at
+  `+0xc4`. Moving all of them by the same amount moves the enemy for good (`npcposcopies.py` found them). Pulling the
+  height too, a little each frame, made them sink into the ground (2.5 under) - so only along the ground.
+- **Health** `[npc+0x420] +0x60` (max `+0x64`). Damage to any entity: `0x99eec0` (**cdecl** victim, hit - declaring it
+  stdcall broke the stack: 0xc0000409). The final damage is worked out a little differently on each PC (the same hit:
+  10 on one, 20 on the other), so the PC of the player who hit sends the health it took.
+- Synced (research switch `FGUYMOD_TEST_NPCSYNC=1`): spawns ('E'), state 10 a second ('G': where, health), players'
+  hits ('V', with the health lost), down ('K'); the others follow the host's position each frame (its last + speed x
+  age). Measured (Multiverse Madness, 220 ms ping, 2% loss): 0.25 off on average along the ground, 1.5-2.5 at most;
+  health and who's up the same on both. Deathmatch: the Giant Chicken (900 health) thrown by either PC made by the
+  host's game, the same on both, its damage the same on both, its kill and medals counted for its owner on both.
 
 ## Supply crates (2026-10-18)
 - A supply crate is a store portal: `zInteraction` (vtable `0xa8d6fc`, `+0x18` id, `+0x28` -> its menu,

@@ -1045,6 +1045,18 @@ extern const int kPktStateSizeOld, kPktStateSizeMoney;
 struct PktHit;
 struct PktStats;
 void FreeStatsIn(int s, const PktStats* p);
+struct PktSpawn;
+void FreeSpawnIn(int s, const PktSpawn* p);
+extern const int kPktSpawnSize;
+struct PktNpcStates;
+void FreeNpcStatesIn(int s, const PktNpcStates* p, int n);
+extern const int kPktNpcStatesHead;
+struct PktNpcHit;
+void FreeNpcHitIn(int s, const PktNpcHit* p);
+extern const int kPktNpcHitSize;
+struct PktNpcDown;
+void FreeNpcDownIn(int s, const PktNpcDown* p);
+extern const int kPktNpcDownSize;
 extern const int kPktStatsSize;
 void FreeState(int s, const PktState* p, bool withMoney, bool withClock);
 void FreeHitIn(int s, const PktHit* p, bool withCredit);
@@ -1119,6 +1131,14 @@ void Receive() {
             if (g_free) FreeBack(slot);
         } else if (h->type == 'U' && n >= kPktPickupSize) {   // a pickup they took
             if (g_free) FreePickupIn(slot, reinterpret_cast<PktPickup*>(buf));
+        } else if (h->type == 'E' && n >= kPktSpawnSize) {   // an enemy the host's game spawned
+            if (g_free) FreeSpawnIn(slot, reinterpret_cast<PktSpawn*>(buf));
+        } else if (h->type == 'G' && n >= kPktNpcStatesHead) {   // the host's enemies: where, how hurt
+            if (g_free) FreeNpcStatesIn(slot, reinterpret_cast<PktNpcStates*>(buf), n);
+        } else if (h->type == 'V' && n >= kPktNpcHitSize) {   // a player's hit on an enemy, for the host's game
+            if (g_free) FreeNpcHitIn(slot, reinterpret_cast<PktNpcHit*>(buf));
+        } else if (h->type == 'K' && n >= kPktNpcDownSize) {   // an enemy the host's game has down
+            if (g_free) FreeNpcDownIn(slot, reinterpret_cast<PktNpcDown*>(buf));
         } else if (h->type == 'T' && n >= kPktStatsSize) {   // the host's scoreboard
             if (g_free) FreeStatsIn(slot, reinterpret_cast<PktStats*>(buf));
         } else if (h->type == 'W' && n >= kPktBuySize) {   // a weapon they bought at a supply crate
@@ -2129,6 +2149,9 @@ char __fastcall Free_TakeDamage(void* self, void*, void* info) {
                      ? *reinterpret_cast<int*>(src + 0xdf8) : -1;
     if (source >= g_players) source = -1;
     int decides = source >= 0 ? source : (victim >= 0 && victim < g_players ? victim : 0);
+    static int god = -1;   // (research: FGUYMOD_TEST_GOD - my player takes no hits, to watch a match's enemies)
+    if (god < 0) god = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_GOD", 0);
+    if (god && victim == g_slot) return 0;
     if (decides != g_slot) {   // another PC decides this one: it comes from there ('Z')
         ++g_hitsBlocked;
         // (no source: the level's own - out of the world, a kill volume: their character here is somewhere it isn't on
@@ -2538,6 +2561,497 @@ bool InstallPickupHooks() {
     return true;
 }
 
+// ---- enemies (NPCs): to be the host's ----
+// What's known so far (RESEARCH_NOTES.md "Enemies / NPCs"): every PC's own spawner places its own enemies; an enemy goes
+// into the world in 0x60ce30 (thiscall: the enemy, a flag -> placed?) at its spawn point (+0x22c: position, facing), and
+// its kind is its template's first word (+0x218 -> [0]). Research knobs: FGUYMOD_TEST_NPCLOG - every PC says which go in;
+// FGUYMOD_TEST_NPCBLOCK - the others' PCs (not the host's) place none themselves (to see what their spawners do then).
+const uintptr_t kNpcActivate = 0x60ce30;
+const unsigned char kNpcActivateStart[] = {0x51, 0x53, 0x56, 0x8b, 0xf1, 0x8b, 0x06};   // push ecx/ebx/esi; mov esi,ecx; mov eax,[esi]
+using NpcActivate_t = char(__thiscall*)(void* npc, int flag);
+NpcActivate_t NpcActivateOriginal = nullptr;   // (a trampoline: those 7 bytes, then the rest of it)
+int g_npcLog = 0, g_npcBlock = 0;
+
+unsigned NpcKind(unsigned char* npc) {
+    auto t = *reinterpret_cast<unsigned**>(npc + 0x218);
+    return t && !IsBadReadPtr(t, 4) ? t[0] : 0;
+}
+
+char __fastcall Free_NpcActivate(unsigned char* npc, void*, int flag) {
+    if (!g_free || IsBadReadPtr(npc, 0x260)) return NpcActivateOriginal(npc, flag);
+    const float* at = reinterpret_cast<const float*>(npc + 0x22c);
+    unsigned id = *reinterpret_cast<unsigned*>(npc + 0x18), kind = NpcKind(npc);
+    if (g_npcBlock && g_slot != 0) {
+        static int logged = 0;
+        if (++logged <= 80)
+            Log(L"Netplay: free - enemy %x (kind %x) at (%.1f %.1f %.1f) would go in here (flag %d, from %p) - held", id, kind,
+                at[0], at[1], at[2], flag, _ReturnAddress());
+        return 0;
+    }
+    char r = NpcActivateOriginal(npc, flag);
+    static int logged = 0;
+    if (g_npcLog && ++logged <= 120)
+        Log(L"Netplay: free - enemy %x (kind %x) goes in at (%.1f %.1f %.1f, facing %.2f) - flag %d, from %p: %d", id, kind,
+            at[0], at[1], at[2], at[3], flag, _ReturnAddress(), r);
+    return r;
+}
+
+// Spawning (FGUYMOD_TEST_NPCSYNC, being built): every enemy - a wave's, a power-up's chicken - comes from 0x60d080 (cdecl:
+// a spawn request -> the enemy, or 0: none free...). Its request (0x6c bytes) is all values the same on every PC - who
+// spawns it ([2],[3]: an entity's id), its kind ([4],[5]), where ([0xc..0xe]) and how it faces, flags - but [10], a
+// pointer to its team (or none). While the match runs free the host's game spawns them: what it spawns goes out ('E': the
+// request, the team, its enemy's id), the others' own spawning is turned down (0, as when none is free - their spawners
+// try again later) and they spawn the host's, each linked to the host's (by its id) for what comes next.
+const uintptr_t kNpcSpawn = 0x60d080;
+const unsigned char kNpcSpawnStart[] = {0x53, 0x56, 0x8b, 0x74, 0x24, 0x0c};   // push ebx; push esi; mov esi, [esp+0xc]
+const int kSpawnRequest = 0x6c;
+using NpcSpawn_t = unsigned char*(__cdecl*)(void* request);
+NpcSpawn_t NpcSpawnOriginal = nullptr;
+int g_npcSync = 0;
+volatile LONG g_replayingSpawn = 0;
+#pragma pack(push, 1)
+struct PktSpawn { PktHeader h; unsigned seq; unsigned hostNpc; int team; BYTE hasTeam; BYTE request[kSpawnRequest]; };
+#pragma pack(pop)
+const int kPktSpawnSize = (int)sizeof(PktSpawn);
+std::vector<PktSpawn> g_spawnsIn;              // the host's spawns, played at my next frame
+unsigned g_spawnSeen[128], g_spawnSeq = 0;
+std::map<unsigned, unsigned char*> g_npcOfHost;   // the host's enemy (its id) -> mine
+struct NpcTrack { float pos[3], vel[3]; double sentMs; ULONGLONG at; };
+std::map<unsigned, NpcTrack> g_npcTrack;          // the host's enemy (its id) -> where it was, how fast, when
+int g_spawnsTurnedDown = 0;
+
+unsigned char* __cdecl Free_NpcSpawn(BYTE* request) {
+    if (!g_free || !g_npcSync || g_replayingSpawn) return NpcSpawnOriginal(request);
+    if (g_slot != 0) {   // the host's game spawns them
+        if (++g_spawnsTurnedDown <= 20)
+            Log(L"Netplay: free - a spawn here turned down (kind %x:%x) - the host's game spawns them",
+                *reinterpret_cast<unsigned*>(request + 0x10), *reinterpret_cast<unsigned*>(request + 0x14));
+        return nullptr;
+    }
+    unsigned char* npc = NpcSpawnOriginal(request);
+    if (!npc) return npc;
+    PktSpawn e{};
+    e.h = {'E', (BYTE)g_slot};
+    e.seq = ++g_spawnSeq;
+    e.hostNpc = *reinterpret_cast<unsigned*>(npc + 0x18);
+    memcpy(e.request, request, kSpawnRequest);
+    auto team = *reinterpret_cast<int**>(request + 0x28);
+    if (team && !IsBadReadPtr(team, 4)) { e.hasTeam = 1; e.team = *team; }
+    memset(e.request + 0x28, 0, 4);
+    g_npcOfHost[e.hostNpc] = npc;
+    SendAll(&e, sizeof(e));
+    SendAll(&e, sizeof(e));   // (twice: a lost one would be an enemy missing over there)
+    static int logged = 0;
+    if (++logged <= 60)
+        Log(L"Netplay: free - enemy %x spawned (kind %x:%x) at (%.1f %.1f %.1f) - sent", e.hostNpc,
+            *reinterpret_cast<unsigned*>(request + 0x10), *reinterpret_cast<unsigned*>(request + 0x14),
+            *reinterpret_cast<float*>(request + 0x30), *reinterpret_cast<float*>(request + 0x34),
+            *reinterpret_cast<float*>(request + 0x38));
+    return npc;
+}
+
+void FreeSpawnIn(int s, const PktSpawn* p) {
+    if (s != 0 || !p->seq) return;   // (the host's; each once - it comes twice, not always in order)
+    for (unsigned seen : g_spawnSeen) if (seen == p->seq) return;
+    g_spawnSeen[p->seq % 128] = p->seq;
+    g_spawnsIn.push_back(*p);
+}
+
+void NpcKill(unsigned char* npc);
+float* NpcHealthField(unsigned char* npc);
+bool NpcAlive(unsigned char* npc);
+
+void FreeApplySpawns() {
+    std::vector<PktSpawn> in;
+    in.swap(g_spawnsIn);
+    for (const PktSpawn& e : in) {
+        alignas(16) static BYTE request[kSpawnRequest + 16];
+        static int team;
+        memcpy(request, e.request, kSpawnRequest);
+        team = e.team;
+        *reinterpret_cast<int**>(request + 0x28) = e.hasTeam ? &team : nullptr;
+        InterlockedExchange(&g_replayingSpawn, 1);
+        unsigned char* npc = NpcSpawnOriginal(request);
+        InterlockedExchange(&g_replayingSpawn, 0);
+        auto was = g_npcOfHost.find(e.hostNpc);   // (a pool id: the host's one by it before is gone there)
+        unsigned char* old = was == g_npcOfHost.end() ? nullptr : was->second;
+        if (npc) g_npcOfHost[e.hostNpc] = npc;
+        else if (old) g_npcOfHost.erase(was);
+        g_npcTrack.erase(e.hostNpc);
+        bool oldInUse = false;
+        for (auto& kv : g_npcOfHost) oldInUse |= kv.second == old;
+        float* oldHp = old && !oldInUse && NpcAlive(old) ? NpcHealthField(old) : nullptr;
+        if (oldHp && *oldHp > 0) {
+            Log(L"Netplay: free - the host's enemy %x is a new one: the one it was here (still up) goes down", e.hostNpc);
+            NpcKill(old);
+        }
+        static int logged = 0;
+        if (++logged <= 60 || !npc)
+            Log(L"Netplay: free - the host's enemy %x (kind %x:%x) at (%.1f %.1f %.1f): %s", e.hostNpc,
+                *reinterpret_cast<const unsigned*>(e.request + 0x10), *reinterpret_cast<const unsigned*>(e.request + 0x14),
+                *reinterpret_cast<const float*>(e.request + 0x30), *reinterpret_cast<const float*>(e.request + 0x34),
+                *reinterpret_cast<const float*>(e.request + 0x38), npc ? L"spawned here" : L"COULDN'T SPAWN HERE");
+    }
+}
+
+// The enemies' state (being built): the host's game sends where its enemies are and their health ('G', 10 a second);
+// the others pull theirs there (a far one straight there), take its health, and one down there goes down here.
+// Their damage: an enemy (entity type 0x48) is hurt in the game's damage 0x99eec0 (cdecl: the victim, the hit). A hit
+// counts on the PC of the player who made it - at once there, and the host's game gets it ('V'); one another player
+// made, played here from their input, doesn't count here (it comes from their PC); the rest (the enemies' own, the
+// level's) the host's game decides.
+const uintptr_t kEntityDamage = 0x99eec0;
+const unsigned char kEntityDamageStart[] = {0x83, 0xec, 0x34, 0x53, 0x8b, 0x5c, 0x24, 0x3c};   // sub esp,34; push ebx; mov ebx,[esp+3c]
+using EntityDamage_t = void(__cdecl*)(void* victim, void* info);
+EntityDamage_t EntityDamageOriginal = nullptr;
+volatile LONG g_replayingNpcHit = 0;
+const int kNpcHealthObj = 0x420, kNpcHealth = 0x60;
+#pragma pack(push, 1)
+struct NpcState { unsigned hostNpc; float pos[3]; float health; };
+struct PktNpcStates { PktHeader h; unsigned seq; unsigned sentMs; BYTE count; NpcState s[48]; };
+struct PktNpcHit { PktHeader h; unsigned seq; unsigned hostNpc; float lost; BYTE info[kHitInfo]; };
+struct PktNpcDown { PktHeader h; unsigned seq; unsigned hostNpc; };
+#pragma pack(pop)
+const int kPktNpcStatesHead = (int)offsetof(PktNpcStates, s), kPktNpcHitSize = (int)sizeof(PktNpcHit);
+const int kPktNpcDownSize = (int)sizeof(PktNpcDown);
+unsigned g_npcHitSeq = 0, g_npcHitSeen[4][32], g_npcDownSeq = 0, g_npcDownSeen[64];
+BYTE g_lastNpcHitInfo[kHitInfo];   // (the last hit on an enemy seen here, any: a shape for a kill of its own)
+bool g_haveLastNpcHitInfo = false;
+unsigned g_npcStatesSeqIn = 0;
+
+bool NpcAlive(unsigned char* npc) {   // (still an enemy object - a pool one: it may be in use for another by now)
+    return npc && !IsBadReadPtr(npc, 0x430) && *reinterpret_cast<int*>(npc + 0x20) == 0x48;
+}
+float* NpcHealthField(unsigned char* npc) {
+    auto o = *reinterpret_cast<unsigned char**>(npc + kNpcHealthObj);
+    return o && !IsBadWritePtr(o + kNpcHealth, 8) ? reinterpret_cast<float*>(o + kNpcHealth) : nullptr;
+}
+float* NpcPosField(unsigned char* npc) {
+    auto x = *reinterpret_cast<unsigned char**>(npc + 0x38);
+    return x && !IsBadWritePtr(x + 0x30, 12) ? reinterpret_cast<float*>(x + 0x30) : nullptr;
+}
+// Moving an enemy: where it is is its physics body's (a Havok hkpRigidBody at [[npc+0x124] (its
+// zNPCCombatCollisionRigidBodyListener) +8]: its transform +0x120, its swept transform's centres +0x130/+0x140, two more
+// +0x1d0/+0x1e0) - the game copies it to the transform each frame; so all of them by the same, with the transforms
+// (+0x38, +0x5c) and the steering's (zNPCSingleSteering at +0x418, +0xc4).
+const ULONG_PTR kNpcBodyListenerVtable = 0x9f2308, kNpcBodyVtable = 0xa5ae74, kNpcSteeringVtable = 0x9f5644;
+void NpcShift(unsigned char* p, float dx, float dy, float dz) {
+    if (!p || IsBadWritePtr(p, 12)) return;
+    auto f = reinterpret_cast<float*>(p);
+    f[0] += dx;
+    f[1] += dy;
+    f[2] += dz;
+}
+unsigned char* NpcObj(unsigned char* p, int at, ULONG_PTR vtable, int size) {
+    if (!p || IsBadReadPtr(p + at, 4)) return nullptr;
+    auto o = *reinterpret_cast<unsigned char**>(p + at);
+    if (!o || IsBadReadPtr(o, size)) return nullptr;
+    return !vtable || *reinterpret_cast<ULONG_PTR*>(o) == vtable ? o : nullptr;
+}
+void NpcMoveBy(unsigned char* npc, float dx, float dy, float dz) {
+    if (unsigned char* body = NpcObj(NpcObj(npc, 0x124, kNpcBodyListenerVtable, 0xc), 8, kNpcBodyVtable, 0x1f0))
+        for (int o : {0x120, 0x130, 0x140, 0x1d0, 0x1e0}) NpcShift(body + o, dx, dy, dz);
+    if (unsigned char* steer = NpcObj(npc, 0x418, kNpcSteeringVtable, 0xd0)) NpcShift(steer + 0xc4, dx, dy, dz);
+    for (int at : {0x38, 0x5c})
+        if (unsigned char* m = NpcObj(npc, at, 0, 0x3c)) NpcShift(m + 0x30, dx, dy, dz);
+}
+unsigned HostNpcOf(unsigned char* npc) {   // (mine -> the host's id)
+    for (auto& kv : g_npcOfHost) if (kv.second == npc) return kv.first;
+    return 0;
+}
+// Down here too (the host's game has it down): a hit for more than it has left, as the level's (no one's kill).
+void NpcKill(unsigned char* npc) {
+    float* hp = NpcHealthField(npc);
+    if (!hp || *hp <= 0) return;
+    const BYTE* shape = g_haveLastNpcHitInfo ? g_lastNpcHitInfo : g_haveLastHitInfo ? g_lastHitInfo : nullptr;
+    if (!shape) {   // (no hit seen here yet to copy: its health at least)
+        *hp = 0;
+        Log(L"Netplay: free - enemy %x down: no hit seen here yet to play - its health set to 0",
+            *reinterpret_cast<unsigned*>(npc + 0x18));
+        return;
+    }
+    BYTE* info = ReplayInfo();
+    memcpy(info, shape, kHitInfo);
+    memset(info, 0, 4);
+    memset(info + 0x58, 0, 4);
+    float amount = *hp + 1000;
+    memcpy(info + 4, &amount, 4);
+    memcpy(info + 0x1c, &amount, 4);
+    InterlockedExchange(&g_replayingNpcHit, 1);
+    EntityDamageOriginal(npc, info);
+    InterlockedExchange(&g_replayingNpcHit, 0);
+}
+void NpcSendDown(unsigned char* npc, float before) {   // (the host: one of its enemies just went down)
+    float* hp = NpcHealthField(npc);
+    if (g_slot != 0 || !hp || before <= 0 || *hp > 0) return;
+    PktNpcDown k{};
+    k.h = {'K', (BYTE)g_slot};
+    k.seq = ++g_npcDownSeq;
+    k.hostNpc = *reinterpret_cast<unsigned*>(npc + 0x18);
+    SendAll(&k, sizeof(k));
+    SendAll(&k, sizeof(k));
+}
+void FreeNpcDownIn(int s, const PktNpcDown* p) {
+    if (s != 0 || g_slot == 0 || !p->seq) return;
+    for (unsigned seen : g_npcDownSeen) if (seen == p->seq) return;
+    g_npcDownSeen[p->seq % 64] = p->seq;
+    auto it = g_npcOfHost.find(p->hostNpc);
+    unsigned char* npc = it == g_npcOfHost.end() ? nullptr : it->second;
+    if (NpcAlive(npc)) NpcKill(npc);
+    g_npcTrack.erase(p->hostNpc);
+}
+
+void __cdecl Free_EntityDamage(unsigned char* victim, unsigned char* info) {
+    if (!g_free || !g_npcSync || g_replayingNpcHit || !victim || IsBadReadPtr(victim, 0x24) ||
+        *reinterpret_cast<int*>(victim + 0x20) != 0x48 || !info || IsBadReadPtr(info, kHitInfo)) {
+        EntityDamageOriginal(victim, info);
+        return;
+    }
+    auto src = *reinterpret_cast<unsigned char**>(info);
+    int source = src && !IsBadReadPtr(src, 0xe00) && *reinterpret_cast<ULONG_PTR*>(src) == kPlayerVtable
+                     ? *reinterpret_cast<int*>(src + 0xdf8) : -1;
+    memcpy(g_lastNpcHitInfo, info, kHitInfo);
+    g_haveLastNpcHitInfo = true;
+    float* hp = NpcHealthField(victim);
+    float before = hp ? *hp : -1;
+    if (source == g_slot) {   // mine: here at once, and the host's game from me
+        BYTE hit[kHitInfo];
+        memcpy(hit, info, kHitInfo);   // (as it came: the game's damage changes it)
+        EntityDamageOriginal(victim, info);
+        NpcSendDown(victim, before);
+        unsigned host = g_slot == 0 ? 0 : HostNpcOf(victim);
+        static int logged = 0;
+        if (g_slot != 0 && ++logged <= 200)
+            Log(L"Netplay: free - my hit on enemy %x (the host's %x): health %.1f -> %.1f", *reinterpret_cast<unsigned*>(victim + 0x18),
+                host, before, hp ? *hp : -1);
+        if (host) {
+            PktNpcHit v{};
+            v.h = {'V', (BYTE)g_slot};
+            v.seq = ++g_npcHitSeq;
+            v.hostNpc = host;
+            v.lost = hp && before > *hp ? before - *hp : 0.f;
+            memcpy(v.info, hit, kHitInfo);
+            memset(v.info, 0, 4);
+            memset(v.info + 0x58, 0, 4);
+            SendAll(&v, sizeof(v));
+            SendAll(&v, sizeof(v));
+        }
+        return;
+    }
+    if (g_slot == 0 && source < 0) {   // the host's game: the rest
+        EntityDamageOriginal(victim, info);
+        NpcSendDown(victim, before);
+        return;
+    }
+    // (another player's, played here from their input: theirs counts on their PC; or not the host: the host's state)
+}
+
+void FreeNpcHitIn(int s, const PktNpcHit* p) {
+    if (g_slot != 0 || s <= 0 || s >= 4) return;
+    for (unsigned seen : g_npcHitSeen[s]) if (seen == p->seq) return;
+    g_npcHitSeen[s][p->seq % 32] = p->seq;
+    auto it = g_npcOfHost.find(p->hostNpc);
+    unsigned char* npc = it == g_npcOfHost.end() ? nullptr : it->second;
+    unsigned char* player = PlayerBySlot(s);
+    if (!NpcAlive(npc) || !player) {
+        Log(L"Netplay: free - player %d's hit on enemy %x: no such enemy here", s, p->hostNpc);
+        return;
+    }
+    BYTE* info = ReplayInfo();
+    memcpy(info, p->info, kHitInfo);
+    *reinterpret_cast<unsigned char**>(info) = player;   // (theirs: their kill, their points)
+    // (the health it took there, here too - the game's damage works it out a little differently on each PC: played
+    // with the health well up, then set; one that downs it played as a hit for more than it has left)
+    float* hp = NpcHealthField(npc);
+    if (!hp) return;
+    float before = *hp, after = before - p->lost;
+    if (before <= 0) return;
+    if (after <= 0) {
+        float amount = before + 1000;
+        memcpy(info + 4, &amount, 4);
+        memcpy(info + 0x1c, &amount, 4);
+    } else {
+        *hp = before + 100000;
+    }
+    InterlockedExchange(&g_replayingNpcHit, 1);
+    EntityDamageOriginal(npc, info);
+    InterlockedExchange(&g_replayingNpcHit, 0);
+    if (after > 0) *hp = after;
+    NpcSendDown(npc, before);
+    static int logged = 0;
+    if (++logged <= 200)
+        Log(L"Netplay: free - player %d's hit on enemy %x: health %.1f -> %.1f", s, p->hostNpc, before, hp ? *hp : -1);
+}
+
+void FreeSendNpcStates() {
+    static ULONGLONG last = 0;
+    ULONGLONG now = GetTickCount64();
+    if (g_slot != 0 || now - last < 100) return;
+    last = now;
+    PktNpcStates g{};
+    g.h = {'G', (BYTE)g_slot};
+    static unsigned seq = 0;
+    g.seq = ++seq;
+    g.sentMs = (unsigned)(ULONGLONG)PreciseMs();
+    for (auto& kv : g_npcOfHost) {
+        if (g.count >= 48) break;
+        unsigned char* npc = kv.second;
+        if (!NpcAlive(npc)) continue;
+        float* pos = NpcPosField(npc);
+        float* hp = NpcHealthField(npc);
+        if (!pos || !hp) continue;
+        NpcState& e = g.s[g.count++];
+        e.hostNpc = kv.first;
+        memcpy(e.pos, pos, 12);
+        e.health = *hp;
+    }
+    if (g.count) SendAll(&g, kPktNpcStatesHead + g.count * (int)sizeof(NpcState));
+}
+
+float g_npcOffSum = 0, g_npcOffMax = 0, g_npcOffY = 0;   // (how far off the enemies were when the host's came: the log's, 5 s)
+unsigned g_npcOffCount = 0;
+void FreeNpcStatesIn(int s, const PktNpcStates* p, int n) {
+    if (s != 0 || g_slot == 0 || p->seq <= g_npcStatesSeqIn) return;
+    static ULONGLONG lastLog = 0;
+    ULONGLONG now = GetTickCount64();
+    if (now - lastLog >= 5000) {
+        if (g_npcOffCount)
+            Log(L"Netplay: free - enemies: %.2f off on average along the ground, %.2f at most, height %.2f off on "
+                L"average (%u updates)", g_npcOffSum / g_npcOffCount, g_npcOffMax, g_npcOffY / g_npcOffCount, g_npcOffCount);
+        lastLog = now;
+        g_npcOffSum = g_npcOffMax = g_npcOffY = 0;
+        g_npcOffCount = 0;
+    }
+    g_npcStatesSeqIn = p->seq;
+    int count = p->count;
+    if (kPktNpcStatesHead + count * (int)sizeof(NpcState) > n) count = (n - kPktNpcStatesHead) / (int)sizeof(NpcState);
+    for (int i = 0; i < count && i < 48; ++i) {
+        const NpcState& e = p->s[i];
+        auto it = g_npcOfHost.find(e.hostNpc);
+        unsigned char* npc = it == g_npcOfHost.end() ? nullptr : it->second;
+        if (!NpcAlive(npc)) continue;
+        float* pos = NpcPosField(npc);
+        float* hp = NpcHealthField(npc);
+        if (!pos || !hp) continue;
+        NpcTrack& t = g_npcTrack[e.hostNpc];
+        float gap = (float)(p->sentMs - t.sentMs) / 1000.f;   // (how fast: from the host's last one, its clock)
+        float jump = sqrtf((e.pos[0] - t.pos[0]) * (e.pos[0] - t.pos[0]) + (e.pos[1] - t.pos[1]) * (e.pos[1] - t.pos[1]) +
+                           (e.pos[2] - t.pos[2]) * (e.pos[2] - t.pos[2]));
+        for (int k = 0; k < 3; ++k)
+            t.vel[k] = t.at && gap > 0.02f && gap < 1.f && jump < 8 ? (e.pos[k] - t.pos[k]) / gap : 0.f;
+        memcpy(t.pos, e.pos, 12);
+        t.sentMs = p->sentMs;
+        t.at = now;
+        LONG ping = InterlockedCompareExchange(&g_pingMs[0], 0, 0);
+        float ahead = ping > 0 ? ping / 2000.f : 0.f;   // (the host's now: how far off mine is)
+        float dx = e.pos[0] + t.vel[0] * ahead - pos[0], dy = e.pos[1] + t.vel[1] * ahead - pos[1],
+              dz = e.pos[2] + t.vel[2] * ahead - pos[2];
+        float d = sqrtf(dx * dx + dz * dz);
+        g_npcOffSum += d;
+        g_npcOffY += fabsf(dy);
+        g_npcOffMax = d > g_npcOffMax ? d : g_npcOffMax;
+        ++g_npcOffCount;
+        if (e.health <= 0 && *hp > 0) {   // down there: down here
+            NpcKill(npc);
+        } else if (e.health > 0) {
+            *hp = e.health;
+        }
+    }
+}
+
+// Each frame (not the host): each enemy pulled toward where the host's is by now (its last place, on at its speed for
+// that long and half the ping, a quarter second at most) - a part of the way each frame along the ground, a far one
+// straight there.
+void FreeNpcFollow(float dt) {
+    if (g_slot == 0 || g_npcTrack.empty()) return;
+    ULONGLONG now = GetTickCount64();
+    LONG ping = InterlockedCompareExchange(&g_pingMs[0], 0, 0);
+    float k = 1.f - expf(-dt * 8.f);
+    for (auto& kv : g_npcTrack) {
+        const NpcTrack& t = kv.second;
+        if (!t.at || now - t.at > 1000) continue;   // (the host's stopped sending it: gone there)
+        auto it = g_npcOfHost.find(kv.first);
+        unsigned char* npc = it == g_npcOfHost.end() ? nullptr : it->second;
+        if (!NpcAlive(npc)) continue;
+        float* pos = NpcPosField(npc);
+        if (!pos) continue;
+        float ahead = (float)(now - t.at) / 1000.f + (ping > 0 ? ping / 2000.f : 0.f);
+        if (ahead > 0.25f) ahead = 0.25f;
+        float dx = t.pos[0] + t.vel[0] * ahead - pos[0], dy = t.pos[1] + t.vel[1] * ahead - pos[1],
+              dz = t.pos[2] + t.vel[2] * ahead - pos[2];
+        float d = sqrtf(dx * dx + dy * dy + dz * dz);
+        if (d > 8) NpcMoveBy(npc, dx, dy, dz);
+        else if (dx * dx + dz * dz > 0.0004f) NpcMoveBy(npc, dx * k, 0, dz * k);   // (along the ground: its height its
+                                                                                  // physics' - pulled, it sinks in)
+    }
+}
+
+bool InstallEntityDamageHook() {
+    auto at = reinterpret_cast<unsigned char*>(kEntityDamage);
+    if (IsBadReadPtr(at, sizeof(kEntityDamageStart)) || memcmp(at, kEntityDamageStart, sizeof(kEntityDamageStart)) != 0) {
+        Log(L"Netplay: the game's damage isn't what we expect - enemies' damage not shared");
+        return false;
+    }
+    auto tramp = static_cast<unsigned char*>(VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!tramp) return false;
+    memcpy(tramp, kEntityDamageStart, sizeof(kEntityDamageStart));
+    tramp[8] = 0xE9;
+    *reinterpret_cast<int*>(tramp + 9) = (int)((kEntityDamage + 8) - (reinterpret_cast<uintptr_t>(tramp) + 13));
+    EntityDamageOriginal = reinterpret_cast<EntityDamage_t>(tramp);
+    DWORD old;
+    VirtualProtect(at, sizeof(kEntityDamageStart), PAGE_EXECUTE_READWRITE, &old);
+    at[0] = 0xE9;
+    *reinterpret_cast<int*>(at + 1) = (int)(reinterpret_cast<uintptr_t>(&Free_EntityDamage) - (kEntityDamage + 5));
+    at[5] = at[6] = at[7] = 0x90;
+    VirtualProtect(at, sizeof(kEntityDamageStart), old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, sizeof(kEntityDamageStart));
+    return true;
+}
+
+bool InstallNpcSpawnHook() {
+    auto at = reinterpret_cast<unsigned char*>(kNpcSpawn);
+    if (IsBadReadPtr(at, sizeof(kNpcSpawnStart)) || memcmp(at, kNpcSpawnStart, sizeof(kNpcSpawnStart)) != 0) {
+        Log(L"Netplay: the enemies' spawning isn't what we expect - not the host's");
+        return false;
+    }
+    auto tramp = static_cast<unsigned char*>(VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!tramp) return false;
+    memcpy(tramp, kNpcSpawnStart, sizeof(kNpcSpawnStart));
+    tramp[6] = 0xE9;
+    *reinterpret_cast<int*>(tramp + 7) = (int)((kNpcSpawn + 6) - (reinterpret_cast<uintptr_t>(tramp) + 11));
+    NpcSpawnOriginal = reinterpret_cast<NpcSpawn_t>(tramp);
+    DWORD old;
+    VirtualProtect(at, sizeof(kNpcSpawnStart), PAGE_EXECUTE_READWRITE, &old);
+    at[0] = 0xE9;
+    *reinterpret_cast<int*>(at + 1) = (int)(reinterpret_cast<uintptr_t>(&Free_NpcSpawn) - (kNpcSpawn + 5));
+    at[5] = 0x90;
+    VirtualProtect(at, sizeof(kNpcSpawnStart), old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, sizeof(kNpcSpawnStart));
+    return true;
+}
+
+bool InstallNpcHooks() {
+    auto at = reinterpret_cast<unsigned char*>(kNpcActivate);
+    if (IsBadReadPtr(at, sizeof(kNpcActivateStart)) || memcmp(at, kNpcActivateStart, sizeof(kNpcActivateStart)) != 0) {
+        Log(L"Netplay: the enemies' code isn't what we expect - enemies not watched");
+        return false;
+    }
+    auto tramp = static_cast<unsigned char*>(VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!tramp) return false;
+    memcpy(tramp, kNpcActivateStart, sizeof(kNpcActivateStart));
+    tramp[7] = 0xE9;
+    *reinterpret_cast<int*>(tramp + 8) = (int)((kNpcActivate + 7) - (reinterpret_cast<uintptr_t>(tramp) + 12));
+    NpcActivateOriginal = reinterpret_cast<NpcActivate_t>(tramp);
+    DWORD old;
+    VirtualProtect(at, sizeof(kNpcActivateStart), PAGE_EXECUTE_READWRITE, &old);
+    at[0] = 0xE9;
+    *reinterpret_cast<int*>(at + 1) = (int)(reinterpret_cast<uintptr_t>(&Free_NpcActivate) - (kNpcActivate + 5));
+    at[5] = at[6] = 0x90;
+    VirtualProtect(at, sizeof(kNpcActivateStart), old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, sizeof(kNpcActivateStart));
+    return true;
+}
+
 // Everyone else's characters: towards where their own PC has them.
 void FreeApplyRemotes(float dt) {
     for (int s = 0; s < g_players && s < 4; ++s) {
@@ -2663,6 +3177,14 @@ void FreeStart() {
     }
     g_statsSeqIn = 0;
     g_haveStatsIn = false;
+    memset(g_spawnSeen, 0, sizeof(g_spawnSeen));
+    memset(g_npcHitSeen, 0, sizeof(g_npcHitSeen));
+    memset(g_npcDownSeen, 0, sizeof(g_npcDownSeen));
+    g_haveLastNpcHitInfo = false;
+    g_npcStatesSeqIn = 0;
+    g_spawnsIn.clear();
+    g_npcOfHost.clear();
+    g_npcTrack.clear();
     AcquireSRWLockExclusive(&g_buyLock);   // (nothing left over from a match before)
     g_buysIn.clear();
     g_buysOut.clear();
@@ -2761,10 +3283,15 @@ void FreeTick() {
     OnlineSettingsApply(kbm, g_players);
     KbmApply(kbm, g_players);
     FreeApplyHits();
+    FreeApplySpawns();
     FreeTestHurt();
     FreeApplyPickups();
     FreeSendBuys();
     FreeStats();
+    if (g_npcSync) {
+        FreeSendNpcStates();
+        FreeNpcFollow(dt);
+    }
     FreeApplyRemotes(dt);
     FreeSendState();
     static int frames = 0, moveFrames = 0;   // (my own input and character, for the log below)
@@ -3537,6 +4064,13 @@ void InitNetplay(HMODULE exe) {
         VirtualProtect(slot, sizeof(void*), old, &old);
         Log(L"Netplay: the match will run free (no lockstep) once everyone's level is up");
         if (InstallPickupHooks()) Log(L"Netplay: pickups shared (only my own player takes them here)");
+        g_npcLog = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NPCLOG", 0);
+        g_npcBlock = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NPCBLOCK", 0);
+        g_npcSync = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NPCSYNC", 0);
+        if (g_npcSync && InstallNpcSpawnHook() && InstallEntityDamageHook())
+            Log(L"Netplay: being built - the host's game spawns the enemies, their state and damage the host's");
+        if ((g_npcLog || g_npcBlock) && InstallNpcHooks())
+            Log(L"Netplay: research - enemies going in watched%s", g_npcBlock ? L", the others' PCs place none" : L"");
     }
     for (int s = 0; s < 4; ++s)
         for (int k = 0; k < 8; ++k) g_peerHashTick[s][k] = ~0u;
