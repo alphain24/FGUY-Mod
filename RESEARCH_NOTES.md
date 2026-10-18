@@ -401,7 +401,9 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   the same on every PC; the 5-minute match ended on all four within 85 ms. In the 4-player run the lockstep part before
   it lets go had sync check mismatches (tick 150 on one PC, 810-870 on another: the slowest to load, 4 games on one PC
   - the players 0.04 lower while falling into the level, 3 random numbers more); from tick 900 the free-running match
-  corrects it. With the classic netcode such a start would end the match - worth a look there (4 copies on one PC).
+  corrects it. Checked again: 4 players with the classic netcode (no lag: 75 checks each; with the lag: ~207 each) and
+  the new one (with and without the lag) - no mismatch at all. A one-off on an overloaded PC (4 games loading at once,
+  right after other runs).
 - The match clock: `0xbadcc0` (elapsed; the HUD's timer is the limit `0xbadcac` minus it). Both PCs within ~0.02 s
   after 4 minutes (both count real time from the same tick); it's compared with the host's, not corrected.
 
