@@ -394,18 +394,21 @@ bool KbmIsKeyboardSlot(int slot) { return slot >= 0 && slot < 4 && g_kbmSlot[slo
 // controller 0's (the keyboard's), and its screens take that as player 1 - online a keyboard player in another slot
 // couldn't leave the store (Backspace, Esc, Enter). Whose key it is: the keyboard player who has it down this tick
 // (or had, for a release) - with the keys the game makes it of (Esc from Backspace: back; Home and Space from
-// Enter), from everyone's synced keys, so the same on every PC; -1: nobody's (a controller's: as it was).
+// Enter), from everyone's synced keys, so the same on every PC; -1: nobody's (a controller's: as it was). +4: give
+// it as Enter - the game makes a keyboard player's Enter Home + Enter in slot 1, but Home + Space in the others, and
+// the death menu goes on only with Enter (a keyboard player in another slot couldn't respawn with it).
 int KbmKeyPlayer(int code) {
     if (!g_session || !g_menuKeysLive || code <= 0 || code >= 256) return -1;
-    int from[3] = {code, -1, -1};
+    int from[2] = {code, -1};
     if (code == VK_ESCAPE) from[1] = VK_BACK;
     if (code == VK_HOME || code == VK_SPACE) from[1] = VK_RETURN;
     for (int pass = 0; pass < 2; ++pass)
         for (int s = 0; s < 4; ++s) {
             if (!g_kbmSlot[s]) continue;
             const BYTE* keys = pass == 0 ? g_slotKeys[s] : g_slotKeysBefore[s];
-            for (int k : from)
-                if (k > 0 && (keys[k >> 3] >> (k & 7)) & 1) return s;
+            auto down = [keys](int k) { return k > 0 && ((keys[k >> 3] >> (k & 7)) & 1); };
+            if (down(from[0])) return s;
+            if (down(from[1])) return code == VK_SPACE ? s + 4 : s;
         }
     return -1;
 }

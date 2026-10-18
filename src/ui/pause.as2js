@@ -32,7 +32,7 @@ function FGUYEnableLocalInput(keyHandler, keyUpHandler) {
     return made;
 }
 
-function FGUYKeyPlayer(code) {
+function FGUYKeyPlayer(code) {   // (+4: give it as Enter - FGUYMOD_KeyPlayer)
     var p = Number(flash.external.ExternalInterface.call('FGUYMOD_KeyPlayer', code));
     return isNaN(p) ? -1 : p;
 }
@@ -53,6 +53,10 @@ function FGUYKeyWrap() {
     l.onKeyDown = function (idx) {
         if (this.fguyDown == undefined) return;
         var code = Key.fguyGetCode(idx), p = FGUYKeyPlayer(code);
+        if (p >= 4) {
+            p -= 4;
+            code = 13;
+        }
         if (p < 0 || p == idx) {
             this.fguyDown(idx);
             return;
@@ -65,6 +69,10 @@ function FGUYKeyWrap() {
     l.onKeyUp = function (idx) {
         if (this.fguyUp == undefined) return;
         var code = Key.fguyGetCode(idx), p = FGUYKeyPlayer(code);
+        if (p >= 4) {
+            p -= 4;
+            code = 13;
+        }
         if (p < 0 || p == idx) {
             this.fguyUp(idx);
             return;
