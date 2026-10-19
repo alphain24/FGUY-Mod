@@ -642,8 +642,9 @@ void StartSession(const std::vector<std::string>& f) {
         char forced[8] = "";
         bool free = (conf.size() > 6 && conf[6] == "1") || GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", forced, sizeof(forced)) > 0;
         bool anyMode = free && strcmp(forced, "all") == 0;   // (research: FGUYMOD_TEST_NETFREE=all - any mode)
-        if ((conf.empty() || conf[0] != "DM") && !anyMode) free = false;   // (Deathmatch only, for now: the other
-                                                             //  modes' enemies, flags and goals aren't shared yet)
+        if ((conf.empty() || (conf[0] != "DM" && conf[0] != "HD")) && !anyMode) free = false;   // (Deathmatch and
+                                                             //  Multiverse Madness, for now: the other modes' flags and goals
+                                                             //  aren't shared yet)
         set(L"FGUYMOD_NET_FREE", free ? "1" : "0");
         // rejoining a free-running match: no catching up on the host's record - the session game loads the level on its
         // own and joins in (netplay.cpp FreeStart)

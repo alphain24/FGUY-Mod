@@ -74,6 +74,7 @@ void NetplayProfileRender(DWORD ms);   //   research (test pipe "profile <ms>"):
 void NetplayTestLeave();               //   test pipe "netleave": quit the match to the lobby (as the pause menu does)
 void NetplayTestNudge();
 int KbmKeyPlayer(int code);                          //   the HUD's key event: whose (-1: as the game has it)
+void NetplayTestGod(bool on);                         //   test pipe "god 0/1": my player takes no hits
 void NetplayTestKillNpcs();                          //   test pipe "killnpcs": the host's enemies all down
 void NetplayTestHurt(int player, float amount);   //   test pipe "hurt": my player there takes a hit nobody caused
 void OnlineMenuLogYaw();               //   test pipe "yaw": the lobby preview's facing (onlinemenu.cpp)

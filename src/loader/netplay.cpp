@@ -1043,6 +1043,9 @@ extern const int kPktBuySize;
 struct PktRematch;
 void FreeRematchIn(int s, const PktRematch* p);
 extern const int kPktRematchSize;
+struct PktRound;
+void FreeRoundIn(int s, const PktRound* p);
+extern const int kPktRoundSize;
 struct PktState;
 extern const int kPktStateSizeOld, kPktStateSizeMoney;
 struct PktHit;
@@ -1148,6 +1151,8 @@ void Receive() {
             if (g_free) FreeBuyIn(slot, reinterpret_cast<PktBuy*>(buf));
         } else if (h->type == 'r' && n >= kPktRematchSize) {   // the host's pick at the end of the match ('R': ready)
             if (g_free) FreeRematchIn(slot, reinterpret_cast<PktRematch*>(buf));
+        } else if (h->type == 'w' && n >= kPktRoundSize) {   // Multiverse Madness: the host's round (next, ended, respawn)
+            if (g_free) FreeRoundIn(slot, reinterpret_cast<PktRound*>(buf));
         } else if (h->type == 'X' && n >= kPktStateSizeOld) {   // (0.8.12 and older: no money in it)
             if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSizeMoney, n >= kPktStateSize);
         } else if (h->type == 'Z' && n >= kPktHitSizeOld) {   // (0.8.13 and older: no credit in it)
@@ -1617,7 +1622,8 @@ struct SessionPress { int pad; WORD buttons; int delay; unsigned from; };
 CRITICAL_SECTION g_pressLock;
 std::vector<SessionPress> g_pressQueue, g_pressActive;
 bool g_sessionStory = false;     // story co-op session: guests drop in once the level runs
-bool g_sessionDM = false;        // a Deathmatch session (the only mode the free-running match is for, so far)
+bool g_sessionDM = false;        // a Deathmatch session (the free-running match: Deathmatch, Multiverse Madness)
+bool g_sessionHorde = false;     // a Multiverse Madness one
 volatile LONG g_sessionLevelAsked = 0;  // the menu launched the level (taken at the next tick)
 unsigned g_levelTick = 0;
 
@@ -2137,6 +2143,7 @@ int HitCredit(unsigned char* src) {
     int s = *reinterpret_cast<int*>(owner + 0xdf8);
     return s >= 0 && s < g_players ? s : -1;
 }
+volatile bool g_testGod = false;   // (test pipe "god 1": my player takes no hits - this copy only)
 
 BYTE g_lastHitInfo[kHitInfo];                  // (test "hurt": the last hit's shape, for a hit of its own)
 bool g_haveLastHitInfo = false;
@@ -2156,7 +2163,7 @@ char __fastcall Free_TakeDamage(void* self, void*, void* info) {
     int decides = source >= 0 ? source : (victim >= 0 && victim < g_players ? victim : 0);
     static int god = -1;   // (research: FGUYMOD_TEST_GOD - my player takes no hits, to watch a match's enemies)
     if (god < 0) god = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_GOD", 0);
-    if (god && victim == g_slot) return 0;
+    if ((god || g_testGod) && victim == g_slot) return 0;
     if (decides != g_slot) {   // another PC decides this one: it comes from there ('Z')
         ++g_hitsBlocked;
         // (no source: the level's own - out of the world, a kill volume: their character here is somewhere it isn't on
@@ -3128,6 +3135,98 @@ void FreeTestKillNpcs() {
     Log(L"Netplay: test - killnpcs: %d enemies down", n);
 }
 
+// Multiverse Madness' rounds: the level's script sends the game mode's events - "FGUY: MP: Increment Round Number"
+// (0xf91ca714: the round, 0xbadcb0, +1), "Set Round Number" (0x93d11ddd), "Notify Horde Round Ended" (0xa0cc1897: the
+// round just ended, 0xbadcb4 - a player down waits for it: "Cannot respawn until round is over"), "Respawn All Players"
+// (0x9def5921) - to their handler 0x6a06a0 (cdecl: ?, sender, event hash, args), from its spawner's waves. The host's
+// game spawns the enemies, so on the others the spawner has none and its script never got there: a player down there
+// stayed down for good. So these events are the host's: what its game sends goes out ('w'), the others' own are dropped
+// and the host's played instead.
+const uintptr_t kMpEvent = 0x6a06a0;
+const unsigned char kMpEventStart[] = {0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf0};   // push ebp; mov ebp, esp; and esp, -16
+using MpEvent_t = void(__cdecl*)(int a, int sender, unsigned event, float* args);
+MpEvent_t MpEventOriginal = nullptr;
+const unsigned kRoundEvents[] = {0xf91ca714, 0x93d11ddd, 0xa0cc1897, 0x9def5921};
+#pragma pack(push, 1)
+struct PktRound { PktHeader h; unsigned seq; unsigned event; float arg; };
+#pragma pack(pop)
+const int kPktRoundSize = (int)sizeof(PktRound);
+volatile LONG g_replayingRound = 0;
+unsigned g_roundSeq = 0, g_roundSeen[16];
+std::vector<PktRound> g_roundsIn;
+int g_mpEventA = 0, g_mpEventSender = 0;   // (the last call's: the host's events are played with them)
+
+bool RoundEvent(unsigned e) {
+    for (unsigned r : kRoundEvents) if (r == e) return true;
+    return false;
+}
+const wchar_t* RoundEventName(unsigned e) {
+    return e == 0xf91ca714 ? L"next round" : e == 0x93d11ddd ? L"round number" : e == 0xa0cc1897 ? L"round ended"
+                                                                                                  : L"everyone respawns";
+}
+
+void __cdecl Free_MpEvent(int a, int sender, unsigned event, float* args) {
+    if (!g_replayingRound) { g_mpEventA = a; g_mpEventSender = sender; }
+    if (!g_free || !g_sessionHorde || g_replayingRound || !RoundEvent(event)) {
+        MpEventOriginal(a, sender, event, args);
+        return;
+    }
+    if (g_slot == 0) {   // the host's: here, and to everyone
+        MpEventOriginal(a, sender, event, args);
+        PktRound w{{'w', (BYTE)g_slot}, ++g_roundSeq, event, args && !IsBadReadPtr(args, 4) ? *args : 0.f};
+        SendAll(&w, sizeof(w));
+        SendAll(&w, sizeof(w));
+        Log(L"Netplay: free - Multiverse Madness: %s (round %.0f) - sent", RoundEventName(event), *reinterpret_cast<float*>(0xbadcb0));
+        return;
+    }
+    static int logged = 0;   // (mine: the host's comes instead)
+    if (++logged <= 20) Log(L"Netplay: free - Multiverse Madness: %s here - the host's instead", RoundEventName(event));
+}
+
+void FreeRoundIn(int s, const PktRound* p) {
+    if (s != 0 || g_slot == 0 || !p->seq || !RoundEvent(p->event)) return;
+    for (unsigned seen : g_roundSeen) if (seen == p->seq) return;
+    g_roundSeen[p->seq % 16] = p->seq;
+    g_roundsIn.push_back(*p);
+}
+
+void FreeApplyRounds() {   // (the game's thread, each frame)
+    if (g_roundsIn.empty() || !MpEventOriginal) return;
+    std::vector<PktRound> in;
+    in.swap(g_roundsIn);
+    for (const PktRound& w : in) {
+        static float arg;
+        arg = w.arg;
+        InterlockedExchange(&g_replayingRound, 1);
+        MpEventOriginal(g_mpEventA, g_mpEventSender, w.event, &arg);
+        InterlockedExchange(&g_replayingRound, 0);
+        Log(L"Netplay: free - Multiverse Madness: the host's %s (round %.0f here now)", RoundEventName(w.event),
+            *reinterpret_cast<float*>(0xbadcb0));
+    }
+}
+
+bool InstallMpEventHook() {
+    auto at = reinterpret_cast<unsigned char*>(kMpEvent);
+    if (IsBadReadPtr(at, sizeof(kMpEventStart)) || memcmp(at, kMpEventStart, sizeof(kMpEventStart)) != 0) {
+        Log(L"Netplay: the game mode's events aren't what we expect - Multiverse Madness' rounds not shared");
+        return false;
+    }
+    auto tramp = static_cast<unsigned char*>(VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!tramp) return false;
+    memcpy(tramp, kMpEventStart, sizeof(kMpEventStart));
+    tramp[6] = 0xE9;
+    *reinterpret_cast<int*>(tramp + 7) = (int)((kMpEvent + 6) - (reinterpret_cast<uintptr_t>(tramp) + 11));
+    MpEventOriginal = reinterpret_cast<MpEvent_t>(tramp);
+    DWORD old;
+    VirtualProtect(at, sizeof(kMpEventStart), PAGE_EXECUTE_READWRITE, &old);
+    at[0] = 0xE9;
+    *reinterpret_cast<int*>(at + 1) = (int)(reinterpret_cast<uintptr_t>(&Free_MpEvent) - (kMpEvent + 5));
+    at[5] = 0x90;
+    VirtualProtect(at, sizeof(kMpEventStart), old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, sizeof(kMpEventStart));
+    return true;
+}
+
 bool InstallEntityDamageHook() {
     auto at = reinterpret_cast<unsigned char*>(kEntityDamage);
     if (IsBadReadPtr(at, sizeof(kEntityDamageStart)) || memcmp(at, kEntityDamageStart, sizeof(kEntityDamageStart)) != 0) {
@@ -3329,6 +3428,8 @@ void FreeStart() {
     g_npcTrack.clear();
     g_rematchSent = false;
     g_resultsQuitting = false;
+    memset(g_roundSeen, 0, sizeof(g_roundSeen));
+    g_roundsIn.clear();
     InterlockedExchange(&g_resultsLeave, 0);
     AcquireSRWLockExclusive(&g_buyLock);   // (nothing left over from a match before)
     g_buysIn.clear();
@@ -3429,6 +3530,7 @@ void FreeTick() {
     KbmApply(kbm, g_players);
     FreeApplyHits();
     FreeApplySpawns();
+    FreeApplyRounds();
     FreeTestHurt();
     FreeApplyPickups();
     FreeSendBuys();
@@ -3488,7 +3590,7 @@ void Tick() {
     }
     bool freeNow = g_freeRejoin ? g_freeRejoinHud && g_tick >= g_freeRejoinHud + kFreeAfterTicks
                                 : g_liveTick && g_tick >= g_liveTick + kFreeAfterTicks;
-    if (g_freeWanted && g_inSession && g_sessionDM && !g_catchUp && freeNow) {
+    if (g_freeWanted && g_inSession && (g_sessionDM || g_sessionHorde) && !g_catchUp && freeNow) {
         EnterCriticalSection(&g_netLock);
         FreeStart();
         LeaveCriticalSection(&g_netLock);
@@ -4114,6 +4216,10 @@ void NetplayTestHurt(int player, float amount) {
     g_testHurtAmount = amount;
     InterlockedExchange(&g_testHurtWho, player);
 }
+void NetplayTestGod(bool on) {
+    g_testGod = on;
+    Log(L"Netplay: test - my player %s", on ? L"takes no hits" : L"takes hits again");
+}
 void NetplayTestKillNpcs() { InterlockedExchange(&g_testKillNpcs, 1); }
 void NetplayTestNudge() { InterlockedExchange(&g_testNudge, 1); Log(L"Netplay: test - nudging my player on this PC"); }
 void NetplayTestStall(DWORD ms) {
@@ -4256,6 +4362,7 @@ void InitNetplay(HMODULE exe) {
         // show the host's; research: FGUYMOD_TEST_NPCSYNC=0 leaves each PC its own, as before)
         g_npcSync = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NPCSYNC", 1);
         if (g_npcSync && !(InstallNpcSpawnHook() && InstallEntityDamageHook())) g_npcSync = 0;
+        if (g_npcSync) InstallMpEventHook();   // (Multiverse Madness' rounds: the host's)
         Log(L"Netplay: enemies %s", g_npcSync ? L"shared: the host's game makes them, the others show the host's"
                                               : L"not shared: each PC its own");
         if ((g_npcLog || g_npcBlock) && InstallNpcHooks())
@@ -4313,6 +4420,7 @@ void InitNetplay(HMODULE exe) {
     DWORD sessionLen = GetEnvironmentVariableA("FGUYMOD_SESSION", session, sizeof(session));
     g_sessionStory = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "ST,", 3) == 0;
     g_sessionDM = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "DM,", 3) == 0;
+    g_sessionHorde = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "HD,", 3) == 0;
     {   // (research: FGUYMOD_TEST_NETFREE=all - the free-running match in any mode, to look at its enemies)
         char all[8] = "";
         if (GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", all, sizeof(all)) && strcmp(all, "all") == 0) g_sessionDM = true;

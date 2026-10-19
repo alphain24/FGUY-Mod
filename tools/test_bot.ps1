@@ -33,11 +33,15 @@ Start-Sleep 3
 if ($Story) { Press $hostId down; Press $hostId left }           # GAME MODE: back one = STORY CO-OP
 elseif ($ModeRights) { Press $hostId down; foreach ($k in 1..$ModeRights) { Press $hostId right } }
 elseif ($MapLefts) { Press $hostId down; Press $hostId down; foreach ($k in 1..$MapLefts) { Press $hostId left } }
-if ($NewNet -or $FriendlyFire) {   # (Deathmatch's rows: mode, map, time, score, friendly fire, frame rate, netcode)
-    Press $hostId down; Press $hostId down; Press $hostId down; Press $hostId a   # MATCH SETTINGS
+if ($NewNet -or $FriendlyFire) {   # (Deathmatch's rows: mode, map, time, score, friendly fire, frame rate, netcode;
+    #  Multiverse Madness has no score row)
+    $ffRow = if ($ModeRights -eq 1) { 3 } else { 4 }
+    $netRow = if ($ModeRights -eq 1) { 5 } else { 6 }
+    $at = if ($Story -or $ModeRights) { 1 } elseif ($MapLefts) { 2 } else { 0 }   # (the row picked above: START, GAME MODE, MAP)
+    foreach ($k in ($at + 1)..3) { Press $hostId down }; Press $hostId a   # MATCH SETTINGS
     $row = 0
-    if ($FriendlyFire) { foreach ($k in 1..4) { Press $hostId down }; Press $hostId right; $row = 4 }
-    if ($NewNet) { foreach ($k in ($row + 1)..6) { Press $hostId down }; Press $hostId right }
+    if ($FriendlyFire) { foreach ($k in 1..$ffRow) { Press $hostId down }; Press $hostId right; $row = $ffRow }
+    if ($NewNet) { foreach ($k in ($row + 1)..$netRow) { Press $hostId down }; Press $hostId right }
     Press $hostId b
 }
 

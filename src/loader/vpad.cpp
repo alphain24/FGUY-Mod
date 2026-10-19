@@ -296,6 +296,11 @@ void HandleCommand(char* line) {
         if (who && amount) NetplayTestHurt(atoi(who), (float)atof(amount));
         return;
     }
+    if (cmd && _stricmp(cmd, "god") == 0) {   // test tools: god 1 / 0 - my player takes no hits (free-running)
+        char* on = strtok_s(nullptr, " \t\r\n", &ctx);
+        NetplayTestGod(!on || atoi(on) != 0);
+        return;
+    }
     if (cmd && _stricmp(cmd, "killnpcs") == 0) {   // test tools: the host's enemies all down (free-running, enemy sync)
         NetplayTestKillNpcs();
         return;

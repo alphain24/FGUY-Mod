@@ -506,3 +506,18 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
 - Message letters: `'R'` is "ready" (the session's first tick) and `'K'` the host's catch-up record - 0.8.15/0.8.16
   used `'K'` for an enemy down too, which swallowed the record: rejoining a classic-netcode match broke. Enemy down
   is `'k'` now, the rematch `'r'` (the server only reads `'a'`).
+
+## Multiverse Madness in the new netcode (2026-10-19)
+- Rounds: the level's script sends the game mode's events by name hash to its handler `0x6a06a0` (cdecl: ?, sender,
+  event, args): "FGUY: MP: Increment Round Number" `0xf91ca714` (round `0xbadcb0` +1, an int), "Set Round Number"
+  `0x93d11ddd`, "Notify Horde Round Ended" `0xa0cc1897` (`0xbadcb4` = the round: a player down waits for it -
+  "Cannot respawn until round is over"), "Respawn All Players" `0x9def5921` (each player down: `0x69d5a0`). The hashes
+  are in the name lookup `0x55e000`-`0x56a000` (cmp eax, hash; je -> mov eax, name). The script sends them from its
+  spawner's waves - with the host's game spawning every enemy, the others' spawner has none: a player down there
+  stayed down. Now the host's go out ('w') and the others' own are dropped (they do send some), the host's played.
+  Tested: the guest down, the host's round ends at ~78 s, the guest back on both PCs; rounds 2 / 2 on both.
+- No drops from enemies (kills pay money); pickups are the level's pool (171 on both PCs).
+- In the lobby: NETCODE shows for Multiverse Madness too (lobby.as2js FGUYNewNetMode); the match's end (RETRY) takes
+  everyone back and starts the next one (tested through the lobby, the bot as the guest).
+- Test tools: pipe `god 0/1` (my player takes no hits - one copy); test_bot.ps1 reached the character screen instead
+  of MATCH SETTINGS after picking a mode (fixed).
