@@ -560,7 +560,22 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
 - Capture the Flag (mode 5, `0x6655a0`): the player's update `0x69b5f0` looks for the flag near (`0x66ce50`: player,
   position) and with the interact action (`0x15`) picks it up (`0x690110`: player, flag - `[player+0xeb2c]` = it;
   the flag `0x68f550`: its carrier `+0x70`, event `0xb92a5c53` with the team, the sting `MPXX_STING_CTF_pickup_ref`).
-  "FGUY: MP: Flag Was Consumed or Killed" `0xabafef45` (sent from `0x66ceff`), the stat "Captures". Next: its drop,
-  return and capture; then the host's pickups for everyone, as the points.
+  "FGUY: MP: Flag Was Consumed or Killed" `0xabafef45` (sent from `0x66ceff`), the stat "Captures".
+- The Deaf Guy is a character (`zNPCGeneric`, kind `3d:18e`) - spawned by the host's game in the new netcode like the
+  enemies. Down, his carryable (`zCarryableObject`, vtable `0xa228e4`, id `0x4e` on Frat Row on every PC; the list
+  `[0xbad994]+0xad8`, nodes at +4) comes on where he lies: `+0x7d` 1, `+0x84` its physics shape (`0x644350`); carrier
+  `+0x70`. Grabbable (`0x6293b0`): shape, `+0x7d`, `+0x7b`/`+0x7c`, not `+0x40`; near (`0x478490`): distance and a
+  ray. The X button picks it up (action `0x15`). Dropped: `0x66f320` (fastcall: the player) - down, captured, respawn.
+- The bases: `zCarryableDropZone` (vtable `0xa220c4`, type `0xe5`; Frat Row `0x413f` team 1 at (120.2 7.6 83.0),
+  `0x413e` team 2 at (49.5 8.4 204.9); centre `+0x74`, config `[+0x40]`: team `+0x58`, scores `+0x54`/`+0x55`, points
+  `+0x4c`). Their update `0x68f660`: a carried carryable whose carrier is of its team and in it (`0x62a320`, thiscall:
+  base, position - its only caller) - the carrier's score `+0xe84` += points, captures `+0xe8c` + 1, the team's points
+  (`0x673ba0`), the sting, dropped (`0x66f320`); then the Deaf Guy again.
+- In the new netcode (0.8.18): `'f'` from the host - each carryable's carrier and a count of pickups, each base's
+  captures; on the others their own pickups are dropped (the host's game picks up for that player, ~0.2 s after the
+  press), a new pickup of the host's taken at once, a carrier apart for 0.7 s without one: the host's; a base answers
+  "in" only for a capture the host's had (within 3 s) - its own game plays it out. Tested (2 PCs, 100 ms lag, teams):
+  the guest's pickup and capture, the host's, the carrier down - the same on both, scores the same. Test pipe:
+  `killnpcs` (the host) knocks the Deaf Guy down.
 - Research: FGUYMOD_TEST_NPCLOG=1 also logs every game mode event (hash, sender, arg), who switches the points, and
   the timelines' events.

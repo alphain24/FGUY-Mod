@@ -1049,6 +1049,9 @@ extern const int kPktRoundSize;
 struct PktPoints;
 void FreePointsIn(int s, const PktPoints* p, int n);
 extern const int kPktPointsHead;
+struct PktCarry;
+void FreeCarryIn(int s, const PktCarry* p);
+extern const int kPktCarrySize;
 struct PktState;
 extern const int kPktStateSizeOld, kPktStateSizeMoney;
 struct PktHit;
@@ -1158,6 +1161,8 @@ void Receive() {
             if (g_free) FreeRoundIn(slot, reinterpret_cast<PktRound*>(buf));
         } else if (h->type == 'q' && n >= kPktPointsHead) {   // Infiltration: the host's control points
             if (g_free) FreePointsIn(slot, reinterpret_cast<PktPoints*>(buf), n);
+        } else if (h->type == 'f' && n >= kPktCarrySize) {   // Capture the Flag: who carries the Deaf Guy, captures
+            if (g_free) FreeCarryIn(slot, reinterpret_cast<PktCarry*>(buf));
         } else if (h->type == 'X' && n >= kPktStateSizeOld) {   // (0.8.12 and older: no money in it)
             if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSizeMoney, n >= kPktStateSize);
         } else if (h->type == 'Z' && n >= kPktHitSizeOld) {   // (0.8.13 and older: no credit in it)
@@ -1630,6 +1635,7 @@ bool g_sessionStory = false;     // story co-op session: guests drop in once the
 bool g_sessionDM = false;        // a Deathmatch session (the free-running match: Deathmatch, Multiverse Madness)
 bool g_sessionHorde = false;     // a Multiverse Madness one
 bool g_sessionInf = false;       // an Infiltration one
+bool g_sessionCtf = false;       // a Capture the Flag one (the Greased-Up Deaf Guy)
 volatile LONG g_sessionLevelAsked = 0;  // the menu launched the level (taken at the next tick)
 unsigned g_levelTick = 0;
 
@@ -3610,6 +3616,226 @@ bool InstallPointHooks() {
     return true;
 }
 
+// Capture the Greased-Up Deaf Guy: the Deaf Guy is a character (the host's, as the enemies); down, his carryable
+// (zCarryableObject, vtable 0xa228e4, in the list [0xbad994]+0xad8; id +0x18 the same on every PC) comes on where he lies.
+// A player near it with the interact button picks it up (the player's update: 0x690110, thiscall: the player, the
+// carryable - its carrier +0x70, the player's +0xeb2c), drops it down or when it's taken off them (0x66f320: fastcall,
+// the player), and scores carrying it into their team's base (the base's update 0x68f660: the carrier's position in
+// it - 0x62a320, thiscall: the base, the position - the carrier's score, captures, the team's points, dropped).
+// Each PC working them out itself, the players a little apart on each: the host's game decides - who carries it
+// ('f', with a count of pickups) and the captures (a count by base); the others' own pickups dropped, the host's
+// carrier taken (a pickup at once, a carrier apart for a while without one: the host's), their base answers "in" only
+// for a capture the host's had (its own game then plays it out: scores, stats, the sting).
+const uintptr_t kPickup = 0x690110, kInBase = 0x62a320, kDrop = 0x66f320, kCarryVtable = 0xa228e4;
+const unsigned char kPickupStart[] = {0x56, 0x8b, 0xf1, 0xe8};   // push esi; mov esi, ecx; call 0x66f320 (the drop)
+const unsigned char kInBaseStart[] = {0x8b, 0x51, 0x40, 0x0f, 0xb6, 0x42, 0x40};   // mov edx, [ecx+0x40];
+                                                                                  // movzx eax, byte [edx+0x40]
+using Pickup_t = int(__thiscall*)(void* player, void* thing);
+using InBase_t = char(__thiscall*)(void* base, const float* pos);
+Pickup_t PickupOriginal = nullptr;
+InBase_t InBaseOriginal = nullptr;
+struct CarryState { unsigned id; signed char carrier; BYTE picks; };
+struct BaseCount { unsigned id; BYTE n; };
+#pragma pack(push, 1)
+struct PktCarry { PktHeader h; unsigned seq; BYTE carries, bases; CarryState c[4]; BaseCount b[8]; };
+#pragma pack(pop)
+const int kPktCarrySize = (int)sizeof(PktCarry);
+bool g_carryDirected = false;                   // (a pickup / drop the host's: through)
+std::map<unsigned, CarryState> g_carryHost;      // the others: the host's, by the carryable's id
+std::map<unsigned, BYTE> g_carryApplied;        // the others: the host's pickup count taken
+std::map<unsigned, ULONGLONG> g_carryApartSince;
+std::map<unsigned, BYTE> g_carryPicks;          // the host: each carryable's pickups
+std::map<unsigned, BYTE> g_zoneCaptures;        // the host: each base's captures
+std::map<unsigned, BYTE> g_zoneHost;            // the others: the host's count
+std::map<unsigned, std::pair<BYTE, ULONGLONG>> g_zoneMine;   // the others: the captures played here, when the host's came
+unsigned g_carrySeq = 0, g_carrySeqIn = 0;
+
+int SlotOfPlayer(const void* player) {
+    if (!player) return -1;
+    for (int s = 0; s < g_players && s < 4; ++s)
+        if (PlayerBySlot(s) == player) return s;
+    return -1;
+}
+
+std::vector<unsigned char*> Carryables() {   // (the level's carryables: the list [0xbad994]+0xad8, nodes at +4)
+    std::vector<unsigned char*> out;
+    auto mgr = *reinterpret_cast<unsigned char**>(0xbad994);
+    if (!mgr || IsBadReadPtr(mgr + 0xad8, 4)) return out;
+    auto head = mgr + 0xad8;
+    auto node = *reinterpret_cast<unsigned char**>(head);
+    for (int i = 0; node && node != head && i < 8; ++i) {
+        if (IsBadReadPtr(node, 4) || IsBadReadPtr(node - 4, 0x88)) break;
+        unsigned char* thing = node - 4;
+        if (*reinterpret_cast<uintptr_t*>(thing) == kCarryVtable) out.push_back(thing);
+        node = *reinterpret_cast<unsigned char**>(node);
+    }
+    return out;
+}
+
+int __fastcall Free_Pickup(unsigned char* player, void*, unsigned char* thing) {
+    bool mine = g_free && g_npcSync && g_sessionCtf;
+    if (mine && g_slot != 0 && !g_carryDirected && !g_carryHost.empty()) {   // (the host's game decides)
+        static int logged = 0;
+        if (++logged <= 20) Log(L"Netplay: free - a pickup of the Deaf Guy here (player %d) - only as the host's", SlotOfPlayer(player));
+        return 0;
+    }
+    int r = PickupOriginal(player, thing);
+    if (mine && g_slot == 0 && r && thing && !IsBadReadPtr(thing + 0x18, 4)) {
+        unsigned id = *reinterpret_cast<unsigned*>(thing + 0x18);
+        ++g_carryPicks[id];
+        Log(L"Netplay: free - the Deaf Guy (%x) picked up by player %d", id, SlotOfPlayer(player));
+    }
+    return r;
+}
+
+char __fastcall Free_InBase(unsigned char* base, void*, const float* pos) {
+    if (!g_free || !g_npcSync || !g_sessionCtf || IsBadReadPtr(base, 0x44)) return InBaseOriginal(base, pos);
+    auto cfg = *reinterpret_cast<unsigned char**>(base + 0x40);
+    bool scores = cfg && !IsBadReadPtr(cfg + 0x54, 1) && *(cfg + 0x54);
+    unsigned id = *reinterpret_cast<unsigned*>(base + 0x18);
+    if (g_slot == 0) {   // the host: a capture, for the others
+        char r = InBaseOriginal(base, pos);
+        if (r && scores) {
+            ++g_zoneCaptures[id];
+            Log(L"Netplay: free - the Deaf Guy brought into base %x - a capture", id);
+        }
+        return r;
+    }
+    if (!scores) return InBaseOriginal(base, pos);
+    auto h = g_zoneHost.find(id);
+    if (h == g_zoneHost.end()) return 0;
+    auto& mine = g_zoneMine[id];
+    if (mine.first == h->second) return 0;
+    if (GetTickCount64() - mine.second > 3000) {   // (a capture of the host's this PC didn't get to in time: let go)
+        Log(L"Netplay: free - base %x: the host's capture not played here (the Deaf Guy not carried here)", id);
+        mine.first = h->second;
+        return 0;
+    }
+    ++mine.first;
+    Log(L"Netplay: free - base %x: the host's capture, here too", id);
+    return 1;
+}
+
+void FreeCarryIn(int s, const PktCarry* p) {
+    if (s != 0 || g_slot == 0 || p->seq <= g_carrySeqIn) return;
+    g_carrySeqIn = p->seq;
+    for (int i = 0; i < p->carries && i < 4; ++i) g_carryHost[p->c[i].id] = p->c[i];
+    ULONGLONG now = GetTickCount64();
+    for (int i = 0; i < p->bases && i < 8; ++i) {
+        auto it = g_zoneHost.find(p->b[i].id);
+        if (it == g_zoneHost.end()) {   // (a base's first capture - from none at the start; back in a match: from here)
+            g_zoneMine[p->b[i].id] = {g_freeRejoin ? p->b[i].n : (BYTE)0, now};
+        } else if (it->second != p->b[i].n && g_zoneMine[p->b[i].id].first == it->second) {
+            g_zoneMine[p->b[i].id].second = now;   // (a new one: from now)
+        }
+        g_zoneHost[p->b[i].id] = p->b[i].n;
+    }
+}
+
+void FreeCarryTick() {
+    if (!g_npcSync || !g_sessionCtf) return;
+    std::vector<unsigned char*> things = Carryables();
+    if (g_slot == 0) {   // the host: 10 a second, and on a change
+        static ULONGLONG last = 0;
+        static unsigned sentKey = 0;
+        PktCarry f{};
+        f.h = {'f', (BYTE)g_slot};
+        unsigned key = 0;
+        for (unsigned char* t : things) {
+            if (f.carries >= 4) break;
+            CarryState c{};
+            c.id = *reinterpret_cast<unsigned*>(t + 0x18);
+            c.carrier = (signed char)SlotOfPlayer(*reinterpret_cast<void**>(t + 0x70));
+            c.picks = g_carryPicks[c.id];
+            key = key * 31 + (unsigned)(BYTE)c.carrier * 7 + c.picks;
+            f.c[f.carries++] = c;
+        }
+        for (auto& kv : g_zoneCaptures) {
+            if (f.bases >= 8) break;
+            f.b[f.bases++] = {kv.first, kv.second};
+            key = key * 31 + kv.second;
+        }
+        ULONGLONG now = GetTickCount64();
+        if (key == sentKey && now - last < 100) return;
+        sentKey = key;
+        last = now;
+        f.seq = ++g_carrySeq;
+        SendAll(&f, sizeof(f));
+        return;
+    }
+    ULONGLONG now = GetTickCount64();
+    for (unsigned char* t : things) {   // the others: the host's carrier
+        unsigned id = *reinterpret_cast<unsigned*>(t + 0x18);
+        auto it = g_carryHost.find(id);
+        if (it == g_carryHost.end()) continue;
+        const CarryState& h = it->second;
+        int here = SlotOfPlayer(*reinterpret_cast<void**>(t + 0x70));
+        auto applied = g_carryApplied.find(id);
+        bool newPick = applied != g_carryApplied.end() && applied->second != h.picks;
+        if (applied == g_carryApplied.end()) g_carryApplied[id] = h.picks;
+        if (here == h.carrier && !newPick) {
+            g_carryApartSince.erase(id);
+            continue;
+        }
+        if (!newPick) {   // (apart without a new pickup - a carrier down here first, or there: a moment for it)
+            auto a = g_carryApartSince.find(id);
+            if (a == g_carryApartSince.end()) { g_carryApartSince[id] = now; continue; }
+            if (now - a->second < 700) continue;
+        }
+        g_carryApartSince.erase(id);
+        g_carryApplied[id] = h.picks;
+        g_carryDirected = true;
+        if (here >= 0 && here != h.carrier) {
+            unsigned char* p = PlayerBySlot(here);
+            if (p) reinterpret_cast<void(__fastcall*)(void*)>(kDrop)(p);
+        }
+        if (h.carrier >= 0 && SlotOfPlayer(*reinterpret_cast<void**>(t + 0x70)) != h.carrier) {
+            unsigned char* p = PlayerBySlot(h.carrier);
+            if (p) PickupOriginal(p, t);
+        }
+        g_carryDirected = false;
+        Log(L"Netplay: free - the Deaf Guy (%x): carried by player %d here, by %d on the host - the host's taken", id, here,
+            h.carrier);
+    }
+}
+
+bool InstallCarryHooks() {
+    auto pk = reinterpret_cast<unsigned char*>(kPickup);
+    auto ib = reinterpret_cast<unsigned char*>(kInBase);
+    if (IsBadReadPtr(pk, 8) || memcmp(pk, kPickupStart, sizeof(kPickupStart)) != 0 ||
+        (uintptr_t)(pk + 8) + *reinterpret_cast<int*>(pk + 4) != kDrop ||
+        IsBadReadPtr(ib, sizeof(kInBaseStart)) || memcmp(ib, kInBaseStart, sizeof(kInBaseStart)) != 0) {
+        Log(L"Netplay: Capture the Flag's code isn't what we expect - who carries the Deaf Guy not shared");
+        return false;
+    }
+    auto t1 = static_cast<unsigned char*>(VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!t1) return false;
+    unsigned char* t2 = t1 + 32;
+    memcpy(t1, kPickupStart, 4);   // push esi; mov esi, ecx; call the drop (from here); jmp back
+    *reinterpret_cast<int*>(t1 + 4) = (int)(kDrop - (reinterpret_cast<uintptr_t>(t1) + 8));
+    t1[8] = 0xE9;
+    *reinterpret_cast<int*>(t1 + 9) = (int)((kPickup + 8) - (reinterpret_cast<uintptr_t>(t1) + 13));
+    memcpy(t2, kInBaseStart, sizeof(kInBaseStart));
+    t2[7] = 0xE9;
+    *reinterpret_cast<int*>(t2 + 8) = (int)((kInBase + 7) - (reinterpret_cast<uintptr_t>(t2) + 12));
+    PickupOriginal = reinterpret_cast<Pickup_t>(t1);
+    InBaseOriginal = reinterpret_cast<InBase_t>(t2);
+    DWORD old;
+    VirtualProtect(pk, 8, PAGE_EXECUTE_READWRITE, &old);
+    pk[0] = 0xE9;
+    *reinterpret_cast<int*>(pk + 1) = (int)(reinterpret_cast<uintptr_t>(&Free_Pickup) - (kPickup + 5));
+    pk[5] = pk[6] = pk[7] = 0x90;
+    VirtualProtect(pk, 8, old, &old);
+    VirtualProtect(ib, sizeof(kInBaseStart), PAGE_EXECUTE_READWRITE, &old);
+    ib[0] = 0xE9;
+    *reinterpret_cast<int*>(ib + 1) = (int)(reinterpret_cast<uintptr_t>(&Free_InBase) - (kInBase + 5));
+    ib[5] = ib[6] = 0x90;
+    VirtualProtect(ib, sizeof(kInBaseStart), old, &old);
+    FlushInstructionCache(GetCurrentProcess(), pk, 8);
+    FlushInstructionCache(GetCurrentProcess(), ib, sizeof(kInBaseStart));
+    return true;
+}
+
 bool InstallEntityDamageHook() {
     auto at = reinterpret_cast<unsigned char*>(kEntityDamage);
     if (IsBadReadPtr(at, sizeof(kEntityDamageStart)) || memcmp(at, kEntityDamageStart, sizeof(kEntityDamageStart)) != 0) {
@@ -3821,6 +4047,14 @@ void FreeStart() {
     g_pointDone.clear();
     g_pointById.clear();
     g_pointsSeqIn = 0;
+    g_carryHost.clear();
+    g_carryApplied.clear();
+    g_carryApartSince.clear();
+    g_carryPicks.clear();
+    g_zoneCaptures.clear();
+    g_zoneHost.clear();
+    g_zoneMine.clear();
+    g_carrySeqIn = 0;
     InterlockedExchange(&g_resultsLeave, 0);
     AcquireSRWLockExclusive(&g_buyLock);   // (nothing left over from a match before)
     g_buysIn.clear();
@@ -3923,6 +4157,7 @@ void FreeTick() {
     FreeApplySpawns();
     FreeApplyRounds();
     FreePointsTick();
+    FreeCarryTick();
     FreeTestHurt();
     FreeApplyPickups();
     FreeSendBuys();
@@ -3982,7 +4217,7 @@ void Tick() {
     }
     bool freeNow = g_freeRejoin ? g_freeRejoinHud && g_tick >= g_freeRejoinHud + kFreeAfterTicks
                                 : g_liveTick && g_tick >= g_liveTick + kFreeAfterTicks;
-    if (g_freeWanted && g_inSession && (g_sessionDM || g_sessionHorde || g_sessionInf) && !g_catchUp && freeNow) {
+    if (g_freeWanted && g_inSession && (g_sessionDM || g_sessionHorde || g_sessionInf || g_sessionCtf) && !g_catchUp && freeNow) {
         EnterCriticalSection(&g_netLock);
         FreeStart();
         LeaveCriticalSection(&g_netLock);
@@ -4758,6 +4993,7 @@ void InitNetplay(HMODULE exe) {
         if (g_npcSync && !(InstallNpcSpawnHook() && InstallEntityDamageHook())) g_npcSync = 0;
         if (g_npcSync) InstallMpEventHook();   // (Multiverse Madness' rounds: the host's)
         if (g_npcSync) InstallPointHooks();    // (Infiltration's control points: the host's)
+        if (g_npcSync) InstallCarryHooks();    // (Capture the Flag's Deaf Guy: who carries him, captures - the host's)
         Log(L"Netplay: enemies %s", g_npcSync ? L"shared: the host's game makes them, the others show the host's"
                                               : L"not shared: each PC its own");
         if ((g_npcLog || g_npcBlock) && InstallNpcHooks())
@@ -4817,6 +5053,7 @@ void InitNetplay(HMODULE exe) {
     g_sessionDM = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "DM,", 3) == 0;
     g_sessionHorde = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "HD,", 3) == 0;
     g_sessionInf = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "IN,", 3) == 0;
+    g_sessionCtf = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "CF,", 3) == 0;
     {   // (research: FGUYMOD_TEST_NETFREE=all - the free-running match in any mode, to look at its enemies)
         char all[8] = "";
         if (GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", all, sizeof(all)) && strcmp(all, "all") == 0) g_sessionDM = true;
