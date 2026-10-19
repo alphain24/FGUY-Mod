@@ -521,3 +521,21 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   everyone back and starts the next one (tested through the lobby, the bot as the guest).
 - Test tools: pipe `god 0/1` (my player takes no hits - one copy); test_bot.ps1 reached the character screen instead
   of MATCH SETTINGS after picking a mode (fixed).
+
+## Infiltration and Capture the Flag in the new netcode (2026-10-20, research)
+- test_bot.ps1 `-ModeRights 2` is INFILTRATION (`IN`), 3 is Capture the Greased-Up Deaf Guy (`CF`).
+- Infiltration's characters (its commanders and guards: 90 / 120 / 150 / 300 / 1200 health) come through the
+  spawning `0x60d080` once the match runs free - so they're the host's already: 0.25-0.6 off on average on the guest.
+  (npcstate.py pairs them by pool id - the same enemy has another id on each PC: it showed them far apart.)
+- It doesn't use the game mode's event handler `0x6a06a0` (none in a 90 s match). Its goals are control points:
+  `zControlPoint` (vtable `0xa8d86c`, 5 of them on Frat Row, ids `0x10f`-`0x113` the same on both PCs). Their events:
+  "Control Point: Capture progress by Team 1 / 2" `0x40765633` / `0x40765634`, "... blocked" `0x701fc614`,
+  "... inactive" `0x4d698403`, "Captured" `0xfa0fcd35`, "Captured by Team 1 / 2" `0x885ba00b` / `0x885ba00c`,
+  "Destroy progress by Team 1 / 2" `0xbf45d8d2` / `0xbf45d8d3`, "Destroyed" `0xd5cb4d2e`, "Destroyed by Team 1 / 2"
+  `0x4b780fe6` / `0x4b780fe7`, "Disabled" `0xb98571a7`, "Expired" `0xaeaeb416`, "Neutralized" `0xb7627868` - sent
+  from `0x9a97c3`-`0x9a9899` (progress) and `0x9ac7ae`-`0x9acb6c` (state). Each PC works them out from where the
+  players stand: to be the host's (next): its control points' state out, the others' own events dropped and the
+  host's played.
+- Capture the Flag: "FGUY: MP: Flag Was Consumed or Killed" `0xabafef45` (sent from `0x66ceff`), the pickup prompt
+  `=MNU_GUDG_PICKUP`, the stat "Captures" - not looked into yet.
+- Research: FGUYMOD_TEST_NPCLOG=1 also logs every game mode event (hash, sender, arg).

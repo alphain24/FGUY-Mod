@@ -3167,6 +3167,13 @@ const wchar_t* RoundEventName(unsigned e) {
 
 void __cdecl Free_MpEvent(int a, int sender, unsigned event, float* args) {
     if (!g_replayingRound) { g_mpEventA = a; g_mpEventSender = sender; }
+    if (g_npcLog && g_free) {   // (research: FGUYMOD_TEST_NPCLOG - every game mode event, to compare the PCs)
+        static int logged = 0;
+        if (++logged <= 400)
+            Log(L"Netplay: free - mode event %08x from %p (sender %x, arg %.2f)", event, _ReturnAddress(),
+                sender && !IsBadReadPtr(reinterpret_cast<void*>(sender + 0x18), 4) ? *reinterpret_cast<unsigned*>(sender + 0x18) : 0,
+                args && !IsBadReadPtr(args, 4) ? *args : 0.f);
+    }
     if (!g_free || !g_sessionHorde || g_replayingRound || !RoundEvent(event)) {
         MpEventOriginal(a, sender, event, args);
         return;
