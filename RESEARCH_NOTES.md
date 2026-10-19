@@ -534,8 +534,33 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   "Destroy progress by Team 1 / 2" `0xbf45d8d2` / `0xbf45d8d3`, "Destroyed" `0xd5cb4d2e`, "Destroyed by Team 1 / 2"
   `0x4b780fe6` / `0x4b780fe7`, "Disabled" `0xb98571a7`, "Expired" `0xaeaeb416`, "Neutralized" `0xb7627868` - sent
   from `0x9a97c3`-`0x9a9899` (progress) and `0x9ac7ae`-`0x9acb6c` (state). Each PC works them out from where the
-  players stand: to be the host's (next): its control points' state out, the others' own events dropped and the
-  host's played.
-- Capture the Flag: "FGUY: MP: Flag Was Consumed or Killed" `0xabafef45` (sent from `0x66ceff`), the pickup prompt
-  `=MNU_GUDG_PICKUP`, the stat "Captures" - not looked into yet.
-- Research: FGUYMOD_TEST_NPCLOG=1 also logs every game mode event (hash, sender, arg).
+  players stand.
+- The point's update `0x9ac6a0` (thiscall: point, frame time; `ret 4`): off (`+0x26` bit 0) or no volume (`+0x44`):
+  nothing. Else for each player (`0xbad988`, count `+0x20`) not down: the volume test `0x61bd30` (thiscall: volume,
+  `[player+0x38]+0x30` - true / false; volume `+0x84` the shape: 1 = sphere, centre `+0x70`), the team's bit
+  (`0x96b8a0`) into who's there; who's there changed: start capturing / destroying (`0x9a97b0` / `0x9a9830`); the same:
+  progress `+0x48` up (several of one team: faster, config `+0x1c`) to the config's `+0x18` - captured (state `+0x50`
+  4, team `+0x4c`, the message `=MNU_GOOD_CAPTURE` / `=MNU_EVIL_CAPTURE`, the players' captures `+0xe60`), or destroyed
+  (`+0x54` 4, `=MNU_..._DESTROY_KEG`, off); nobody: decaying (state 1, `+0x64` to config `+0x24`, then neutral 0).
+  Captured: every `+0x2c` s the team's points (`0x673ba0`: team, 2, config `+0x28`); `+0x60` to config `+0x20` (60 s):
+  expired (`=MNU_KEG_EXPIRED_BLUE/RED`, off). The point's config: `[point+0x40]`. Its id `+0x18`.
+- Switching it on / off: the events Enable `0x2c9d0683` / Disable `0x71e42988` through the game's event dispatch
+  `0x520c50` (cdecl: from, ?, to, event, args, only-if-on: sets / clears bit 0, passes the event to what's linked);
+  `0x96b860` (thiscall: thing, event) sends a thing its own event. A timeline (`zTimeline` vtable `0xa22224`, its timed
+  events `0x635f90`) switches the point on; which point: each PC its own pick (the host's game had `0x113` on, the
+  guest's `0x10f`). With players of two teams it sometimes never came on (in the classic netcode too).
+- In the new netcode (0.8.18): the host's game says who stands on each point and its state (`'q'`, 10 a second and on a
+  change); on the others the volume test answers the host's who-stands-there while the point updates, their own
+  Enable / Disable for points dropped and the host's sent, the host's progress and timers taken; a capture / destroy /
+  expiry the host's had and this PC hasn't (counted on each), it finishes itself (progress / timer at the end) so its
+  own game plays it out (messages, events, points); still apart for 1.5 s: the host's whole state.
+  Tested (2 PCs, 100 ms lag): the guest 0.1-0.2 s after the host in capturing, captured, destroyed, expired; the team
+  points the same. Test pipe: `pointon <id>` (the host's point on); FGUYMOD_TEST_CONF can carry the players
+  (`IN,FR,0,0,0,0,0|Peter:0:0:c;Peter:0:1:c`: teams).
+- Capture the Flag (mode 5, `0x6655a0`): the player's update `0x69b5f0` looks for the flag near (`0x66ce50`: player,
+  position) and with the interact action (`0x15`) picks it up (`0x690110`: player, flag - `[player+0xeb2c]` = it;
+  the flag `0x68f550`: its carrier `+0x70`, event `0xb92a5c53` with the team, the sting `MPXX_STING_CTF_pickup_ref`).
+  "FGUY: MP: Flag Was Consumed or Killed" `0xabafef45` (sent from `0x66ceff`), the stat "Captures". Next: its drop,
+  return and capture; then the host's pickups for everyone, as the points.
+- Research: FGUYMOD_TEST_NPCLOG=1 also logs every game mode event (hash, sender, arg), who switches the points, and
+  the timelines' events.

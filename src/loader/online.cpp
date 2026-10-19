@@ -642,17 +642,19 @@ void StartSession(const std::vector<std::string>& f) {
         char forced[8] = "";
         bool free = (conf.size() > 6 && conf[6] == "1") || GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", forced, sizeof(forced)) > 0;
         bool anyMode = free && strcmp(forced, "all") == 0;   // (research: FGUYMOD_TEST_NETFREE=all - any mode)
-        if ((conf.empty() || (conf[0] != "DM" && conf[0] != "HD")) && !anyMode) free = false;   // (Deathmatch and
-                                                             //  Multiverse Madness, for now: the other modes' flags and goals
-                                                             //  aren't shared yet)
+        if ((conf.empty() || (conf[0] != "DM" && conf[0] != "HD" && conf[0] != "IN")) && !anyMode) free = false;
+                                                             // (Deathmatch, Multiverse Madness, Infiltration for now: the
+                                                             //  others' flags and goals aren't shared yet)
         set(L"FGUYMOD_NET_FREE", free ? "1" : "0");
         // rejoining a free-running match: no catching up on the host's record - the session game loads the level on its
         // own and joins in (netplay.cpp FreeStart)
         set(L"FGUYMOD_NET_REJOIN", g_catchUpStart && free ? "1" : "0");
         if (g_catchUpStart && free) set(L"FGUYMOD_NET_CATCHUP", "0");
     }
-    char testConf[64];   // test knob: FGUYMOD_TEST_CONF=mode,map,time,score,ff overrides the rules (every copy alike)
-    if (GetEnvironmentVariableA("FGUYMOD_TEST_CONF", testConf, sizeof(testConf))) set(L"FGUYMOD_SESSION", testConf + ("|" + f[8]));
+    char testConf[128];   // test knob: FGUYMOD_TEST_CONF=mode,map,time,score,ff overrides the rules (every copy alike);
+                          // with "|name:costume:team:input;..." the players too (their teams)
+    if (GetEnvironmentVariableA("FGUYMOD_TEST_CONF", testConf, sizeof(testConf)))
+        set(L"FGUYMOD_SESSION", strchr(testConf, '|') ? std::string(testConf) : testConf + ("|" + f[8]));
     keep(L"FGUYMOD_SAVEDIR");
     SetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", dirName);
     set(L"FGUYMOD_MY_SETTINGS", OnlineSettingsCapture());   // my own settings, not the host's save's

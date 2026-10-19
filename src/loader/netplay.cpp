@@ -1046,6 +1046,9 @@ extern const int kPktRematchSize;
 struct PktRound;
 void FreeRoundIn(int s, const PktRound* p);
 extern const int kPktRoundSize;
+struct PktPoints;
+void FreePointsIn(int s, const PktPoints* p, int n);
+extern const int kPktPointsHead;
 struct PktState;
 extern const int kPktStateSizeOld, kPktStateSizeMoney;
 struct PktHit;
@@ -1153,6 +1156,8 @@ void Receive() {
             if (g_free) FreeRematchIn(slot, reinterpret_cast<PktRematch*>(buf));
         } else if (h->type == 'w' && n >= kPktRoundSize) {   // Multiverse Madness: the host's round (next, ended, respawn)
             if (g_free) FreeRoundIn(slot, reinterpret_cast<PktRound*>(buf));
+        } else if (h->type == 'q' && n >= kPktPointsHead) {   // Infiltration: the host's control points
+            if (g_free) FreePointsIn(slot, reinterpret_cast<PktPoints*>(buf), n);
         } else if (h->type == 'X' && n >= kPktStateSizeOld) {   // (0.8.12 and older: no money in it)
             if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSizeMoney, n >= kPktStateSize);
         } else if (h->type == 'Z' && n >= kPktHitSizeOld) {   // (0.8.13 and older: no credit in it)
@@ -1624,6 +1629,7 @@ std::vector<SessionPress> g_pressQueue, g_pressActive;
 bool g_sessionStory = false;     // story co-op session: guests drop in once the level runs
 bool g_sessionDM = false;        // a Deathmatch session (the free-running match: Deathmatch, Multiverse Madness)
 bool g_sessionHorde = false;     // a Multiverse Madness one
+bool g_sessionInf = false;       // an Infiltration one
 volatile LONG g_sessionLevelAsked = 0;  // the menu launched the level (taken at the next tick)
 unsigned g_levelTick = 0;
 
@@ -3234,6 +3240,376 @@ bool InstallMpEventHook() {
     return true;
 }
 
+// Infiltration's control points (zControlPoint, vtable 0xa8d86c): each one's update 0x9ac6a0 (thiscall: the point,
+// the frame's time) asks its volume ([point+0x44]) of every player whether they stand in it (0x61bd30: thiscall, the
+// player's position - true / false), and from who does: capturing, blocked, captured (its events, the message, the team's
+// points, the players' captures), destroyed, expired. Each PC asking its own - the players a little apart on each - they
+// came out differently at the edges. So the host's game says who stands on each point ('q': by player, with its state),
+// and on the others the volume answers that while the point updates: the same captures, at the host's moments (half
+// the ping later); the host's progress and timers taken on top, its whole state if they still differ after a while.
+const uintptr_t kPointUpdate = 0x9ac6a0, kInVolume = 0x61bd30;
+const unsigned char kPointUpdateStart[] = {0x51, 0x56, 0x8b, 0xf1, 0xf6, 0x46, 0x26, 0x01};   // push ecx; push esi;
+                                                                                              // mov esi, ecx; test [esi+26], 1
+const unsigned char kInVolumeStart[] = {0x0f, 0xb6, 0x81, 0x84, 0x00, 0x00, 0x00};   // movzx eax, byte [ecx+0x84]
+using PointUpdate_t = void(__thiscall*)(void* point, float dt);
+using InVolume_t = char(__thiscall*)(void* volume, const float* pos);
+PointUpdate_t PointUpdateOriginal = nullptr;
+InVolume_t InVolumeOriginal = nullptr;
+struct PointState {
+    unsigned id;
+    BYTE mask;
+    BYTE done[3];   // (how many captures, destroys, expiries it's had: the others finish one the host's had)
+    WORD flags;
+    float progress;
+    int team, state, destroy;
+    BYTE last;
+    float t5c, t60, t64;
+};
+#pragma pack(push, 1)
+struct PktPoints { PktHeader h; unsigned seq; BYTE count; PointState p[16]; };
+#pragma pack(pop)
+const int kPktPointsHead = (int)offsetof(PktPoints, p);
+unsigned char* g_pointNow = nullptr;    // (a point updating on this thread: its volume answers for it)
+BYTE g_pointMask = 0;                   // the host: who stood in it / the others: who stands in it on the host
+bool g_pointForce = false;
+std::map<unsigned, PointState> g_pointsHost;    // the host's, by the point's id (the others)
+std::map<unsigned, ULONGLONG> g_pointDiffSince;
+std::map<unsigned, BYTE> g_pointMaskHere;       // the host: each point's who-stands-in-it, last update
+unsigned g_pointsSeq = 0, g_pointsSeqIn = 0;
+std::vector<unsigned char*> g_pointList;
+std::map<unsigned, ULONGLONG> g_pointOffSince;
+std::map<unsigned, unsigned char*> g_pointById;   // (the test's "pointon")
+volatile LONG g_testPointOn = 0;
+struct PointDone { BYTE n[3]; BYTE mask, last; ULONGLONG differSince; };   // (this PC's count; the others: who stood
+std::map<unsigned, PointDone> g_pointDone;                                  //  in it last, for finishing one)
+
+// Switching a point on and off: the events Enable (0x2c9d0683) and Disable (0x71e42988), through the game's event
+// dispatch 0x520c50 (cdecl: from, ?, to, event, args, only if on) - it sets / clears the point's bit 0 and passes the
+// event on to what's linked to it (its beam, its marker). The mode's script picks the point on each PC (the host's game
+// had one on that the others' never did): on the others their own are dropped, the host's sent instead (FreePointsTick,
+// through 0x96b860: thiscall, the point sends itself the event, as the game's own code does).
+const uintptr_t kDispatch = 0x520c50, kPointVtable = 0xa8d86c, kPointEvent = 0x96b860;
+const unsigned kEnableEvent = 0x2c9d0683, kDisableEvent = 0x71e42988;
+const unsigned char kDispatchStart[] = {0x83, 0xec, 0x08, 0x56, 0x57, 0x8b, 0x7c, 0x24, 0x1c};   // sub esp, 8; push esi;
+                                                                                                // push edi; mov edi, [esp+1c]
+using Dispatch_t = void(__cdecl*)(void* from, int a, unsigned char* to, unsigned event, void* args, int onlyIfOn);
+Dispatch_t DispatchOriginal = nullptr;
+bool g_pointEnabling = false;
+void __cdecl Free_Dispatch(void* from, int a, unsigned char* to, unsigned event, void* args, int onlyIfOn) {
+    if (g_npcLog && (event == kEnableEvent || event == kDisableEvent) && to &&
+        *reinterpret_cast<uintptr_t*>(to) == kPointVtable) {   // (research: who switches the points)
+        auto f = static_cast<unsigned char*>(from);
+        Log(L"Netplay: research - control point %x gets %s from %p (vtable %x, id %x, a %x) - called from %p",
+            *reinterpret_cast<unsigned*>(to + 0x18), event == kEnableEvent ? L"Enable" : L"Disable", from,
+            f && !IsBadReadPtr(f, 0x1c) ? *reinterpret_cast<unsigned*>(f) : 0,
+            f && !IsBadReadPtr(f, 0x1c) ? *reinterpret_cast<unsigned*>(f + 0x18) : 0, a, _ReturnAddress());
+    }
+    if (g_npcLog && to && *reinterpret_cast<uintptr_t*>(to) == 0xa22224 && event != 0xd576ca21 && event != 0xae72e9e5) {   // (research: the timelines' events)
+        static int logged = 0;
+        auto f = static_cast<unsigned char*>(from);
+        if (++logged <= 300)
+            Log(L"Netplay: research - timeline %x gets %08x from %x (id %x) - called from %p", *reinterpret_cast<unsigned*>(to + 0x18),
+                event, f && !IsBadReadPtr(f, 0x1c) ? *reinterpret_cast<unsigned*>(f) : 0,
+                f && !IsBadReadPtr(f, 0x1c) ? *reinterpret_cast<unsigned*>(f + 0x18) : 0, _ReturnAddress());
+    }
+    if ((event == kEnableEvent || event == kDisableEvent) && g_free && g_sessionInf && g_slot != 0 && !g_pointEnabling &&
+        to && *reinterpret_cast<uintptr_t*>(to) == kPointVtable && !g_pointsHost.empty()) {
+        static int logged = 0;
+        if (++logged <= 20)
+            Log(L"Netplay: free - control point %x %s here - only as the host's", *reinterpret_cast<unsigned*>(to + 0x18),
+                event == kEnableEvent ? L"on" : L"off");
+        return;
+    }
+    DispatchOriginal(from, a, to, event, args, onlyIfOn);
+}
+void PointSend(unsigned char* p, unsigned event) {
+    g_pointEnabling = true;
+    reinterpret_cast<void(__thiscall*)(void*, unsigned)>(kPointEvent)(p, event);
+    g_pointEnabling = false;
+}
+
+int SlotAt(const float* pos) {   // (the player whose position this is: [player+0x38]+0x30, as the update passes it)
+    for (int s = 0; s < g_players && s < 4; ++s) {
+        unsigned char* p = PlayerBySlot(s);
+        if (!p) continue;
+        auto t = *reinterpret_cast<unsigned char**>(p + 0x38);
+        const float* at = reinterpret_cast<const float*>((t ? t : reinterpret_cast<unsigned char*>(0xb156e8)) + 0x30);
+        if (at == pos) return s;
+    }
+    return -1;
+}
+
+char __fastcall Free_InVolume(void* volume, void*, const float* pos) {
+    if (!g_pointNow) return InVolumeOriginal(volume, pos);
+    int s = SlotAt(pos);
+    if (g_pointForce) return s >= 0 && (g_pointMask >> s) & 1 ? 1 : 0;
+    char r = InVolumeOriginal(volume, pos);
+    if (r && s >= 0) g_pointMask |= (BYTE)(1 << s);
+    return r;
+}
+
+PointState ReadPoint(unsigned char* p) {
+    PointState st{};
+    st.id = *reinterpret_cast<unsigned*>(p + 0x18);
+    st.flags = *reinterpret_cast<WORD*>(p + 0x26);
+    st.progress = *reinterpret_cast<float*>(p + 0x48);
+    st.team = *reinterpret_cast<int*>(p + 0x4c);
+    st.state = *reinterpret_cast<int*>(p + 0x50);
+    st.destroy = *reinterpret_cast<int*>(p + 0x54);
+    st.last = *(p + 0x58);
+    st.t5c = *reinterpret_cast<float*>(p + 0x5c);
+    st.t60 = *reinterpret_cast<float*>(p + 0x60);
+    st.t64 = *reinterpret_cast<float*>(p + 100);
+    return st;
+}
+
+void PointLogChange(unsigned char* point) {   // (each point's state, as it changes: the PCs' logs side by side)
+    static std::map<unsigned, unsigned> was;
+    PointState st = ReadPoint(point);
+    unsigned now = (unsigned)st.state | (unsigned)st.destroy << 8 | (unsigned)(st.team & 0xff) << 16 | (st.flags & 1u) << 24;
+    auto it = was.find(st.id);
+    if (it != was.end() && it->second == now) return;
+    was[st.id] = now;
+    static int logged = 0;
+    if (++logged <= 300)
+        Log(L"Netplay: free - control point %x: state %d / %d, team %d, %s, progress %.2f", st.id, st.state, st.destroy,
+            st.team, st.flags & 1 ? L"on" : L"off", st.progress);
+}
+
+// A capture (capturing -> captured), a destroy (destroying -> destroyed, or off from it), an expiry (captured and on ->
+// off): counted on every PC. The others' progress and timers being the host's of a moment before, the host's game gets
+// there first - and its point's state changes before the others' got there: one the host's had and this PC hasn't, it
+// finishes here (its progress / timer put at the end, who stood in it last standing in it), so its own game plays it
+// out: the events, the message, the team's points, the players' captures.
+void PointCountDone(unsigned id, const PointState& b, const PointState& a) {
+    PointDone& d = g_pointDone[id];
+    if (b.state == 3 && a.state == 4) ++d.n[0];
+    if (b.destroy == 3 && (a.destroy == 4 || !(a.flags & 1))) ++d.n[1];
+    else if (b.state == 4 && (b.flags & 1) && !(a.flags & 1)) ++d.n[2];
+}
+
+void __fastcall Free_PointUpdate(unsigned char* point, void*, float dt);
+void __fastcall Free_PointUpdateBody(unsigned char* point, float dt);
+void __fastcall Free_PointUpdate(unsigned char* point, void*, float dt) {
+    Free_PointUpdateBody(point, dt);
+    if (g_free && g_sessionInf && !IsBadReadPtr(point, 0x68)) PointLogChange(point);
+}
+
+void __fastcall Free_PointUpdateBody(unsigned char* point, float dt) {
+    if (!g_free || !g_npcSync || !g_sessionInf || IsBadReadPtr(point, 0x68)) {
+        PointUpdateOriginal(point, dt);
+        return;
+    }
+    unsigned id = *reinterpret_cast<unsigned*>(point + 0x18);
+    if (g_pointList.size() < 16 && std::find(g_pointList.begin(), g_pointList.end(), point) == g_pointList.end())
+        g_pointList.push_back(point);   // (this frame's points: FreePointsTick)
+    g_pointById[id] = point;
+    if (g_slot == 0) {   // the host: who stands in it, for the others
+        PointState b = ReadPoint(point);
+        g_pointNow = point;
+        g_pointMask = 0;
+        g_pointForce = false;
+        PointUpdateOriginal(point, dt);
+        g_pointNow = nullptr;
+        g_pointMaskHere[id] = g_pointMask;
+        PointCountDone(id, b, ReadPoint(point));
+        return;
+    }
+    auto it = g_pointsHost.find(id);
+    if (it == g_pointsHost.end()) {   // (nothing from the host yet: as it was)
+        PointUpdateOriginal(point, dt);
+        return;
+    }
+    const PointState& h = it->second;
+    PointDone& d = g_pointDone[id];
+    PointState b = ReadPoint(point);
+    BYTE mask = h.mask;
+    auto cfg = *reinterpret_cast<unsigned char**>(point + 0x40);
+    if ((b.flags & 1) && cfg && !IsBadReadPtr(cfg, 0x30)) {
+        const wchar_t* finish = nullptr;
+        if ((signed char)(h.done[0] - d.n[0]) > 0 && b.state == 3) finish = L"capture";
+        else if ((signed char)(h.done[1] - d.n[1]) > 0 && b.destroy == 3 && b.state != 3) finish = L"destroy";
+        if (finish && d.last) {
+            *reinterpret_cast<float*>(point + 0x48) = *reinterpret_cast<float*>(cfg + 0x18);
+            *(point + 0x58) = d.last;
+            mask = d.mask;
+        } else if ((signed char)(h.done[2] - d.n[2]) > 0 && b.state == 4 && b.destroy != 4) {
+            finish = L"expiry";
+            *reinterpret_cast<float*>(point + 0x60) = *reinterpret_cast<float*>(cfg + 0x20);
+        } else {
+            finish = nullptr;
+        }
+        if (finish) Log(L"Netplay: free - control point %x: the host's %s, here too", id, finish);
+    }
+    g_pointNow = point;
+    g_pointMask = mask;
+    g_pointForce = true;
+    PointUpdateOriginal(point, dt);
+    g_pointForce = false;
+    g_pointNow = nullptr;
+    PointState a = ReadPoint(point);
+    PointCountDone(id, b, a);
+    if (a.last) { d.last = a.last; d.mask = mask; }
+}
+
+void FreeSendPoints(const std::vector<unsigned char*>& points) {   // (the host, 10 a second and as who stands changes)
+    static ULONGLONG last = 0;
+    static std::map<unsigned, BYTE> sentMask;
+    ULONGLONG now = GetTickCount64();
+    static std::map<unsigned, unsigned> sentDone;
+    bool changed = false;
+    for (auto& kv : g_pointMaskHere) changed |= sentMask[kv.first] != kv.second;
+    for (auto& kv : g_pointDone)
+        changed |= sentDone[kv.first] != (unsigned)(kv.second.n[0] | kv.second.n[1] << 8 | kv.second.n[2] << 16);
+    if (!changed && now - last < 100) return;
+    last = now;
+    PktPoints q{};
+    q.h = {'q', (BYTE)g_slot};
+    q.seq = ++g_pointsSeq;
+    for (unsigned char* p : points) {
+        if (q.count >= 16) break;
+        PointState st = ReadPoint(p);
+        st.mask = g_pointMaskHere[st.id];
+        sentMask[st.id] = st.mask;
+        const PointDone& d = g_pointDone[st.id];
+        memcpy(st.done, d.n, 3);
+        sentDone[st.id] = (unsigned)(d.n[0] | d.n[1] << 8 | d.n[2] << 16);
+        q.p[q.count++] = st;
+    }
+    if (q.count) SendAll(&q, kPktPointsHead + q.count * (int)sizeof(PointState));
+}
+
+void FreePointsIn(int s, const PktPoints* p, int n) {
+    if (s != 0 || g_slot == 0 || p->seq <= g_pointsSeqIn) return;
+    g_pointsSeqIn = p->seq;
+    int count = p->count;
+    if (kPktPointsHead + count * (int)sizeof(PointState) > n) count = (n - kPktPointsHead) / (int)sizeof(PointState);
+    for (int i = 0; i < count && i < 16; ++i) g_pointsHost[p->p[i].id] = p->p[i];
+}
+
+// Each frame: the host's points out (the host); the others' points brought to the host's - its progress and timers
+// while in the same state, its whole state if they've differed for 1.5 s (a capture here came out otherwise).
+void FreePointsTick() {
+    if (!g_npcSync || !g_sessionInf || g_pointList.empty()) return;
+    if (unsigned on = (unsigned)InterlockedExchange(&g_testPointOn, 0)) {
+        auto t = g_pointById.find(on);
+        if (g_slot == 0 && t != g_pointById.end()) {
+            PointSend(t->second, kEnableEvent);
+            Log(L"Netplay: test - control point %x switched on", on);
+        }
+    }
+    std::vector<unsigned char*> list;
+    list.swap(g_pointList);   // (the points that updated since: still there)
+    if (g_slot == 0) {
+        FreeSendPoints(list);
+        return;
+    }
+    ULONGLONG now = GetTickCount64();
+    for (unsigned char* p : list) {
+        if (IsBadWritePtr(p, 0x68)) continue;
+        unsigned id = *reinterpret_cast<unsigned*>(p + 0x18);
+        auto it = g_pointsHost.find(id);
+        if (it == g_pointsHost.end()) continue;
+        const PointState& h = it->second;
+        PointState me = ReadPoint(p);
+        if ((h.flags & 1) && !(me.flags & 1)) {   // the host's game switched it on: here too (its marker, its beam)
+            PointSend(p, kEnableEvent);
+            g_pointOffSince.erase(id);
+            Log(L"Netplay: free - control point %x on, as on the host", id);
+            continue;
+        }
+        if (!(h.flags & 1) && (me.flags & 1)) {   // off on the host (expired, destroyed - here a moment later, or not)
+            auto o = g_pointOffSince.find(id);
+            if (o == g_pointOffSince.end()) { g_pointOffSince[id] = now; continue; }
+            if (now - o->second < 500) continue;
+            g_pointOffSince.erase(o);
+            PointSend(p, kDisableEvent);
+            Log(L"Netplay: free - control point %x off, as on the host", id);
+            continue;
+        }
+        g_pointOffSince.erase(id);
+        bool same = me.state == h.state && me.destroy == h.destroy && me.team == h.team;
+        if (same) {
+            g_pointDiffSince.erase(id);
+            PointDone& d = g_pointDone[id];   // (the counts apart while the same for a while: one missed - from here on, as on the host)
+            if (memcmp(d.n, h.done, 3) == 0) d.differSince = 0;
+            else if (!d.differSince) d.differSince = now;
+            else if (now - d.differSince > 1500) { memcpy(d.n, h.done, 3); d.differSince = 0; }
+            *reinterpret_cast<float*>(p + 0x48) = h.progress;
+            *reinterpret_cast<float*>(p + 0x5c) = h.t5c;
+            *reinterpret_cast<float*>(p + 0x60) = h.t60;
+            *reinterpret_cast<float*>(p + 100) = h.t64;
+            continue;
+        }
+        auto d = g_pointDiffSince.find(id);
+        if (d == g_pointDiffSince.end()) { g_pointDiffSince[id] = now; continue; }
+        if (now - d->second < 1500) continue;
+        g_pointDiffSince.erase(d);
+        Log(L"Netplay: free - control point %x: here state %d / %d team %d, the host's %d / %d team %d - the host's taken",
+            id, me.state, me.destroy, me.team, h.state, h.destroy, h.team);
+        memcpy(g_pointDone[id].n, h.done, 3);
+        *reinterpret_cast<float*>(p + 0x48) = h.progress;
+        *reinterpret_cast<int*>(p + 0x4c) = h.team;
+        *reinterpret_cast<int*>(p + 0x50) = h.state;
+        *reinterpret_cast<int*>(p + 0x54) = h.destroy;
+        *(p + 0x58) = h.last;
+        *reinterpret_cast<float*>(p + 0x5c) = h.t5c;
+        *reinterpret_cast<float*>(p + 0x60) = h.t60;
+        *reinterpret_cast<float*>(p + 100) = h.t64;
+    }
+}
+
+bool InstallPointHooks() {
+    auto up = reinterpret_cast<unsigned char*>(kPointUpdate);
+    auto vol = reinterpret_cast<unsigned char*>(kInVolume);
+    if (IsBadReadPtr(up, sizeof(kPointUpdateStart)) || memcmp(up, kPointUpdateStart, sizeof(kPointUpdateStart)) != 0 ||
+        IsBadReadPtr(vol, sizeof(kInVolumeStart)) || memcmp(vol, kInVolumeStart, sizeof(kInVolumeStart)) != 0) {
+        Log(L"Netplay: the control points' code isn't what we expect - Infiltration's points not shared");
+        return false;
+    }
+    auto en = reinterpret_cast<unsigned char*>(kDispatch);
+    if (IsBadReadPtr(en, sizeof(kDispatchStart)) || memcmp(en, kDispatchStart, sizeof(kDispatchStart)) != 0) {
+        Log(L"Netplay: the game's events aren't what we expect - Infiltration's points not shared");
+        return false;
+    }
+    auto t1 = static_cast<unsigned char*>(VirtualAlloc(nullptr, 96, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!t1) return false;
+    unsigned char* t2 = t1 + 32;
+    unsigned char* t3 = t1 + 64;
+    memcpy(t3, kDispatchStart, sizeof(kDispatchStart));
+    t3[9] = 0xE9;
+    *reinterpret_cast<int*>(t3 + 10) = (int)((kDispatch + 9) - (reinterpret_cast<uintptr_t>(t3) + 14));
+    DispatchOriginal = reinterpret_cast<Dispatch_t>(t3);
+    memcpy(t1, kPointUpdateStart, sizeof(kPointUpdateStart));
+    t1[8] = 0xE9;
+    *reinterpret_cast<int*>(t1 + 9) = (int)((kPointUpdate + 8) - (reinterpret_cast<uintptr_t>(t1) + 13));
+    memcpy(t2, kInVolumeStart, sizeof(kInVolumeStart));
+    t2[7] = 0xE9;
+    *reinterpret_cast<int*>(t2 + 8) = (int)((kInVolume + 7) - (reinterpret_cast<uintptr_t>(t2) + 12));
+    PointUpdateOriginal = reinterpret_cast<PointUpdate_t>(t1);
+    InVolumeOriginal = reinterpret_cast<InVolume_t>(t2);
+    DWORD old;
+    VirtualProtect(up, sizeof(kPointUpdateStart), PAGE_EXECUTE_READWRITE, &old);
+    up[0] = 0xE9;
+    *reinterpret_cast<int*>(up + 1) = (int)(reinterpret_cast<uintptr_t>(&Free_PointUpdate) - (kPointUpdate + 5));
+    up[5] = up[6] = up[7] = 0x90;
+    VirtualProtect(up, sizeof(kPointUpdateStart), old, &old);
+    VirtualProtect(vol, sizeof(kInVolumeStart), PAGE_EXECUTE_READWRITE, &old);
+    vol[0] = 0xE9;
+    *reinterpret_cast<int*>(vol + 1) = (int)(reinterpret_cast<uintptr_t>(&Free_InVolume) - (kInVolume + 5));
+    vol[5] = vol[6] = 0x90;
+    VirtualProtect(vol, sizeof(kInVolumeStart), old, &old);
+    FlushInstructionCache(GetCurrentProcess(), up, sizeof(kPointUpdateStart));
+    FlushInstructionCache(GetCurrentProcess(), vol, sizeof(kInVolumeStart));
+    VirtualProtect(en, sizeof(kDispatchStart), PAGE_EXECUTE_READWRITE, &old);
+    en[0] = 0xE9;
+    *reinterpret_cast<int*>(en + 1) = (int)(reinterpret_cast<uintptr_t>(&Free_Dispatch) - (kDispatch + 5));
+    en[5] = en[6] = en[7] = en[8] = 0x90;
+    VirtualProtect(en, sizeof(kDispatchStart), old, &old);
+    FlushInstructionCache(GetCurrentProcess(), en, sizeof(kDispatchStart));
+    return true;
+}
+
 bool InstallEntityDamageHook() {
     auto at = reinterpret_cast<unsigned char*>(kEntityDamage);
     if (IsBadReadPtr(at, sizeof(kEntityDamageStart)) || memcmp(at, kEntityDamageStart, sizeof(kEntityDamageStart)) != 0) {
@@ -3437,6 +3813,14 @@ void FreeStart() {
     g_resultsQuitting = false;
     memset(g_roundSeen, 0, sizeof(g_roundSeen));
     g_roundsIn.clear();
+    g_pointsHost.clear();
+    g_pointDiffSince.clear();
+    g_pointMaskHere.clear();
+    g_pointList.clear();
+    g_pointOffSince.clear();
+    g_pointDone.clear();
+    g_pointById.clear();
+    g_pointsSeqIn = 0;
     InterlockedExchange(&g_resultsLeave, 0);
     AcquireSRWLockExclusive(&g_buyLock);   // (nothing left over from a match before)
     g_buysIn.clear();
@@ -3538,6 +3922,7 @@ void FreeTick() {
     FreeApplyHits();
     FreeApplySpawns();
     FreeApplyRounds();
+    FreePointsTick();
     FreeTestHurt();
     FreeApplyPickups();
     FreeSendBuys();
@@ -3597,7 +3982,7 @@ void Tick() {
     }
     bool freeNow = g_freeRejoin ? g_freeRejoinHud && g_tick >= g_freeRejoinHud + kFreeAfterTicks
                                 : g_liveTick && g_tick >= g_liveTick + kFreeAfterTicks;
-    if (g_freeWanted && g_inSession && (g_sessionDM || g_sessionHorde) && !g_catchUp && freeNow) {
+    if (g_freeWanted && g_inSession && (g_sessionDM || g_sessionHorde || g_sessionInf) && !g_catchUp && freeNow) {
         EnterCriticalSection(&g_netLock);
         FreeStart();
         LeaveCriticalSection(&g_netLock);
@@ -4223,6 +4608,8 @@ void NetplayTestHurt(int player, float amount) {
     g_testHurtAmount = amount;
     InterlockedExchange(&g_testHurtWho, player);
 }
+void NetplayTestPointOn(unsigned id) { InterlockedExchange(&g_testPointOn, (LONG)id); }
+
 void NetplayTestGod(bool on) {
     g_testGod = on;
     Log(L"Netplay: test - my player %s", on ? L"takes no hits" : L"takes hits again");
@@ -4370,6 +4757,7 @@ void InitNetplay(HMODULE exe) {
         g_npcSync = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NPCSYNC", 1);
         if (g_npcSync && !(InstallNpcSpawnHook() && InstallEntityDamageHook())) g_npcSync = 0;
         if (g_npcSync) InstallMpEventHook();   // (Multiverse Madness' rounds: the host's)
+        if (g_npcSync) InstallPointHooks();    // (Infiltration's control points: the host's)
         Log(L"Netplay: enemies %s", g_npcSync ? L"shared: the host's game makes them, the others show the host's"
                                               : L"not shared: each PC its own");
         if ((g_npcLog || g_npcBlock) && InstallNpcHooks())
@@ -4428,6 +4816,7 @@ void InitNetplay(HMODULE exe) {
     g_sessionStory = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "ST,", 3) == 0;
     g_sessionDM = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "DM,", 3) == 0;
     g_sessionHorde = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "HD,", 3) == 0;
+    g_sessionInf = sessionLen > 0 && sessionLen < sizeof(session) && strncmp(session, "IN,", 3) == 0;
     {   // (research: FGUYMOD_TEST_NETFREE=all - the free-running match in any mode, to look at its enemies)
         char all[8] = "";
         if (GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", all, sizeof(all)) && strcmp(all, "all") == 0) g_sessionDM = true;

@@ -301,6 +301,11 @@ void HandleCommand(char* line) {
         NetplayTestGod(!on || atoi(on) != 0);
         return;
     }
+    if (cmd && _stricmp(cmd, "pointon") == 0) {   // test tools: pointon <id hex> - the host's game switches that control
+        char* id = strtok_s(nullptr, " \t\r\n", &ctx);   // point on (Infiltration, free-running)
+        if (id) NetplayTestPointOn((unsigned)strtoul(id, nullptr, 16));
+        return;
+    }
     if (cmd && _stricmp(cmd, "killnpcs") == 0) {   // test tools: the host's enemies all down (free-running, enemy sync)
         NetplayTestKillNpcs();
         return;

@@ -643,9 +643,9 @@ function FGUYInputName(input) {
     return input == 'k' ? 'Keyboard & mouse' : 'Controller';
 }
 
-// The modes the new netcode is for so far: Deathmatch, Multiverse Madness (the others: the classic one).
+// The modes the new netcode is for so far: Deathmatch, Multiverse Madness, Infiltration (the others: the classic one).
 function FGUYNewNetMode(code) {
-    return code == 'DM' || code == 'HD';
+    return code == 'DM' || code == 'HD' || code == 'IN';
 }
 
 function FGUYSendConf() {
