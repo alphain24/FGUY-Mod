@@ -14,10 +14,26 @@ void TrimNewline(wchar_t* s) {
     for (size_t n = wcslen(s); n && (s[n - 1] == L'\n' || s[n - 1] == L'\r'); --n) s[n - 1] = 0;
 }
 
+// Some of the game's prints hand plain text to the wide-text call: two letters became one Chinese-looking character
+// in the log ("StoreStats - success" showed as CJK). Such a string - every character's two bytes printable
+// ASCII (the last one's high byte maybe its end) - is read as the plain text it is.
+bool LooksNarrow(LPCWSTR s) {
+    int n = 0;
+    for (; s[n] && n < 512; ++n) {
+        unsigned lo = s[n] & 0xFF, hi = s[n] >> 8;
+        bool loOk = (lo >= 0x20 && lo < 0x7F) || lo == '\n' || lo == '\r' || lo == '\t';
+        bool hiOk = (hi >= 0x20 && hi < 0x7F) || hi == '\n' || hi == '\r' || hi == '\t' || (hi == 0 && !s[n + 1]);
+        if (!loOk || !hiOk) return false;
+    }
+    return n > 0;
+}
+
 void WINAPI Hook_OutputDebugStringW(LPCWSTR s) {
     if (s) {
         wchar_t buf[1024];
-        wcsncpy_s(buf, s, _TRUNCATE);
+        if (LooksNarrow(s)) MultiByteToWideChar(CP_ACP, 0, reinterpret_cast<LPCSTR>(s), -1, buf, 1024);
+        else wcsncpy_s(buf, s, _TRUNCATE);
+        buf[1023] = 0;
         TrimNewline(buf);
         Log(L"Game: %s", buf);
     }
