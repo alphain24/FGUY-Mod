@@ -778,6 +778,7 @@ function FGUYMakeHits(ui) {
         c.fgIndex = hit.index;
         c.onRollOver = FGUYHitOver;
         c.onRelease = FGUYHitPress;
+        if (hit.kind == 'charCard' || hit.kind == 'skin') c.onRollOut = FGUYHitOut;
     }
 }
 
@@ -816,6 +817,11 @@ function FGUYHitOver() {
     if (FGUYMouseHover(this.fgKind, this.fgIndex)) { FGUYSound('nav'); FGUYDraw(); }
 }
 
+function FGUYHitOut() {   // (the character screen's highlight: off the card again)
+    if (this.fgKind == 'charCard' && FGUYCharHover == this.fgIndex) { FGUYCharHover = -1; FGUYDraw(); }
+    else if (this.fgKind == 'skin' && FGUYSkinHover == this.fgIndex) { FGUYSkinHover = -1; FGUYDraw(); }
+}
+
 function FGUYHitPress() {
     FGUYKeyFromPad = false;
     FGUYMouseClick(this.fgKind, this.fgIndex);
@@ -824,7 +830,8 @@ function FGUYHitPress() {
 
 // Hover: select what's under the cursor. Returns true if that changed anything.
 function FGUYMouseHover(kind, i) {
-    var was = FGUYScreen + FGUYHubPanel + ',' + FGUYFocus + ',' + FGUYFind + ',' + FGUYCharSel + ',' + FGUYCostumeSel;
+    var was = FGUYScreen + FGUYHubPanel + ',' + FGUYFocus + ',' + FGUYFind + ',' + FGUYCharSel + ',' + FGUYCostumeSel + ',' +
+              FGUYCharHover + ',' + FGUYSkinHover;
     if (kind == 'hubPanel') { if (FGUYHubPanel != i) { FGUYHubPanel = i; FGUYFocus = 0; } }
     else if (kind == 'hostPrivate' || kind == 'hostMax' || kind == 'hostCreate') {
         FGUYHubPanel = 0;
@@ -834,10 +841,11 @@ function FGUYMouseHover(kind, i) {
     else if (kind == 'codeJoin') { FGUYHubPanel = 2; FGUYFocus = 1; }
     else if (kind == 'lobbyItem' || kind == 'lobbyItemLeft' || kind == 'lobbyItemRight' ||
              kind == 'setRow' || kind == 'setRowLeft' || kind == 'setRowRight') FGUYFocus = i;
-    else if (kind == 'charCard') { if (FGUYCharSel != i) { FGUYCharSel = i; FGUYCostumeSel = 0; } }
-    else if (kind == 'skin') FGUYCostumeSel = i;
+    else if (kind == 'charCard') FGUYCharHover = i;   // (the character screen: hovering only shows it - a click picks,
+    else if (kind == 'skin') FGUYSkinHover = i;       //  so going over to the skins doesn't change the character)
     else if (kind == 'modRow') FGUYModsSel = i;
-    var now = FGUYScreen + FGUYHubPanel + ',' + FGUYFocus + ',' + FGUYFind + ',' + FGUYCharSel + ',' + FGUYCostumeSel;
+    var now = FGUYScreen + FGUYHubPanel + ',' + FGUYFocus + ',' + FGUYFind + ',' + FGUYCharSel + ',' + FGUYCostumeSel + ',' +
+              FGUYCharHover + ',' + FGUYSkinHover;
     return now != was;
 }
 
@@ -856,8 +864,10 @@ function FGUYMouseClick(kind, i) {
     else if (kind == 'setRow') FGUYInputSettings(FGUYIsHost() ? 13 : 39);
     else if (kind == 'setRowLeft') FGUYInputSettings(37);
     else if (kind == 'setRowRight') FGUYInputSettings(39);
-    else if (kind == 'charCard') FGUYInputChar(13);
-    else if (kind == 'skin') FGUYSound('change');
+    else if (kind == 'charCard') {   // a click picks the character; again (the one picked): that's it
+        if (FGUYCharSel != i) { FGUYCharSel = i; FGUYCostumeSel = 0; FGUYSound('nav'); }
+        else FGUYInputChar(13);
+    } else if (kind == 'skin') { FGUYCostumeSel = i; FGUYSound('change'); }
     else if (kind == 'team') { FGUYPickTeam = i; FGUYSound('change'); }
     else if (kind == 'key') FGUYScreenKey(i);   // a footer button hint: its button
     else if (kind == 'modRow') FGUYInputMods(13);
@@ -1338,8 +1348,9 @@ function FGUYDrawChar(ui) {
     for (var i = 0; i < FGUYChars.length; i++) {
         var col = i % 5, row = Math.floor(i / 5);
         var x = 48 + col * 196, y = 200 + row * 300, c = FGUYChars[i], sel = FGUYCharSel == i;
+        var over = FGUYCharHover == i && !sel;
         if (sel) FGUYRect(ui, x - 6, y - 6, 192, 292, 24, FGUYC.yellow, 35, 0, 0, 0);
-        FGUYRect(ui, x, y, 180, 280, 20, FGUYC.panel, 100, sel ? FGUYC.yellow : FGUYC.rowLine, 100, 3);
+        FGUYRect(ui, x, y, 180, 280, 20, FGUYC.panel, 100, sel ? FGUYC.yellow : (over ? FGUYC.white : FGUYC.rowLine), 100, 3);
         FGUYHit(x, y, 180, 280, 'charCard', i);
         var list = FGUYCostumeList(c);
         FGUYPicture(ui, FGUYEntryPic(c, list[0]), x + 3, y + 3, 174, 224, 17, 0.08);
@@ -1359,12 +1370,14 @@ function FGUYDrawChar(ui) {
     FGUYText(ui, px + 26, 646, pw - 52, 30, 'Skin: ' + skinName + '   (' + (FGUYCostumeSel + 1) + ' / ' + Math.max(1, costumes.length) + ')', false, 20, FGUYC.white, 'left');
     var first = Math.max(0, Math.min(FGUYCostumeSel - 2, costumes.length - 5));
     for (var k = first; k < costumes.length && k < first + 5; k++) {
-        var tx = px + 26 + (k - first) * 92, on = k == FGUYCostumeSel;
-        FGUYRect(ui, tx, 690, 82, 112, 12, FGUYC.panel2, 100, on ? FGUYC.yellow : FGUYC.rowLine, 100, on ? 3 : 2);
+        var tx = px + 26 + (k - first) * 92, on = k == FGUYCostumeSel, skinOver = FGUYSkinHover == k && !on;
+        FGUYRect(ui, tx, 690, 82, 112, 12, FGUYC.panel2, 100, on ? FGUYC.yellow : (skinOver ? FGUYC.white : FGUYC.rowLine), 100,
+                 on || skinOver ? 3 : 2);
         FGUYHit(tx, 690, 82, 112, 'skin', k);
         FGUYPicture(ui, FGUYEntryPic(c2, costumes[k]), tx + 3, 693, 76, 106, 9, 0.05);
     }
-    FGUYFooter(ui, ['A', 'Confirm', 'B', 'Back', 'LB', 'Skin', 'RB', 'Skin'], 'Click to pick - drag or Q / E to turn');
+    FGUYFooter(ui, ['A', 'Confirm', 'B', 'Back', 'LB', 'Skin', 'RB', 'Skin'],
+               'Click a character, then a skin - click the character again to confirm - drag or Q / E to turn');
 }
 
 // ---- loading: the match is starting (the session game boots hidden and takes over when it's ready) ---------
@@ -1807,6 +1820,8 @@ function FGUYCycleChar(dir) {
 function FGUYOpenChar() {
     FGUYScreen = 'char';
     FGUYCharSel = 0;
+    FGUYCharHover = -1;
+    FGUYSkinHover = -1;
     for (var i = 0; i < FGUYChars.length; i++) if (FGUYChars[i] == FGUYPickChar) FGUYCharSel = i;
     FGUYCostumeSel = 0;
     var list = FGUYCostumeList(FGUYPickChar);

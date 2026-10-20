@@ -254,14 +254,41 @@ void HoldPreview() {
     }
 }
 
+// The menus take only the controllers in their mask ([0xade6a8]: bit 1 the first controller - and the keyboard,
+// which shares its place - bit 2 the second, ...): the one that pressed Start on the title screen, and after a match
+// the one the player's CONTROLS picked (the keyboard for keyboard and mouse) - a tester's controller did nothing on
+// the ONLINE screens. There every controller is let in; leaving them, the game's own mask again (and a change the
+// game made to it meanwhile kept: ours goes on top of it).
+const uintptr_t kMenuControllers = 0xade6a8;
+const DWORD kAllPads = 0x1e;
+DWORD g_menuMaskBase = 0, g_menuMaskOurs = 0;
+bool g_menuMaskOn = false;
+void AllPadsInMenus(bool on) {
+    volatile DWORD& mask = *reinterpret_cast<volatile DWORD*>(kMenuControllers);
+    if (!on) {
+        if (g_menuMaskOn && mask == g_menuMaskOurs) mask = g_menuMaskBase;
+        g_menuMaskOn = false;
+        return;
+    }
+    if (!g_menuMaskOn || mask != g_menuMaskOurs) {   // (first, or the game set it: that's its own)
+        if (!g_menuMaskOn) Log(L"Online: every controller works on the ONLINE screens (the menus had %#lx)", (DWORD)mask);
+        g_menuMaskBase = mask;
+        g_menuMaskOn = true;
+    }
+    g_menuMaskOurs = g_menuMaskBase | kAllPads;
+    mask = g_menuMaskOurs;
+}
+
 }  // namespace
 
 // d3d9.cpp, every frame: Q / E held on the ONLINE screens turn the preview (about half a turn a second).
 void OnlineMenuFrame() {
     if (!g_open || NetplayEnabled()) {
         if (g_blockedInput) BlockPreviewInput(nullptr);   // (left the ONLINE screens: its controls as they were)
+        AllPadsInMenus(false);
         return;
     }
+    AllPadsInMenus(!IsBot());
     HoldPreview();
     if (!g_menuWnd || GetForegroundWindow() != g_menuWnd) return;
     static LARGE_INTEGER last = {}, freq = {};
@@ -271,6 +298,7 @@ void OnlineMenuFrame() {
     float dt = last.QuadPart ? (float)(now.QuadPart - last.QuadPart) / freq.QuadPart : 0.0f;
     last = now;
     if (dt > 0.1f) dt = 0.1f;
+    if (g_chatMode) return;   // (typing in the chat box: Q / E are letters there)
     int dir = ((GetAsyncKeyState('E') & 0x8000) ? 1 : 0) - ((GetAsyncKeyState('Q') & 0x8000) ? 1 : 0);
     if (dir) OnlineMenuTurnPreview(dir * 3.0f * dt);
 }

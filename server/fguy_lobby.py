@@ -408,15 +408,13 @@ class Server:
             c.gone_at = c.gone_at or time.monotonic()
             return
         c.lobby = None
-        if lobby.host is c and not any(m.away for m in lobby.members[1:]):  # the host leaving closes the lobby
-            self.lobbies.pop(lobby.code, None)
+        if lobby.host is c:   # the host leaving closes the lobby: everyone in it back out (a player still on the
+            self.lobbies.pop(lobby.code, None)   # way back from its match finds it gone - "That lobby is gone")
             for m in lobby.members[1:]:
                 m.lobby = None
-                m.send('CLOSED The host left the lobby')
-            log.info('lobby %s closed', lobby.code)
-        elif lobby.host is c:   # players still in the match: one of them hosts when they're back
-            lobby.members.remove(c)
-            lobby.broadcast_members()
+                if not m.away:
+                    m.send('CLOSED The host left the lobby')
+            log.info('lobby %s closed (the host left)', lobby.code)
         else:
             lobby.members.remove(c)
             lobby.broadcast_members()
