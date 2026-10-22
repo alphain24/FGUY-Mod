@@ -359,6 +359,9 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnString(movie, OnlinePauseCursor());
         } else if (strcmp(fn, "HudTakesStart") == 0) {   // (1 / 0): my weapons screen is up - START is its own
             OnlinePauseHudTakesStart(ArgNumber(args, argc, 0) != 0);
+        } else if (strcmp(fn, "DeathPanel") == 0) {   // (my death menu's panel up / gone)
+            SplitViewNoMarkers(ArgNumber(args, argc, 0) != 0);
+            ReturnBool(movie, true);
         } else if (strcmp(fn, "DeathMouse") == 0) {   // (my death menu's buttons) -> the pointer
             ReturnString(movie, OnlinePauseDeathMouse(ArgString(args, argc, 0)));
         } else if (strcmp(fn, "MenuMouse") == 0) {    // (the end of the match's menu) -> the Windows pointer shown?

@@ -340,6 +340,15 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
         }
         lastHold = hold;
         if (!click) vk = 0;
+        bool deathMenu = false;   // (my death menu: its keys held down 1/10 s, as a click's - a quick tap was missed)
+        AcquireSRWLockShared(&g_boxLock);
+        deathMenu = g_boxCount > 0 && g_boxes[0].kind == 0 && GetTickCount64() - g_boxesAt < 300;
+        ReleaseSRWLockShared(&g_boxLock);
+        if (!vk && deathMenu && g_clickTicks <= 0) {
+            if (pressed(VK_RETURN)) vk = VK_RETURN;
+            else if (pressed('X')) vk = 'X';
+            else if (pressed('Y')) vk = 'Y';
+        }
         if (vk) {
             g_clickVk = vk;
             g_clickTicks = 6;

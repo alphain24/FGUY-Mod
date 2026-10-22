@@ -457,44 +457,93 @@ function FGUYDeathMouse() {
             boxes = Math.round((wb.xMin - r.x) / r.w * 10000) + ',' + Math.round((wb.yMin - r.y) / r.h * 10000) + ',' +
                     Math.round((wb.xMax - r.x) / r.w * 10000) + ',' + Math.round((wb.yMax - r.y) / r.h * 10000) + ',88,1,' + Math.round(r.w / r.h * 1000) + ';';
     }
-    if (mouseScreen && screen == 'DeathMenu') {
-        var m = GetScreenMovieClip(p);
-        var names = ['continueButton', 'characterSelectButton', 'weaponChangesButton'], keys = [13, 88, 89];
-        var got = [], x0 = undefined, x1 = undefined;
-        for (var i = 0; m != undefined && i < names.length; i++) {
-            var b = m[names[i]];
-            if (b == undefined || !b._visible) continue;
-            var bb = b.getBounds(layer);
-            if (bb.xMax <= bb.xMin) continue;
-            got.push({y0: bb.yMin, y1: bb.yMax, x0: bb.xMin, x1: bb.xMax, key: keys[i]});
-            if (keys[i] != 13) {   // (Continue's bounds hold our hint line, wider than the buttons)
-                x0 = x0 == undefined ? bb.xMin : Math.min(x0, bb.xMin);
-                x1 = x1 == undefined ? bb.xMax : Math.max(x1, bb.xMax);
-            }
-        }
-        // The buttons are stacked, and each one's bounds reach over the next (its hidden pad icon): a button's box
-        // ends where the next one's starts (the bottom one's: one step on).
-        for (var j = 0; j < got.length; j++) {
-            var e = got[j], below = undefined, above = undefined;
-            for (var k = 0; k < got.length; k++) {
-                if (got[k].y0 > e.y0 && (below == undefined || got[k].y0 < below)) below = got[k].y0;
-                if (got[k].y0 < e.y0 && (above == undefined || got[k].y0 > above)) above = got[k].y0;
-            }
-            var y1 = e.y1;
-            if (below != undefined) y1 = Math.min(y1, below);
-            else if (above != undefined) y1 = Math.min(y1, e.y0 + (e.y0 - above));
-            var bx0 = x0 == undefined ? e.x0 : x0, bx1 = x1 == undefined ? e.x1 : x1;
-            boxes = boxes + Math.round((bx0 - r.x) / r.w * 10000) + ',' + Math.round((e.y0 - r.y) / r.h * 10000) + ',' +
-                    Math.round((bx1 - r.x) / r.w * 10000) + ',' + Math.round((y1 - r.y) / r.h * 10000) + ',' + e.key + ';';
-        }
+    var deathUp = screen == 'DeathMenu';   // (my death menu: our panel over it, any controls)
+    if (deathUp != FGUYDeathUp) {
+        FGUYDeathUp = deathUp;
+        flash.external.ExternalInterface.call('FGUYMOD_DeathPanel', deathUp ? 1 : 0);
     }
+    FGUYDeathPanel(p, deathUp, mouseScreen);
+    if (mouseScreen && deathUp) boxes = FGUYDeathBoxes;
     if (boxes == '' && layer == undefined) return;   // (nothing to say: no menu of mine now, none before)
     var c = String(flash.external.ExternalInterface.call('FGUYMOD_DeathMouse', boxes)).split('|');
+    FGUYDeathPtr = mouseScreen ? {x: r.x + Number(c[0]) / 10000 * r.w, y: r.y + Number(c[1]) / 10000 * r.h} : undefined;
     if (layer == undefined) return;
     layer.pointer._visible = c[2] == '1';
     layer.pointer._x = r.x + Number(c[0]) / 10000 * r.w;
     layer.pointer._y = r.y + Number(c[1]) / 10000 * r.h;
     if (boxes == '') layer.removeMovieClip();
+}
+
+// Online, my death menu: the game's is three small lines in the middle of the screen (under the others' name tags,
+// which the loader hides meanwhile: FGUYMOD_DeathPanel) - ours is a panel of big buttons, each with its key (a
+// keyboard player's) or button; the one under the pointer lights up, and a click on it is its key (FGUYDeathMouse ->
+// the loader, through the match's input). The game's buttons stay, unseen: its menu still takes the keys and buttons.
+function FGUYDeathPanel(p, show, keyboard) {
+    var ui = _root.FGUYDeathUI;
+    if (!show) {
+        if (ui != undefined) ui.removeMovieClip();
+        if (FGUYDeathGame != undefined) { FGUYDeathGameShown(FGUYDeathGame, true); FGUYDeathGame = undefined; }
+        FGUYDeathSig = undefined;
+        FGUYDeathBoxes = '';
+        return;
+    }
+    var m = GetScreenMovieClip(p);
+    if (m != undefined) {
+        FGUYDeathGameShown(m, false);
+        FGUYDeathGame = m;
+    }
+    var r = FGUYPauseRect(), size = r.h / 720;
+    var labels = ['CONTINUE', 'CHANGE CHARACTER', 'CHANGE WEAPONS'], keys = [13, 88, 89];
+    var glyphs = keyboard ? ['ENTER', 'X', 'Y'] : ['A', 'X', 'Y'];
+    var pads = [0x3DB54A, 0x2D7FE0, 0xE8B400];
+    var pw = Math.min(r.w * 0.44, 560 * size), bh = 64 * size, gap = 14 * size, top = 104 * size;
+    var ph = top + 3 * bh + 2 * gap + 54 * size;
+    var px = r.x + (r.w - pw) / 2, py = r.y + (r.h - ph) / 2 - 20 * size;
+    var bx = px + 26 * size, bw = pw - 52 * size;
+    var hover = -1;
+    for (var i = 0; keyboard && FGUYDeathPtr != undefined && i < 3; i++) {
+        var by = py + top + i * (bh + gap);
+        if (FGUYDeathPtr.x >= bx && FGUYDeathPtr.x <= bx + bw && FGUYDeathPtr.y >= by && FGUYDeathPtr.y <= by + bh) hover = i;
+    }
+    var sig = hover + ',' + keyboard + ',' + r.x + ',' + r.y + ',' + r.w + ',' + r.h;
+    if (ui == undefined || sig != FGUYDeathSig) {
+        ui.removeMovieClip();
+        ui = _root.createEmptyMovieClip('FGUYDeathUI', 29990);
+        var bg = ui.createEmptyMovieClip('bg', 1);
+        FGUYPauseBox(bg, r.x, r.y, r.w, r.h, 0, 0x000000, 30, 0, 0, 0);
+        FGUYPauseBox(bg, px, py, pw, ph, 18, 0x13213C, 95, 0x2E5C9A, 100, 3);
+        FGUYPauseText(ui, px, py + 16 * size, pw, 58 * size, 'YOU DIED', true, 44 * size, 0xF5D33A, 'center');
+        FGUYPauseText(ui, px, py + 68 * size, pw, 26 * size, 'What next?', false, 16 * size, 0xBFD0EA, 'center');
+        for (var k = 0; k < 3; k++) {
+            var ky = py + top + k * (bh + gap), on = k == hover;
+            FGUYPauseBox(bg, bx, ky, bw, bh, 12, on ? 0xF5D33A : (k == 0 ? 0x24467A : 0x1C3156), 100,
+                         on ? 0xFFFFFF : (k == 0 ? 0x5A8AD0 : 0x2E5C9A), 100, 2);
+            var gh = 40 * size, gw = keyboard && k == 0 ? 84 * size : gh, gx = bx + 16 * size, gy = ky + (bh - gh) / 2;
+            if (keyboard) FGUYPauseBox(bg, gx, gy, gw, gh, 8 * size, 0xFFFFFF, 100, 0x000000, 50, 1);
+            else FGUYPauseBox(bg, gx, gy, gw, gh, gh / 2, pads[k], 100, 0xFFFFFF, 80, 2);
+            FGUYPauseText(ui, gx, gy + (keyboard && k == 0 ? 9 : 6) * size, gw, gh, glyphs[k], true,
+                          (keyboard && k == 0 ? 17 : 22) * size, keyboard ? 0x1A1A1A : 0xFFFFFF, 'center');
+            FGUYPauseText(ui, gx + gw + 20 * size, ky + (bh - 34 * size) / 2, bw - gw - 56 * size, 40 * size, labels[k], true,
+                          26 * size, on ? 0x1A1A1A : 0xFFFFFF, 'left');
+        }
+        FGUYPauseText(ui, px, py + ph - 42 * size, pw, 26 * size,
+                      keyboard ? 'Press the key - or click the button' : 'Press the button', false, 14 * size, 0x9FB4D6, 'center');
+        FGUYDeathSig = sig;
+    }
+    FGUYMouseUnzoom(ui);
+    var boxes = '';
+    for (var j = 0; keyboard && j < 3; j++) {
+        var jy = py + top + j * (bh + gap);
+        boxes = boxes + Math.round((bx - r.x) / r.w * 10000) + ',' + Math.round((jy - r.y) / r.h * 10000) + ',' +
+                Math.round((bx + bw - r.x) / r.w * 10000) + ',' + Math.round((jy + bh - r.y) / r.h * 10000) + ',' + keys[j] + ';';
+    }
+    FGUYDeathBoxes = boxes;
+}
+
+// (the game's own death menu buttons: unseen under our panel, back when it goes)
+function FGUYDeathGameShown(m, shown) {
+    var names = ['continueButton', 'characterSelectButton', 'weaponChangesButton'];
+    for (var i = 0; i < names.length; i++) if (m[names[i]] != undefined) m[names[i]]._alpha = shown ? 100 : 0;
 }
 
 // The pointer's layer in whole-screen units, like the pause menu's (FGUYPauseUnzoom).
@@ -554,10 +603,7 @@ function FGUYDeathHints(playerIndex) {
         if (c.fguyHint != undefined) c.fguyHint._visible = false;
         return;
     }
-    if (c.fguyHint == undefined)
-        c.fguyHint = FGUYPauseText(c, -300, 34, 600, 30, 'ENTER  continue      X  change character      Y  change weapons',
-                                   false, 16, 0xFFFFFF, 'center');
-    c.fguyHint._visible = true;
+    if (c.fguyHint != undefined) c.fguyHint._visible = false;   // (our panel shows the keys: FGUYDeathPanel)
 }
 
 // ...and on the screens behind it (change character, change weapons): there the game hides its controller help

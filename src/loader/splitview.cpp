@@ -223,8 +223,15 @@ using MarkerToHud_t = void(__thiscall*)(void* hud, float* point, int viewport, f
 // screen, as in single player. (Mapped into my quarter of the 4-way layout they sat in the middle of the screen's
 // top-left quarter, wherever the heads were: the markers' own layer isn't zoomed with the HUD.) The other views'
 // markers go off screen.
+volatile bool g_noMarkers = false;   // (my death menu's panel is up: no name tags over it - FGUYMOD_DeathPanel)
 void __fastcall Hook_MarkerToHud(void* hud, void*, float* point, int viewport, float* out) {
     int mine = ShownViewport();   // (spectating: the shown view's name tags)
+    if (g_noMarkers && mine >= 0 && viewport == mine) {
+        reinterpret_cast<MarkerToHud_t>(kMarkerToHud)(hud, point, viewport, out);
+        point[0] = point[1] = -10000.0f;
+        if (out) out[0] = out[1] = -10000.0f;
+        return;
+    }
     if (mine >= 0 && viewport == mine) {
         g_markerFull = true;
         reinterpret_cast<MarkerToHud_t>(kMarkerToHud)(hud, point, viewport, out);
@@ -237,6 +244,10 @@ void __fastcall Hook_MarkerToHud(void* hud, void*, float* point, int viewport, f
         if (out) out[0] = out[1] = -10000.0f;
     }
 }
+
+}  // namespace
+void SplitViewNoMarkers(bool on) { g_noMarkers = on; }
+namespace {
 
 bool PatchCall(uintptr_t at, uintptr_t expectedTarget, void* to) {
     auto b = reinterpret_cast<unsigned char*>(at);
