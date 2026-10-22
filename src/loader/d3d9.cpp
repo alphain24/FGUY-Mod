@@ -397,6 +397,7 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, 
     PaceFrame();
     DisplayCheckStyle();
     ModsFrame();   // the mods' plugins (modloader.cpp)
+    CosmeticsFrame(self);   // skins (cosmetics.cpp)
     NetplayOnFrame();
     OnlineMenuFrame();
     static unsigned frame = 0;

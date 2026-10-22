@@ -324,6 +324,14 @@ void HandleCommand(char* line) {
         NetplayTestKillNpcs();
         return;
     }
+    if (cmd && (_stricmp(cmd, "texinfo") == 0 || _stricmp(cmd, "texfill") == 0)) {   // research: texinfo <lo> <hi> /
+        char* lo = strtok_s(nullptr, " \t\r\n", &ctx);                                // texfill <lo> <hi> <rrggbb>
+        char* hi = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* rgb = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (lo && hi) CosmeticsTest(_stricmp(cmd, "texfill") == 0, strtoul(lo, nullptr, 16), strtoul(hi, nullptr, 16),
+                                    rgb ? strtoul(rgb, nullptr, 16) : 0xff00ff);
+        return;
+    }
     if (cmd && _stricmp(cmd, "uicmd") == 0) {   // test tools: uicmd <command> [args] - a menu command, as a menu sends it
         char* c = strtok_s(nullptr, " \t\r\n", &ctx);
         char* a = strtok_s(nullptr, "\r\n", &ctx);

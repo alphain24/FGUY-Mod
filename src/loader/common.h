@@ -139,6 +139,9 @@ bool ModsFileOverride(const wchar_t* gamePath, wchar_t* out);   //   a mod's cop
 std::vector<std::wstring> ModsUiFolders();   //   their movie patches' folders
 void ModsTick();                       //   vpad.cpp: a game tick starts (the game's thread)
 void ModsFrame();                      //   d3d9.cpp: a frame was drawn
+struct IDirect3DDevice9;
+void CosmeticsFrame(IDirect3DDevice9* dev);   // cosmetics.cpp: skins, on the render thread after each frame
+void CosmeticsTest(bool fill, unsigned lo, unsigned hi, unsigned rgb);   //   test pipe "texinfo" / "texfill"
 std::string ModsOnlineKey();           //   the gameplay mods that are on (the lobby server matches by it)
 const char* ModsList();                //   FGUYMOD_ModsList (the MODS page)
 bool ModsToggle(const char* folder);   //   FGUYMOD_ModsToggle
