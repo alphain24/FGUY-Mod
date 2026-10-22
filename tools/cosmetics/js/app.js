@@ -261,18 +261,13 @@ function hsl2rgb([h, s, l]) {
   return [f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255];
 }
 
-$('apply').onclick = () => {
-  const P = state.picked;
-  if (!P) return;
-  const t = P.t, img = t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height), d = img.data;
-  t.history.push(t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height));
-  if (t.history.length > 20) t.history.shift();
-  const hex = $('toColor').value, Q = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-  const hp = rgb2hsl(P.rgb), hq = rgb2hsl(Q);
-  const tol = +$('tolerance').value * 2.2;
+// one texture: the pixels near color P (rgb) moved to Q, shading kept; returns how many
+function recolor(t, P, Q, tol) {
+  const img = t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height), d = img.data;
+  const hp = rgb2hsl(P), hq = rgb2hsl(Q);
   let count = 0;
   for (let i = 0; i < d.length; i += 4) {
-    const dist = Math.hypot(d[i] - P.rgb[0], d[i + 1] - P.rgb[1], d[i + 2] - P.rgb[2]);
+    const dist = Math.hypot(d[i] - P[0], d[i + 1] - P[1], d[i + 2] - P[2]);
     if (dist > tol) continue;
     const w = dist < tol * 0.6 ? 1 : 1 - (dist - tol * 0.6) / (tol * 0.4);   // (soft edge)
     const hc = rgb2hsl([d[i], d[i + 1], d[i + 2]]);
@@ -280,12 +275,30 @@ $('apply').onclick = () => {
     for (let k = 0; k < 3; k++) d[i + k] = d[i + k] * (1 - w) + out[k] * w;
     count++;
   }
+  if (!count) return 0;
+  t.history.push(t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height));
+  if (t.history.length > 20) t.history.shift();
   t.ctx.putImageData(img, 0, 0);
   t.modified = true;
-  state.picked = {t, rgb: Q};
-  $('fromColor').style.background = hex;
   changed(t);
-  setStatus(count ? `Recolored ${count.toLocaleString()} pixels.` : 'Nothing that close - pick again or allow more with "How close".');
+  return count;
+}
+
+// The outfit's battle damage textures carry their own copy of its colors (torn bits of the clothes, drawn over the
+// character in the game): a recolor goes to them too - or the old color shows through in the game.
+const isDamage = t => /damage|dstr/i.test(t.name);
+$('apply').onclick = () => {
+  const P = state.picked;
+  if (!P) return;
+  const hex = $('toColor').value, Q = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  const tol = +$('tolerance').value * 2.2;
+  const count = recolor(P.t, P.rgb, Q, tol);
+  let extra = 0;
+  if (count) for (const t of state.current?.textures || []) if (t !== P.t && isDamage(t)) extra += recolor(t, P.rgb, Q, tol);
+  state.picked = {t: P.t, rgb: Q};
+  $('fromColor').style.background = hex;
+  setStatus(count ? `Recolored ${count.toLocaleString()} pixels${extra ? ` (and ${extra.toLocaleString()} in the battle damage)` : ''}.`
+    : 'Nothing that close - pick again or allow more with "How close".');
 };
 
 $('undo').onclick = () => {
