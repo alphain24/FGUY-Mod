@@ -623,3 +623,19 @@ ematch_<lobby pid>.txt`), whose lobby then
   same object except Peter's in Chicken Fight.
 - Level 10 (`BPXX`) opens with the T-rex (`3025`, 5600 health, bullets on its body do nothing - "Destroy the T-Rex's
   Lasers", then Bertram's helmet, a 10-health character riding it). Not played through yet.
+
+## Cosmetics: skins and parts (2026-10-22)
+- Characters live in `FGUY/Global_Scenes/Players/PLYS.ho` (every character and outfit; PLYW / PLYN / PLYX subsets).
+  `tools/re/ho.py` reads .ho packages, `tools/re/ho2glb.py` turns a `<Character><Outfit>_Rig_Geo` Model into a .glb.
+- A Model: its SkeletonBlob and SkinGeometry pieces. A piece's record: +0x54 vertex count, ids of its Material and
+  three RawBlobs (vertices - the biggest; texture coordinates, half floats, 4 bytes a vertex; triangles, u16). Vertices:
+  position, normal, [tangent + sign], then for more than one bone 4 weight bytes; one table in the record of vertex
+  counts by bone count (dwords k << 16 | count, counts with none left out), one-bone vertices first.
+- Textures: a Texture asset (16 bytes) names its DDS blob. In the game: the asset's scene tree node -> a
+  World::TextureResourceEntity (vtable 0x9fb2b8), [+0x28] +0x14 the IDirect3DTexture9 (managed pool).
+- A character's color texture is bound on stages 1-2; at its DrawIndexedPrimitive the vertex shader's c4..c6 .w are its
+  world position (which player it is). A player's model: [[player +0x38] +0x1d4] = its World::ModelPrototypeEntity
+  (vtable 0x9fad48). The main menu's couch family aren't players; the lobby's 3D character is the menu's player 2.
+- The outfits of one character have the same skeleton (1-4 header dwords differ), so pieces fit across outfits. A
+  piece's runtime World::SkinGeometryEntity (vtable 0x9fb30c) has Direct3D objects at +0xac and [+0xc8] - present for
+  every outfit in the package even when nobody wears it (the main menu): a piece of another outfit can be drawn.
