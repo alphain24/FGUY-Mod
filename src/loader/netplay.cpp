@@ -1052,6 +1052,9 @@ extern const int kPktPointsHead;
 struct PktCarry;
 void FreeCarryIn(int s, const PktCarry* p);
 extern const int kPktCarrySize;
+struct PktStory;
+void FreeStoryIn(int s, const PktStory* p, int n);
+extern const int kPktStoryHead;
 struct PktState;
 extern const int kPktStateSizeOld, kPktStateSizeMoney;
 struct PktHit;
@@ -1161,6 +1164,8 @@ void Receive() {
             if (g_free) FreeRoundIn(slot, reinterpret_cast<PktRound*>(buf));
         } else if (h->type == 'q' && n >= kPktPointsHead) {   // Infiltration: the host's control points
             if (g_free) FreePointsIn(slot, reinterpret_cast<PktPoints*>(buf), n);
+        } else if (h->type == 'e' && n >= kPktStoryHead) {   // story co-op: a player's own events (its PC's)
+            if (g_free) FreeStoryIn(slot, reinterpret_cast<PktStory*>(buf), n);
         } else if (h->type == 'f' && n >= kPktCarrySize) {   // Capture the Flag: who carries the Deaf Guy, captures
             if (g_free) FreeCarryIn(slot, reinterpret_cast<PktCarry*>(buf));
         } else if (h->type == 'X' && n >= kPktStateSizeOld) {   // (0.8.12 and older: no money in it)
@@ -3301,6 +3306,138 @@ const unsigned char kDispatchStart[] = {0x83, 0xec, 0x08, 0x56, 0x57, 0x8b, 0x7c
 using Dispatch_t = void(__cdecl*)(void* from, int a, unsigned char* to, unsigned event, void* args, int onlyIfOn);
 Dispatch_t DispatchOriginal = nullptr;
 bool g_pointEnabling = false;
+// Story co-op (the new netcode): a player's own events - the ones the game's code starts for that player (dispatch
+// depth 0, from the player: entering / leaving a trigger, ...) - are its own PC's, which knows where that player really
+// is (each PC has the others a little behind: a trigger's edge, a respawn jump, a skip went by it). Its PC sends them
+// ('e', in order, each one again with the next few - a lost packet); the others drop their own of that player and
+// play its PC's, from the same player to the same object (the asset ids are the same on every PC: 0x616c60). What
+// they set off - the level's own logic, along the objects' links - runs on every PC as in the game.
+int g_dispatchDepth = 0;
+const uintptr_t kFindObject = 0x616c60;   // (cdecl: id low, id high - the object, or none)
+#pragma pack(push, 1)
+struct StoryEvent {
+    unsigned seq;
+    BYTE toSlot;            // the event's target: a player (its slot), or 0xff - an object, by its asset id
+    unsigned toLo, toHi;
+    unsigned event, a;
+    float args[4];
+    BYTE hasArgs, onlyIfOn;
+};
+struct PktStory { PktHeader h; BYTE count; StoryEvent e[16]; };
+#pragma pack(pop)
+const int kPktStoryHead = (int)offsetof(PktStory, e);
+StoryEvent g_storyOut[64];          // my last events (a ring, by seq)
+unsigned g_storySeq = 0, g_storySentUpTo = 0;
+ULONGLONG g_storyLastNew = 0;
+std::map<unsigned, StoryEvent> g_storyIn[4];   // the others': waiting to be played, by seq
+unsigned g_storyPlayed[4] = {};
+ULONGLONG g_storyGapSince[4] = {};
+
+int PlayerSlotOf(const unsigned char* o) {   // (a player object: its slot; else -1)
+    if (!o || IsBadReadPtr(o, 0xe00) || *reinterpret_cast<const ULONG_PTR*>(o) != kPlayerVtable) return -1;
+    int s = *reinterpret_cast<const int*>(o + 0xdf8);
+    return s >= 0 && s < g_players && s < 4 ? s : -1;
+}
+
+// (depth 0, story co-op) false: drop it - another player's, whose PC sends it
+bool StoryPlayerEvent(unsigned char* from, int a, unsigned char* to, unsigned event, void* args, int onlyIfOn) {
+    int s = PlayerSlotOf(from);
+    if (s < 0 && from && !IsBadReadPtr(from, 0xe00) && *reinterpret_cast<ULONG_PTR*>(from) == kPlayerVtable) {
+        static int logged = 0;   // (research: a player object with no slot - whose?)
+        if (++logged <= 20) Log(L"Netplay: research - event %08x from a player with slot %d (id %x, %p; players %d)", event,
+                                *reinterpret_cast<int*>(from + 0xdf8), *reinterpret_cast<unsigned*>(from + 0x18), from, g_players);
+    }
+    if (s < 0) return true;   // (not a player's: the level's own)
+    if (s != g_slot) {
+        static int logged = 0;
+        if (++logged <= 20) Log(L"Netplay: free - player %d's event %08x here - only as their PC has it", s, event);
+        return false;
+    }
+    StoryEvent e{};
+    e.seq = ++g_storySeq;
+    int ts = PlayerSlotOf(to);
+    e.toSlot = ts >= 0 ? (BYTE)ts : 0xff;
+    if (to && !IsBadReadPtr(to, 0x20)) {
+        e.toLo = *reinterpret_cast<unsigned*>(to + 0x18);
+        e.toHi = *reinterpret_cast<unsigned*>(to + 0x1c);
+    }
+    e.event = event;
+    e.a = (unsigned)a;
+    if (args && !IsBadReadPtr(args, 16)) {
+        memcpy(e.args, args, 16);
+        e.hasArgs = 1;
+    }
+    e.onlyIfOn = (BYTE)onlyIfOn;
+    g_storyOut[e.seq % 64] = e;
+    g_storyLastNew = GetTickCount64();
+    return true;
+}
+
+// (each frame) mine out: the new ones, and for a moment after the last new one, the last few again
+void FreeStorySend() {
+    if (!g_storySeq) return;
+    ULONGLONG now = GetTickCount64();
+    static ULONGLONG lastSend = 0;
+    bool fresh = g_storySentUpTo < g_storySeq;
+    if (!fresh && (now - g_storyLastNew > 1000 || now - lastSend < 50)) return;
+    lastSend = now;
+    unsigned from = g_storySeq > 15 ? g_storySeq - 15 : 1;
+    if (fresh && g_storySentUpTo + 1 < from) from = g_storySentUpTo + 1;   // (a burst: all of it, 16 at a time)
+    while (from <= g_storySeq) {
+        PktStory p{};
+        p.h = {'e', (BYTE)g_slot};
+        for (; from <= g_storySeq && p.count < 16; ++from) p.e[p.count++] = g_storyOut[from % 64];
+        SendAll(&p, kPktStoryHead + p.count * (int)sizeof(StoryEvent));
+    }
+    g_storySentUpTo = g_storySeq;
+}
+
+void FreeStoryIn(int s, const PktStory* p, int n) {
+    if (s < 0 || s >= 4 || s == g_slot) return;
+    int count = p->count;
+    if (kPktStoryHead + count * (int)sizeof(StoryEvent) > n) count = (n - kPktStoryHead) / (int)sizeof(StoryEvent);
+    for (int i = 0; i < count && i < 16; ++i)
+        if (p->e[i].seq > g_storyPlayed[s]) g_storyIn[s][p->e[i].seq] = p->e[i];
+}
+
+// (each frame, the game's thread) the others' events played here, each player's in order (a gap: waited for a second)
+void FreeStoryApply() {
+    ULONGLONG now = GetTickCount64();
+    for (int s = 0; s < 4 && s < g_players; ++s) {
+        auto& in = g_storyIn[s];
+        while (!in.empty()) {
+            auto it = in.begin();
+            if (it->first <= g_storyPlayed[s]) { in.erase(it); continue; }
+            if (it->first != g_storyPlayed[s] + 1 && g_storyPlayed[s] != 0) {
+                if (!g_storyGapSince[s]) g_storyGapSince[s] = now;
+                if (now - g_storyGapSince[s] < 1000) break;
+                Log(L"Netplay: free - player %d's events %u-%u never came - on from %u", s, g_storyPlayed[s] + 1, it->first - 1,
+                    it->first);
+            }
+            g_storyGapSince[s] = 0;
+            StoryEvent e = it->second;
+            in.erase(it);
+            g_storyPlayed[s] = e.seq;
+            unsigned char* from = PlayerBySlot(s);
+            unsigned char* to = e.toSlot != 0xff ? PlayerBySlot(e.toSlot)
+                                                 : reinterpret_cast<unsigned char*(__cdecl*)(unsigned, unsigned)>(kFindObject)(e.toLo, e.toHi);
+            if (!from || !to) {
+                static int logged = 0;
+                if (++logged <= 20) Log(L"Netplay: free - player %d's event %08x: no %s here", s, e.event, from ? L"target" : L"player");
+                continue;
+            }
+            static int played = 0;
+            if (++played <= 200)
+                Log(L"Netplay: free - player %d's event %08x (#%u) to %x played here", s, e.event, e.seq, e.toSlot != 0xff ? e.toSlot : e.toLo);
+            static float args[4];
+            memcpy(args, e.args, 16);
+            ++g_dispatchDepth;   // (played as what it is: one of theirs - not one of this PC's own)
+            DispatchOriginal(from, (int)e.a, to, e.event, e.hasArgs ? args : nullptr, e.onlyIfOn);
+            --g_dispatchDepth;
+        }
+    }
+}
+
 void __cdecl Free_Dispatch(void* from, int a, unsigned char* to, unsigned event, void* args, int onlyIfOn) {
     if (g_npcLog && (event == kEnableEvent || event == kDisableEvent) && to &&
         *reinterpret_cast<uintptr_t*>(to) == kPointVtable) {   // (research: who switches the points)
@@ -3310,13 +3447,19 @@ void __cdecl Free_Dispatch(void* from, int a, unsigned char* to, unsigned event,
             f && !IsBadReadPtr(f, 0x1c) ? *reinterpret_cast<unsigned*>(f) : 0,
             f && !IsBadReadPtr(f, 0x1c) ? *reinterpret_cast<unsigned*>(f + 0x18) : 0, a, _ReturnAddress());
     }
-    if (g_npcLog && to && *reinterpret_cast<uintptr_t*>(to) == 0xa22224 && event != 0xd576ca21 && event != 0xae72e9e5) {   // (research: the timelines' events)
+    int& depth = g_dispatchDepth;   // (an event's links send more through here: depth 1+ - what one at depth 0 set off)
+    static int evLog = -1;   // research: FGUYMOD_TEST_EVLOG=1 - every event started fresh by the game's code (depth 0)
+    if (evLog < 0) evLog = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_EVLOG", 0);
+    if (evLog && depth == 0 && g_free && event != 0xafc4a7fd) {   // (that one: every script, every frame)
         static int logged = 0;
         auto f = static_cast<unsigned char*>(from);
-        if (++logged <= 300)
-            Log(L"Netplay: research - timeline %x gets %08x from %x (id %x) - called from %p", *reinterpret_cast<unsigned*>(to + 0x18),
-                event, f && !IsBadReadPtr(f, 0x1c) ? *reinterpret_cast<unsigned*>(f) : 0,
-                f && !IsBadReadPtr(f, 0x1c) ? *reinterpret_cast<unsigned*>(f + 0x18) : 0, _ReturnAddress());
+        bool fOk = f && !IsBadReadPtr(f, 0x1c), tOk = to && !IsBadReadPtr(to, 0x1c);
+        if (++logged <= 4000)
+            Log(L"Netplay: research - event %08x: from %x/%x id %x (a %x) to %x/%x id %x, arg %.2f, only-if-on %d - called from %p",
+                event, fOk ? *reinterpret_cast<unsigned*>(f) : 0, fOk ? *reinterpret_cast<unsigned*>(f + 0x10) : 0,
+                fOk ? *reinterpret_cast<unsigned*>(f + 0x18) : 0, a, tOk ? *reinterpret_cast<unsigned*>(to) : 0,
+                tOk ? *reinterpret_cast<unsigned*>(to + 0x10) : 0, tOk ? *reinterpret_cast<unsigned*>(to + 0x18) : 0,
+                args && !IsBadReadPtr(args, 4) ? *static_cast<float*>(args) : 0.f, onlyIfOn, _ReturnAddress());
     }
     if ((event == kEnableEvent || event == kDisableEvent) && g_free && g_sessionInf && g_slot != 0 && !g_pointEnabling &&
         to && *reinterpret_cast<uintptr_t*>(to) == kPointVtable && !g_pointsHost.empty()) {
@@ -3326,7 +3469,11 @@ void __cdecl Free_Dispatch(void* from, int a, unsigned char* to, unsigned event,
                 event == kEnableEvent ? L"on" : L"off");
         return;
     }
+    if (depth == 0 && g_free && g_sessionStory && !StoryPlayerEvent(static_cast<unsigned char*>(from), a, to, event, args, onlyIfOn))
+        return;   // (another player's own: their PC's comes instead)
+    ++depth;
     DispatchOriginal(from, a, to, event, args, onlyIfOn);
+    --depth;
 }
 void PointSend(unsigned char* p, unsigned event) {
     g_pointEnabling = true;
@@ -4055,6 +4202,8 @@ void FreeStart() {
     g_zoneHost.clear();
     g_zoneMine.clear();
     g_carrySeqIn = 0;
+    g_storySeq = g_storySentUpTo = 0;
+    for (int s = 0; s < 4; ++s) { g_storyIn[s].clear(); g_storyPlayed[s] = 0; g_storyGapSince[s] = 0; }
     InterlockedExchange(&g_resultsLeave, 0);
     AcquireSRWLockExclusive(&g_buyLock);   // (nothing left over from a match before)
     g_buysIn.clear();
@@ -4158,6 +4307,10 @@ void FreeTick() {
     FreeApplyRounds();
     FreePointsTick();
     FreeCarryTick();
+    if (g_sessionStory && g_npcSync) {
+        FreeStoryApply();
+        FreeStorySend();
+    }
     FreeTestHurt();
     FreeApplyPickups();
     FreeSendBuys();

@@ -579,3 +579,26 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   `killnpcs` (the host) knocks the Deaf Guy down.
 - Research: FGUYMOD_TEST_NPCLOG=1 also logs every game mode event (hash, sender, arg), who switches the points, and
   the timelines' events.
+
+## Story co-op in the new netcode (2026-10-22, research)
+- The engine is Heavy Iron Studios' (the one of SpongeBob: Battle for Bikini Bottom - its fan decompilation documents
+  it): the level's logic is objects (`xBase` / `xEnt`; struct types `zScript` - the timelines, vtable `0xa22224`;
+  `zTrigger` `0xa21cfc`; `zConditional`, `xCounter`, `xTimer`, `xGroup`, `zDispatcherData` `0xa227cc`, `zPlatform`
+  `0xa19844`, `zEntSimpleObj` `0xa21ab4`, `zDestructible`) wired by events: every event goes through the dispatch
+  `0x520c50` (cdecl: from, from-event, to, event, args (floats), only-if-on), which passes it on along the target's
+  links (recursively). An object: vtable, `+0x10` its kind, `+0x18`/`+0x1c` its asset id (the same on every PC;
+  `0x616c60(lo, hi)` finds the object), `+0x26` flags (bit 0 on), `+0x28` links, `+0x30` event handler.
+  Classes: `zFamilyGuyPlayer` `0xa1af14` (kind 0x6f), `zNPCGeneric` `0xa1aafc`, `zCheckpoint`, `zCinematic`,
+  `zObjective`, `zTriggerEntity`, `zInteraction`, `zPortal`, `zSpringboard`, `zHazard`, `zNPCSpawner`,
+  `zFGUYOneLinersEntity`, `zSaveLoad`; remnants of the original game's own networking: `zNPCNetworking`,
+  `xNetProxy`, `zNetPlayer`, `FGUYPlayerLocalAuthorityUpdateMessage`.
+- Events started fresh by the game's code (dispatch depth 0; FGUYMOD_TEST_EVLOG=1 logs them): every frame
+  `0xafc4a7fd` to every script; a player entering / leaving / in a trigger (from the player, to the `zTrigger`:
+  `0x22475de5/6`, `0x8a812dd8`, `0x8a812cc5`, `0x395f3819`, `0xe215652f`, `0x8a84d842`, `0xdd3d4b1f/20`,
+  `0xd1d0ea3a/b`, `0xd1d12d43/44`, `0x36599286`, `0x365d3cf0`, `0xbbd19233` - sent from `0x4b1e7a`-`0x4b27ff`,
+  `0x4cb26a`); scripts' timed events (`0x635f90`); the NPCs' own. Greek, the host walking: both PCs had the same
+  trigger events at the same moments. Dialogue (one-liners) is picked at random on each PC: different lines.
+- Design: a player's own events (depth 0, from that player) are its own PC's - sent, and the others drop theirs and
+  play the owner's (so triggers, interactions, pickups go by where the player really is: respawn jumps, skips); the
+  level's own logic (scripts, timers, what events set off) runs on every PC as vanilla; enemies and random picks the
+  host's.
