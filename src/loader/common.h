@@ -76,6 +76,7 @@ void NetplayTestNudge();
 int KbmKeyPlayer(int code);                          //   the HUD's key event: whose (-1: as the game has it)
 void ModsTestHook(unsigned address, int length);    //   test pipe "hooktest <address> <length>": the mods' Hook, tried
 void NetplayTestGod(bool on);
+void NetplayTestSendEvent(unsigned lo, unsigned hi, unsigned event);   //   test pipe "sendevent": an object gets an event
 void NetplayStoryLevelChange(const char* what);   // ui.cpp: the menu restarts the level / goes to another (story co-op)                         //   test pipe "god 0/1": my player takes no hits
 void NetplayTestPointOn(unsigned id);                 //   test pipe "pointon <id>": the host's control point on
 void NetplayTestKillNpcs();                          //   test pipe "killnpcs": the host's enemies all down
@@ -189,7 +190,8 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
 void OnlinePauseCommand(const char* command);  //   ui.cpp: a menu command ran
 const char* OnlinePauseMenu();                 //   FGUYMOD_PauseMenu (the HUD)
 const char* OnlinePauseCursor();
-void SplitViewNoMarkers(bool on);              //   FGUYMOD_DeathPanel: no name tags while my death menu's panel is up
+void SplitViewNoMarkers(bool on);
+bool SplitViewCutscenePlaying();               //   a cutscene of the game's playing (story)              //   FGUYMOD_DeathPanel: no name tags while my death menu's panel is up
 const char* OnlinePauseDeathMouse(const char* boxes);   //   FGUYMOD_DeathMouse (the HUD): my death menu's buttons
 void OnlinePauseHudTakesStart(bool up);                 //   FGUYMOD_HudTakesStart (the HUD): my weapons screen is up
 const char* OnlineMenuMouse(const char* boxes, const char* who);   //   FGUYMOD_MenuMouse (the game's menus): their lists

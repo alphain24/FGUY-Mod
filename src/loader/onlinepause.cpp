@@ -308,7 +308,11 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
     if (keyboardPlayer) { g_cursorX = kbm->cursorX; g_cursorY = kbm->cursorY; }
 
     bool pausePress = (down & XINPUT_GAMEPAD_START) || pressed(VK_ESCAPE);
-    bool startToGame = g_hudTakesStart && !g_open;   // (START leaves my weapons screen: it goes to the game, as offline)
+    // Story co-op, a cutscene playing: START / the keyboard's skip key go to the game - it skips the cutscene (as offline:
+    // a pause there skipped it and paused everyone's game); netplay.cpp ends it on the others' PCs too.
+    bool cutscene = NetplayStoryCoop() && !g_gamePaused && SplitViewCutscenePlaying();
+    if (cutscene) pausePress = false;
+    bool startToGame = (g_hudTakesStart || cutscene) && !g_open;   // (START leaves my weapons screen: it goes to the game, as offline)
     if (startToGame && !pressed(VK_ESCAPE)) pausePress = false;
     if (g_gamePaused) g_storyPauseTicks = 0;   // (my pause did it: the rest of its presses would pause again after RESUME)
     if (g_gamePaused && !(g_open && g_settings)) {   // the game's own pause menu is up: everything goes to it
@@ -397,7 +401,7 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
             if (g_partyTicks > 0) { g_partyTicks -= g_steps; kbm->flags |= 4; }
             if (g_storyPauseTicks > 0) { g_storyPauseTicks -= g_steps; kbm->flags |= 8; }
             if (!startToGame) *buttons &= ~XINPUT_GAMEPAD_START;   // (only the menu answers the pause button online)
-            if (keyboardPlayer) kbm->keys[VK_ESCAPE >> 3] &= ~(1 << (VK_ESCAPE & 7));
+            if (keyboardPlayer && !cutscene) kbm->keys[VK_ESCAPE >> 3] &= ~(1 << (VK_ESCAPE & 7));
             return false;
         }
     } else if (g_settings) {

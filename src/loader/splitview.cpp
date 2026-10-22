@@ -95,8 +95,21 @@ volatile LONG g_spectate = -1;   // the viewport shown instead of mine (-1: mine
 volatile LONG g_spectateSlot = -1;
 LONG g_shownApplied = -2;        // (render thread) the view the rectangles were last set for
 
+// A cutscene playing (the game's current one, [0xbad99c], in its playing state +0xac 3): it drives the first view's
+// camera - played on one screen that's the whole screen; online every PC shows that view meanwhile (the others showed
+// their own player's - a cutscene played on the guest's PC unseen).
+bool CutscenePlaying() {
+    auto cin = *reinterpret_cast<unsigned char* volatile*>(0xbad99c);
+    return cin && !IsBadReadPtr(cin + 0xac, 4) && *reinterpret_cast<int*>(cin + 0xac) == 3;
+}
+
+}  // namespace
+bool SplitViewCutscenePlaying() { return CutscenePlaying(); }
+namespace {
+
 int ShownViewport() {
     int mine = MyViewport(), s = g_spectate;
+    if (mine >= 0 && CutscenePlaying()) return 0;
     return mine >= 0 && s >= 0 && s < Count() ? s : mine;
 }
 

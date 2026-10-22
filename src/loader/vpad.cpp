@@ -307,6 +307,14 @@ void HandleCommand(char* line) {
         NetplayTestGod(!on || atoi(on) != 0);
         return;
     }
+    if (cmd && _stricmp(cmd, "sendevent") == 0) {   // research: sendevent <id low hex> <id high hex> <event hex> - that
+        char* lo = strtok_s(nullptr, " \t\r\n", &ctx);   //   object (by its asset id) gets the event here (free-running)
+        char* hi = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* ev = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (lo && hi && ev)
+            NetplayTestSendEvent((unsigned)strtoul(lo, nullptr, 16), (unsigned)strtoul(hi, nullptr, 16), (unsigned)strtoul(ev, nullptr, 16));
+        return;
+    }
     if (cmd && _stricmp(cmd, "pointon") == 0) {   // test tools: pointon <id hex> - the host's game switches that control
         char* id = strtok_s(nullptr, " \t\r\n", &ctx);   // point on (Infiltration, free-running)
         if (id) NetplayTestPointOn((unsigned)strtoul(id, nullptr, 16));
