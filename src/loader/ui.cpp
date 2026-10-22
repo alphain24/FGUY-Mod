@@ -502,6 +502,7 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             fflush(f);   // (test copies get closed without a goodbye)
         }
     }
+    if (name && strcmp(name, "SCEN_Reset") == 0) NetplayStoryLevelChange("the level restarted");
     if (name && g_seenCalls.insert(name).second) {
         if (NetplayEnabled()) Log(L"UI: menu calls %S (%u args) - tick %u", name, argc, NetplayTick());
         else Log(L"UI: menu calls %S (%u args)", name, argc);
@@ -537,6 +538,8 @@ using Command_t = void(__fastcall*)(void* self, void* edx, void* movie, const ch
 Command_t Real_Command = nullptr;
 
 void __fastcall Hook_Command(void* self, void* edx, void* movie, const char* command, const char* args) {
+    if (command && (strcmp(command, "GAME_Portal") == 0 || strcmp(command, "GAME_Reload") == 0))
+        NetplayStoryLevelChange(command);   // (story co-op: another level / the same again)
     if (NetplayResultsCommand(command) == 2) {   // (the end of the match's pick, free-running: netplay.cpp)
         Log(L"UI: command %S(%S) - online, back to the lobby for the next match instead (GAME_Quit)", command, args ? args : "");
         Real_Command(self, edx, movie, "GAME_Quit", "");

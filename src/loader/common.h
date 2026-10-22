@@ -75,7 +75,8 @@ void NetplayTestLeave();               //   test pipe "netleave": quit the match
 void NetplayTestNudge();
 int KbmKeyPlayer(int code);                          //   the HUD's key event: whose (-1: as the game has it)
 void ModsTestHook(unsigned address, int length);    //   test pipe "hooktest <address> <length>": the mods' Hook, tried
-void NetplayTestGod(bool on);                         //   test pipe "god 0/1": my player takes no hits
+void NetplayTestGod(bool on);
+void NetplayStoryLevelChange(const char* what);   // ui.cpp: the menu restarts the level / goes to another (story co-op)                         //   test pipe "god 0/1": my player takes no hits
 void NetplayTestPointOn(unsigned id);                 //   test pipe "pointon <id>": the host's control point on
 void NetplayTestKillNpcs();                          //   test pipe "killnpcs": the host's enemies all down
 void NetplayTestHurt(int player, float amount);   //   test pipe "hurt": my player there takes a hit nobody caused

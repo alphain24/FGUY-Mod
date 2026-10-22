@@ -2017,6 +2017,8 @@ struct Remote {
     unsigned pickupSeen[16];                   // their last pickups' numbers (each comes twice)
     unsigned buySeen[8];                       // their last purchases' numbers (each comes twice)
     bool rescue;                               // the game here wanted to put their character back in the level
+    WORD heldAtReset;                          // story co-op: their buttons / keys down when this PC's level restarted -
+    BYTE keysHeldAtReset[32];                  //   not pressed again in the new one until let go
     // stats for the log
     double errSum, yawErrSum;
     float errMax, yawErrMax;
@@ -2741,6 +2743,49 @@ unsigned char* __cdecl Free_NpcSpawn(BYTE* request) {
     return npc;
 }
 
+// Story co-op: the level's own characters (placed in it, not spawned while the match runs free) - made by the level's
+// loading, in lockstep, so the same ones with the same ids on every PC - are linked by their ids like the host's spawns
+// (its state goes out, the others follow it). The scene's objects: a tree of its assets ([0xb07b04]; a node: the id
+// +0 / +4, its two branches +0x20 / +0x24 (low 2 bits flags), the object +0x3c). Looked over each 2 s (a new level, a
+// restart), the ones not linked yet added.
+const uintptr_t kSceneTree = 0xb07b04, kNpcGenericVtable = 0xa1aafc;
+void ForEachSceneObject(void (*fn)(unsigned char* obj, void* user), void* user) {
+    auto root = *reinterpret_cast<unsigned char**>(kSceneTree);
+    std::vector<unsigned char*> stack;
+    if (root) stack.push_back(root);
+    int nodes = 0;
+    while (!stack.empty() && nodes < 400000) {
+        unsigned char* n = stack.back();
+        stack.pop_back();
+        if (IsBadReadPtr(n, 0x40)) continue;
+        ++nodes;
+        auto obj = *reinterpret_cast<unsigned char**>(n + 0x3c);
+        if (obj && !IsBadReadPtr(obj, 0x20)) fn(obj, user);
+        auto left = *reinterpret_cast<unsigned char**>(n + 0x20);
+        auto right = reinterpret_cast<unsigned char*>(*reinterpret_cast<uintptr_t*>(n + 0x24) & ~(uintptr_t)3);
+        if (left) stack.push_back(left);
+        if (right) stack.push_back(right);
+    }
+}
+
+void FreeLinkLevelNpcs(bool now) {
+    static ULONGLONG last = 0;
+    ULONGLONG t = GetTickCount64();
+    if (!now && t - last < 2000) return;
+    last = t;
+    int added = 0;
+    ForEachSceneObject([](unsigned char* o, void* user) {
+        if (*reinterpret_cast<uintptr_t*>(o) != kNpcGenericVtable) return;
+        unsigned id = *reinterpret_cast<unsigned*>(o + 0x18);
+        for (auto& kv : g_npcOfHost) if (kv.second == o) return;   // (linked already - maybe to a host's spawn)
+        if (g_npcOfHost.count(id)) return;
+        g_npcOfHost[id] = o;
+        ++*static_cast<int*>(user);
+    }, &added);
+    if (added) Log(L"Netplay: free - story: %d of the level's own characters linked by their ids (%u in all)", added,
+                   (unsigned)g_npcOfHost.size());
+}
+
 void FreeSpawnIn(int s, const PktSpawn* p) {
     if (s != 0 || !p->seq) return;   // (the host's; each once - it comes twice, not always in order)
     for (unsigned seen : g_spawnSeen) if (seen == p->seq) return;
@@ -3317,6 +3362,7 @@ const uintptr_t kFindObject = 0x616c60;   // (cdecl: id low, id high - the objec
 #pragma pack(push, 1)
 struct StoryEvent {
     unsigned seq;
+    unsigned short epoch;   // (the sender's level instance: restarts / the next level count up)
     BYTE toSlot;            // the event's target: a player (its slot), or 0xff - an object, by its asset id
     unsigned toLo, toHi;
     unsigned event, a;
@@ -3332,6 +3378,8 @@ ULONGLONG g_storyLastNew = 0;
 std::map<unsigned, StoryEvent> g_storyIn[4];   // the others': waiting to be played, by seq
 unsigned g_storyPlayed[4] = {};
 ULONGLONG g_storyGapSince[4] = {};
+unsigned short g_storyEpoch = 0;   // this PC's level instance (each restart, each new level: +1)
+ULONGLONG g_storyAheadSince[4] = {};
 
 int PlayerSlotOf(const unsigned char* o) {   // (a player object: its slot; else -1)
     if (!o || IsBadReadPtr(o, 0xe00) || *reinterpret_cast<const ULONG_PTR*>(o) != kPlayerVtable) return -1;
@@ -3355,6 +3403,7 @@ bool StoryPlayerEvent(unsigned char* from, int a, unsigned char* to, unsigned ev
     }
     StoryEvent e{};
     e.seq = ++g_storySeq;
+    e.epoch = g_storyEpoch;
     int ts = PlayerSlotOf(to);
     e.toSlot = ts >= 0 ? (BYTE)ts : 0xff;
     if (to && !IsBadReadPtr(to, 0x20)) {
@@ -3415,6 +3464,17 @@ void FreeStoryApply() {
                     it->first);
             }
             g_storyGapSince[s] = 0;
+            if (it->second.epoch > g_storyEpoch) {   // (from their next level instance: once this PC's is there too)
+                if (!g_storyAheadSince[s]) g_storyAheadSince[s] = now;
+                if (now - g_storyAheadSince[s] < 15000) break;
+                Log(L"Netplay: free - player %d's events of a level this PC never got to - dropped", s);
+            }
+            g_storyAheadSince[s] = 0;
+            if (it->second.epoch != g_storyEpoch) {   // (of a level instance gone: not played)
+                g_storyPlayed[s] = it->first;
+                in.erase(it);
+                continue;
+            }
             StoryEvent e = it->second;
             in.erase(it);
             g_storyPlayed[s] = e.seq;
@@ -3454,7 +3514,7 @@ void __cdecl Free_Dispatch(void* from, int a, unsigned char* to, unsigned event,
         static int logged = 0;
         auto f = static_cast<unsigned char*>(from);
         bool fOk = f && !IsBadReadPtr(f, 0x1c), tOk = to && !IsBadReadPtr(to, 0x1c);
-        if (++logged <= 4000)
+        if (++logged <= 60000)
             Log(L"Netplay: research - event %08x: from %x/%x id %x (a %x) to %x/%x id %x, arg %.2f, only-if-on %d - called from %p",
                 event, fOk ? *reinterpret_cast<unsigned*>(f) : 0, fOk ? *reinterpret_cast<unsigned*>(f + 0x10) : 0,
                 fOk ? *reinterpret_cast<unsigned*>(f + 0x18) : 0, a, tOk ? *reinterpret_cast<unsigned*>(to) : 0,
@@ -4145,6 +4205,14 @@ Pad FreeRemotePad(int s) {
     p.buttons |= r.buttonsSince;
     r.buttonsSince = 0;
     for (int k = 0; k < 32; ++k) { p.kbm.keys[k] |= r.keysSince[k]; r.keysSince[k] = 0; }
+    // (a level restart here: what they held then isn't pressed again in the new level until they let go - the host's
+    //  A for "restart: yes" reached the others' game after its restart and skipped its intro there)
+    r.heldAtReset &= r.latest.buttons;
+    p.buttons &= ~r.heldAtReset;
+    for (int k = 0; k < 32; ++k) {
+        r.keysHeldAtReset[k] &= r.latest.kbm.keys[k];
+        p.kbm.keys[k] &= (BYTE)~r.keysHeldAtReset[k];
+    }
     p.kbm.buttons |= r.mouseSince;
     r.mouseSince = 0;
     p.rx = p.ry = 0;
@@ -4155,6 +4223,30 @@ Pad FreeRemotePad(int s) {
     unsigned char* them = PlayerBySlot(s);
     if (!them || PlayerHealth(them) > 0) p.buttons &= ~XINPUT_GAMEPAD_START;
     return p;
+}
+
+// ui.cpp: the game's menu restarted the level (SCEN_Reset) or goes to another one (GAME_Portal / GAME_Reload) - story
+// co-op: a new level instance here (the players' events of the old one aren't played in it), and what the others hold
+// down now isn't a press in it.
+void StoryLevelChange(const char* what) {
+    if (!g_enabled || !g_free || !g_sessionStory) return;
+    EnterCriticalSection(&g_netLock);
+    ++g_storyEpoch;
+    for (int s = 0; s < 4; ++s) {
+        Remote& r = g_remote[s];
+        r.heldAtReset = r.latest.buttons | r.buttonsSince;
+        r.buttonsSince = 0;
+        for (int k = 0; k < 32; ++k) {
+            r.keysHeldAtReset[k] = r.latest.kbm.keys[k] | r.keysSince[k];
+            r.keysSince[k] = 0;
+        }
+    }
+    if (strcmp(what, "the level restarted") != 0) {   // (another level: its objects are new - linked again once it's up)
+        g_npcOfHost.clear();
+        g_npcTrack.clear();
+    }
+    LeaveCriticalSection(&g_netLock);
+    Log(L"Netplay: free - story: %S - level instance %u (the others' held buttons not pressed in it)", what, g_storyEpoch);
 }
 
 // Everyone lets go of the lockstep at this tick (the same one on every PC).
@@ -4203,6 +4295,7 @@ void FreeStart() {
     g_zoneMine.clear();
     g_carrySeqIn = 0;
     g_storySeq = g_storySentUpTo = 0;
+    g_storyEpoch = 0;
     for (int s = 0; s < 4; ++s) { g_storyIn[s].clear(); g_storyPlayed[s] = 0; g_storyGapSince[s] = 0; }
     InterlockedExchange(&g_resultsLeave, 0);
     AcquireSRWLockExclusive(&g_buyLock);   // (nothing left over from a match before)
@@ -4308,6 +4401,7 @@ void FreeTick() {
     FreePointsTick();
     FreeCarryTick();
     if (g_sessionStory && g_npcSync) {
+        FreeLinkLevelNpcs(false);
         FreeStoryApply();
         FreeStorySend();
     }
@@ -4861,6 +4955,7 @@ void NetplayOnFrame() {
 }
 
 bool NetplayEnabled() { return g_enabled; }
+void NetplayStoryLevelChange(const char* what) { StoryLevelChange(what); }
 bool NetplayFreeRun() { return g_enabled && g_free; }
 // ui.cpp, a menu command: the end of the match's pick while the match runs free. 0: run it; 2: run the menu's quit to
 // the lobby instead (GAME_Quit - the pick stopped the menu, so its poll can't). RESTART MAP / NEXT MAP picked on a PC
