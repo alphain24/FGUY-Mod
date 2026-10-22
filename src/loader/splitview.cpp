@@ -65,7 +65,9 @@ void* Camera(int viewport, int which) {
     return reinterpret_cast<void*>(kViewports + viewport * kViewportSize + (which ? kSecondCamera : 0));
 }
 
-// My player's viewport (whether or not the game has set up that many viewports yet), -1 if unknown.
+// My player's viewport, -1 if unknown - or not set up (yet): a one-view level after a two-player one (Chicken Fight's
+// one-player fight, before the others join) keeps the others' player objects with their old viewport numbers - their
+// PCs hid the only view's HUD (not theirs) and showed its raw template; until they're in they watch that view.
 int MyPlayerViewport() {
     if (g_forced >= 0) return g_forced;
     int slot = NetplayLocalSlot();
@@ -76,7 +78,7 @@ int MyPlayerViewport() {
         auto p = players[i];
         if (*reinterpret_cast<int*>(p + 0xdf8) == slot) {
             int vp = *reinterpret_cast<int*>(p + 0xdfc);
-            if (vp >= 0 && vp < kMaxViewports) return vp;
+            if (vp >= 0 && vp < kMaxViewports && vp < Count()) return vp;
         }
     }
     return -1;  // not in the level (yet): watch the host's view, with its HUD

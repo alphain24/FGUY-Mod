@@ -80,6 +80,7 @@ void NetplayTestSendEvent(unsigned lo, unsigned hi, unsigned event);   //   test
 void NetplayStoryLevelChange(const char* what);   // ui.cpp: the menu restarts the level / goes to another (story co-op)                         //   test pipe "god 0/1": my player takes no hits
 void NetplayTestPointOn(unsigned id);                 //   test pipe "pointon <id>": the host's control point on
 void NetplayTestKillNpcs();                          //   test pipe "killnpcs": the host's enemies all down
+void NetplayTestHitNpc(unsigned id, int amount);     //   test pipe "hitnpc <id> <amount>": my player hits that enemy
 void NetplayTestHurt(int player, float amount);   //   test pipe "hurt": my player there takes a hit nobody caused
 void OnlineMenuLogYaw();               //   test pipe "yaw": the lobby preview's facing (onlinemenu.cpp)
 void NetplayTestResolution(int w, int h);   //   test pipe: the game changes resolution (Options > Screen)               //   test pipe: my player moves a little here only (out of sync)

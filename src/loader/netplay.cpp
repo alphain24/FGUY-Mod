@@ -1607,9 +1607,11 @@ int PlayerMoney(const unsigned char* player) {   // (the wallet, 0x5bf420: playe
     return IsBadReadPtr(money, 4) ? 0 : *money;
 }
 
-float PlayerHealth(const unsigned char* player) {   // (player +0x5c points to its health: +0x140, 200 when full)
-    auto obj = *reinterpret_cast<const unsigned char* const*>(player + 0x5c);
-    const float* health = obj ? reinterpret_cast<const float*>(obj + 0x140) : nullptr;
+// (player +0x105c points to its health: +0x50, 200 when full. +0x5c is the same object, 0xf0 before it - but not
+//  everywhere: Peter's in Chicken Fight is something else, 0 there - he counted as down, never corrected)
+float PlayerHealth(const unsigned char* player) {
+    auto obj = *reinterpret_cast<const unsigned char* const*>(player + 0x105c);
+    const float* health = obj ? reinterpret_cast<const float*>(obj + 0x50) : nullptr;
     return !health || IsBadReadPtr(health, 4) ? 0.0f : *health;
 }
 
@@ -1645,6 +1647,7 @@ bool g_sessionInf = false;       // an Infiltration one
 bool g_sessionCtf = false;       // a Capture the Flag one (the Greased-Up Deaf Guy)
 volatile LONG g_sessionLevelAsked = 0;  // the menu launched the level (taken at the next tick)
 unsigned g_levelTick = 0;
+extern unsigned short g_storyEpoch;
 
 void TakeSessionPresses() {      // main thread, start of a tick
     EnterCriticalSection(&g_pressLock);
@@ -1667,6 +1670,29 @@ void TakeSessionPresses() {      // main thread, start of a tick
     // story co-op: once the level runs, every other player presses Start to drop in, again every 3 s until
     // the game has given them their viewport (the viewport count is game state, the same on every PC)
     const int kViewportCount = 0xb53e60;
+    if (g_free) {   // free-running: ticks are frames (not 60 a second) and each PC presses on its own - by the clock: once
+        // this level instance has been up 5 s (its first view there, no cutscene, no menu - a START then would skip
+        // the cutscene for everyone, or work the menu), then every 3 s; a new level instance (MISSION SELECT,
+        // CONTINUE, a restart) starts over - the last one's views can still be up while it loads
+        static unsigned epoch = ~0u;
+        static ULONGLONG upSince = 0, next = 0;
+        ULONGLONG now = GetTickCount64();
+        int views = *reinterpret_cast<volatile int*>(kViewportCount);
+        if (epoch != g_storyEpoch) { epoch = g_storyEpoch; upSince = 0; next = now + 3000; }
+        bool up = g_sessionStory && g_levelTick && views >= 1 && !SplitViewCutscenePlaying() && !OnlinePauseMenusUp();
+        if (!up) { upSince = 0; return; }
+        if (!upSince) upSince = now;
+        if (now - upSince < 5000 || now < next) return;
+        next = now + 3000;
+        for (int s = 1; s < g_players; ++s)
+            if (views < s + 1) {
+                g_pressActive.push_back({s, XINPUT_GAMEPAD_START, 0, g_tick});
+                g_current[s].buttons |= XINPUT_GAMEPAD_START;
+                Log(L"Netplay: session - player %d drops in (tick %u)", s, g_tick);
+                break;
+            }
+        return;
+    }
     const unsigned wait = 10 * g_rate, every = 3 * g_rate;   // 10 s in, then every 3 s
     if (g_sessionStory && g_levelTick && g_tick >= g_levelTick + wait && (g_tick - g_levelTick - wait) % every == 0) {
         int views = *reinterpret_cast<volatile int*>(kViewportCount);
@@ -2889,8 +2915,8 @@ const int kNpcHealthObj = 0x420, kNpcHealth = 0x60;
 #pragma pack(push, 1)
 struct NpcState { unsigned hostNpc; float pos[3]; float health; float yaw; };
 struct PktNpcStates { PktHeader h; unsigned seq; unsigned sentMs; unsigned short epoch; BYTE count; NpcState s[48]; };
-struct PktNpcHit { PktHeader h; unsigned seq; unsigned hostNpc; float lost; BYTE info[kHitInfo]; };
-struct PktNpcDown { PktHeader h; unsigned seq; unsigned hostNpc; };
+struct PktNpcHit { PktHeader h; unsigned seq; unsigned hostNpc; float lost; BYTE info[kHitInfo]; unsigned short epoch; };
+struct PktNpcDown { PktHeader h; unsigned seq; unsigned hostNpc; unsigned short epoch; };   // (epoch: story, the level instance)
 #pragma pack(pop)
 const int kPktNpcStatesHead = (int)offsetof(PktNpcStates, s), kPktNpcHitSize = (int)sizeof(PktNpcHit);
 const int kPktNpcDownSize = (int)sizeof(PktNpcDown);
@@ -3004,11 +3030,13 @@ void NpcSendDown(unsigned char* npc, float before) {   // (the host: one of its 
     k.h = {'k', (BYTE)g_slot};
     k.seq = ++g_npcDownSeq;
     k.hostNpc = *reinterpret_cast<unsigned*>(npc + 0x18);
+    k.epoch = g_storyEpoch;
     SendAll(&k, sizeof(k));
     SendAll(&k, sizeof(k));
 }
 void FreeNpcDownIn(int s, const PktNpcDown* p) {
     if (s != 0 || g_slot == 0 || !p->seq) return;
+    if (g_sessionStory && p->epoch != g_storyEpoch) return;   // (an enemy of a level instance not this PC's now)
     for (unsigned seen : g_npcDownSeen) if (seen == p->seq) return;
     g_npcDownSeen[p->seq % 64] = p->seq;
     auto it = g_npcOfHost.find(p->hostNpc);
@@ -3047,6 +3075,7 @@ void __cdecl Free_EntityDamage(unsigned char* victim, unsigned char* info) {
             v.seq = ++g_npcHitSeq;
             v.hostNpc = host;
             v.lost = hp && before > *hp ? before - *hp : 0.f;
+            v.epoch = g_storyEpoch;
             memcpy(v.info, hit, kHitInfo);
             memset(v.info, 0, 4);
             memset(v.info + 0x58, 0, 4);
@@ -3065,6 +3094,7 @@ void __cdecl Free_EntityDamage(unsigned char* victim, unsigned char* info) {
 
 void FreeNpcHitIn(int s, const PktNpcHit* p) {
     if (g_slot != 0 || s <= 0 || s >= 4) return;
+    if (g_sessionStory && p->epoch != g_storyEpoch) return;   // (a hit on an enemy of a level instance gone here)
     for (unsigned seen : g_npcHitSeen[s]) if (seen == p->seq) return;
     g_npcHitSeen[s][p->seq % 32] = p->seq;
     auto it = g_npcOfHost.find(p->hostNpc);
@@ -3233,6 +3263,36 @@ void FreeTestKillNpcs() {
         ++n;
     }
     Log(L"Netplay: test - killnpcs: %d enemies down", n);
+}
+
+// Test pipe "hitnpc <id> <amount>": my player hits that enemy (its id on this PC) for that much - as one of my shots
+// would land (Free_EntityDamage: here at once, the host's game from me). Its shape is the last hit's on an enemy.
+volatile LONG g_testHitNpc = 0, g_testHitNpcAmount = 0;
+void FreeTestHitNpc() {
+    LONG id = InterlockedExchange(&g_testHitNpc, 0);
+    if (!id) return;
+    float amount = (float)InterlockedCompareExchange(&g_testHitNpcAmount, 0, 0);
+    unsigned char* me = PlayerBySlot(g_slot);
+    unsigned char* npc = nullptr;
+    for (unsigned char* o : SceneNpcs())
+        if (*reinterpret_cast<unsigned*>(o + 0x18) == (unsigned)id) npc = o;
+    for (auto& kv : g_npcOfHost)
+        if (!npc && *reinterpret_cast<unsigned*>(kv.second + 0x18) == (unsigned)id) npc = kv.second;
+    const BYTE* shape = g_haveLastNpcHitInfo ? g_lastNpcHitInfo : g_haveLastHitInfo ? g_lastHitInfo : nullptr;
+    if (!me || !NpcAlive(npc) || !shape) {
+        Log(L"Netplay: test - hitnpc %x: %s", id, !me ? L"no player of mine" : !shape ? L"no hit seen here yet to copy" : L"no such enemy");
+        return;
+    }
+    BYTE* info = ReplayInfo();
+    memcpy(info, shape, kHitInfo);
+    *reinterpret_cast<unsigned char**>(info) = me;
+    memset(info + 0x58, 0, 4);
+    memcpy(info + 4, &amount, 4);
+    memcpy(info + 0x1c, &amount, 4);
+    float* hp = NpcHealthField(npc);
+    float before = hp ? *hp : -1;
+    Free_EntityDamage(npc, info);
+    Log(L"Netplay: test - hitnpc %x for %.0f: health %.1f -> %.1f", id, amount, before, hp ? *hp : -1);
 }
 
 // Multiverse Madness' rounds: the level's script sends the game mode's events - "FGUY: MP: Increment Round Number"
@@ -4273,18 +4333,21 @@ void FreeApplyRemotes(float dt) {
         ++r.errCount;
         // Far off (a respawn, a big lag), or above / below where their PC has them (fell somewhere they didn't - a slide
         // can't come back up through the floor - or the game wanted to put them back in the level: that's their PC's call,
-        // FreeRescue): straight there - unless someone's standing there.
+        // FreeRescue): straight there - unless someone's standing there (then slid there: the game's collision keeps
+        // them apart - they stayed where they were for good, in a fist fight right next to the other player).
         bool jump = dist > 4 || fabsf(dy) > 1.5f || r.rescue;
         r.rescue = false;
+        bool clear = true;
         if (jump) {
-            bool clear = true;
             unsigned char* list[8];
             int n = GamePlayers(list, 8);
             for (int i = 0; i < n; ++i) {
                 const float* o = list[i] == p ? nullptr : PlayerPos(list[i]);
                 if (o && fabsf(o[0] - r.pos[0]) < 1.6f && fabsf(o[2] - r.pos[2]) < 1.6f && fabsf(o[1] - r.pos[1]) < 2.5f) clear = false;
             }
-            if (clear && TeleportPlayer(p, r.pos)) ++r.teleports;
+        }
+        if (jump && clear && TeleportPlayer(p, r.pos)) {
+            ++r.teleports;
         } else if (dist > 0.05f) {   // close: slide the rest of the way (the game's own collision on the way)
             float m = dt * 8 < 1 ? dt * 8 : 1;
             pos[0] += dx * m;
@@ -4540,6 +4603,7 @@ void FreeTick() {
     FreeStats();
     if (g_npcSync) {
         FreeTestKillNpcs();
+        FreeTestHitNpc();
         FreeSendNpcStates();
         FreeNpcFollow(dt);
     }
@@ -5248,6 +5312,10 @@ void NetplayTestGod(bool on) {
     Log(L"Netplay: test - my player %s", on ? L"takes no hits" : L"takes hits again");
 }
 void NetplayTestKillNpcs() { InterlockedExchange(&g_testKillNpcs, 1); }
+void NetplayTestHitNpc(unsigned id, int amount) {
+    InterlockedExchange(&g_testHitNpcAmount, amount);
+    InterlockedExchange(&g_testHitNpc, (LONG)id);
+}
 void NetplayTestNudge() { InterlockedExchange(&g_testNudge, 1); Log(L"Netplay: test - nudging my player on this PC"); }
 void NetplayTestStall(DWORD ms) {
     g_testStallUntil = GetTickCount64() + ms;

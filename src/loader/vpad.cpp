@@ -324,6 +324,12 @@ void HandleCommand(char* line) {
         NetplayTestKillNpcs();
         return;
     }
+    if (cmd && _stricmp(cmd, "hitnpc") == 0) {   // test tools: hitnpc <id hex> <amount> - my player hits that enemy
+        char* id = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* amount = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (id && amount) NetplayTestHitNpc((unsigned)strtoul(id, nullptr, 16), atoi(amount));
+        return;
+    }
     if (cmd && _stricmp(cmd, "nudge") == 0) {   // test tools: this PC's game goes out of sync with the others
         NetplayTestNudge();
         return;

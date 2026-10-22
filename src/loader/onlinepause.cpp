@@ -33,7 +33,10 @@ volatile LONG g_leave = 0;     // QUIT TO LOBBY chosen: leave the session (from 
 volatile LONG g_quit = 0;      // the HUD movie should quit the level now (GAME_Quit)
 int g_openCount = 0, g_players = 0;
 int g_injectSlot = -1, g_injectTicks = 0;
-int g_storyPauseTicks = 0;     // story co-op: my pause goes out with the next few inputs
+ULONGLONG g_storyPauseUntil = 0;   // story co-op: my pause goes out with my input until then (0.4 s: free-running,
+                                   //   the others see my latest input - one input's worth could be passed over)
+bool g_pauseKeyHeld = false;   // the START / Esc that paused: not the game's while still held (it would pause the
+                               //   others' games itself, as my player's press - outside the mod's pause)
 bool g_swallowBack = false;    // my SETTINGS closed over the game's pause menu: its back press stays mine
 volatile bool g_hudTakesStart = false;   // my weapons screen is up (the HUD): START is its own (leaves it), not ours
 // The end of the match's rematch vote: Y votes (KbmRaw.flags bit 4, with my input - every PC sees everyone's); once
@@ -314,7 +317,15 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
     if (cutscene) pausePress = false;
     bool startToGame = (g_hudTakesStart || cutscene) && !g_open;   // (START leaves my weapons screen: it goes to the game, as offline)
     if (startToGame && !pressed(VK_ESCAPE)) pausePress = false;
-    if (g_gamePaused) g_storyPauseTicks = 0;   // (my pause did it: the rest of its presses would pause again after RESUME)
+    if (g_pauseKeyHeld) {
+        if (!(*buttons & XINPUT_GAMEPAD_START) && !Key(keys, VK_ESCAPE)) {
+            g_pauseKeyHeld = false;
+        } else {
+            *buttons &= ~XINPUT_GAMEPAD_START;
+            kbm->keys[VK_ESCAPE >> 3] &= ~(1 << (VK_ESCAPE & 7));
+        }
+    }
+    if (GetTickCount64() < g_storyPauseUntil) kbm->flags |= 8;   // (on while my game is paused by it too)
     if (g_gamePaused && !(g_open && g_settings)) {   // the game's own pause menu is up: everything goes to it
         if (g_swallowBack) {   // (the Esc / B that closed my SETTINGS: not the game's menu's back too)
             bool held = (*buttons & (XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_START)) || Key(keys, VK_ESCAPE) || Key(keys, VK_BACK);
@@ -387,8 +398,9 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
     }
     // Story co-op pauses as it does offline: one player's pause pauses everyone's game, the game's own pause menu
     // (theirs to drive). The press goes out with my input (KbmRaw.flags bit 3) - OnlinePauseTick on every PC.
-    if (!g_open && pausePress && NetplayStoryCoop()) {
-        g_storyPauseTicks = 4;
+    if (!g_open && pausePress && NetplayStoryCoop() && !g_gamePaused) {
+        g_storyPauseUntil = GetTickCount64() + 400;
+        g_pauseKeyHeld = true;
         Log(L"Pause: story co-op - pausing the game for everyone");
     }
     if (!g_open) {
@@ -399,7 +411,7 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
             Log(L"Pause: menu open (the match goes on)");
         } else {
             if (g_partyTicks > 0) { g_partyTicks -= g_steps; kbm->flags |= 4; }
-            if (g_storyPauseTicks > 0) { g_storyPauseTicks -= g_steps; kbm->flags |= 8; }
+            if (GetTickCount64() < g_storyPauseUntil) kbm->flags |= 8;
             if (!startToGame) *buttons &= ~XINPUT_GAMEPAD_START;   // (only the menu answers the pause button online)
             if (keyboardPlayer && !cutscene) kbm->keys[VK_ESCAPE >> 3] &= ~(1 << (VK_ESCAPE & 7));
             return false;
@@ -485,11 +497,17 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
         if (NetplayFreeRun()) NetplayRematchVoted();   // (free-running: everyone back and the next match, together)
         else g_rematchGo = true;
     }
-    for (int s = 0; s < players && !g_gamePaused; ++s)   // story co-op: someone paused - everyone's game, theirs to drive
-        if (!gone[s] && (flags[s] & 8)) {
+    static BYTE pauseWas[4];   // story co-op: someone paused - everyone's game, theirs to drive (once a press: its bit
+    bool pauseNew[4] = {};     //   stays on a while, and after a quick RESUME it isn't a new pause)
+    for (int s = 0; s < players && s < 4; ++s) {
+        BYTE on = !gone[s] && (flags[s] & 8);
+        pauseNew[s] = on && !pauseWas[s];
+        pauseWas[s] = on;
+    }
+    for (int s = 0; s < players && s < 4 && !g_gamePaused; ++s)
+        if (pauseNew[s]) {
             g_gamePaused = true;
             g_open = false;
-            g_storyPauseTicks = 0;
             g_injectSlot = s;
             g_injectTicks = 4 * NetplayRate() / 60;
             Log(L"Pause: player %d paused the game (story co-op)", s);
@@ -511,11 +529,17 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
     return -1;
 }
 
-// ui.cpp: a menu command ran (GAME_Unpause: the game's pause menu resumed - the same tick everywhere).
+// ui.cpp: a menu command ran (GAME_Unpause: the game's pause menu resumed - the same tick everywhere; QUIT GAME,
+// RESTART LEVEL, MISSION SELECT leave the paused level - its pause goes with it: START in the next one pauses everyone).
 void OnlinePauseCommand(const char* command) {
-    if (g_gamePaused && command && strcmp(command, "GAME_Unpause") == 0) {
+    if (!g_gamePaused || !command) return;
+    if (strcmp(command, "GAME_Unpause") == 0) {
         g_gamePaused = false;
         Log(L"Pause: the game resumed");
+    } else if (strcmp(command, "GAME_Quit") == 0 || strcmp(command, "GAME_Portal") == 0 ||
+               strcmp(command, "GAME_Reload") == 0 || strcmp(command, "SCEN_Reset") == 0) {
+        g_gamePaused = false;
+        Log(L"Pause: the paused level is left (%S) - the pause goes with it", command);
     }
 }
 
