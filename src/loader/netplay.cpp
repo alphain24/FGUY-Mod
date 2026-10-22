@@ -3504,6 +3504,61 @@ void FreeStoryIn(int s, const PktStory* p, int n) {
 }
 
 // (each frame, the game's thread) the others' events played here, each player's in order (a gap: waited for a second)
+// Story co-op: a one-liner (zOneLiner's "Play OneLiner", 0x601650: thiscall - the one-liner, a target, a prefix, a
+// line set; ret 0xc) picks one of its lines at random (the C runtime's rand, [0x9dc394]) - each PC its own: the players
+// heard different lines. Played from the same events on every PC, its pick there comes from the same seed: the
+// one-liner's id, the level instance, how often it has played in it; the random numbers stirred again after.
+const uintptr_t kOneLinerPlay = 0x601650, kRandSlot = 0x9dc394, kSrandSlot = 0x9dc398;
+const unsigned char kOneLinerStart[] = {0x81, 0xec, 0x8c, 0x00, 0x00, 0x00};   // sub esp, 0x8c
+using OneLiner_t = char(__thiscall*)(void* liner, void* target, void* prefix, void* lines);
+OneLiner_t OneLinerOriginal = nullptr;
+std::map<unsigned, unsigned> g_oneLinerPlays;
+unsigned short g_oneLinerEpoch = 0xffff;
+char __fastcall Free_OneLiner(unsigned char* liner, void*, void* target, void* prefix, void* lines) {
+    if (!g_free || !g_sessionStory || !liner || IsBadReadPtr(liner, 0x20)) return OneLinerOriginal(liner, target, prefix, lines);
+    auto rnd = *reinterpret_cast<int(__cdecl**)()>(kRandSlot);
+    auto seed = *reinterpret_cast<void(__cdecl**)(unsigned)>(kSrandSlot);
+    if (g_oneLinerEpoch != g_storyEpoch) { g_oneLinerEpoch = g_storyEpoch; g_oneLinerPlays.clear(); }
+    unsigned id = *reinterpret_cast<unsigned*>(liner + 0x18), hi = *reinterpret_cast<unsigned*>(liner + 0x1c);
+    // (by the one-liner and who says it - a character's animation plays it, each PC's a little its own: an extra one on
+    //  one PC shifts only that character's next lines)
+    auto who = static_cast<unsigned char*>(target);
+    unsigned whoId = who && !IsBadReadPtr(who, 0x20) ? *reinterpret_cast<unsigned*>(who + 0x18) : 0;
+    unsigned n = g_oneLinerPlays[id * 31u + whoId * 2654435761u]++;
+    id ^= whoId * 0x27d4eb2du;
+    unsigned stir = (unsigned)rnd() * 2654435761u ^ (unsigned)GetTickCount64();
+    seed(id * 2654435761u ^ hi * 40503u ^ g_storyEpoch * 0x9e3779b1u ^ n * 0x85ebca6bu);
+    char r = OneLinerOriginal(liner, target, prefix, lines);
+    seed(stir);
+    static int logged = 0;
+    if (++logged <= 300)
+        Log(L"Netplay: free - story: one-liner %x (#%u) played - %d (target %p, called from %p)", id, n, r, target, _ReturnAddress());
+    return r;
+}
+
+bool InstallOneLinerHook() {
+    auto at = reinterpret_cast<unsigned char*>(kOneLinerPlay);
+    if (IsBadReadPtr(at, sizeof(kOneLinerStart)) || memcmp(at, kOneLinerStart, sizeof(kOneLinerStart)) != 0 ||
+        IsBadReadPtr(reinterpret_cast<void*>(kRandSlot), 8)) {
+        Log(L"Netplay: the one-liners' code isn't what we expect - each PC picks its own lines");
+        return false;
+    }
+    auto tramp = static_cast<unsigned char*>(VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!tramp) return false;
+    memcpy(tramp, kOneLinerStart, sizeof(kOneLinerStart));
+    tramp[6] = 0xE9;
+    *reinterpret_cast<int*>(tramp + 7) = (int)((kOneLinerPlay + 6) - (reinterpret_cast<uintptr_t>(tramp) + 11));
+    OneLinerOriginal = reinterpret_cast<OneLiner_t>(tramp);
+    DWORD old;
+    VirtualProtect(at, 6, PAGE_EXECUTE_READWRITE, &old);
+    at[0] = 0xE9;
+    *reinterpret_cast<int*>(at + 1) = (int)(reinterpret_cast<uintptr_t>(&Free_OneLiner) - (kOneLinerPlay + 5));
+    at[5] = 0x90;
+    VirtualProtect(at, 6, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, 6);
+    return true;
+}
+
 volatile LONG g_testEventPending = 0;   // (test pipe "sendevent": done on the game's thread)
 unsigned g_testEventLo = 0, g_testEventHi = 0, g_testEvent = 0;
 void FreeTestSendEvent() {
@@ -4534,7 +4589,7 @@ void Tick() {
     }
     bool freeNow = g_freeRejoin ? g_freeRejoinHud && g_tick >= g_freeRejoinHud + kFreeAfterTicks
                                 : g_liveTick && g_tick >= g_liveTick + kFreeAfterTicks;
-    if (g_freeWanted && g_inSession && (g_sessionDM || g_sessionHorde || g_sessionInf || g_sessionCtf) && !g_catchUp && freeNow) {
+    if (g_freeWanted && g_inSession && (g_sessionDM || g_sessionHorde || g_sessionInf || g_sessionCtf || g_sessionStory) && !g_catchUp && freeNow) {
         EnterCriticalSection(&g_netLock);
         FreeStart();
         LeaveCriticalSection(&g_netLock);
@@ -5316,6 +5371,7 @@ void InitNetplay(HMODULE exe) {
         if (g_npcSync) InstallMpEventHook();   // (Multiverse Madness' rounds: the host's)
         if (g_npcSync) InstallPointHooks();    // (Infiltration's control points: the host's)
         if (g_npcSync) InstallCarryHooks();    // (Capture the Flag's Deaf Guy: who carries him, captures - the host's)
+        if (g_npcSync) InstallOneLinerHook();  // (story co-op: the one-liners' lines the same on every PC)
         Log(L"Netplay: enemies %s", g_npcSync ? L"shared: the host's game makes them, the others show the host's"
                                               : L"not shared: each PC its own");
         if ((g_npcLog || g_npcBlock) && InstallNpcHooks())

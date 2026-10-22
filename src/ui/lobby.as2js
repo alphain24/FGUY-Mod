@@ -643,9 +643,9 @@ function FGUYInputName(input) {
     return input == 'k' ? 'Keyboard & mouse' : 'Controller';
 }
 
-// The modes the new netcode is for so far: the multiplayer ones (story co-op: the classic one).
+// The modes the new netcode is for: all of them (story co-op too).
 function FGUYNewNetMode(code) {
-    return code == 'DM' || code == 'HD' || code == 'IN' || code == 'CF';
+    return code == 'DM' || code == 'HD' || code == 'IN' || code == 'CF' || code == 'ST';
 }
 
 function FGUYSendConf() {

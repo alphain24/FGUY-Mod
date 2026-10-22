@@ -642,8 +642,8 @@ void StartSession(const std::vector<std::string>& f) {
         char forced[8] = "";
         bool free = (conf.size() > 6 && conf[6] == "1") || GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", forced, sizeof(forced)) > 0;
         bool anyMode = free && strcmp(forced, "all") == 0;   // (research: FGUYMOD_TEST_NETFREE=all - any mode)
-        if ((conf.empty() || (conf[0] != "DM" && conf[0] != "HD" && conf[0] != "IN" && conf[0] != "CF")) && !anyMode)
-            free = false;   // (the multiplayer modes; story co-op: the classic netcode only, for now)
+        if ((conf.empty() || (conf[0] != "DM" && conf[0] != "HD" && conf[0] != "IN" && conf[0] != "CF" && conf[0] != "ST")) && !anyMode)
+            free = false;   // (every mode: the multiplayer ones and story co-op)
         set(L"FGUYMOD_NET_FREE", free ? "1" : "0");
         // rejoining a free-running match: no catching up on the host's record - the session game loads the level on its
         // own and joins in (netplay.cpp FreeStart)
