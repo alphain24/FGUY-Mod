@@ -335,7 +335,7 @@ DWORD WINAPI LobbyThread(LPVOID) {
         char port[8];
         sprintf_s(port, "%d", g_serverPort);
         if (getaddrinfo(g_serverHost.c_str(), port, &hints, &res) != 0 || !res) {
-            SetStatus(State::Failed, "Can't find the server " + g_serverHost);
+            SetStatus(State::Failed, "Can't find the lobby server");   // (its address isn't shown: screenshots, streams)
             Sleep(3000);
             continue;
         }
@@ -346,14 +346,14 @@ DWORD WINAPI LobbyThread(LPVOID) {
         freeaddrinfo(res);
         if (!ok) {
             closesocket(s);
-            SetStatus(State::Failed, "Can't reach the server " + g_serverHost);
+            SetStatus(State::Failed, "Lobby server offline - try again later");
             Sleep(3000);
             continue;
         }
         int nodelay = 1;
         setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (const char*)&nodelay, sizeof(nodelay));
         g_sock = s;
-        Log(L"Online: connected to %S:%d as %S", g_serverHost.c_str(), g_serverPort, g_name.c_str());
+        Log(L"Online: connected to the lobby server as %S", g_name.c_str());   // (not its address: logs get shared)
         SendLine("HELLO " + std::to_string(kProto) + " " + GameKey() + " " + g_name);
         SendLine("LIST");
 
@@ -776,7 +776,7 @@ const char* LobbyState() {
     std::lock_guard<std::mutex> lock(g_lock);
     bool inLobby = g_state == State::InLobby || g_state == State::Starting;
     g_text = "S|" + std::string(StateName()) + "|" + Field(g_status) + "|" + g_code + "|" + std::to_string(g_mySlot) +
-             "|" + (g_private ? "1" : "0") + "|" + Field(g_name) + "|" + Field(g_serverHost) + "|" +
+             "|" + (g_private ? "1" : "0") + "|" + Field(g_name) + "|" + Field(std::string()) + "|"   /* (the server's address: not to the menu) */ +
              std::to_string(g_rtt) + "|" + (g_matchOpen && g_state == State::InLobby ? "1" : "0") + "|" +
              Field(g_state == State::Starting ? g_progress : std::string()) + "\n";
     g_text += "C|" + g_conf + "|" + g_confRate + "|" + g_confNet + "\n";
