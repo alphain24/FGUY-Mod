@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FGUY Skin Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<script type="importmap">
+{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+  "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
+}}
+</script>
+<style>
+:root {
+  --bg: #0b1730; --panel: #13284d; --panel2: #0f2140; --line: #2c4f86; --text: #e8f0ff; --muted: #8fa8d4;
+  --accent: #ffcf33; --accent2: #5cc8ff; --danger: #ff6b6b; --radius: 14px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 Nunito, system-ui, sans-serif; }
+button, input, select { font: inherit; color: inherit; }
+h1 { font: 28px 'Lilita One', sans-serif; margin: 0; letter-spacing: .5px; color: var(--accent2); text-shadow: 0 2px 0 #06101f; }
+h2 { font: 18px 'Lilita One', sans-serif; margin: 0 0 8px; color: var(--accent); letter-spacing: .4px; }
+.app { display: grid; grid-template-columns: 250px 1fr 340px; grid-template-rows: auto 1fr; height: 100vh; gap: 12px; padding: 12px; }
+header { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+header .sub { color: var(--muted); }
+.panel { background: var(--panel); border: 2px solid var(--line); border-radius: var(--radius); padding: 12px; overflow: auto; min-height: 0; }
+.btn { background: var(--panel2); border: 2px solid var(--line); border-radius: 10px; padding: 7px 12px; cursor: pointer; font-weight: 800; }
+.btn:hover { border-color: var(--accent2); }
+.btn.primary { background: var(--accent); color: #1b1300; border-color: #e0b000; }
+.btn.primary:hover { filter: brightness(1.05); }
+.btn:disabled { opacity: .45; cursor: default; }
+.list { display: flex; flex-direction: column; gap: 4px; }
+.item { text-align: left; background: transparent; border: 2px solid transparent; border-radius: 10px; padding: 6px 10px; cursor: pointer; font-weight: 700; }
+.item:hover { background: var(--panel2); }
+.item.on { border-color: var(--accent); background: var(--panel2); }
+.outfits { margin-left: 10px; display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.chip { font-size: 13px; padding: 3px 9px; border-radius: 999px; border: 2px solid var(--line); background: var(--panel2); cursor: pointer; font-weight: 700; }
+.chip.on { border-color: var(--accent); color: var(--accent); }
+#view { position: relative; border-radius: var(--radius); border: 2px solid var(--line); overflow: hidden; background: radial-gradient(ellipse at 50% 35%, #26508e, #0b1730 75%); min-height: 0; }
+#view canvas { display: block; width: 100%; height: 100%; }
+.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; }
+.card { background: rgba(11, 23, 48, .92); border: 2px solid var(--line); border-radius: var(--radius); padding: 22px 26px; max-width: 520px; }
+.card p { color: var(--muted); }
+.viewopt { position: absolute; right: 12px; bottom: 8px; color: var(--muted); font-size: 13px; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.hint { position: absolute; left: 12px; bottom: 10px; color: var(--muted); font-size: 13px; pointer-events: none; }
+.tex-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+.tex { border: 2px solid var(--line); border-radius: 8px; overflow: hidden; cursor: pointer; background: #0a1328; aspect-ratio: 1; position: relative; }
+.tex.on { border-color: var(--accent); }
+.tex canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+.tex .mod { position: absolute; top: 3px; right: 3px; background: var(--accent); color: #1b1300; font-size: 10px; font-weight: 800; border-radius: 6px; padding: 0 5px; }
+#bigTex { width: 100%; border-radius: 10px; border: 2px solid var(--line); background: repeating-conic-gradient(#1a2a48 0 25%, #12203b 0 50%) 0 0 / 16px 16px; cursor: crosshair; image-rendering: pixelated; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.swatch { width: 34px; height: 34px; border-radius: 8px; border: 2px solid var(--line); }
+input[type=color] { width: 44px; height: 34px; border: 2px solid var(--line); border-radius: 8px; background: none; padding: 0; cursor: pointer; }
+input[type=range] { flex: 1; accent-color: var(--accent); }
+input[type=text] { background: var(--panel2); border: 2px solid var(--line); border-radius: 8px; padding: 6px 9px; width: 100%; }
+.muted { color: var(--muted); font-size: 13px; }
+.sep { border-top: 2px solid var(--line); margin: 12px 0; }
+.status { color: var(--muted); font-size: 13px; min-height: 18px; }
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto auto 60vh auto; height: auto; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>FGUY SKIN STUDIO</h1>
+    <span class="sub">Make skins for Family Guy: Back to the Multiverse - your game's files stay on your PC</span>
+    <span style="flex:1"></span>
+    <button class="btn primary" id="openFolder">Open game folder</button>
+    <label class="btn" style="display:inline-block">Or pick PLYS.ho <input type="file" id="openFile" accept=".ho" hidden></label>
+  </header>
+
+  <aside class="panel">
+    <h2>Characters</h2>
+    <div class="list" id="chars"><div class="muted">Open your game folder to start.</div></div>
+  </aside>
+
+  <main id="view">
+    <div class="overlay" id="welcome"><div class="card">
+      <h2>Welcome!</h2>
+      <p>Click <b>Open game folder</b> and choose the folder Family Guy is installed in
+      (the one with <code>FGUY.exe</code>). The studio reads the characters from your own copy of the game -
+      nothing is uploaded anywhere.</p>
+      <p class="muted">Chrome or Edge. In other browsers use "Or pick PLYS.ho" (it's in <code>FGUY\Global_Scenes\Players</code>).</p>
+    </div></div>
+    <div class="hint" id="hint">Drag to turn - scroll to zoom - click the character to pick a color</div>
+    <label class="viewopt"><input type="checkbox" id="showDamage"> Show battle damage</label>
+  </main>
+
+  <aside class="panel" id="side">
+    <h2>Textures</h2>
+    <div class="tex-grid" id="texList"></div>
+    <canvas id="bigTex" width="512" height="512"></canvas>
+    <div class="status" id="pickInfo">Click the texture or the character to pick a color.</div>
+
+    <h2 style="margin-top:12px">Recolor</h2>
+    <div class="row">
+      <div class="swatch" id="fromColor" title="the color you picked"></div>
+      <span>&rarr;</span>
+      <input type="color" id="toColor" value="#3a7bd5" title="the new color">
+      <button class="btn primary" id="apply" disabled>Recolor</button>
+    </div>
+    <div class="row"><span class="muted" style="width:72px">How close</span><input type="range" id="tolerance" min="2" max="80" value="22"></div>
+    <div class="row">
+      <button class="btn" id="undo" disabled>Undo</button>
+      <button class="btn" id="reset" disabled>Reset texture</button>
+    </div>
+
+    <div class="sep"></div>
+    <h2>Paint it yourself</h2>
+    <div class="row">
+      <button class="btn" id="exportPng" disabled>Export PNG</button>
+      <label class="btn" id="importLabel">Import PNG <input type="file" id="importPng" accept="image/*" hidden></label>
+    </div>
+    <div class="muted">Export, paint it in any art program, import it back (same size works best).</div>
+
+    <div class="sep"></div>
+    <h2>Skin pack</h2>
+    <div class="row"><input type="text" id="packName" placeholder="Skin name, e.g. Blue Tux Stewie" maxlength="40"></div>
+    <div class="row">
+      <button class="btn primary" id="savePack" disabled>Save skin pack</button>
+      <label class="btn">Open pack <input type="file" id="openPack" accept=".fgskin,.zip" hidden></label>
+    </div>
+    <div class="status" id="status"></div>
+  </aside>
+</div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
