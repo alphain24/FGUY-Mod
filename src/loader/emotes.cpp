@@ -26,13 +26,18 @@ struct Emote {
     std::shared_ptr<const MotionClip> clip;
     FILETIME written{};
     DWORD size = 0;
+    std::vector<unsigned char> data;                     // (the pack: sent to the others online)
 };
 std::vector<Emote> g_emotes;
 ULONGLONG g_scannedAt = 0;
 
 volatile LONG g_request[4] = {-1, -1, -1, -1};   // (a slot's press, per player: 0-3, -1 none)
-struct Playing { int emote = -1; float x = 0, z = 0; bool stopOnMove = false; };
+struct Playing { bool on = false; int emote = -1; float x = 0, z = 0; bool stopOnMove = false; };   // (emote: mine, -1 theirs)
 Playing g_playing[4];
+CRITICAL_SECTION g_remoteLock;   // (another player's emote, from the network: played on the next frame)
+bool g_remoteInit = false;
+struct Remote { bool pending = false; std::vector<unsigned char> pack; };   // (pack empty: stop)
+Remote g_remote[4];
 
 // a tiny reader for emote.json's few values (the Studio writes it; not a general JSON reader)
 size_t Find(const std::string& js, const char* key) {
@@ -76,15 +81,9 @@ bool EmoteOn(const std::wstring& file) {
     return GetPrivateProfileIntW(L"Emotes", file.c_str(), 1, IniPath().c_str()) != 0;
 }
 
-bool LoadEmote(const std::wstring& path, Emote& e) {
-    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (f == INVALID_HANDLE_VALUE) return false;
-    DWORD size = GetFileSize(f, nullptr), got = 0;
-    std::vector<unsigned char> d(size < 32 * 1024 * 1024 ? size : 0);
-    bool ok = !d.empty() && ReadFile(f, d.data(), size, &got, nullptr) && got == size;
-    CloseHandle(f);
+bool ParseEmote(const std::vector<unsigned char>& d, Emote& e) {
     std::vector<unsigned char> json, motion;
-    if (!ok || !ZipRead(d, "emote.json", json) || !ZipRead(d, "motion.bin", motion)) return false;
+    if (!ZipRead(d, "emote.json", json) || !ZipRead(d, "motion.bin", motion)) return false;
     std::string js(json.begin(), json.end());
     e.name = JsString(js, "name");
     e.character = JsString(js, "character");
@@ -98,6 +97,18 @@ bool LoadEmote(const std::wstring& path, Emote& e) {
     for (double u : uses)
         if (u >= 0 && u < e.uses.size()) e.uses[(size_t)u] = true;
     e.legs = JsBool(js, "legs") || (e.uses.size() > 1 && e.uses[1]);   // (game bone 1: the skeleton's root)
+    return true;
+}
+
+bool LoadEmote(const std::wstring& path, Emote& e) {
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    DWORD size = GetFileSize(f, nullptr), got = 0;
+    std::vector<unsigned char> d(size < 32 * 1024 * 1024 ? size : 0);
+    bool ok = !d.empty() && ReadFile(f, d.data(), size, &got, nullptr) && got == size;
+    CloseHandle(f);
+    if (!ok || !ParseEmote(d, e)) return false;
+    e.data.swap(d);
     return true;
 }
 
@@ -164,17 +175,35 @@ void Start(int slot, int nth) {
     }
     int i = mine[nth];
     Playing& pl = g_playing[slot];
-    if (pl.emote == i && MotionPlaying(slot)) {   // (its slot again: stop)
+    bool online = NetplayEnabled() && slot == NetplayLocalSlot();
+    if (pl.on && pl.emote == i && MotionPlaying(slot)) {   // (its slot again: stop)
         MotionStop(slot);
-        pl.emote = -1;
+        pl.on = false;
+        if (online) NetplayEmote(nullptr);
         return;
     }
     const Emote& e = g_emotes[i];
     MotionPlay(slot, e.clip, e.uses, e.loop);
-    pl.emote = i;
-    pl.stopOnMove = e.loop || e.legs;
+    pl = {true, i, 0, 0, e.loop || e.legs};
     Where(slot, &pl.x, &pl.z);
+    if (online) NetplayEmote(&e.data);   // (everyone's PC plays it on my player too)
     Log(L"Emotes: player %d - \"%S\"", slot, e.name.c_str());
+}
+
+// another player's emote (online), on this PC: as theirs plays it
+void PlayRemote(int slot, const std::vector<unsigned char>& pack) {
+    Playing& pl = g_playing[slot];
+    if (pack.empty()) {
+        if (pl.on) MotionStop(slot);
+        pl.on = false;
+        return;
+    }
+    Emote e;
+    if (!ParseEmote(pack, e)) { Log(L"Emotes: player %d's emote pack can't be read here", slot); return; }
+    MotionPlay(slot, e.clip, e.uses, e.loop);
+    pl = {true, -1, 0, 0, e.loop || e.legs};
+    Where(slot, &pl.x, &pl.z);
+    Log(L"Emotes: player %d (online) - \"%S\"", slot, e.name.c_str());
 }
 
 // whose presses: offline a controller is its player (pad n: slot n), the keyboard player 0; online, mine
@@ -215,6 +244,15 @@ void EmotesPad(DWORD pad, XINPUT_STATE* st) {
     if (backUntil[pad] > GetTickCount64()) b |= XINPUT_GAMEPAD_BACK;
 }
 
+void EmotesRemote(int slot, const std::vector<unsigned char>* pack) {
+    if (slot < 0 || slot >= 4) return;
+    if (!g_remoteInit) { InitializeCriticalSection(&g_remoteLock); g_remoteInit = true; }
+    EnterCriticalSection(&g_remoteLock);
+    g_remote[slot].pending = true;
+    if (pack) g_remote[slot].pack = *pack; else g_remote[slot].pack.clear();
+    LeaveCriticalSection(&g_remoteLock);
+}
+
 void EmotesRequest(int slot, int nth) {   // (test pipe "emote <slot> <1-4>")
     if (slot >= 0 && slot < 4 && nth >= 0 && nth < 4) InterlockedExchange(&g_request[slot], nth);
 }
@@ -229,16 +267,22 @@ void EmotesFrame() {
         if (down && !keyDown[k]) InterlockedExchange(&g_request[SlotFor(0) & 3], k);
         keyDown[k] = down;
     }
+    if (!g_remoteInit) { InitializeCriticalSection(&g_remoteLock); g_remoteInit = true; }
     for (int s = 0; s < 4; ++s) {
         LONG nth = InterlockedExchange(&g_request[s], -1);
         if (nth >= 0) Start(s, nth);
+        EnterCriticalSection(&g_remoteLock);
+        Remote r;
+        std::swap(r, g_remote[s]);
+        LeaveCriticalSection(&g_remoteLock);
+        if (r.pending) PlayRemote(s, r.pack);
         Playing& pl = g_playing[s];
-        if (pl.emote < 0) continue;
-        if (!MotionPlaying(s)) { pl.emote = -1; continue; }
-        float x, z;
+        if (!pl.on) continue;
+        if (!MotionPlaying(s)) { pl.on = false; continue; }
+        float x, z;   // (moving stops it - on every PC alike: the same player, the same game)
         if (pl.stopOnMove && Where(s, &x, &z) && (x - pl.x) * (x - pl.x) + (z - pl.z) * (z - pl.z) > 0.25f * 0.25f) {
             MotionStop(s);
-            pl.emote = -1;
+            pl.on = false;
         }
     }
 }

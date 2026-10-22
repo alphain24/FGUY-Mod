@@ -1218,6 +1218,149 @@ void SkinStart() {
     Log(L"Netplay: my skin pack %s (%u bytes) - everyone gets it", path, (unsigned)g_skinMine.size());
 }
 
+// ---- emotes: a player's emote, played on every PC (emotes.cpp) ------------------------------------------------------
+// 'm': I play an emote (its pack's CRC and size) or stop it - sent three times (a sequence number: once each). A PC
+// without that pack asks me for its pieces ('b'), I send them ('d', 1 KB each); it plays it as soon as it's whole.
+// Packs seen once are kept for the match. Emotes don't touch the game's state: nothing in the lockstep.
+#pragma pack(push, 1)
+struct PktEmote { PktHeader h; unsigned seq, crc, size; BYTE on; };
+struct PktEmoteAsk { PktHeader h; BYTE to; unsigned crc, first; unsigned short count; };
+struct PktEmotePiece { PktHeader h; BYTE to; unsigned crc, total, index; unsigned short len; BYTE data[1024]; };
+#pragma pack(pop)
+const int kPktEmotePieceHead = (int)offsetof(PktEmotePiece, data);
+std::vector<std::pair<unsigned, std::vector<unsigned char>>> g_emotePacks;   // (CRC, pack: mine and those received)
+struct EmoteIn { unsigned seq = 0, crc = 0, size = 0; std::vector<unsigned char> data; std::vector<bool> have; unsigned left = 0;
+                 ULONGLONG askedAt = 0, since = 0; bool waiting = false; };
+EmoteIn g_emoteIn[4];
+PktEmote g_emoteOut{};
+int g_emoteResend = 0;
+ULONGLONG g_emoteSentAt = 0;
+
+const std::vector<unsigned char>* EmotePack(unsigned crc) {
+    for (const auto& p : g_emotePacks) if (p.first == crc) return &p.second;
+    return nullptr;
+}
+
+void EmoteIn_(int s, const PktEmote* p) {
+    if (s < 0 || s >= 4 || s == g_slot) return;
+    SkinLock();
+    EmoteIn& in = g_emoteIn[s];
+    if (p->seq != in.seq) {
+        in.seq = p->seq;
+        Log(L"Netplay: player %d's emote %08x (%u bytes)%s", s, p->crc, p->size,
+            !p->on ? L" stopped" : EmotePack(p->crc) ? L" - have it" : L" - fetching it");
+        if (!p->on) {
+            in.waiting = false;
+            LeaveCriticalSection(&g_skinLock);
+            EmotesRemote(s, nullptr);
+            return;
+        }
+        if (const std::vector<unsigned char>* have = EmotePack(p->crc)) {
+            std::vector<unsigned char> copy = *have;
+            in.waiting = false;
+            LeaveCriticalSection(&g_skinLock);
+            EmotesRemote(s, &copy);
+            return;
+        }
+        if (p->size && p->size <= 16 * 1024 * 1024 && (in.crc != p->crc || !in.waiting)) {   // (a pack to fetch first)
+            in.crc = p->crc;
+            in.size = p->size;
+            in.data.assign(in.size, 0);
+            in.have.assign((in.size + kSkinPiece - 1) / kSkinPiece, false);
+            in.left = (unsigned)in.have.size();
+            in.askedAt = 0;
+        }
+        in.waiting = true;
+        in.since = GetTickCount64();
+    }
+    LeaveCriticalSection(&g_skinLock);
+}
+
+void EmoteAskIn(int s, const PktEmoteAsk* p) {
+    if (p->to != g_slot) return;
+    SkinLock();
+    const std::vector<unsigned char>* pack = EmotePack(p->crc);
+    std::vector<unsigned char> d = pack ? *pack : std::vector<unsigned char>();
+    LeaveCriticalSection(&g_skinLock);
+    unsigned pieces = ((unsigned)d.size() + kSkinPiece - 1) / kSkinPiece;
+    for (unsigned i = p->first; i < p->first + min((unsigned)p->count, 48u) && i < pieces; ++i) {
+        PktEmotePiece u{};
+        u.h = {'d', (BYTE)g_slot};
+        u.to = (BYTE)s;
+        u.crc = p->crc;
+        u.total = (unsigned)d.size();
+        u.index = i;
+        u.len = (unsigned short)min((unsigned)kSkinPiece, (unsigned)d.size() - i * kSkinPiece);
+        memcpy(u.data, d.data() + i * kSkinPiece, u.len);
+        SendAll(&u, kPktEmotePieceHead + u.len);
+    }
+}
+
+void EmotePieceIn(int s, const PktEmotePiece* p, int n) {
+    if (p->to != g_slot || s < 0 || s >= 4 || n < kPktEmotePieceHead + p->len) return;
+    SkinLock();
+    EmoteIn& in = g_emoteIn[s];
+    if (p->crc == in.crc && p->total == in.size && p->index < in.have.size() && !in.have[p->index] && p->len <= kSkinPiece) {
+        memcpy(in.data.data() + (size_t)p->index * kSkinPiece, p->data, p->len);
+        in.have[p->index] = true;
+        --in.left;
+    }
+    LeaveCriticalSection(&g_skinLock);
+}
+
+// every frame (the render thread): my play / stop again (three times in all), the packs still coming in
+void EmoteFrame() {
+    if (!g_enabled) return;
+    ULONGLONG now = GetTickCount64();
+    if (g_emoteResend > 0 && now - g_emoteSentAt >= 70) {
+        g_emoteSentAt = now;
+        --g_emoteResend;
+        SendAll(&g_emoteOut, sizeof(g_emoteOut));
+    }
+    for (int s = 0; s < 4; ++s) {
+        SkinLock();
+        EmoteIn& in = g_emoteIn[s];
+        std::vector<unsigned char> play;
+        if (in.waiting && now - in.since > 10000) in.waiting = false;   // (too late now)
+        if (in.waiting && in.left == 0 && in.size) {
+            if (SkinCrc(in.data) == in.crc) {
+                if (!EmotePack(in.crc)) g_emotePacks.push_back({in.crc, in.data});
+                play = in.data;
+                in.waiting = false;
+                Log(L"Netplay: player %d's emote pack is here (%u bytes)", s, in.size);
+            } else {   // (garbled: again)
+                in.have.assign(in.have.size(), false);
+                in.left = (unsigned)in.have.size();
+            }
+        } else if (in.waiting && in.size && now - in.askedAt >= 150) {
+            in.askedAt = now;
+            unsigned first = 0;
+            while (first < in.have.size() && in.have[first]) ++first;
+            PktEmoteAsk a{{'b', (BYTE)g_slot}, (BYTE)s, in.crc, first, 48};
+            SendAll(&a, sizeof(a));
+        }
+        LeaveCriticalSection(&g_skinLock);
+        if (!play.empty()) EmotesRemote(s, &play);
+    }
+}
+
+}  // namespace
+
+// emotes.cpp: I play an emote (its pack) - or stop (nullptr): everyone's PC plays it on my player too
+void NetplayEmote(const std::vector<unsigned char>* pack) {
+    if (!g_enabled) return;
+    SkinLock();
+    unsigned crc = pack ? SkinCrc(*pack) : 0;
+    if (pack && !EmotePack(crc)) g_emotePacks.push_back({crc, *pack});
+    g_emoteOut = {{'m', (BYTE)g_slot}, g_emoteOut.seq + 1, crc, pack ? (unsigned)pack->size() : 0u, (BYTE)(pack ? 1 : 0)};
+    g_emoteResend = 3;
+    g_emoteSentAt = 0;
+    LeaveCriticalSection(&g_skinLock);
+    Log(L"Netplay: my emote %08x (%u bytes)%s - everyone sees it", crc, pack ? (unsigned)pack->size() : 0u, pack ? L"" : L" stopped");
+}
+
+namespace {
+
 void Receive() {
     char buf[1500];
     EnterCriticalSection(&g_netLock);
@@ -1321,6 +1464,12 @@ void Receive() {
             SkinAskIn(slot, reinterpret_cast<PktSkinAsk*>(buf));
         } else if (h->type == 'u' && n >= kPktSkinPieceHead) {          // a piece of a player's skin pack
             SkinPieceIn(slot, reinterpret_cast<PktSkinPiece*>(buf), n);
+        } else if (h->type == 'm' && n >= (int)sizeof(PktEmote)) {      // a player plays an emote (or stops)
+            EmoteIn_(slot, reinterpret_cast<PktEmote*>(buf));
+        } else if (h->type == 'b' && n >= (int)sizeof(PktEmoteAsk)) {   // a player asks for pieces of my emote pack
+            EmoteAskIn(slot, reinterpret_cast<PktEmoteAsk*>(buf));
+        } else if (h->type == 'd' && n >= kPktEmotePieceHead) {         // a piece of a player's emote pack
+            EmotePieceIn(slot, reinterpret_cast<PktEmotePiece*>(buf), n);
         } else if (h->type == 'h' && n >= kPktSaveAskSize) {   // story co-op: a player rejoining asks for the host's save
             if (g_slot == 0) StorySaveAskIn(slot, reinterpret_cast<PktSaveAsk*>(buf));
         } else if (h->type == 'c' && n >= kPktSaveChunkHead) {   // a piece of the host's save (for me, rejoining)
@@ -5642,6 +5791,7 @@ bool NetplayPadConnected(DWORD pad) { return (g_enabled || g_left) && pad < 4 &&
 void NetplayOnFrame() {
     if (!g_enabled) return;
     SkinFrame();   // (everyone's skin packs)
+    EmoteFrame();  // (everyone's emotes)
     if (!g_renderThread) {
         g_renderThread = GetCurrentThreadId();
         Log(L"Netplay: render thread %lu, game thread %lu", g_renderThread, g_mainThread);

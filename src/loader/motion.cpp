@@ -112,6 +112,9 @@ void __cdecl Hook_PoseBuild(unsigned char* ent, float* rot, float* pos, float* s
         if (tr.freeze) {
             if (tr.frozen.empty()) { tr.frozen.resize(bones * kFloats); Gather(rot, pos, scale, bones, tr.frozen.data()); }
             if ((int)tr.frozen.size() == bones * kFloats) Scatter(tr.frozen.data(), bones, rot, pos, scale);
+        } else if (tr.play && tr.play->bones != bones) {
+            Log(L"Motion: a motion of %d bones doesn't fit this character (%d) - not played", tr.play->bones, bones);
+            tr.play.reset();
         } else if (tr.play && tr.play->bones == bones) {
             double now = Now(), e = now - tr.playStart, length = tr.play->times.back() - tr.play->times.front();
             if (!tr.loop && !tr.stopAt && e >= length) tr.stopAt = tr.playStart + length;   // (its end: back to the game's)
