@@ -324,6 +324,11 @@ void HandleCommand(char* line) {
         NetplayTestKillNpcs();
         return;
     }
+    if (cmd && _stricmp(cmd, "freeze") == 0) {   // test tools: freeze <ms> - the game loop stops a while (a window held)
+        char* ms = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (ms) NetplayTestFreeze(atoi(ms));
+        return;
+    }
     if (cmd && _stricmp(cmd, "hitnpc") == 0) {   // test tools: hitnpc <id hex> <amount> - my player hits that enemy
         char* id = strtok_s(nullptr, " \t\r\n", &ctx);
         char* amount = strtok_s(nullptr, " \t\r\n", &ctx);

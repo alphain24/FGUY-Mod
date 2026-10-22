@@ -81,6 +81,7 @@ void NetplayStoryLevelChange(const char* what);   // ui.cpp: the menu restarts t
 void NetplayTestPointOn(unsigned id);                 //   test pipe "pointon <id>": the host's control point on
 void NetplayTestKillNpcs();                          //   test pipe "killnpcs": the host's enemies all down
 void NetplayTestHitNpc(unsigned id, int amount);     //   test pipe "hitnpc <id> <amount>": my player hits that enemy
+void NetplayTestFreeze(int ms);                      //   test pipe "freeze <ms>": the game loop stops a while
 void NetplayLevelFileOpened(const wchar_t* path);   // config.cpp: a file opened (a level's package: story co-op)
 void NetplayTestHurt(int player, float amount);   //   test pipe "hurt": my player there takes a hit nobody caused
 void OnlineMenuLogYaw();               //   test pipe "yaw": the lobby preview's facing (onlinemenu.cpp)

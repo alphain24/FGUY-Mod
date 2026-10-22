@@ -556,6 +556,7 @@ volatile LONG g_pingMs[4] = {-1, -1, -1, -1};   // the round trip to each player
 const int kPingRecent = 8;
 int g_pingRecent[4][kPingRecent];    // the last few round trips to each player (2 s of them)
 unsigned g_pingAt[4];
+volatile ULONGLONG g_echoAt[4];      // each player's last echo of my ping (their PC answers while its game is frozen)
 unsigned g_skipSeqSeen[4];
 void StartSkip(const wchar_t* why);
 
@@ -1198,6 +1199,7 @@ void Receive() {
         } else if (h->type == 'O' && n >= (int)sizeof(PktPing)) {   // my ping's echo
             auto p = reinterpret_cast<PktPing*>(buf);
             static unsigned long long timed[4];   // (the first echo: the quicker way - the second comes the slower)
+            if (p->to == g_slot) g_echoAt[slot] = GetTickCount64();
             if (p->to == g_slot && p->sent != timed[slot]) {
                 timed[slot] = p->sent;
                 ULONGLONG now = GetTickCount64();
@@ -1647,6 +1649,9 @@ bool g_sessionInf = false;       // an Infiltration one
 bool g_sessionCtf = false;       // a Capture the Flag one (the Greased-Up Deaf Guy)
 volatile LONG g_sessionLevelAsked = 0;  // the menu launched the level (taken at the next tick)
 unsigned g_levelTick = 0;
+volatile LONG g_testFreezeMs = 0;   // (test pipe "freeze")
+extern volatile ULONGLONG g_freeTickAt;
+void StartFreeKeepAlive();
 extern unsigned short g_storyEpoch;
 unsigned char* PlayerBySlot(int slot);
 
@@ -4521,6 +4526,8 @@ void FreeStart() {
     ReleaseSRWLockExclusive(&g_buyLock);
     g_free = true;
     g_freeFrom = g_tick;
+    g_freeTickAt = 0;
+    StartFreeKeepAlive();
     if (g_freeRejoin) {   // back in: everyone plays again here, and they hear I'm back
         for (int s = 0; s < g_players && s < 4; ++s) if (s != g_slot) g_gone[s] = false;
         g_freeBackUntil = now + 3000;
@@ -4531,7 +4538,31 @@ void FreeStart() {
     Log(L"Netplay: tick %u - the match runs free from here: no lockstep, real clock, my own frame rate", g_tick);
 }
 
+// The game loop frozen a while (its window held - lag abuse): nobody reads the network here then, so my pings' echoes
+// don't go back and the others count me gone after 10 s. Read meanwhile by a thread of its own: their pings echoed -
+// they give me a minute (FreeTick: "their PC still answers").
+volatile ULONGLONG g_freeTickAt = 0;
+void StartFreeKeepAlive() {
+    static bool started = false;
+    if (started) return;
+    started = true;
+    CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
+        for (;;) {
+            Real_Sleep(250);
+            if (!g_enabled || !g_free || !g_freeTickAt || GetTickCount64() - g_freeTickAt < 1000) continue;
+            if (!TryEnterCriticalSection(&g_netLock)) continue;
+            Receive();
+            LeaveCriticalSection(&g_netLock);
+        }
+    }, nullptr, 0, nullptr));
+}
+
 void FreeTick() {
+    if (LONG ms = InterlockedExchange(&g_testFreezeMs, 0)) {   // (test: a window held - outside the lock, as the game's
+        Log(L"Netplay: test - the game loop stops for %ld ms", ms);   //  own message loop is then)
+        Sleep((DWORD)ms);
+    }
+    g_freeTickAt = GetTickCount64();
     EnterCriticalSection(&g_netLock);
     struct Unlock { ~Unlock() { LeaveCriticalSection(&g_netLock); } } unlock;
     static LARGE_INTEGER lastAt{};
@@ -4575,9 +4606,12 @@ void FreeTick() {
     g_current[g_slot] = mine;
     for (int s = 0; s < g_players && s < 4; ++s) {
         if (s == g_slot) continue;
-        if (!g_gone[s] && nowMs - g_remote[s].heardAt > 10000) {
+        // (nothing from them for 10 s: gone - unless their PC still answers my pings: its game frozen a while, as a
+        //  window held - lag abuse, the Amish clip - they get a minute)
+        bool answers = nowMs - g_echoAt[s] < 3000;
+        if (!g_gone[s] && nowMs - g_remote[s].heardAt > (answers ? 60000u : 10000u)) {
             g_gone[s] = true;
-            Log(L"Netplay: free - nothing from player %d for 10 s - they left; their character stays idle", s);
+            Log(L"Netplay: free - nothing from player %d for %d s - they left; their character stays idle", s, answers ? 60 : 10);
             if (g_inSession && s != 0) OverlayShow((PlayerName(s) + L" left the match").c_str(), 5000);
             if (s == 0 && g_inSession) {
                 g_freeHostGone = true;
@@ -5353,6 +5387,7 @@ void NetplayLevelFileOpened(const wchar_t* path) {   // (any thread) a level's p
     if (wcslen(name) != 7 || _wcsicmp(name + 4, L".ho") != 0) return;
     InterlockedExchange(&g_levelFileOpen, 1);
 }
+void NetplayTestFreeze(int ms) { InterlockedExchange(&g_testFreezeMs, ms); }
 void NetplayTestHitNpc(unsigned id, int amount) {
     InterlockedExchange(&g_testHitNpcAmount, amount);
     InterlockedExchange(&g_testHitNpc, (LONG)id);
