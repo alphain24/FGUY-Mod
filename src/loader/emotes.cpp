@@ -253,6 +253,41 @@ void EmotesRemote(int slot, const std::vector<unsigned char>* pack) {
     LeaveCriticalSection(&g_remoteLock);
 }
 
+// FGUYMOD_EmoteList (the MODS page): "<file>|<name>|<character>|<on>|<slot: 1-4 for its character, 0 none>\n..."
+const char* EmotesList() {
+    static std::string text;
+    g_scannedAt = 0;   // (fresh)
+    Scan();
+    text.clear();
+    std::vector<std::pair<std::string, int>> count;   // (a character's emotes switched on so far: its slots)
+    for (const Emote& e : g_emotes) {
+        char f[MAX_PATH * 3];
+        WideCharToMultiByte(CP_UTF8, 0, e.file.c_str(), -1, f, sizeof(f), nullptr, nullptr);
+        std::string n = e.name, c = e.character;
+        for (char& ch : n) if (ch == '|' || ch == '\n') ch = ' ';
+        for (char& ch : c) if (ch == '|' || ch == '\n') ch = ' ';
+        bool on = EmoteOn(e.file);
+        int slot = 0;
+        if (on) {
+            auto it = std::find_if(count.begin(), count.end(), [&](const auto& x) { return x.first == e.character; });
+            if (it == count.end()) { count.push_back({e.character, 0}); it = count.end() - 1; }
+            slot = ++it->second <= 4 ? it->second : 0;
+        }
+        text += std::string(f) + "|" + n + "|" + c + "|" + (on ? "1" : "0") + "|" + std::to_string(slot) + "\n";
+    }
+    return text.c_str();
+}
+
+// FGUYMOD_EmoteToggle(<file>): on / off
+void EmotesToggle(const char* file) {
+    wchar_t w[MAX_PATH] = L"";
+    if (file) MultiByteToWideChar(CP_UTF8, 0, file, -1, w, MAX_PATH);
+    if (!w[0] || wcschr(w, L'\\') || wcschr(w, L'/')) return;
+    bool on = EmoteOn(w);
+    WritePrivateProfileStringW(L"Emotes", w, on ? L"0" : L"1", IniPath().c_str());
+    Log(L"Emotes: %s %s", w, on ? L"off" : L"on");
+}
+
 void EmotesRequest(int slot, int nth) {   // (test pipe "emote <slot> <1-4>")
     if (slot >= 0 && slot < 4 && nth >= 0 && nth < 4) InterlockedExchange(&g_request[slot], nth);
 }

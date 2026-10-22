@@ -1978,19 +1978,28 @@ function FGUYModsRead() {
         FGUYMods.push({folder: g[0], name: g[1], version: '', author: '', who: g[2], type: 'skin', on: g[3] == '1',
                        running: false, about: 'Skin pack for ' + g[2] + ' (FGUYMod\\skins\\' + g[0] + ')'});
     }
+    // and the emote packs (FGUYMod\\emotes): on = in that character's emote slots (Back + D-pad, F5-F8 - in order)
+    var emotes = String(flash.external.ExternalInterface.call('FGUYMOD_EmoteList')).split('\n');
+    for (var e = 0; e < emotes.length; e++) {
+        if (emotes[e] == '') continue;
+        var h = emotes[e].split('|');
+        FGUYMods.push({folder: h[0], name: h[1], version: '', author: '', who: h[2], slot: Number(h[4]), type: 'emote',
+                       on: h[3] == '1', running: false, about: 'Emote for ' + h[2] + ' (FGUYMod\\emotes\\' + h[0] + ')'});
+    }
     if (FGUYModsSel >= FGUYMods.length) FGUYModsSel = Math.max(0, FGUYMods.length - 1);
 }
 
 function FGUYDrawMods(ui) {
     FGUYTitle(ui, 48, 26, 600, 80, 'MODS', 60, FGUYC.title, 'left');
-    FGUYText(ui, 640, 50, 912, 30, 'Mods from FGUYMod\\mods (after a restart) - skins from FGUYMod\\skins (at once)', false, 20,
+    FGUYText(ui, 640, 50, 912, 30, 'Mods: FGUYMod\\mods (after a restart) - skins, emotes: \\skins, \\emotes (at once)', false, 20,
              FGUYC.muted2, 'right');
     FGUYPanel(ui, 48, 130, 1504, 690, 28, FGUYC.panel, FGUYC.glow);
     if (FGUYMods.length == 0) {
         FGUYText(ui, 90, 200, 1400, 40, 'No mods yet.', false, 30, FGUYC.white, 'left');
         FGUYText(ui, 90, 250, 1400, 30, 'Put a mod\'s folder in FGUYMod\\mods\\ (Y opens it), then come back here to switch it on.',
                  false, 20, FGUYC.soft, 'left');
-        FGUYText(ui, 90, 286, 1400, 30, 'Skin packs (.fgskin, made with the Skin Studio) go in FGUYMod\\skins\\.', false, 20, FGUYC.soft, 'left');
+        FGUYText(ui, 90, 286, 1400, 30, 'Skin packs (.fgskin, made with the Skin Studio) go in FGUYMod\\skins\\, emote packs (.fgemote) in FGUYMod\\emotes\\.',
+                 false, 20, FGUYC.soft, 'left');
     }
     // 7 rows at a time: more scroll - the selection (up / down), the wheel, or the arrows beside the list
     var shown = FGUYModsShown(), more = FGUYMods.length > shown, rowW = more ? 1376 : 1448;
@@ -2016,12 +2025,12 @@ function FGUYDrawMods(ui) {
         FGUYRect(ui, 76, y, rowW, 62, 16, hot ? FGUYC.rowHot : FGUYC.row, 100, hot ? FGUYC.yellow : FGUYC.rowLine, 100, hot ? 3 : 2);
         FGUYHit(76, y, rowW, 62, 'modRow', i);
         FGUYText(ui, 100, y + 6, 760, 30, m.name + '  ' + m.version, false, 22, FGUYC.white, 'left');
-        FGUYText(ui, 100, y + 34, 760, 26, m.type == 'skin' ? 'for ' + m.who : (m.author != '' ? 'by ' + m.author : m.folder),
-                 false, 16, FGUYC.muted2, 'left');
-        var gameplay = m.type == 'gameplay', skin = m.type == 'skin';
+        FGUYText(ui, 100, y + 34, 760, 26, m.type == 'skin' ? 'for ' + m.who : m.type == 'emote' ? 'for ' + m.who + FGUYEmoteKeys(m)
+                 : (m.author != '' ? 'by ' + m.author : m.folder), false, 16, FGUYC.muted2, 'left');
+        var gameplay = m.type == 'gameplay', skin = m.type == 'skin', emote = m.type == 'emote';
         var sx = more ? -72 : 0;   // (the arrows' room)
         FGUYRect(ui, 1080 + sx, y + 16, 170, 32, 10, FGUYC.ink, 100, gameplay ? FGUYC.yellow : FGUYC.glow, 100, 2);
-        FGUYText(ui, 1080 + sx, y + 20, 170, 28, skin ? 'SKIN' : (gameplay ? 'GAMEPLAY' : 'COSMETIC'), false, 15,
+        FGUYText(ui, 1080 + sx, y + 20, 170, 28, skin ? 'SKIN' : emote ? 'EMOTE' : (gameplay ? 'GAMEPLAY' : 'COSMETIC'), false, 15,
                  gameplay ? FGUYC.yellow : FGUYC.soft, 'center');
         FGUYRect(ui, 1290 + sx, y + 12, 200, 40, 14, m.on ? FGUYC.green : FGUYC.bg, 100, m.on ? FGUYC.greenLine : FGUYC.redLine, 100, 2);
         FGUYText(ui, 1290 + sx, y + 18, 200, 30, m.on ? 'ON' : 'OFF', false, 20, m.on ? FGUYC.white : FGUYC.red, 'center');
@@ -2029,6 +2038,7 @@ function FGUYDrawMods(ui) {
     if (FGUYMods.length > 0) {   // the chosen one's description, and what on / off means for it
         var c = FGUYMods[FGUYModsSel];
         var note = c.type == 'skin' ? 'On: worn whenever this outfit is played offline, and picked for it online (one skin per outfit).'
+                 : c.type == 'emote' ? 'On: in a level, Back + a D-pad direction (or F5-F8) plays it - up to 4 a character. Online everyone sees it.'
                  : c.type == 'gameplay' ? 'Gameplay mod: online, everyone in the lobby needs it (the same version).'
                                         : 'Cosmetic mod: online, the others don\'t need it.';
         if (c.on && c.running) note = note + '  Its plugin is running.';
@@ -2043,6 +2053,13 @@ function FGUYDrawMods(ui) {
 }
 
 function FGUYModsShown() { return 7; }
+
+// an emote's keys: its slot (its place among its character's emotes that are on) - Back + D-pad, or F5-F8
+function FGUYEmoteKeys(m) {
+    if (!m.on) return '';
+    if (!m.slot) return ' - no slot left (4 a character)';
+    return ' - slot ' + m.slot + ': Back + ' + ['Up', 'Right', 'Down', 'Left'][m.slot - 1] + ' or F' + (4 + m.slot);
+}
 
 // Scroll the list by `by` rows (the wheel, the arrows): the selection stays on a row that's shown.
 function FGUYModsScroll(by) {
@@ -2066,6 +2083,7 @@ function FGUYInputMods(key) {
     else if (key == 13 || key == 37 || key == 39) {
         var m = FGUYMods[FGUYModsSel];
         if (m.type == 'skin') flash.external.ExternalInterface.call('FGUYMOD_SkinToggle', m.folder);
+        else if (m.type == 'emote') flash.external.ExternalInterface.call('FGUYMOD_EmoteToggle', m.folder);
         else flash.external.ExternalInterface.call('FGUYMOD_ModsToggle', m.folder);
         FGUYModsRead();
         FGUYSound('change');

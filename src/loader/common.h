@@ -159,6 +159,8 @@ struct _XINPUT_STATE;
 void EmotesPad(DWORD pad, _XINPUT_STATE* st);   // emotes.cpp: Back + D-pad, kept from the game   (emotes.cpp)
 void EmotesFrame();                    //   d3d9.cpp: a frame was drawn (F5-F8, starting / stopping)
 void EmotesRequest(int slot, int nth); //   test pipe "emote <slot> <1-4>"
+const char* EmotesList();              //   FGUYMOD_EmoteList: the MODS page's emote packs
+void EmotesToggle(const char* file);   //   FGUYMOD_EmoteToggle: on / off
 void EmotesRemote(int slot, const std::vector<unsigned char>* pack);   //   netplay.cpp: another player's emote (nullptr: stop)
 void NetplayEmote(const std::vector<unsigned char>* pack);   // netplay.cpp: I play an emote (nullptr: stop) - everyone sees it
 bool ZipRead(const std::vector<unsigned char>& zip, const std::string& name, std::vector<unsigned char>& out);   // cosmetics.cpp: a stored zip entry
