@@ -4344,20 +4344,28 @@ void FreeApplyRemotes(float dt) {
         ++r.errCount;
         // Far off (a respawn, a big lag), or above / below where their PC has them (fell somewhere they didn't - a slide
         // can't come back up through the floor - or the game wanted to put them back in the level: that's their PC's call,
-        // FreeRescue): straight there - unless someone's standing there (then slid there: the game's collision keeps
-        // them apart - they stayed where they were for good, in a fist fight right next to the other player).
+        // FreeRescue): straight there - someone standing there: right next to them, on that side (they stayed where
+        // they were for good before - a fist fight right next to the other player), slid the rest of the way.
         bool jump = dist > 4 || fabsf(dy) > 1.5f || r.rescue;
         r.rescue = false;
-        bool clear = true;
+        const float* blocker = nullptr;
         if (jump) {
             unsigned char* list[8];
             int n = GamePlayers(list, 8);
             for (int i = 0; i < n; ++i) {
                 const float* o = list[i] == p ? nullptr : PlayerPos(list[i]);
-                if (o && fabsf(o[0] - r.pos[0]) < 1.6f && fabsf(o[2] - r.pos[2]) < 1.6f && fabsf(o[1] - r.pos[1]) < 2.5f) clear = false;
+                if (o && fabsf(o[0] - r.pos[0]) < 1.6f && fabsf(o[2] - r.pos[2]) < 1.6f && fabsf(o[1] - r.pos[1]) < 2.5f) blocker = o;
             }
         }
-        if (jump && clear && TeleportPlayer(p, r.pos)) {
+        float spot[3] = {r.pos[0], r.pos[1], r.pos[2]};
+        if (blocker) {
+            float ax = r.pos[0] - blocker[0], az = r.pos[2] - blocker[2], len = sqrtf(ax * ax + az * az);
+            if (len < 0.01f) { ax = 1; az = 0; len = 1; }
+            spot[0] = blocker[0] + ax / len * 1.7f;
+            spot[2] = blocker[2] + az / len * 1.7f;
+        }
+        float sx = spot[0] - pos[0], sy = spot[1] - pos[1], sz = spot[2] - pos[2];
+        if (jump && (!blocker || sqrtf(sx * sx + sy * sy + sz * sz) > 4 || fabsf(sy) > 1.5f) && TeleportPlayer(p, spot)) {
             ++r.teleports;
         } else if (dist > 0.05f) {   // close: slide the rest of the way (the game's own collision on the way)
             float m = dt * 8 < 1 ? dt * 8 : 1;
