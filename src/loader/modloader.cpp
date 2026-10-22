@@ -382,7 +382,8 @@ void InitMods() {
         m.description = Ini(ini, L"Mod", L"Description");
         m.plugin = Ini(ini, L"Mod", L"Plugin");
         m.gameplay = _wcsicmp(Ini(ini, L"Mod", L"Type", L"gameplay").c_str(), L"cosmetic") != 0;
-        m.enabled = GetPrivateProfileIntW(L"Enabled", m.folder.c_str(), 0, EnabledIni().c_str()) != 0;
+        int byDefault = _wtoi(Ini(ini, L"Mod", L"DefaultOn", L"0").c_str());   // (on until switched off: our own mods)
+        m.enabled = GetPrivateProfileIntW(L"Enabled", m.folder.c_str(), byDefault, EnabledIni().c_str()) != 0;
         wchar_t none[4];   // (test knob: FGUYMOD_TEST_NOMODS=1 - this copy runs with every mod off)
         if (GetEnvironmentVariableW(L"FGUYMOD_TEST_NOMODS", none, 4)) m.enabled = false;
         g_mods.push_back(m);
@@ -449,6 +450,16 @@ std::vector<std::wstring> ModsUiFolders() {
     std::vector<std::wstring> out;
     for (auto& m : g_mods)
         if (m.enabled) out.push_back(m.dir + L"\\ui");
+    return out;
+}
+
+// Content a mod brings (the Cosmetics mod's skins, the Emotes mod's emotes): <mod>\<sub> of each mod that's on, then
+// the loose FGUYMod\<sub> (your own, e.g. straight from the Skin Studio) - with the mod's name ("" loose).
+std::vector<std::pair<std::wstring, std::wstring>> ModsContentFolders(const wchar_t* sub) {
+    std::vector<std::pair<std::wstring, std::wstring>> out;
+    for (auto& m : g_mods)
+        if (m.enabled) out.push_back({m.dir + L"\\" + sub, m.name});
+    out.push_back({std::wstring(g_modDir) + L"\\" + sub, L""});
     return out;
 }
 

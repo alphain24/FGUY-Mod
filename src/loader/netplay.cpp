@@ -1248,13 +1248,16 @@ void EmoteIn_(int s, const PktEmote* p) {
     if (p->seq != in.seq) {
         in.seq = p->seq;
         Log(L"Netplay: player %d's emote %08x (%u bytes)%s", s, p->crc, p->size,
-            !p->on ? L" stopped" : EmotePack(p->crc) ? L" - have it" : L" - fetching it");
+            !p->on ? L" stopped" : EmotePack(p->crc) ? L" - have it" : L" - not here yet");
         if (!p->on) {
             in.waiting = false;
             LeaveCriticalSection(&g_skinLock);
             EmotesRemote(s, nullptr);
             return;
         }
+        std::vector<unsigned char> mine;
+        bool local = !EmotePack(p->crc) && EmotesLocalPack(p->crc, mine);   // (the same pack here: the same mod)
+        if (local) g_emotePacks.push_back({p->crc, mine});
         if (const std::vector<unsigned char>* have = EmotePack(p->crc)) {
             std::vector<unsigned char> copy = *have;
             in.waiting = false;

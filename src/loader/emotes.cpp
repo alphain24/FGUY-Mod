@@ -18,7 +18,7 @@
 namespace {
 
 struct Emote {
-    std::wstring file;
+    std::wstring file, from;                             // (its file name, the mod it's from - "" FGUYMod\emotes)
     std::string name, character;
     std::vector<std::pair<unsigned, unsigned>> models;   // (the character's outfits)
     std::vector<bool> uses;                              // (the game bones it moves)
@@ -75,7 +75,6 @@ std::vector<double> JsNumbers(const std::string& js, const char* key) {   // (an
     return out;
 }
 
-std::wstring EmotesDir() { return std::wstring(g_modDir) + L"\\emotes"; }
 std::wstring IniPath() { return std::wstring(g_modDir) + L"\\FGUYMod.ini"; }
 bool EmoteOn(const std::wstring& file) {
     return GetPrivateProfileIntW(L"Emotes", file.c_str(), 1, IniPath().c_str()) != 0;
@@ -100,6 +99,19 @@ bool ParseEmote(const std::vector<unsigned char>& d, Emote& e) {
     return true;
 }
 
+// (the same CRC-32 as netplay.cpp's: a pack someone plays online, found here by it - no need to fetch it)
+unsigned Crc(const std::vector<unsigned char>& d) {
+    unsigned c = 0xFFFFFFFFu;
+    for (unsigned char b : d) {
+        c ^= b;
+        for (int k = 0; k < 8; ++k) c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+    }
+    return d.empty() ? 0 : c ^ 0xFFFFFFFFu;
+}
+struct LocalLock { LocalLock() { InitializeCriticalSection(&cs); } CRITICAL_SECTION cs; };
+CRITICAL_SECTION& LocalCs() { static LocalLock l; return l.cs; }   // (the network thread reads g_local too)
+std::vector<std::pair<unsigned, std::vector<unsigned char>>> g_local;
+
 bool LoadEmote(const std::wstring& path, Emote& e) {
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
     if (f == INVALID_HANDLE_VALUE) return false;
@@ -112,35 +124,45 @@ bool LoadEmote(const std::wstring& path, Emote& e) {
     return true;
 }
 
-// FGUYMod\emotes, read again when it changed (a file's time or size) - at most every 2 s
+// the emotes there are - the Emotes mod's (and any other mod's that's on), then FGUYMod\emotes - read again when one
+// changed (a file's time or size), at most every 2 s
 void Scan() {
     ULONGLONG now = GetTickCount64();
     if (g_scannedAt && now - g_scannedAt < 2000) return;
     g_scannedAt = now;
     std::vector<Emote> found;
-    WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW((EmotesDir() + L"\\*.fgemote").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) { g_emotes.clear(); return; }
-    do {
-        auto old = std::find_if(g_emotes.begin(), g_emotes.end(), [&](const Emote& e) {
-            return e.file == fd.cFileName && e.size == fd.nFileSizeLow && CompareFileTime(&e.written, &fd.ftLastWriteTime) == 0;
-        });
-        if (old != g_emotes.end()) { found.push_back(*old); continue; }
-        Emote e;
-        e.file = fd.cFileName;
-        e.size = fd.nFileSizeLow;
-        e.written = fd.ftLastWriteTime;
-        if (LoadEmote(EmotesDir() + L"\\" + fd.cFileName, e)) {
-            Log(L"Emotes: %s - \"%S\" for %S (%d bones, %.2f s%s)", e.file.c_str(), e.name.c_str(), e.character.c_str(),
-                MotionBones(*e.clip), MotionLength(*e.clip), e.loop ? L", loops" : L"");
-            found.push_back(std::move(e));
-        } else {
-            Log(L"Emotes: %s isn't an emote pack this version can read", fd.cFileName);
-        }
-    } while (FindNextFileW(h, &fd));
-    FindClose(h);
+    for (const auto& folder : ModsContentFolders(L"emotes")) {
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW((folder.first + L"\\*.fgemote").c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) continue;
+        do {
+            if (std::any_of(found.begin(), found.end(), [&](const Emote& e) { return e.file == fd.cFileName; })) continue;
+            auto old = std::find_if(g_emotes.begin(), g_emotes.end(), [&](const Emote& e) {
+                return e.file == fd.cFileName && e.from == folder.second && e.size == fd.nFileSizeLow &&
+                       CompareFileTime(&e.written, &fd.ftLastWriteTime) == 0;
+            });
+            if (old != g_emotes.end()) { found.push_back(*old); continue; }
+            Emote e;
+            e.file = fd.cFileName;
+            e.from = folder.second;
+            e.size = fd.nFileSizeLow;
+            e.written = fd.ftLastWriteTime;
+            if (LoadEmote(folder.first + L"\\" + fd.cFileName, e)) {
+                Log(L"Emotes: %s - \"%S\" for %S (%d bones, %.2f s%s)", e.file.c_str(), e.name.c_str(), e.character.c_str(),
+                    MotionBones(*e.clip), MotionLength(*e.clip), e.loop ? L", loops" : L"");
+                found.push_back(std::move(e));
+            } else {
+                Log(L"Emotes: %s isn't an emote pack this version can read", fd.cFileName);
+            }
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
     std::sort(found.begin(), found.end(), [](const Emote& a, const Emote& b) { return _stricmp(a.name.c_str(), b.name.c_str()) < 0; });
     g_emotes.swap(found);
+    EnterCriticalSection(&LocalCs());   // (what the network thread may look up: each pack by its CRC)
+    g_local.clear();
+    for (const Emote& e : g_emotes) g_local.push_back({Crc(e.data), e.data});
+    LeaveCriticalSection(&LocalCs());
 }
 
 unsigned char* PlayerOf(int slot) {
@@ -244,6 +266,16 @@ void EmotesPad(DWORD pad, XINPUT_STATE* st) {
     if (backUntil[pad] > GetTickCount64()) b |= XINPUT_GAMEPAD_BACK;
 }
 
+// netplay.cpp: an emote pack someone plays, if it's here too (the same Emotes mod) - by its CRC
+bool EmotesLocalPack(unsigned crc, std::vector<unsigned char>& out) {
+    EnterCriticalSection(&LocalCs());
+    bool found = false;
+    for (const auto& l : g_local)
+        if (l.first == crc) { out = l.second; found = true; break; }
+    LeaveCriticalSection(&LocalCs());
+    return found;
+}
+
 void EmotesRemote(int slot, const std::vector<unsigned char>* pack) {
     if (slot < 0 || slot >= 4) return;
     if (!g_remoteInit) { InitializeCriticalSection(&g_remoteLock); g_remoteInit = true; }
@@ -303,6 +335,7 @@ void EmotesFrame() {
         keyDown[k] = down;
     }
     if (!g_remoteInit) { InitializeCriticalSection(&g_remoteLock); g_remoteInit = true; }
+    if (NetplayEnabled()) Scan();   // (online: the packs here, for the others' emotes - every 2 s at most)
     for (int s = 0; s < 4; ++s) {
         LONG nth = InterlockedExchange(&g_request[s], -1);
         if (nth >= 0) Start(s, nth);

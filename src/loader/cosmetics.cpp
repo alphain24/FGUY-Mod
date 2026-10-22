@@ -400,14 +400,18 @@ std::string JsonField(const std::vector<unsigned char>& pack, const char* key) {
     size_t q1 = s.find('"', s.find(':', at) + 1), q2 = q1 == std::string::npos ? q1 : s.find('"', q1 + 1);
     return q2 == std::string::npos ? "" : s.substr(q1 + 1, q2 - q1 - 1);
 }
-struct PackEntry { std::wstring file; std::string name; unsigned lo, hi; FILETIME written; std::string who; };
+struct PackEntry { std::wstring file; std::string name; unsigned lo, hi; FILETIME written; std::string who; std::wstring path, from; };
 std::vector<PackEntry> g_packs;
 ULONGLONG g_packsAt = 0;
 std::wstring g_myPick;              // (the file picked for the outfit shown - empty: none)
 unsigned g_myPickLo = 0, g_myPickHi = 0;
 std::string g_optionsText;
 
-std::wstring SkinsDir() { return std::wstring(g_modDir) + L"\\skins"; }
+// a pack's file (by its name: the first of that name - the mods' before the loose folder's), "" none
+std::wstring PackPath(const std::wstring& file) {
+    for (const PackEntry& e : g_packs) if (e.file == file) return e.path;
+    return L"";
+}
 
 std::vector<unsigned char> ReadAll(const std::wstring& path) {
     std::vector<unsigned char> d;
@@ -427,24 +431,28 @@ void ScanPacks() {
     if (g_packsAt && now - g_packsAt < 3000) return;
     g_packsAt = now;
     std::vector<PackEntry> out;
-    WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW((SkinsDir() + L"\\*.fgskin").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) { g_packs.clear(); return; }
-    do {
-        auto known = std::find_if(g_packs.begin(), g_packs.end(), [&](const PackEntry& e) {
-            return e.file == fd.cFileName && CompareFileTime(&e.written, &fd.ftLastWriteTime) == 0; });
-        if (known != g_packs.end()) { out.push_back(*known); continue; }   // (unchanged: not read again)
-        PackEntry e{fd.cFileName, "", 0, 0, fd.ftLastWriteTime, ""};
-        std::vector<unsigned char> d = ReadAll(SkinsDir() + L"\\" + fd.cFileName);
-        if (CosmeticsPackInfo(d, &e.name, &e.lo, &e.hi)) {
-            e.who = JsonField(d, "character");   // ("Stewie - Default": the MODS page)
-            std::string outfit = JsonField(d, "outfit");
-            if (!outfit.empty()) e.who += " - " + outfit;
-            out.push_back(e);
-        }
-        else Log(L"Cosmetics: %s isn't a skin pack this version can use (made by an older Skin Studio?)", fd.cFileName);
-    } while (FindNextFileW(h, &fd));
-    FindClose(h);
+    for (const auto& folder : ModsContentFolders(L"skins")) {   // (the Cosmetics mod's skins, then FGUYMod\skins)
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW((folder.first + L"\\*.fgskin").c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) continue;
+        do {
+            std::wstring path = folder.first + L"\\" + fd.cFileName;
+            if (std::any_of(out.begin(), out.end(), [&](const PackEntry& e) { return e.file == fd.cFileName; })) continue;
+            auto known = std::find_if(g_packs.begin(), g_packs.end(), [&](const PackEntry& e) {
+                return e.path == path && CompareFileTime(&e.written, &fd.ftLastWriteTime) == 0; });
+            if (known != g_packs.end()) { out.push_back(*known); continue; }   // (unchanged: not read again)
+            PackEntry e{fd.cFileName, "", 0, 0, fd.ftLastWriteTime, "", path, folder.second};
+            std::vector<unsigned char> d = ReadAll(path);
+            if (CosmeticsPackInfo(d, &e.name, &e.lo, &e.hi)) {
+                e.who = JsonField(d, "character");   // ("Stewie - Default": the MODS page)
+                std::string outfit = JsonField(d, "outfit");
+                if (!outfit.empty()) e.who += " - " + outfit;
+                out.push_back(e);
+            }
+            else Log(L"Cosmetics: %s isn't a skin pack this version can use (made by an older Skin Studio?)", path.c_str());
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
     g_packs.swap(out);
 }
 
@@ -489,7 +497,7 @@ void OfflineSkins() {
         }
         if (want == g_offlineWorn[slot]) continue;
         g_offlineWorn[slot] = want;
-        CosmeticsLoadSkinFile(slot, want.empty() ? L"" : (SkinsDir() + L"\\" + want).c_str());
+        CosmeticsLoadSkinFile(slot, want.empty() ? L"" : PackPath(want).c_str());
     }
     for (int s = 0; s < 4; ++s)
         if (!seen[s] && !g_offlineWorn[s].empty()) { g_offlineWorn[s].clear(); CosmeticsLoadSkinFile(s, L""); }
@@ -508,6 +516,11 @@ const char* CosmeticsSkinList() {
         char f[MAX_PATH * 3];
         WideCharToMultiByte(CP_UTF8, 0, e.file.c_str(), -1, f, sizeof(f), nullptr, nullptr);
         std::string n = e.name, w = e.who;
+        if (!e.from.empty()) {   // ("Stewie - Default (FGUY Cosmetics)")
+            char m[256];
+            WideCharToMultiByte(CP_UTF8, 0, e.from.c_str(), -1, m, sizeof(m), nullptr, nullptr);
+            w += std::string(" (") + m + ")";
+        }
         for (char& c : n) if (c == '|' || c == '\n') c = ' ';
         for (char& c : w) if (c == '|' || c == '\n') c = ' ';
         g_listText += std::string(f) + "|" + n + "|" + w + "|" + (PickFor(e.lo, e.hi) == e.file ? "1" : "0") + "\n";
@@ -544,7 +557,7 @@ const char* CosmeticsSkinOptions() {
         g_myPickLo = lo; g_myPickHi = hi;
         bool there = std::any_of(g_packs.begin(), g_packs.end(), [&](const PackEntry& e) { return e.file == g_myPick && e.lo == lo && e.hi == hi; });
         if (!there) g_myPick.clear();
-        CosmeticsLoadSkinFile(2, g_myPick.empty() ? L"" : (SkinsDir() + L"\\" + g_myPick).c_str());   // (the preview)
+        CosmeticsLoadSkinFile(2, g_myPick.empty() ? L"" : PackPath(g_myPick).c_str());   // (the preview)
     }
     char buf[64];
     sprintf_s(buf, "%x_%x|", lo, hi);
@@ -574,7 +587,7 @@ void CosmeticsSkinPick(const char* file) {
     wchar_t key[32];
     swprintf_s(key, L"%x_%x", lo, hi);
     WritePrivateProfileStringW(L"Skins", key, g_myPick.empty() ? nullptr : g_myPick.c_str(), IniPath().c_str());
-    CosmeticsLoadSkinFile(2, g_myPick.empty() ? L"" : (SkinsDir() + L"\\" + g_myPick).c_str());
+    CosmeticsLoadSkinFile(2, g_myPick.empty() ? L"" : PackPath(g_myPick).c_str());
     Log(L"Cosmetics: my skin for this outfit: %s", g_myPick.empty() ? L"none" : g_myPick.c_str());
 }
 
@@ -582,7 +595,7 @@ void CosmeticsSkinPick(const char* file) {
 std::wstring CosmeticsMySkinPath() {
     unsigned lo = 0, hi = 0;
     if (g_myPick.empty() || !CosmeticsPlayerModel(2, 0, &lo, &hi) || lo != g_myPickLo || hi != g_myPickHi) return L"";
-    return SkinsDir() + L"\\" + g_myPick;
+    return PackPath(g_myPick);
 }
 
 void CosmeticsTrace(unsigned lo, unsigned hi) {

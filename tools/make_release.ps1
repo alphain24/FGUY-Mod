@@ -20,6 +20,9 @@ Copy-Item $dll $stage
 Copy-Item "$P\dist\FGUYMod\FGUYMod.ini" "$stage\FGUYMod\"
 Copy-Item "$P\dist\FGUYMod\dxvk\*" "$stage\FGUYMod\dxvk\"
 Copy-Item "$P\dist\FGUYMod\ui\*.fgpatch" "$stage\FGUYMod\ui\"
+# (our own mods: FGUY Cosmetics, FGUY Emotes - their content only: skins, emotes...)
+Copy-Item "$P\dist\FGUYMod\mods" "$stage\FGUYMod\mods" -Recurse
+Get-ChildItem "$stage\FGUYMod\mods" -Recurse -Filter ".gitkeep" | Remove-Item
 if (Test-Path "$P\dist\FGUYMod\sounds\*.wav") {
     New-Item -ItemType Directory -Force "$stage\FGUYMod\sounds" | Out-Null
     Copy-Item "$P\dist\FGUYMod\sounds\*.wav" "$stage\FGUYMod\sounds\"

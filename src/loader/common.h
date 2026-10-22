@@ -138,6 +138,7 @@ void InitMods();                       //   at start: the mods there are, which 
 void ModsLoadPlugins();                //   at the end of start-up: their plugins
 bool ModsFileOverride(const wchar_t* gamePath, wchar_t* out);   //   a mod's copy of a game file
 std::vector<std::wstring> ModsUiFolders();   //   their movie patches' folders
+std::vector<std::pair<std::wstring, std::wstring>> ModsContentFolders(const wchar_t* sub);   //   <mod>\<sub> of those on, then FGUYMod\<sub>: (folder, mod name)
 void ModsTick();                       //   vpad.cpp: a game tick starts (the game's thread)
 void ModsFrame();                      //   d3d9.cpp: a frame was drawn
 struct IDirect3DDevice9;
@@ -161,6 +162,7 @@ void EmotesFrame();                    //   d3d9.cpp: a frame was drawn (F5-F8, 
 void EmotesRequest(int slot, int nth); //   test pipe "emote <slot> <1-4>"
 const char* EmotesList();              //   FGUYMOD_EmoteList: the MODS page's emote packs
 void EmotesToggle(const char* file);   //   FGUYMOD_EmoteToggle: on / off
+bool EmotesLocalPack(unsigned crc, std::vector<unsigned char>& out);   //   netplay.cpp: that pack, if it's here too
 void EmotesRemote(int slot, const std::vector<unsigned char>* pack);   //   netplay.cpp: another player's emote (nullptr: stop)
 void NetplayEmote(const std::vector<unsigned char>* pack);   // netplay.cpp: I play an emote (nullptr: stop) - everyone sees it
 bool ZipRead(const std::vector<unsigned char>& zip, const std::string& name, std::vector<unsigned char>& out);   // cosmetics.cpp: a stored zip entry
