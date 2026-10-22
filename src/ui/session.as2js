@@ -41,6 +41,8 @@ function FGUYSessionInit() {
     if (flash.external.ExternalInterface.call('FGUYMOD_SessionStarted') == true) {   // story co-op: back in the main
         FGUYSessStage = 'started';   //   menu after a quit - the players' own (no walking into the level again)
         FGUYSessLog('the main menu - the players\' (story co-op)');
+        clearInterval(FGUYSessFrontTimer);   // (the host goes back to the lobby: everyone does - asked 4 times a second)
+        FGUYSessFrontTimer = setInterval(FGUYSessFrontPoll, 250);
         return;
     }
     var parts = String(cfg).split('|');
@@ -53,6 +55,11 @@ function FGUYSessionInit() {
     }
     FGUYSessStage = 'boot';
     FGUYSessLog('session ' + cfg);
+}
+
+function FGUYSessFrontPoll() {
+    if (FGUYSessReturning) { clearInterval(FGUYSessFrontTimer); return; }
+    FGUYSessionCheckReturn();
 }
 
 function FGUYSessionCheckReturn() {

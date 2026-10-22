@@ -193,7 +193,8 @@ void OnlinePauseCommand(const char* command);  //   ui.cpp: a menu command ran
 const char* OnlinePauseMenu();                 //   FGUYMOD_PauseMenu (the HUD)
 const char* OnlinePauseCursor();
 void SplitViewNoMarkers(bool on);
-bool SplitViewCutscenePlaying();               //   a cutscene of the game's playing (story)              //   FGUYMOD_DeathPanel: no name tags while my death menu's panel is up
+bool SplitViewCutscenePlaying();
+bool SplitViewCutsceneSkippable();             //   ...and START would skip it               //   a cutscene of the game's playing (story)              //   FGUYMOD_DeathPanel: no name tags while my death menu's panel is up
 const char* OnlinePauseDeathMouse(const char* boxes);   //   FGUYMOD_DeathMouse (the HUD): my death menu's buttons
 void OnlinePauseHudTakesStart(bool up);                 //   FGUYMOD_HudTakesStart (the HUD): my weapons screen is up
 const char* OnlineMenuMouse(const char* boxes, const char* who);   //   FGUYMOD_MenuMouse (the game's menus): their lists

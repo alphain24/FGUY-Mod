@@ -310,7 +310,7 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
     bool pausePress = (down & XINPUT_GAMEPAD_START) || pressed(VK_ESCAPE);
     // Story co-op, a cutscene playing: START / the keyboard's skip key go to the game - it skips the cutscene (as offline:
     // a pause there skipped it and paused everyone's game); netplay.cpp ends it on the others' PCs too.
-    bool cutscene = NetplayStoryCoop() && !g_gamePaused && SplitViewCutscenePlaying();
+    bool cutscene = NetplayStoryCoop() && !g_gamePaused && SplitViewCutsceneSkippable();
     if (cutscene) pausePress = false;
     bool startToGame = (g_hudTakesStart || cutscene) && !g_open;   // (START leaves my weapons screen: it goes to the game, as offline)
     if (startToGame && !pressed(VK_ESCAPE)) pausePress = false;

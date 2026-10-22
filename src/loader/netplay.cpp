@@ -1172,6 +1172,8 @@ void Receive() {
             if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSizeMoney, n >= kPktStateSize);
         } else if (h->type == 'Z' && n >= kPktHitSizeOld) {   // (0.8.13 and older: no credit in it)
             if (g_free) FreeHitIn(slot, reinterpret_cast<PktHit*>(buf), n >= kPktHitSize);
+        } else if (h->type == 'o') {   // story co-op: the host went back to the lobby from the main menu - everyone does
+            if (slot == 0 && g_slot != 0) NetplaySessionLeaveAsked();
         } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
             auto p = reinterpret_cast<PktLeave*>(buf);
             if (g_free) {   // (free-running: their tick count isn't mine - they're simply out)
@@ -4488,11 +4490,13 @@ void FreeTick() {
             if (g_inSession && s != 0) OverlayShow((PlayerName(s) + L" left the match").c_str(), 5000);
             if (s == 0 && g_inSession) {
                 g_freeHostGone = true;
+                if (g_sessionStory) NetplaySessionLeaveAsked();   // (story co-op: from the main menu too)
                 OverlayShow(L"Lost the connection to the match - back to the lobby", 8000);
                 OnlinePauseForceQuit();
             }
         } else if (g_gone[s] && s == 0 && g_inSession && !g_freeHostGone) {   // the host quit ('L'): the match is over
             g_freeHostGone = true;
+            if (g_sessionStory) NetplaySessionLeaveAsked();
             Log(L"Netplay: free - the host left the match - back to the lobby");
             OverlayShow((PlayerName(0) + L" (the host) left the match - back to the lobby").c_str(), 8000);
             OnlinePauseForceQuit();
@@ -5191,7 +5195,12 @@ void NetplayLeave(const wchar_t* why) {
 volatile LONG g_storyLeaveAsked = 0;
 bool StoryFrontEnd() { return g_sessionStory && g_freeWanted; }
 void NetplaySessionLeaveAsked() {
-    if (InterlockedExchange(&g_storyLeaveAsked, 1) == 0) Log(L"Netplay: story - back to the lobby (from the main menu)");
+    if (InterlockedExchange(&g_storyLeaveAsked, 1) != 0) return;
+    Log(L"Netplay: story - back to the lobby (from the main menu)");
+    if (g_enabled && g_slot == 0) {   // (the host's: everyone goes - 'o', a few times)
+        PktHeader o{'o', (BYTE)g_slot};
+        for (int i = 0; i < 5; ++i) SendAll(&o, sizeof(o));
+    }
 }
 // (the menu movie, as it starts again: a level of this session ran already - no walking the menus into one again)
 bool NetplaySessionStarted() { return g_inSession && g_levelLaunched; }

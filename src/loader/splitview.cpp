@@ -105,6 +105,12 @@ bool CutscenePlaying() {
 
 }  // namespace
 bool SplitViewCutscenePlaying() { return CutscenePlaying(); }
+// ...and START would skip it (the game's own check, 0x9680c0: seen before, +0x88 - or every one skippable, [0xbad69f]);
+// one that can't be skipped: START pauses the game, as offline
+bool SplitViewCutsceneSkippable() {
+    auto cin = *reinterpret_cast<unsigned char* volatile*>(0xbad99c);
+    return CutscenePlaying() && (*reinterpret_cast<volatile unsigned char*>(0xbad69f) || cin[0x88]);
+}
 namespace {
 
 int ShownViewport() {
