@@ -224,6 +224,7 @@ void PointerShow(HWND wnd, bool on) {
 LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_KEYDOWN && !NetplayEnabled()) OnlineMenuKey(wnd, wp);  // typing on the ONLINE screens
     if (msg == WM_CHAR && !NetplayEnabled()) OnlineMenuChar(wp);         //   (the lobby's chat)
+    if (msg == WM_MOUSEWHEEL && !NetplayEnabled()) OnlineMenuWheel(GET_WHEEL_DELTA_WPARAM(wp));   //   (lists)
     LRESULT handled;
     if (KbmOnMessage(wnd, msg, wp, lp, &handled)) return handled;
     switch (msg) {

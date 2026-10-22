@@ -80,9 +80,14 @@ typedef struct FGUYModAPI {
                                                          it (the place for gameplay changes) */
     int (*OnFrame)(FGUYModCallback fn, void* user);   /* every frame the render thread draws (visual only) */
 
-    /* Detour: the first `length` bytes at `target` (whole instructions, at least 5, no jumps or calls among them) are
-       moved to a trampoline, and target jumps to `detour`. *original gets the trampoline: call it to run the game's
-       function. Returns 1 on success. */
+    /* Detour: the instructions in the first `length` bytes at `target` are moved to a trampoline, and target jumps to
+       `detour`. *original gets the trampoline: call it to run the game's function. Returns 1 on success.
+       `length`: 0 lets the loader choose (as few whole instructions as cover the 5-byte jump - recommended); else it
+       must end on an instruction boundary there and be at least 5. Relative calls / jumps among the moved
+       instructions are relocated (short ones made long). Refused (0, and the log says why): `target` isn't the start
+       of an instruction (checked by decoding from the start of the function around it), a length that ends inside
+       one, a ret / jmp before the 5 bytes, a branch back into the moved bytes, or an instruction the loader can't
+       decode. (Since 0.8.19 - before, any length was taken as given.) */
     int (*Hook)(void* target, int length, void* detour, void** original);
     /* Write bytes into the game's code (with the page made writable). Returns 1 on success. */
     int (*Patch)(void* address, const void* bytes, int length);

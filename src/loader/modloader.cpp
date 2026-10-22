@@ -12,6 +12,7 @@
 //   lets players into a lobby only with the host's (cosmetic mods may differ).
 
 #include "common.h"
+#include "x86len.h"
 
 #include <intrin.h>
 #include <shellapi.h>
@@ -193,21 +194,149 @@ int __cdecl ApiPatch(void* at, const void* bytes, int n) {
     FlushInstructionCache(GetCurrentProcess(), at, n);
     return 1;
 }
+// The detour (see the SDK): the instructions in the first `length` bytes at target (0: as few as make the jump's 5) are
+// moved to a trampoline - checked to be whole instructions there (a length that cut one in two returned 1 and the
+// game crashed: GitHub issue #1), relative calls / jumps among them moved with their targets kept (short ones made
+// long), and refused (0, with a line in the log saying why) when they can't be moved: a ret / jmp before the end, a
+// branch back into the moved bytes, an instruction this decoder doesn't know.
 int __cdecl ApiHook(void* target, int length, void* detour, void** original) {
-    if (!target || !detour || length < 5 || length > 32) return 0;
-    auto tramp = static_cast<unsigned char*>(VirtualAlloc(nullptr, length + 5, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    auto at = static_cast<unsigned char*>(target);
+    if (!at || !detour || length < 0 || length > 32 || IsBadReadPtr(at, 48)) {
+        Log(L"Mods: Hook(%p, %d) refused - no target / detour, or a length outside 0..32", target, length);
+        return 0;
+    }
+    // an instruction's start? (decoded from the start of the function around it - an address a byte or two off, inside
+    // an instruction, decodes as other instructions and was hooked: the game crashed on it, GitHub issue #1)
+    const unsigned char* lowest = at - 0x100000;
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (VirtualQuery(at, &mbi, sizeof(mbi)) && static_cast<const unsigned char*>(mbi.AllocationBase) > lowest)
+        lowest = static_cast<const unsigned char*>(mbi.AllocationBase);
+    const unsigned char *before = nullptr, *after = nullptr;
+    int onStart = X86OnInstructionStart(at, lowest, &before, &after);
+    if (onStart == 0) {
+        Log(L"Mods: Hook(%p, %d) refused - that's inside an instruction (decoded from its function's start, the "
+            L"instructions around it start at %p and %p)", target, length, before, after);
+        return 0;
+    }
+    X86Insn ins[16];
+    int count = 0, n = 0;
+    while (n < 5 || (length > 0 && n < length)) {
+        if (count == 16 || !X86Decode(at + n, &ins[count])) {
+            Log(L"Mods: Hook(%p, %d) refused - an instruction at +%d this loader can't read", target, length, n);
+            return 0;
+        }
+        if (ins[count].ends && n + ins[count].length < (length > 0 ? length : 5)) {
+            Log(L"Mods: Hook(%p, %d) refused - a ret / jmp at +%d ends the code before the jump's 5 bytes (a function "
+                L"this short can't be hooked here)", target, length, n);
+            return 0;
+        }
+        n += ins[count++].length;
+    }
+    if (length > 0 && n != length) {
+        int boundary = 0;   // (the boundaries there, for the log: what would have worked)
+        wchar_t starts[160] = L"";
+        for (int i = 0; i < count; ++i) {
+            boundary += ins[i].length;
+            wchar_t one[16];
+            swprintf_s(one, L"%s%d", i ? L", " : L"", boundary);
+            wcscat_s(starts, one);
+        }
+        Log(L"Mods: Hook(%p, %d) refused - %d bytes there end inside an instruction (whole instructions end at %s; "
+            L"pass one of those of 5 or more, or 0 to choose by itself)", target, length, length, starts);
+        return 0;
+    }
+    // the trampoline: each instruction, a relative one rewritten for its new place (rel8 -> rel32), then jmp back
+    auto tramp = static_cast<unsigned char*>(VirtualAlloc(nullptr, 128, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
     if (!tramp) return 0;
-    memcpy(tramp, target, length);   // (whole instructions, none relative: see the SDK)
-    tramp[length] = 0xE9;
-    *reinterpret_cast<int*>(tramp + length + 1) =
-        (int)(reinterpret_cast<uintptr_t>(target) + length - (reinterpret_cast<uintptr_t>(tramp) + length + 5));
+    const uintptr_t lo = reinterpret_cast<uintptr_t>(at), hi = lo + n;
+    int t = 0, from = 0;
+    for (int i = 0; i < count; ++i) {
+        const X86Insn& x = ins[i];
+        const unsigned char* src = at + from;
+        if (x.relSize == 0) {
+            memcpy(tramp + t, src, x.length);
+            t += x.length;
+        } else {
+            int disp = x.relSize == 1 ? (signed char)src[x.relOffset]
+                     : x.relSize == 2 ? *reinterpret_cast<const short*>(src + x.relOffset)
+                                      : *reinterpret_cast<const int*>(src + x.relOffset);
+            uintptr_t dest = lo + from + x.length + disp;
+            if (dest > lo && dest < hi) {
+                Log(L"Mods: Hook(%p, %d) refused - a branch at +%d goes back into the bytes the jump replaces", target, length, from);
+                VirtualFree(tramp, 0, MEM_RELEASE);
+                return 0;
+            }
+            if (x.relSize == 2 || (x.relSize == 1 && x.op >= 0xe0 && x.op <= 0xe3)) {   // (loop / jcxz, 16-bit ones)
+                Log(L"Mods: Hook(%p, %d) refused - a loop / 16-bit branch at +%d can't be moved", target, length, from);
+                VirtualFree(tramp, 0, MEM_RELEASE);
+                return 0;
+            }
+            unsigned char* d = tramp + t;
+            if (x.relSize == 4) {   // call / jmp / jcc rel32: as it is, the displacement from here
+                memcpy(d, src, x.length);
+                t += x.length;
+            } else if (x.op == 0xeb) {   // jmp rel8 -> jmp rel32
+                d[0] = 0xE9;
+                t += 5;
+            } else {                     // jcc rel8 (70-7F) -> 0F 80-8F rel32
+                d[0] = 0x0F;
+                d[1] = (unsigned char)(0x80 + (x.op & 0x0f));
+                t += 6;
+            }
+            *reinterpret_cast<int*>(tramp + t - 4) = (int)(dest - (reinterpret_cast<uintptr_t>(tramp) + t));
+        }
+        from += x.length;
+    }
+    tramp[t] = 0xE9;
+    *reinterpret_cast<int*>(tramp + t + 1) = (int)(hi - (reinterpret_cast<uintptr_t>(tramp) + t + 5));
+    FlushInstructionCache(GetCurrentProcess(), tramp, t + 5);
     unsigned char jump[32];
     jump[0] = 0xE9;
-    *reinterpret_cast<int*>(jump + 1) = (int)(reinterpret_cast<uintptr_t>(detour) - (reinterpret_cast<uintptr_t>(target) + 5));
-    for (int i = 5; i < length; ++i) jump[i] = 0x90;
+    *reinterpret_cast<int*>(jump + 1) = (int)(reinterpret_cast<uintptr_t>(detour) - (lo + 5));
+    for (int i = 5; i < n; ++i) jump[i] = 0x90;
     if (original) *original = tramp;
-    return ApiPatch(target, jump, length);
+    if (!ApiPatch(target, jump, n)) {
+        VirtualFree(tramp, 0, MEM_RELEASE);
+        if (original) *original = nullptr;
+        return 0;
+    }
+    Log(L"Mods: hooked %p (%d bytes: %d instructions moved)%s", target, n, count,
+        onStart < 0 ? L" - note: whether that's an instruction's start couldn't be checked there" : L"");
+    return 1;
 }
+
+// Test pipe "hooktest <hex address> <length>": that function hooked through Hook with a detour that only counts its
+// calls and goes on to the game's (the trampoline) - the count is logged by "hooktest" again (address 0).
+volatile LONG g_hookTestCalls[4] = {};
+void* g_hookTestOriginal[4] = {};
+unsigned g_hookTestAt[4] = {};
+#define FGUY_HOOK_TEST(i)     __declspec(naked) void HookTestDetour##i() {         __asm { lock inc dword ptr [g_hookTestCalls + 4 * i] }         __asm { jmp dword ptr [g_hookTestOriginal + 4 * i] }     }
+FGUY_HOOK_TEST(0)
+FGUY_HOOK_TEST(1)
+FGUY_HOOK_TEST(2)
+FGUY_HOOK_TEST(3)
+void* const kHookTestDetours[4] = {&HookTestDetour0, &HookTestDetour1, &HookTestDetour2, &HookTestDetour3};
+
+
+}  // namespace
+
+void ModsTestHook(unsigned address, int length) {
+    if (!address) {
+        for (int i = 0; i < 4; ++i)
+            if (g_hookTestOriginal[i]) Log(L"Mods: test hook %#x - %ld calls through it so far", g_hookTestAt[i], g_hookTestCalls[i]);
+        return;
+    }
+    int slot = 0;
+    while (slot < 4 && g_hookTestOriginal[slot]) ++slot;
+    if (slot == 4) { Log(L"Mods: test hook - four are in already"); return; }
+    // (Hook sets the trampoline before the jump goes in: a call right then already finds it)
+    int ok = ApiHook(reinterpret_cast<void*>((uintptr_t)address), length, kHookTestDetours[slot], &g_hookTestOriginal[slot]);
+    if (!ok) g_hookTestOriginal[slot] = nullptr;
+    g_hookTestAt[slot] = address;
+    Log(L"Mods: test hook %#x length %d -> %d", address, length, ok);
+}
+
+namespace {
 
 void FillApi(Mod& m) {
     FGUYModAPI& a = m.api;

@@ -296,6 +296,12 @@ void HandleCommand(char* line) {
         if (who && amount) NetplayTestHurt(atoi(who), (float)atof(amount));
         return;
     }
+    if (cmd && _stricmp(cmd, "hooktest") == 0) {   // test tools: hooktest <hex address> <length> - the mods' Hook, tried
+        char* a = strtok_s(nullptr, " \t\r\n", &ctx);   //   (hooktest 0: how many calls went through it)
+        char* n = strtok_s(nullptr, " \t\r\n", &ctx);
+        ModsTestHook(a ? (unsigned)strtoul(a, nullptr, 16) : 0, n ? atoi(n) : 0);
+        return;
+    }
     if (cmd && _stricmp(cmd, "god") == 0) {   // test tools: god 1 / 0 - my player takes no hits (free-running)
         char* on = strtok_s(nullptr, " \t\r\n", &ctx);
         NetplayTestGod(!on || atoi(on) != 0);

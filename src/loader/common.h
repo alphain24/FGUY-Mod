@@ -74,6 +74,7 @@ void NetplayProfileRender(DWORD ms);   //   research (test pipe "profile <ms>"):
 void NetplayTestLeave();               //   test pipe "netleave": quit the match to the lobby (as the pause menu does)
 void NetplayTestNudge();
 int KbmKeyPlayer(int code);                          //   the HUD's key event: whose (-1: as the game has it)
+void ModsTestHook(unsigned address, int length);    //   test pipe "hooktest <address> <length>": the mods' Hook, tried
 void NetplayTestGod(bool on);                         //   test pipe "god 0/1": my player takes no hits
 void NetplayTestPointOn(unsigned id);                 //   test pipe "pointon <id>": the host's control point on
 void NetplayTestKillNpcs();                          //   test pipe "killnpcs": the host's enemies all down
@@ -153,6 +154,8 @@ void OnlineMenuTurnPreview(float radians);
 void OnlineMenuChar(WPARAM ch);        //   the lobby's chat: a typed character (WM_CHAR)
 void OnlineMenuChatMode(bool on);      //   FGUYMOD_ChatMode
 const char* OnlineMenuChatTyped();     //   FGUYMOD_ChatTyped
+void OnlineMenuWheel(int delta);       //   the window procedure: the mouse wheel turned
+int OnlineMenuWheelSteps();            //   FGUYMOD_MenuWheel: its steps since (up: +)
 void OnlineMenuFrame();                     //   d3d9.cpp, every frame
 bool IsBot();                               //   this copy is the test bot (FGUYMOD_BOT)
 bool StaysMuted();                          //   the bot / test copies: no sound

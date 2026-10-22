@@ -740,6 +740,7 @@ function OnOnlineEnter() {
 
 function OnOnlineExit() {
     if (FGUYModsPage) {
+        clearInterval(FGUYModsTimer);
         FGUYModsPage = false;
         _root.FGUYLobbyUI.removeMovieClip();
         _root.subMenu._visible = true;
@@ -871,6 +872,7 @@ function FGUYMouseClick(kind, i) {
     else if (kind == 'team') { FGUYPickTeam = i; FGUYSound('change'); }
     else if (kind == 'key') FGUYScreenKey(i);   // a footer button hint: its button
     else if (kind == 'modRow') FGUYInputMods(13);
+    else if (kind == 'modUp' || kind == 'modDown') { if (FGUYModsScroll(kind == 'modUp' ? -1 : 1)) FGUYSound('nav'); }
     else if (kind == 'update') { flash.external.ExternalInterface.call('FGUYMOD_UpdateInstall'); FGUYSound('accept'); }
 }
 
@@ -1904,7 +1906,17 @@ function FGUYModsEnter() {
     FGUYModsSel = 0;
     FGUYModsTop = 0;
     FGUYModsRead();
+    flash.external.ExternalInterface.call('FGUYMOD_MenuWheel');   // (turned before: not for this page)
+    clearInterval(FGUYModsTimer);
+    FGUYModsTimer = setInterval(FGUYModsPoll, 100);
     FGUYDraw();
+}
+
+// (the MODS page, 10 times a second) the mouse wheel scrolls its list
+function FGUYModsPoll() {
+    if (!FGUYModsPage || FGUYScreen != 'mods') { clearInterval(FGUYModsTimer); return; }
+    var steps = Number(flash.external.ExternalInterface.call('FGUYMOD_MenuWheel'));
+    if (steps != 0 && !isNaN(steps) && FGUYModsScroll(-steps)) FGUYDraw();
 }
 
 function FGUYModsRead() {
@@ -1930,20 +1942,37 @@ function FGUYDrawMods(ui) {
         FGUYText(ui, 90, 250, 1400, 30, 'Put a mod\'s folder in FGUYMod\\mods\\ (Y opens it), then come back here to switch it on.',
                  false, 20, FGUYC.soft, 'left');
     }
-    var shown = 7;
+    // 7 rows at a time: more scroll - the selection (up / down), the wheel, or the arrows beside the list
+    var shown = FGUYModsShown(), more = FGUYMods.length > shown, rowW = more ? 1376 : 1448;
+    if (FGUYModsTop == undefined || FGUYModsTop < 0) FGUYModsTop = 0;
     if (FGUYModsSel < FGUYModsTop) FGUYModsTop = FGUYModsSel;
     if (FGUYModsSel >= FGUYModsTop + shown) FGUYModsTop = FGUYModsSel - shown + 1;
+    if (FGUYModsTop > Math.max(0, FGUYMods.length - shown)) FGUYModsTop = Math.max(0, FGUYMods.length - shown);
+    if (more) {
+        var upOn = FGUYModsTop > 0, downOn = FGUYModsTop + shown < FGUYMods.length;
+        var ax = 1464, ay0 = 156, ay1 = 156 + (shown - 1) * 72;
+        FGUYRect(ui, ax, ay0, 60, 62, 14, FGUYC.row, 100, upOn ? FGUYC.yellow : FGUYC.rowLine, 100, 2);
+        FGUYPoly(ui, [ax + 30, ay0 + 16, ax + 46, ay0 + 44, ax + 14, ay0 + 44], upOn ? FGUYC.yellow : FGUYC.rowLine, 100);
+        FGUYRect(ui, ax, ay1, 60, 62, 14, FGUYC.row, 100, downOn ? FGUYC.yellow : FGUYC.rowLine, 100, 2);
+        FGUYPoly(ui, [ax + 14, ay1 + 18, ax + 46, ay1 + 18, ax + 30, ay1 + 46], downOn ? FGUYC.yellow : FGUYC.rowLine, 100);
+        FGUYText(ui, ax - 20, ay0 + 78, 100, 26, (FGUYModsTop + 1) + '-' + Math.min(FGUYMods.length, FGUYModsTop + shown), false,
+                 16, FGUYC.white, 'center');
+        FGUYText(ui, ax - 20, ay0 + 102, 100, 26, 'of ' + FGUYMods.length, false, 15, FGUYC.muted2, 'center');
+        FGUYHit(ax, ay0, 60, 62, 'modUp', 0);
+        FGUYHit(ax, ay1, 60, 62, 'modDown', 0);
+    }
     for (var i = FGUYModsTop; i < FGUYMods.length && i < FGUYModsTop + shown; i++) {
         var m = FGUYMods[i], y = 156 + (i - FGUYModsTop) * 72, hot = i == FGUYModsSel;
-        FGUYRect(ui, 76, y, 1448, 62, 16, hot ? FGUYC.rowHot : FGUYC.row, 100, hot ? FGUYC.yellow : FGUYC.rowLine, 100, hot ? 3 : 2);
-        FGUYHit(76, y, 1448, 62, 'modRow', i);
+        FGUYRect(ui, 76, y, rowW, 62, 16, hot ? FGUYC.rowHot : FGUYC.row, 100, hot ? FGUYC.yellow : FGUYC.rowLine, 100, hot ? 3 : 2);
+        FGUYHit(76, y, rowW, 62, 'modRow', i);
         FGUYText(ui, 100, y + 6, 760, 30, m.name + '  ' + m.version, false, 22, FGUYC.white, 'left');
         FGUYText(ui, 100, y + 34, 760, 26, m.author != '' ? 'by ' + m.author : m.folder, false, 16, FGUYC.muted2, 'left');
         var gameplay = m.type == 'gameplay';
-        FGUYRect(ui, 1080, y + 16, 170, 32, 10, FGUYC.ink, 100, gameplay ? FGUYC.yellow : FGUYC.glow, 100, 2);
-        FGUYText(ui, 1080, y + 20, 170, 28, gameplay ? 'GAMEPLAY' : 'COSMETIC', false, 15, gameplay ? FGUYC.yellow : FGUYC.soft, 'center');
-        FGUYRect(ui, 1290, y + 12, 200, 40, 14, m.on ? FGUYC.green : FGUYC.bg, 100, m.on ? FGUYC.greenLine : FGUYC.redLine, 100, 2);
-        FGUYText(ui, 1290, y + 18, 200, 30, m.on ? 'ON' : 'OFF', false, 20, m.on ? FGUYC.white : FGUYC.red, 'center');
+        var sx = more ? -72 : 0;   // (the arrows' room)
+        FGUYRect(ui, 1080 + sx, y + 16, 170, 32, 10, FGUYC.ink, 100, gameplay ? FGUYC.yellow : FGUYC.glow, 100, 2);
+        FGUYText(ui, 1080 + sx, y + 20, 170, 28, gameplay ? 'GAMEPLAY' : 'COSMETIC', false, 15, gameplay ? FGUYC.yellow : FGUYC.soft, 'center');
+        FGUYRect(ui, 1290 + sx, y + 12, 200, 40, 14, m.on ? FGUYC.green : FGUYC.bg, 100, m.on ? FGUYC.greenLine : FGUYC.redLine, 100, 2);
+        FGUYText(ui, 1290 + sx, y + 18, 200, 30, m.on ? 'ON' : 'OFF', false, 20, m.on ? FGUYC.white : FGUYC.red, 'center');
     }
     if (FGUYMods.length > 0) {   // the chosen one's description, and what on / off means for it
         var c = FGUYMods[FGUYModsSel];
@@ -1958,6 +1987,20 @@ function FGUYDrawMods(ui) {
         FGUYText(ui, 76, 762, 1448, 30, 'Restart the game to apply your changes', false, 20, FGUYC.yellow, 'center');
     }
     FGUYFooter(ui, ['A', 'On / off', 'Y', 'Open the mods folder', 'B', 'Back'], '');
+}
+
+function FGUYModsShown() { return 7; }
+
+// Scroll the list by `by` rows (the wheel, the arrows): the selection stays on a row that's shown.
+function FGUYModsScroll(by) {
+    var n = FGUYMods.length, shown = FGUYModsShown();
+    if (n <= shown) return false;
+    var top = Math.max(0, Math.min(n - shown, FGUYModsTop + by));
+    if (top == FGUYModsTop) return false;
+    FGUYModsTop = top;
+    if (FGUYModsSel < top) FGUYModsSel = top;
+    if (FGUYModsSel >= top + shown) FGUYModsSel = top + shown - 1;
+    return true;
 }
 
 function FGUYInputMods(key) {

@@ -374,6 +374,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         } else if (strcmp(fn, "ChatMode") == 0) {        // (the lobby's chat box: typing in it, or not)
             OnlineMenuChatMode(ArgNumber(args, argc, 0) != 0);
             ReturnBool(movie, true);
+        } else if (strcmp(fn, "MenuWheel") == 0) {       // (the mouse wheel's steps since: up +)
+            ReturnNumber(movie, OnlineMenuWheelSteps());
         } else if (strcmp(fn, "ChatTyped") == 0) {       // (what was typed into it since)
             ReturnString(movie, OnlineMenuChatTyped());
         } else if (strcmp(fn, "UpdateState") == 0) {     // (the ONLINE screen: is there a newer version?)

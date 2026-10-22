@@ -133,6 +133,19 @@ const char* OnlineMenuChatTyped() {
     return out.c_str();
 }
 
+// The mouse wheel in the menus (the window procedure): its steps, for our lists there (the MODS page polls them),
+// FGUYMOD_MenuWheel - up +1 a notch, down -1. (Turned elsewhere: the page drops them as it opens.)
+volatile LONG g_wheel = 0;   // (in 1/120 notches)
+void OnlineMenuWheel(int delta) {
+    InterlockedExchangeAdd(&g_wheel, delta);
+}
+int OnlineMenuWheelSteps() {
+    LONG d = InterlockedExchange(&g_wheel, 0);
+    int steps = d / 120;
+    if (steps == 0 && d != 0) steps = d > 0 ? 1 : -1;   // (a fine-grained wheel / touchpad: still a step)
+    return steps;
+}
+
 // FGUYMOD_TypedText: what was typed since the last call (letters, digits, \b for Backspace).
 const char* OnlineMenuTyped() {
     static std::string out;
