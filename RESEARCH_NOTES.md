@@ -602,3 +602,17 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   play the owner's (so triggers, interactions, pickups go by where the player really is: respawn jumps, skips); the
   level's own logic (scripts, timers, what events set off) runs on every PC as vanilla; enemies and random picks the
   host's.
+- The game's mode `[0xaee080]` (the one before it at `+4`; switched by `0x998f40`): 7 playing, 2 its pause menu and
+  also a level's results. The pause menu opening plays `SNDS_PlaySoundFX(EnterPause)` (the results don't): the mod's
+  sign that the game paused itself (it does sometimes right after a cutscene skip - Chicken Fight's between rounds).
+- Cutscenes: the game's own "running" test (its tick `0x69f400`, before START may skip): the current one `[0xbad99c]`,
+  its player's flag `[+0x7c] +0x38`; skippable: also seen (`+0x88`, or `[0xbad69f]`) and its own `+0x89`. The state
+  `+0xac` is 3 for most but 2 for Chicken Fight's. START skips them through `0x76` (the pad's action) per active player.
+- Levels the game loads by itself (no menu command): the results' CONTINUE (`GAME_Unpause`, `MENU_Stop`, then the
+  next level) and Chicken Fight's "If you join, this level will restart" (the one-player `GCXX` -> two-player `GCMP`).
+  A restart (`SCEN_Reset`) doesn't open the level's package again; a load opens it ~8 times, the game ticking between.
+- A one-view level after a two-player one keeps the second player's object with its old viewport number (1) while the
+  game has one view: not in yet. Player health: `[player+0x105c] +0x50` everywhere; `[player+0x5c] +0x140` is the
+  same object except Peter's in Chicken Fight.
+- Level 10 (`BPXX`) opens with the T-rex (`3025`, 5600 health, bullets on its body do nothing - "Destroy the T-Rex's
+  Lasers", then Bertram's helmet, a 10-health character riding it). Not played through yet.
