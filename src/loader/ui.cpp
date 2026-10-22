@@ -542,7 +542,11 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
 using Command_t = void(__fastcall*)(void* self, void* edx, void* movie, const char* command, const char* args);
 Command_t Real_Command = nullptr;
 
+void* g_cmdSelf = nullptr;    // (the last menu command's handler and movie: the mod's own commands go the same way)
+void* g_cmdMovie = nullptr;
+
 void __fastcall Hook_Command(void* self, void* edx, void* movie, const char* command, const char* args) {
+    if (self) { g_cmdSelf = self; g_cmdMovie = movie; }
     if (command && (strcmp(command, "GAME_Portal") == 0 || strcmp(command, "GAME_Reload") == 0))
         NetplayStoryLevelChange(command);   // (story co-op: another level / the same again)
     if (NetplayResultsCommand(command) == 2) {   // (the end of the match's pick, free-running: netplay.cpp)
@@ -595,6 +599,14 @@ bool PatchSlot(uintptr_t vtable, int slot, uintptr_t expected, void* hook, void*
 }
 
 }  // namespace
+
+// The mod's own menu command (the game thread): as a menu would send it - through the last command's handler.
+bool UiRunCommand(const char* command, const char* args) {
+    if (!g_cmdSelf || !Real_Command || !command) return false;
+    Log(L"UI: the mod runs command %S(%S)", command, args ? args : "");
+    Hook_Command(g_cmdSelf, nullptr, g_cmdMovie, command, args ? args : "");
+    return true;
+}
 
 void InitUi() {
     LoadPatches();

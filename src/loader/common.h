@@ -82,6 +82,8 @@ void NetplayTestPointOn(unsigned id);                 //   test pipe "pointon <i
 void NetplayTestKillNpcs();                          //   test pipe "killnpcs": the host's enemies all down
 void NetplayTestHitNpc(unsigned id, int amount);     //   test pipe "hitnpc <id> <amount>": my player hits that enemy
 void NetplayTestFreeze(int ms);                      //   test pipe "freeze <ms>": the game loop stops a while
+void NetplayTestCommand(const char* command, const char* args);   //   test pipe "uicmd <command> [args]"
+bool UiRunCommand(const char* command, const char* args);   // ui.cpp: a menu command of the mod's own (game thread)
 void NetplayLevelFileOpened(const wchar_t* path);   // config.cpp: a file opened (a level's package: story co-op)
 void NetplayTestHurt(int player, float amount);   //   test pipe "hurt": my player there takes a hit nobody caused
 void OnlineMenuLogYaw();               //   test pipe "yaw": the lobby preview's facing (onlinemenu.cpp)

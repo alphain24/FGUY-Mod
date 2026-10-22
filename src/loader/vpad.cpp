@@ -324,6 +324,12 @@ void HandleCommand(char* line) {
         NetplayTestKillNpcs();
         return;
     }
+    if (cmd && _stricmp(cmd, "uicmd") == 0) {   // test tools: uicmd <command> [args] - a menu command, as a menu sends it
+        char* c = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* a = strtok_s(nullptr, "\r\n", &ctx);
+        if (c) NetplayTestCommand(c, a ? a : "");
+        return;
+    }
     if (cmd && _stricmp(cmd, "freeze") == 0) {   // test tools: freeze <ms> - the game loop stops a while (a window held)
         char* ms = strtok_s(nullptr, " \t\r\n", &ctx);
         if (ms) NetplayTestFreeze(atoi(ms));

@@ -1072,6 +1072,9 @@ void FreeNpcHitIn(int s, const PktNpcHit* p);
 extern const int kPktNpcHitSize;
 struct PktNpcDown;
 void FreeNpcDownIn(int s, const PktNpcDown* p);
+struct PktStoryRestart;
+void FreeStoryRestartIn(const PktStoryRestart* p);
+extern const int kPktStoryRestartSize;
 extern const int kPktNpcDownSize;
 extern const int kPktStatsSize;
 void FreeState(int s, const PktState* p, bool withMoney, bool withClock);
@@ -1175,6 +1178,8 @@ void Receive() {
             if (g_free) FreeHitIn(slot, reinterpret_cast<PktHit*>(buf), n >= kPktHitSize);
         } else if (h->type == 'o') {   // story co-op: the host went back to the lobby from the main menu - everyone does
             if (slot == 0 && g_slot != 0) NetplaySessionLeaveAsked();
+        } else if (h->type == 'y' && n >= kPktStoryRestartSize) {   // story co-op: the host restarts the level for everyone
+            if (g_free && slot == 0 && g_slot != 0) FreeStoryRestartIn(reinterpret_cast<PktStoryRestart*>(buf));
         } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
             auto p = reinterpret_cast<PktLeave*>(buf);
             if (g_free) {   // (free-running: their tick count isn't mine - they're simply out)
@@ -1650,6 +1655,7 @@ bool g_sessionCtf = false;       // a Capture the Flag one (the Greased-Up Deaf 
 volatile LONG g_sessionLevelAsked = 0;  // the menu launched the level (taken at the next tick)
 unsigned g_levelTick = 0;
 volatile LONG g_testFreezeMs = 0;   // (test pipe "freeze")
+std::string g_testCommand, g_testCommandArgs;   // (test pipe "uicmd": run at the next tick)
 extern volatile ULONGLONG g_freeTickAt;
 void StartFreeKeepAlive();
 extern unsigned short g_storyEpoch;
@@ -2227,7 +2233,9 @@ char __fastcall Free_TakeDamage(void* self, void*, void* info) {
         ++g_hitsBlocked;
         // (no source: the level's own - out of the world, a kill volume: their character here is somewhere it isn't on
         // their PC - put it where their PC has it at once, FreeApplyRemotes)
-        if (source < 0 && victim >= 0 && victim < 4 && victim != g_slot) g_remote[victim].rescue = true;
+        // (an enemy's hit isn't that: story's enemies hit players all the time - each one teleported them, a jump cut)
+        bool byEnemy = src && !IsBadReadPtr(src, 4) && *reinterpret_cast<ULONG_PTR*>(src) == 0xa1aafc;   // (zNPCGeneric)
+        if (source < 0 && !byEnemy && victim >= 0 && victim < 4 && victim != g_slot) g_remote[victim].rescue = true;
         return 0;
     }
     float before = PlayerHealth(victimObj);
@@ -2267,6 +2275,7 @@ char __fastcall Free_TakeDamage(void* self, void*, void* info) {
     return r;
 }
 
+void StoryRestartFor(int s);
 // A player rejoined ('B'): a new game of theirs - its counts start over. Their character plays again here.
 void FreeBack(int s) {
     if (s == g_slot || s < 0 || s >= 4) return;
@@ -2279,6 +2288,7 @@ void FreeBack(int s) {
     g_lastHitOn[s] = 0;
     Log(L"Netplay: free - player %d rejoined the match", s);
     if (g_inSession) OverlayShow((PlayerName(s) + L" is back in the match").c_str(), 4000);
+    if (g_sessionStory && g_slot == 0) StoryRestartFor(s);
 }
 
 // A hit played here (from another PC, or the test's) gets its damage info from here, not the stack: the game keeps
@@ -4346,7 +4356,7 @@ void FreeApplyRemotes(float dt) {
         // can't come back up through the floor - or the game wanted to put them back in the level: that's their PC's call,
         // FreeRescue): straight there - someone standing there: right next to them, on that side (they stayed where
         // they were for good before - a fist fight right next to the other player), slid the rest of the way.
-        bool jump = dist > 4 || fabsf(dy) > 1.5f || r.rescue;
+        bool jump = dist > 4 || fabsf(dy) > 1.5f || (r.rescue && dist > 0.5f);   // (rescued: only if off)
         r.rescue = false;
         const float* blocker = nullptr;
         if (jump) {
@@ -4477,6 +4487,87 @@ void FreeLevelFileTick() {   // (the game thread, each tick)
     if (!sameLoad) StoryLevelChange("the game loads a level by itself");
 }
 
+// Story co-op: a player rejoining (their game crashed, or they left) comes back with a new game - the level from its
+// start, nothing of what happened in it since (doors, objectives, cutscenes). So everyone restarts the level, as the
+// game itself does when a player joins a one-player level ("If you join, this level will restart"): once the
+// rejoiner's level is up and the host's game is playing (not paused, no cutscene), the host sends 'y' - its level (the
+// path its game opened it by: a made-up one crashes the game) and its level instance after the restart - and every PC
+// loads that level from its start (GAME_ClearCheckPoint, GAME_Portal), the rejoiner taking the host's instance count.
+#pragma pack(push, 1)
+struct PktStoryRestart { PktHeader h; unsigned seq; unsigned short epoch; char level[96]; };
+#pragma pack(pop)
+const int kPktStoryRestartSize = (int)sizeof(PktStoryRestart);
+SRWLOCK g_storyLevelLock = SRWLOCK_INIT;
+char g_storyLevel[96] = "";            // (this PC's level: as its game opened it, "/FGUY/Levels/Level_FRXX/FRXX")
+bool g_restartPending[4] = {};         // (the host: players back - the restart once they're up)
+ULONGLONG g_restartSendUntil = 0, g_restartNextSend = 0;
+PktStoryRestart g_restartOut{};
+unsigned g_restartSeqSeen = 0;
+PktStoryRestart g_restartIn{};         // (a guest: the host's, run at the next tick)
+bool g_restartInPending = false;
+
+void StoryRestartFor(int s) {
+    if (s > 0 && s < 4) g_restartPending[s] = true;
+}
+void FreeStoryRestartIn(const PktStoryRestart* p) {
+    if (!p->seq || p->seq <= g_restartSeqSeen) return;
+    g_restartSeqSeen = p->seq;
+    g_restartIn = *p;
+    g_restartIn.level[sizeof(g_restartIn.level) - 1] = 0;
+    g_restartInPending = true;
+}
+void StoryRestartRun(const char* level, unsigned short epoch) {   // (the game thread, the net lock held)
+    g_storyEpoch = (unsigned short)(epoch - 1);   // (GAME_Portal: +1 - the host's after its restart)
+    LeaveCriticalSection(&g_netLock);   // (the commands come back into the netcode)
+    UiRunCommand("GAME_ClearCheckPoint", "");
+    UiRunCommand("GAME_Portal", level);
+    EnterCriticalSection(&g_netLock);
+}
+void FreeStoryRestartTick() {   // (the game thread, each tick; the net lock held)
+    ULONGLONG now = GetTickCount64();
+    if (g_slot != 0) {
+        if (!g_restartInPending) return;
+        g_restartInPending = false;
+        Log(L"Netplay: free - story: the host restarts the level for everyone (a player rejoined) - %S, level instance %u",
+            g_restartIn.level, g_restartIn.epoch);
+        OverlayShow(L"A player rejoined - the level restarts", 4000);
+        StoryRestartRun(g_restartIn.level, g_restartIn.epoch);
+        return;
+    }
+    if (now < g_restartSendUntil && now >= g_restartNextSend) {   // (a few copies: packets get lost)
+        SendAll(&g_restartOut, sizeof(g_restartOut));
+        g_restartNextSend = now + 100;
+    }
+    int who = -1;
+    for (int s = 1; s < g_players && s < 4; ++s)
+        if (g_restartPending[s] && !g_gone[s] && (g_remote[s].latest.kbm.flags & 1)) who = s;   // (their level's up)
+    if (who < 0) return;
+    const int kGameMode = 0xaee080;   // (7: playing - not paused, not on the results)
+    if (*reinterpret_cast<volatile int*>(kGameMode) != 7 || SplitViewCutscenePlaying()) return;
+    char level[96];
+    AcquireSRWLockShared(&g_storyLevelLock);
+    strcpy_s(level, g_storyLevel);
+    ReleaseSRWLockShared(&g_storyLevelLock);
+    for (int s = 0; s < 4; ++s) g_restartPending[s] = false;
+    if (!level[0]) {
+        Log(L"Netplay: free - story: player %d rejoined - this level's path isn't known here, no restart", who);
+        return;
+    }
+    static unsigned seq = 0;
+    g_restartOut = PktStoryRestart{};
+    g_restartOut.h = {'y', (BYTE)g_slot};
+    g_restartOut.seq = ++seq;
+    g_restartOut.epoch = (unsigned short)(g_storyEpoch + 1);
+    strcpy_s(g_restartOut.level, level);
+    SendAll(&g_restartOut, sizeof(g_restartOut));
+    g_restartSendUntil = now + 2000;
+    g_restartNextSend = now + 100;
+    Log(L"Netplay: free - story: player %d rejoined - the level restarts for everyone (%S, level instance %u)", who,
+        level, g_restartOut.epoch);
+    OverlayShow((PlayerName(who) + L" rejoined - the level restarts").c_str(), 4000);
+    StoryRestartRun(level, g_restartOut.epoch);
+}
+
 // Everyone lets go of the lockstep at this tick (the same one on every PC).
 void FreeStart() {
     LARGE_INTEGER real;
@@ -4526,6 +4617,10 @@ void FreeStart() {
     g_storyEpoch = 0;
     InterlockedExchange(&g_levelFileOpen, 0);   // (this level's own package, before the match ran free)
     g_levelLoadAskedAt = 0;
+    for (int s = 0; s < 4; ++s) g_restartPending[s] = false;
+    g_restartSendUntil = 0;
+    g_restartSeqSeen = 0;
+    g_restartInPending = false;
     for (int s = 0; s < 4; ++s) { g_storyIn[s].clear(); g_storyPlayed[s] = 0; g_storyGapSince[s] = 0; }
     InterlockedExchange(&g_resultsLeave, 0);
     AcquireSRWLockExclusive(&g_buyLock);   // (nothing left over from a match before)
@@ -4662,6 +4757,15 @@ void FreeTick() {
     FreePointsTick();
     FreeCarryTick();
     if (g_sessionStory) FreeLevelFileTick();
+    if (g_sessionStory) FreeStoryRestartTick();
+    if (!g_testCommand.empty()) {
+        std::string c, a;
+        c.swap(g_testCommand);
+        a.swap(g_testCommandArgs);
+        LeaveCriticalSection(&g_netLock);   // (the command can come back into the netcode)
+        UiRunCommand(c.c_str(), a.c_str());
+        EnterCriticalSection(&g_netLock);
+    }
     if (g_sessionStory && g_npcSync) {
         FreeLinkLevelNpcs(false);
         FreeTestSendEvent();
@@ -5347,7 +5451,9 @@ bool NetplaySessionReturn() {
     static bool returned = false;
     if (returned) return true;
     if (!g_inSession || !g_levelLaunched) return false;
-    if (StoryFrontEnd() && !g_storyLeaveAsked) return false;   // (story co-op: the main menu's, until ONLINE)
+    // (story co-op: the main menu's, until ONLINE - unless I left the match: its quit to the lobby, my game alone now -
+    //  stuck on the game's main menu, not back in its lobby)
+    if (StoryFrontEnd() && !g_storyLeaveAsked && !g_left) return false;
     returned = true;
     NetplayLeave(L"the match is over");
     char code[16] = "", token[40] = "";
@@ -5394,8 +5500,25 @@ void NetplayLevelFileOpened(const wchar_t* path) {   // (any thread) a level's p
     name = name ? name + 1 : path;
     if (wcslen(name) != 7 || _wcsicmp(name + 4, L".ho") != 0) return;
     InterlockedExchange(&g_levelFileOpen, 1);
+    // (its path, as GAME_Portal takes it: from "/FGUY/", without ".ho" - "./FGUY/Levels/Level_FRXX/FRXX.ho")
+    const wchar_t* from = wcsstr(path, L"FGUY");
+    if (!from || from == path || (from[-1] != L'/' && from[-1] != L'\\')) return;
+    char level[96];
+    int n = 0;
+    level[n++] = '/';
+    for (const wchar_t* c = from; *c && c < name + 4 && n < 95; ++c) level[n++] = *c == L'\\' ? '/' : (char)*c;
+    level[n] = 0;
+    AcquireSRWLockExclusive(&g_storyLevelLock);
+    strcpy_s(g_storyLevel, level);
+    ReleaseSRWLockExclusive(&g_storyLevelLock);
 }
 void NetplayTestFreeze(int ms) { InterlockedExchange(&g_testFreezeMs, ms); }
+void NetplayTestCommand(const char* command, const char* args) {
+    EnterCriticalSection(&g_netLock);
+    g_testCommand = command;
+    g_testCommandArgs = args;
+    LeaveCriticalSection(&g_netLock);
+}
 void NetplayTestHitNpc(unsigned id, int amount) {
     InterlockedExchange(&g_testHitNpcAmount, amount);
     InterlockedExchange(&g_testHitNpc, (LONG)id);

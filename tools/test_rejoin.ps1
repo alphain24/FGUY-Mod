@@ -72,7 +72,7 @@ function SyncAfter([int]$h, [int]$c, [int]$seconds) {
 & "$PSScriptRoot\wait_gpu.ps1"
 $env:FGUYMOD_NET_SCRIPT = "1"   # (both players move about by themselves - the test bot's script)
 if ($Free) { $env:FGUYMOD_TEST_NETFREE = "1" }
-$extra = @{}; if ($Story) { $extra.Story = $true }
+$extra = @(); if ($Story) { $extra += "-Story" }   # (a switch through -File: its name only)
 $out = powershell -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\test_online_match.ps1" -GameDir $GameDir -Seconds 2 -Controls "controller,controller" @extra   # (the script drives pads)
 Remove-Item Env:FGUYMOD_NET_SCRIPT
 Remove-Item Env:FGUYMOD_TEST_NETFREE -ErrorAction SilentlyContinue
