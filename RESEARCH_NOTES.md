@@ -368,6 +368,12 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   now go without the body part (as a fall), tested: Rupert and the chicken killing the bot, no crash.
 - Seen on the way (for the polish): after the chicken's kill the host's copy of the bot was up again 5 s before the
   bot's own PC had it respawn.
+- **Joe's accuracy online = offline (measured 2026-10-22, 3-player DM, new netcode, a standing target):** Joe (kind
+  0x163:188 once out) hits every ~0.2 s for 10, a full 200 down in ~4.5-5 s - the same whether the target's own PC is the
+  host (its Joe the game's own AI, as offline) or a guest (its copy follows the host's). Every PC had the same hits; the
+  second target (further away, same team as the first) was never shot - no "everyone at once". So the reported aimbot is
+  the game's own Joe. He only attacks the other team (same team: he idles). Test tools (scratchpad): kindon.py (a spot
+  shows a kind), hplog.py (every PC's view of every player's health).
 
 ## Scoreboard and clock (2026-10-18)
 - The game fills the scoreboard with `UpdateMultiPlayerStats(team, player, name, score, bonus, kills, deaths)`
@@ -498,7 +504,8 @@ Player packages: `Global_Scenes\Players\PLYS/PLYW/PLYN/PLYX`.
   the title screen and its lobby (it had to rejoin, and its clock was then 626 s behind the host's).
 - Now (free-running only): the host's pick, or everyone's rematch vote, goes to everyone (`'r'`), every PC goes
   back to its lobby (the pick becomes the menu's `GAME_Quit`; a vote's leave runs from the results movie's poll -
-  the HUD doesn't run there), with a file for its lobby game (`FGUYModematch_<lobby pid>.txt`), whose lobby then
+  the HUD doesn't run there), with a file for its lobby game (`FGUYMod
+ematch_<lobby pid>.txt`), whose lobby then
   readies (guests) / takes the next map and starts once everyone is back (the host). Tested: vote, NEXT MAP (FR ->
   AM), MAIN MENU (back, no new match) - the next match running 16 s after the pick. The results menu follows the
   host's controller (a guest's A does nothing there; Y votes).
