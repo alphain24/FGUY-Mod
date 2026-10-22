@@ -40,23 +40,45 @@ def piece(g, by, ids):
     return n, vb, uv, ib, mats
 
 
-def vertex_starts(vd, n):
-    """Where each vertex starts: 28 bytes each (position, normal, one bone) - or, skinned to more bones, 32 / 36 (their
-    weights): walked by the normals (unit length) - research; the influence count's encoding isn't decoded yet."""
-    import math
+def influence_table(d, n):
+    """The piece's vertices by how many bones move them: dwords (k << 16 | count) for k = 1, 2, .. whose counts add up
+    to the vertex count - the vertices come in that order (all one-bone ones first)."""
+    for i in range(0x80, len(d) - 8, 4):
+        tab, j, k = [], i, 1
+        while j + 4 <= len(d):
+            v = struct.unpack_from('<I', d, j)[0]
+            if v >> 16 != k or not 0 < (v & 0xffff) <= n:
+                break
+            tab.append(v & 0xffff)
+            k, j = k + 1, j + 4
+        if tab and sum(tab) == n:
+            return tab
+    return [n]
 
-    def unit(o):
-        if o + 24 > len(vd):
-            return True
-        x, y, z = struct.unpack_from('<3f', vd, o + 12)
-        return abs(math.sqrt(x * x + y * y + z * z) - 1) < 0.02
+
+def vertex_layout(d, n, vb_size):
+    """Each vertex: position, normal (12 + 12), with tangents also tangent + its sign (16), then - moved by more than
+    one bone - its weights (4 bytes, adding up to 255), then its bones (4 bytes). Returns [(offset, tangents, bones)]."""
+    tab = influence_table(d, n)
+    for tangents in (False, True):
+        base = 28 + (16 if tangents else 0)
+        if tab[0] * base + (n - tab[0]) * (base + 4) == vb_size:
+            out, o = [], 0
+            for k, cnt in enumerate(tab, 1):
+                for _ in range(cnt):
+                    out.append((o, tangents, k))
+                    o += base + (4 if k > 1 else 0)
+            return out
+    return None
+
+
+def vertex_starts(vd, n, d=b''):
+    lay = vertex_layout(d, n, len(vd)) if d else None
+    if lay:
+        return [o for o, _, _ in lay]
     if len(vd) % n == 0:
         return [i * (len(vd) // n) for i in range(n)]
-    out, pos = [], 0
-    while len(out) < n and pos + 24 <= len(vd):
-        out.append(pos)
-        pos += next((s for s in (28, 32, 36, 40) if unit(pos + s)), 28)
-    return out
+    return []
 
 
 def texture_of(mat, by, ids):
@@ -102,7 +124,7 @@ def main():
         if info or not (vb and ib):
             continue
         vd, pos, nor, tc = vb.data(), [], [], []
-        starts = vertex_starts(vd, n)
+        starts = vertex_starts(vd, n, g.data())
         if len(starts) != n:
             print('   (vertices not walked through - skipped)')
             continue
