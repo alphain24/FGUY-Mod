@@ -40,35 +40,39 @@ def piece(g, by, ids):
     return n, vb, uv, ib, mats
 
 
-def influence_table(d, n):
+def influence_tables(d, n):
     """The piece's vertices by how many bones move them: dwords (k << 16 | count) for k = 1, 2, .. whose counts add up
-    to the vertex count - the vertices come in that order (all one-bone ones first)."""
-    for i in range(0x80, len(d) - 8, 4):
-        tab, j, k = [], i, 1
+    to the vertex count - the vertices come in that order (all one-bone ones first). (Every such run in the record: one
+    can be there by chance - vertex_layout keeps the one whose sizes match the vertex data.)"""
+    # (a bone count with no vertices is left out: (1, 108) (3, 1) (4, 22) - returned as [108, 0, 1, 22])
+    out = []
+    for i in range(0x80, len(d) - 4, 4):
+        tab, j, last = [], i, 0
         while j + 4 <= len(d):
             v = struct.unpack_from('<I', d, j)[0]
-            if v >> 16 != k or not 0 < (v & 0xffff) <= n:
+            k, c = v >> 16, v & 0xffff
+            if not last < k <= 8 or not 0 < c <= n or (not tab and k != 1 and k > 4):
                 break
-            tab.append(v & 0xffff)
-            k, j = k + 1, j + 4
+            tab += [0] * (k - last - 1) + [c]
+            last, j = k, j + 4
         if tab and sum(tab) == n:
-            return tab
-    return [n]
+            out.append(tab)
+    return out or [[n]]
 
 
 def vertex_layout(d, n, vb_size):
     """Each vertex: position, normal (12 + 12), with tangents also tangent + its sign (16), then - moved by more than
     one bone - its weights (4 bytes, adding up to 255), then its bones (4 bytes). Returns [(offset, tangents, bones)]."""
-    tab = influence_table(d, n)
-    for tangents in (False, True):
-        base = 28 + (16 if tangents else 0)
-        if tab[0] * base + (n - tab[0]) * (base + 4) == vb_size:
-            out, o = [], 0
-            for k, cnt in enumerate(tab, 1):
-                for _ in range(cnt):
-                    out.append((o, tangents, k))
-                    o += base + (4 if k > 1 else 0)
-            return out
+    for tab in influence_tables(d, n):
+        for tangents in (False, True):
+            base = 28 + (16 if tangents else 0)
+            if tab[0] * base + (n - tab[0]) * (base + 4) == vb_size:
+                out, o = [], 0
+                for k, cnt in enumerate(tab, 1):
+                    for _ in range(cnt):
+                        out.append((o, tangents, k))
+                        o += base + (4 if k > 1 else 0)
+                return out
     return None
 
 
