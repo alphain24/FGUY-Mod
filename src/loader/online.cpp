@@ -657,6 +657,14 @@ void StartSession(const std::vector<std::string>& f) {
     keep(L"FGUYMOD_SAVEDIR");
     SetEnvironmentVariableW(L"FGUYMOD_SAVEDIR", dirName);
     set(L"FGUYMOD_MY_SETTINGS", OnlineSettingsCapture());   // my own settings, not the host's save's
+    {   // my custom skin (cosmetics.cpp): the match sends it to everyone
+        std::wstring skin = CosmeticsMySkinPath();
+        wchar_t test[MAX_PATH];   // (test knob FGUYMOD_TEST_SKIN=<slot>=<pack path>: that slot's player wears it)
+        if (GetEnvironmentVariableW(L"FGUYMOD_TEST_SKIN", test, MAX_PATH) && _wtoi(test) == g_mySlot && wcschr(test, L'='))
+            skin = wcschr(test, L'=') + 1;
+        keep(L"FGUYMOD_MY_SKIN");
+        SetEnvironmentVariableW(L"FGUYMOD_MY_SKIN", skin.empty() ? nullptr : skin.c_str());
+    }
     std::string names;   // everyone's name by slot, for the match's notices ("Waiting for ...")
     for (size_t i = 0; i < g_members.size(); ++i) names += (i ? "|" : "") + g_members[i].name;
     if (g_catchUpStart && f.size() >= 12) names = f[11];   // (rejoining: the match's, as it started)

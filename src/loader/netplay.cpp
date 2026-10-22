@@ -1088,6 +1088,136 @@ void FreeState(int s, const PktState* p, bool withMoney, bool withClock);
 void FreeHitIn(int s, const PktHit* p, bool withCredit);
 extern const int kPktStateSize, kPktHitSize, kPktHitSizeOld;
 
+// ---- skins: everyone's custom skin pack (cosmetics.cpp) ----------------------------------------------------------
+// Each player's skin pack (FGUYMOD_MY_SKIN, picked in the lobby) goes to everyone: 'n' says which one I wear (its size
+// and CRC, once a second all match long - late joiners and rejoiners hear it too), a player without it asks for the
+// pieces missing ('j'), and the owner sends them ('u', 1 KB each). Then that player's character wears it on every PC.
+#pragma pack(push, 1)
+struct PktSkinNote { PktHeader h; unsigned size, crc; };
+struct PktSkinAsk { PktHeader h; BYTE to; unsigned crc, first; unsigned short count; };
+struct PktSkinPiece { PktHeader h; BYTE to; unsigned crc, total, index; unsigned short len; BYTE data[1024]; };
+#pragma pack(pop)
+const int kSkinPiece = 1024, kPktSkinPieceHead = (int)offsetof(PktSkinPiece, data);
+CRITICAL_SECTION g_skinLock;
+bool g_skinLockInit = false;
+std::vector<unsigned char> g_skinMine;   // (my pack)
+unsigned g_skinMineCrc = 0;
+struct SkinIn { unsigned crc = 0, size = 0, applied = 0; std::vector<unsigned char> data; std::vector<bool> have; unsigned left = 0; ULONGLONG askedAt = 0; };
+SkinIn g_skinIn[4];
+
+unsigned SkinCrc(const std::vector<unsigned char>& d) {
+    unsigned c = 0xFFFFFFFFu;
+    for (unsigned char b : d) {
+        c ^= b;
+        for (int k = 0; k < 8; ++k) c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+    }
+    return d.empty() ? 0 : c ^ 0xFFFFFFFFu;
+}
+
+void SkinLock() {
+    if (!g_skinLockInit) { InitializeCriticalSection(&g_skinLock); g_skinLockInit = true; }
+    EnterCriticalSection(&g_skinLock);
+}
+
+void SkinNoteIn(int s, const PktSkinNote* p) {
+    if (s < 0 || s >= 4 || s == g_slot) return;
+    SkinLock();
+    SkinIn& in = g_skinIn[s];
+    if (p->crc != in.crc) {   // (another skin of theirs - or none)
+        in.crc = p->crc;
+        in.size = p->size <= 16 * 1024 * 1024 ? p->size : 0;
+        in.data.assign(in.size, 0);
+        in.have.assign((in.size + kSkinPiece - 1) / kSkinPiece, false);
+        in.left = (unsigned)in.have.size();
+        in.askedAt = 0;
+        if (!in.size && in.applied) {
+            in.applied = 0;
+            CosmeticsSetSkin(s, {}, L"");
+        }
+    }
+    LeaveCriticalSection(&g_skinLock);
+}
+
+void SkinAskIn(int s, const PktSkinAsk* p) {
+    if (p->to != g_slot || p->crc != g_skinMineCrc || g_skinMine.empty()) return;
+    unsigned pieces = ((unsigned)g_skinMine.size() + kSkinPiece - 1) / kSkinPiece;
+    for (unsigned i = p->first; i < p->first + min((unsigned)p->count, 48u) && i < pieces; ++i) {
+        PktSkinPiece u{};
+        u.h = {'u', (BYTE)g_slot};
+        u.to = (BYTE)s;
+        u.crc = g_skinMineCrc;
+        u.total = (unsigned)g_skinMine.size();
+        u.index = i;
+        u.len = (unsigned short)min((unsigned)kSkinPiece, (unsigned)g_skinMine.size() - i * kSkinPiece);
+        memcpy(u.data, g_skinMine.data() + i * kSkinPiece, u.len);
+        SendAll(&u, kPktSkinPieceHead + u.len);
+    }
+}
+
+void SkinPieceIn(int s, const PktSkinPiece* p, int n) {
+    if (p->to != g_slot || s < 0 || s >= 4 || n < kPktSkinPieceHead + p->len) return;
+    SkinLock();
+    SkinIn& in = g_skinIn[s];
+    if (p->crc == in.crc && p->total == in.size && p->index < in.have.size() && !in.have[p->index] && p->len <= kSkinPiece) {
+        memcpy(in.data.data() + (size_t)p->index * kSkinPiece, p->data, p->len);
+        in.have[p->index] = true;
+        --in.left;
+    }
+    LeaveCriticalSection(&g_skinLock);
+}
+
+// every frame (the render thread): say mine, ask for the missing pieces, a complete pack worn
+void SkinFrame() {
+    if (!g_enabled) return;
+    ULONGLONG now = GetTickCount64();
+    static ULONGLONG lastNote = 0;
+    if (now - lastNote >= 1000) {
+        lastNote = now;
+        PktSkinNote note{{'n', (BYTE)g_slot}, (unsigned)g_skinMine.size(), g_skinMineCrc};
+        SendAll(&note, sizeof(note));
+    }
+    SkinLock();
+    for (int s = 0; s < 4; ++s) {
+        SkinIn& in = g_skinIn[s];
+        if (!in.size || in.applied == in.crc) continue;
+        if (in.left == 0) {
+            if (SkinCrc(in.data) == in.crc) {
+                in.applied = in.crc;
+                Log(L"Netplay: player %d's skin pack is here (%u bytes) - wearing it", s, in.size);
+                CosmeticsSetSkin(s, in.data, (PlayerName(s) + L"'s skin").c_str());
+            } else {   // (garbled: again)
+                in.have.assign(in.have.size(), false);
+                in.left = (unsigned)in.have.size();
+            }
+        } else if (now - in.askedAt >= 150) {
+            in.askedAt = now;
+            unsigned first = 0;
+            while (first < in.have.size() && in.have[first]) ++first;
+            PktSkinAsk a{{'j', (BYTE)g_slot}, (BYTE)s, in.crc, first, 48};
+            SendAll(&a, sizeof(a));
+        }
+    }
+    LeaveCriticalSection(&g_skinLock);
+}
+
+// starting: my pack (FGUYMOD_MY_SKIN) - worn here at once, and said to everyone (SkinFrame)
+void SkinStart() {
+    wchar_t path[MAX_PATH];
+    DWORD n = GetEnvironmentVariableW(L"FGUYMOD_MY_SKIN", path, MAX_PATH);
+    if (!n || n >= MAX_PATH) return;
+    HANDLE f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) { Log(L"Netplay: my skin pack %s isn't there", path); return; }
+    DWORD size = GetFileSize(f, nullptr), got = 0;
+    std::vector<unsigned char> d(size);
+    bool ok = size < 16 * 1024 * 1024 && ReadFile(f, d.data(), size, &got, nullptr) && got == size;
+    CloseHandle(f);
+    if (!ok) return;
+    g_skinMine.swap(d);
+    g_skinMineCrc = SkinCrc(g_skinMine);
+    CosmeticsSetSkin(g_slot, g_skinMine, path);
+    Log(L"Netplay: my skin pack %s (%u bytes) - everyone gets it", path, (unsigned)g_skinMine.size());
+}
+
 void Receive() {
     char buf[1500];
     EnterCriticalSection(&g_netLock);
@@ -1185,6 +1315,12 @@ void Receive() {
             if (g_free) FreeHitIn(slot, reinterpret_cast<PktHit*>(buf), n >= kPktHitSize);
         } else if (h->type == 'o') {   // story co-op: the host went back to the lobby from the main menu - everyone does
             if (slot == 0 && g_slot != 0) NetplaySessionLeaveAsked();
+        } else if (h->type == 'n' && n >= (int)sizeof(PktSkinNote)) {   // which skin pack a player wears
+            SkinNoteIn(slot, reinterpret_cast<PktSkinNote*>(buf));
+        } else if (h->type == 'j' && n >= (int)sizeof(PktSkinAsk)) {    // a player asks for pieces of mine
+            SkinAskIn(slot, reinterpret_cast<PktSkinAsk*>(buf));
+        } else if (h->type == 'u' && n >= kPktSkinPieceHead) {          // a piece of a player's skin pack
+            SkinPieceIn(slot, reinterpret_cast<PktSkinPiece*>(buf), n);
         } else if (h->type == 'h' && n >= kPktSaveAskSize) {   // story co-op: a player rejoining asks for the host's save
             if (g_slot == 0) StorySaveAskIn(slot, reinterpret_cast<PktSaveAsk*>(buf));
         } else if (h->type == 'c' && n >= kPktSaveChunkHead) {   // a piece of the host's save (for me, rejoining)
@@ -5505,6 +5641,7 @@ bool NetplayPadConnected(DWORD pad) { return (g_enabled || g_left) && pad < 4 &&
 // thread's ticks; here we only learn which thread renders (it's excluded from quiescence).
 void NetplayOnFrame() {
     if (!g_enabled) return;
+    SkinFrame();   // (everyone's skin packs)
     if (!g_renderThread) {
         g_renderThread = GetCurrentThreadId();
         Log(L"Netplay: render thread %lu, game thread %lu", g_renderThread, g_mainThread);
@@ -5939,6 +6076,7 @@ void InitNetplay(HMODULE exe) {
     Log(L"Netplay: up to %d frames per second in the match (60 until everyone is in the level)", g_rateTarget);
     Log(L"Netplay: on - slot %d of %d players, %s, input delay %d, %s input", g_slot, g_players,
         g_relay ? L"through the lobby server's relay" : L"direct UDP", g_delay, g_script ? L"scripted" : L"controller");
+    SkinStart();   // (my custom skin, for everyone)
 
     HookSpec hooks[] = {
         {"kernel32.dll", "QueryPerformanceCounter", (void*)Hook_QPC, (void**)&Real_QPC},

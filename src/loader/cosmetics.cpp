@@ -311,6 +311,55 @@ void CosmeticsDeviceCreated(IDirect3DDevice9* dev) {
     if (void* o = Patch(dev, 82, (void*)Hook_DrawIndexed)) Real_DrawIndexed = (DrawIndexed_t)o;
 }
 
+// A pack's name and the model (outfit) it's for (skin.json: "name": "..", "modelId": [lo, hi]) - false: not a pack.
+bool CosmeticsPackInfo(const std::vector<unsigned char>& pack, std::string* name, unsigned* lo, unsigned* hi) {
+    std::vector<unsigned char> js;
+    if (!ZipEntry(pack, "skin.json", js)) return false;
+    std::string s(js.begin(), js.end());
+    if (name) {
+        size_t n = s.find("\"name\"");
+        size_t q1 = n == std::string::npos ? n : s.find('"', s.find(':', n) + 1);
+        size_t q2 = q1 == std::string::npos ? q1 : s.find('"', q1 + 1);
+        *name = q2 == std::string::npos ? "" : s.substr(q1 + 1, q2 - q1 - 1);
+    }
+    size_t m = s.find("\"modelId\"");
+    if (m == std::string::npos) return false;   // (made before the Skin Studio saved it: can't be matched to an outfit)
+    size_t br = s.find('[', m);
+    return br != std::string::npos && (sscanf_s(s.c_str() + br, "[%u, %u]", lo, hi) == 2 || sscanf_s(s.c_str() + br, "[%u,%u]", lo, hi) == 2);
+}
+
+// The model a player wears now ([[player +0x38] +0x1d4]: its World::ModelPrototypeEntity) - its asset id, through the
+// asset tree. which: the player's index (+0xdf8), or -1 - the list's n-th player instead (the menus' 3D characters).
+bool CosmeticsPlayerModel(int which, int nth, unsigned* lo, unsigned* hi) {
+    unsigned char* players[8];
+    int n = GamePlayers(players, 8);
+    unsigned char* p = nullptr;
+    for (int i = 0; i < n; ++i)
+        if ((which >= 0 && *reinterpret_cast<int*>(players[i] + 0xdf8) == which) || (which < 0 && i == nth)) p = players[i];
+    if (!p) return false;
+    auto inst = *reinterpret_cast<unsigned char**>(p + 0x38);
+    if (!inst || IsBadReadPtr(inst + 0x1d4, 4)) return false;
+    unsigned char* model = *reinterpret_cast<unsigned char**>(inst + 0x1d4);
+    if (!model) return false;
+    auto root = *reinterpret_cast<unsigned char* volatile*>(kAssetTree);
+    std::vector<unsigned char*> stack{root};
+    int seen = 0;
+    while (!stack.empty() && seen < 400000) {
+        unsigned char* node = stack.back();
+        stack.pop_back();
+        if (!node || IsBadReadPtr(node, 0x40)) continue;
+        ++seen;
+        if (*reinterpret_cast<unsigned char**>(node + 0x3c) == model) {
+            *lo = *reinterpret_cast<unsigned*>(node);
+            *hi = *reinterpret_cast<unsigned*>(node + 4);
+            return true;
+        }
+        stack.push_back(*reinterpret_cast<unsigned char**>(node + 0x20));
+        stack.push_back(reinterpret_cast<unsigned char*>(*reinterpret_cast<uintptr_t*>(node + 0x24) & ~3u));
+    }
+    return false;
+}
+
 // A player wears a skin pack (any thread; the pack's bytes - empty: none). Made ready on the render thread.
 void CosmeticsSetSkin(int slot, const std::vector<unsigned char>& pack, const wchar_t* name) {
     if (slot < 0 || slot >= 4) return;
@@ -330,6 +379,113 @@ void CosmeticsLoadSkinFile(int slot, const wchar_t* path) {
         CloseHandle(f);
     }
     CosmeticsSetSkin(slot, d, path);
+}
+
+// ---- the lobby: my skin -------------------------------------------------------------------------------------------
+// Skin packs live in FGUYMod\skins (*.fgskin). The lobby's character choice offers the ones made for the outfit its 3D
+// preview shows (the menu's player 2), and the one picked shows on the preview at once; the match gets it
+// (FGUYMOD_MY_SKIN, online.cpp) and sends it to everyone (netplay.cpp). The pick is remembered per outfit (FGUYMod.ini
+// [Skins] <model lo>_<model hi>=<file>).
+namespace {
+struct PackEntry { std::wstring file; std::string name; unsigned lo, hi; FILETIME written; };
+std::vector<PackEntry> g_packs;
+ULONGLONG g_packsAt = 0;
+std::wstring g_myPick;              // (the file picked for the outfit shown - empty: none)
+unsigned g_myPickLo = 0, g_myPickHi = 0;
+std::string g_optionsText;
+
+std::wstring SkinsDir() { return std::wstring(g_modDir) + L"\\skins"; }
+
+std::vector<unsigned char> ReadAll(const std::wstring& path) {
+    std::vector<unsigned char> d;
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return d;
+    DWORD size = GetFileSize(f, nullptr), got = 0;
+    if (size != INVALID_FILE_SIZE && size < 32 * 1024 * 1024) {
+        d.resize(size);
+        if (!ReadFile(f, d.data(), size, &got, nullptr) || got != size) d.clear();
+    }
+    CloseHandle(f);
+    return d;
+}
+
+void ScanPacks() {
+    ULONGLONG now = GetTickCount64();
+    if (g_packsAt && now - g_packsAt < 3000) return;
+    g_packsAt = now;
+    std::vector<PackEntry> out;
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((SkinsDir() + L"\\*.fgskin").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) { g_packs.clear(); return; }
+    do {
+        auto known = std::find_if(g_packs.begin(), g_packs.end(), [&](const PackEntry& e) {
+            return e.file == fd.cFileName && CompareFileTime(&e.written, &fd.ftLastWriteTime) == 0; });
+        if (known != g_packs.end()) { out.push_back(*known); continue; }   // (unchanged: not read again)
+        PackEntry e{fd.cFileName, "", 0, 0, fd.ftLastWriteTime};
+        if (CosmeticsPackInfo(ReadAll(SkinsDir() + L"\\" + fd.cFileName), &e.name, &e.lo, &e.hi)) out.push_back(e);
+        else Log(L"Cosmetics: %s isn't a skin pack this version can use (made by an older Skin Studio?)", fd.cFileName);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    g_packs.swap(out);
+}
+
+std::wstring IniPath() { return std::wstring(g_modDir) + L"\\FGUYMod.ini"; }
+}  // namespace
+
+// FGUYMOD_SkinOptions: "<model lo>_<model hi>|<picked file>|<name>~<file>;..." - the packs for the outfit the lobby's
+// preview shows (none known: "|" only)
+const char* CosmeticsSkinOptions() {
+    ScanPacks();
+    unsigned lo = 0, hi = 0;
+    g_optionsText.clear();
+    if (!CosmeticsPlayerModel(2, 0, &lo, &hi)) return g_optionsText.c_str();
+    if (lo != g_myPickLo || hi != g_myPickHi) {   // (another outfit: its remembered pick)
+        wchar_t key[32], file[MAX_PATH] = L"";
+        swprintf_s(key, L"%x_%x", lo, hi);
+        GetPrivateProfileStringW(L"Skins", key, L"", file, MAX_PATH, IniPath().c_str());
+        g_myPick = file;
+        g_myPickLo = lo; g_myPickHi = hi;
+        bool there = std::any_of(g_packs.begin(), g_packs.end(), [&](const PackEntry& e) { return e.file == g_myPick && e.lo == lo && e.hi == hi; });
+        if (!there) g_myPick.clear();
+        CosmeticsLoadSkinFile(2, g_myPick.empty() ? L"" : (SkinsDir() + L"\\" + g_myPick).c_str());   // (the preview)
+    }
+    char buf[64];
+    sprintf_s(buf, "%x_%x|", lo, hi);
+    g_optionsText = buf;
+    char pick[MAX_PATH * 3];
+    WideCharToMultiByte(CP_UTF8, 0, g_myPick.c_str(), -1, pick, sizeof(pick), nullptr, nullptr);
+    g_optionsText += std::string(pick) + "|";
+    for (const PackEntry& e : g_packs) {
+        if (e.lo != lo || e.hi != hi) continue;
+        char f[MAX_PATH * 3];
+        WideCharToMultiByte(CP_UTF8, 0, e.file.c_str(), -1, f, sizeof(f), nullptr, nullptr);
+        std::string n = e.name;
+        for (char& c : n) if (c == '~' || c == ';' || c == '|') c = ' ';
+        g_optionsText += n + "~" + f + ";";
+    }
+    return g_optionsText.c_str();
+}
+
+// FGUYMOD_SkinPick(<file> or ""): my skin for the outfit the preview shows
+void CosmeticsSkinPick(const char* file) {
+    wchar_t w[MAX_PATH] = L"";
+    if (file) MultiByteToWideChar(CP_UTF8, 0, file, -1, w, MAX_PATH);
+    unsigned lo = 0, hi = 0;
+    if (!CosmeticsPlayerModel(2, 0, &lo, &hi)) return;
+    g_myPick = w;
+    g_myPickLo = lo; g_myPickHi = hi;
+    wchar_t key[32];
+    swprintf_s(key, L"%x_%x", lo, hi);
+    WritePrivateProfileStringW(L"Skins", key, g_myPick.empty() ? nullptr : g_myPick.c_str(), IniPath().c_str());
+    CosmeticsLoadSkinFile(2, g_myPick.empty() ? L"" : (SkinsDir() + L"\\" + g_myPick).c_str());
+    Log(L"Cosmetics: my skin for this outfit: %s", g_myPick.empty() ? L"none" : g_myPick.c_str());
+}
+
+// online.cpp, starting a match: my skin pack's path (the one picked for the outfit the preview shows), or ""
+std::wstring CosmeticsMySkinPath() {
+    unsigned lo = 0, hi = 0;
+    if (g_myPick.empty() || !CosmeticsPlayerModel(2, 0, &lo, &hi) || lo != g_myPickLo || hi != g_myPickHi) return L"";
+    return SkinsDir() + L"\\" + g_myPick;
 }
 
 void CosmeticsTrace(unsigned lo, unsigned hi) {

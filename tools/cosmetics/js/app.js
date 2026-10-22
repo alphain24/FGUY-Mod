@@ -354,7 +354,8 @@ async function buildPack() {
   if (!edited.length) return null;
   const name = ($('packName').value || $('packName').placeholder).trim();
   const files = {};
-  const manifest = {format: 1, name, character: o.character, outfit: o.outfit, model: o.model.name, textures: {},
+  const manifest = {format: 1, name, character: o.character, outfit: o.outfit, model: o.model.name,
+    modelId: [o.model.lo, o.model.hi], textures: {},
     tool: 'FGUY Skin Studio'};
   for (const t of edited) {
     const path = 'textures/' + t.name + '.png';

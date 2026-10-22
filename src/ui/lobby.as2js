@@ -874,6 +874,7 @@ function FGUYMouseClick(kind, i) {
         if (FGUYCharSel != i) { FGUYCharSel = i; FGUYCostumeSel = 0; FGUYSound('nav'); }
         else FGUYInputChar(13);
     } else if (kind == 'skin') { FGUYCostumeSel = i; FGUYSound('change'); }
+    else if (kind == 'customSkin') FGUYCycleCustomSkin(1);
     else if (kind == 'team') { FGUYPickTeam = i; FGUYSound('change'); }
     else if (kind == 'key') FGUYScreenKey(i);   // a footer button hint: its button
     else if (kind == 'modRow') FGUYInputMods(13);
@@ -1186,11 +1187,13 @@ function FGUYDrawLobby(ui) {
     FGUYHit(cx + 3, 309, cw - 6, 430, 'stage', 0);
     FGUY3DShow(FGUYPickChar, FGUYPickCostume);
     FGUYStageView(cx + cw / 2, 332, 724);
+    var mySkin = FGUYCustomSkinName(FGUYCustomSkins());   // (and its custom skin on the preview, if one is picked)
     FGUYRect(ui, cx + 16, 322, 170, 32, 16, FGUYC.ink, 70, 0, 0, 0);
     FGUYText(ui, cx + 16, 326, 170, 26, "YOU'RE PLAYING", false, 15, FGUYC.muted2, 'center');
     FGUYRect(ui, cx + 3, 744, cw - 6, 67, 4, FGUYC.ink, 78, 0, 0, 0);
     FGUYTitle(ui, cx + 22, 748, 280, 56, FGUYCharName(FGUYPickChar), 40, FGUYC.yellow, 'left');
-    FGUYText(ui, cx + 290, 750, cw - 312, 28, 'Skin: ' + FGUYCostumeName(FGUYPickChar, FGUYPickCostume), false, 18, FGUYC.soft, 'right');
+    FGUYText(ui, cx + 290, 750, cw - 312, 28, 'Skin: ' + FGUYCostumeName(FGUYPickChar, FGUYPickCostume) +
+             (mySkin != 'None' ? ' + ' + mySkin : ''), false, 18, FGUYC.soft, 'right');
     FGUYText(ui, cx + 290, 778, cw - 312, 28, (mode.teams ? 'Team ' + (FGUYPickTeam == 1 ? 'Evil' : 'Good') + ' - ' : '') + 'Y to change', false, 17, FGUYC.muted, 'right');
 
     // right: players
@@ -1339,6 +1342,30 @@ function FGUYRulesParts(short) {
     return parts;
 }
 
+// ---- custom skins (Skin Studio packs in FGUYMod\skins - the mod's cosmetics.cpp) ------------------------------------
+// FGUYMOD_SkinOptions: "<model>|<picked file>|<name>~<file>;..." - the packs for the outfit the 3D preview shows.
+function FGUYCustomSkins() {
+    var s = String(flash.external.ExternalInterface.call('FGUYMOD_SkinOptions'));
+    var f = s.split('|'), o = {model: f[0], pick: f.length > 1 ? f[1] : '', list: []};
+    if (f.length > 2 && f[2] != '') {
+        var e = f[2].split(';');
+        for (var i = 0; i < e.length; i++) if (e[i] != '') { var p = e[i].split('~'); o.list.push({name: p[0], file: p[1]}); }
+    }
+    return o;
+}
+function FGUYCustomSkinName(o) {
+    for (var i = 0; i < o.list.length; i++) if (o.list[i].file == o.pick) return o.list[i].name;
+    return 'None';
+}
+function FGUYCycleCustomSkin(dir) {   // None, then each pack for this outfit
+    var o = FGUYCustomSkins(), at = -1;
+    if (o.model == '') return;
+    for (var i = 0; i < o.list.length; i++) if (o.list[i].file == o.pick) at = i;
+    var n = o.list.length + 1, next = ((at + 1 + dir) % n + n) % n - 1;
+    flash.external.ExternalInterface.call('FGUYMOD_SkinPick', next < 0 ? '' : o.list[next].file);
+    FGUYSound('change');
+}
+
 // ---- character & skin ---------------------------------------------------------------------------------------------
 function FGUYDrawChar(ui) {
     var mode = FGUYMode(FGUYS.mode);
@@ -1371,6 +1398,14 @@ function FGUYDrawChar(ui) {
     FGUYHit(px + 3, 123, pw - 6, 437, 'stage', 0);
     FGUY3DShow(c2, costumes.length > 0 ? costumes[FGUYCostumeSel].CostumeIndex : 0);
     FGUYStageView(px + pw / 2, 156, 528);
+    var cs = FGUYCustomSkins();   // (custom skins for this outfit: a chip over the preview - Y or click to change)
+    if (cs.model != '') {
+        var label = cs.list.length ? 'CUSTOM SKIN: ' + FGUYCustomSkinName(cs) : 'No custom skins for this outfit';
+        FGUYRect(ui, px + 14, 134, pw - 28, 40, 14, FGUYC.ink, 82, cs.list.length ? FGUYC.yellow : FGUYC.rowLine, 100, 2);
+        FGUYText(ui, px + 28, 141, pw - 56, 28, label + (cs.list.length ? '   (Y)' : ''), false, 18,
+                 cs.list.length ? FGUYC.yellow : FGUYC.muted, 'center');
+        if (cs.list.length) FGUYHit(px + 14, 134, pw - 28, 40, 'customSkin', 0);
+    }
     FGUYPanel(ui, px, 578, pw, 242, 24, FGUYC.panel, FGUYC.glow);
     FGUYTitle(ui, px + 26, 588, pw - 52, 56, FGUYCharName(c2), 42, FGUYC.yellow, 'left');
     var skinName = costumes.length > 0 ? FGUYCostumeName(c2, costumes[FGUYCostumeSel].CostumeIndex) : 'Classic';
@@ -1383,7 +1418,7 @@ function FGUYDrawChar(ui) {
         FGUYHit(tx, 690, 82, 112, 'skin', k);
         FGUYPicture(ui, FGUYEntryPic(c2, costumes[k]), tx + 3, 693, 76, 106, 9, 0.05);
     }
-    FGUYFooter(ui, ['A', 'Confirm', 'B', 'Back', 'LB', 'Skin', 'RB', 'Skin'],
+    FGUYFooter(ui, ['A', 'Confirm', 'B', 'Back', 'LB', 'Skin', 'RB', 'Skin', 'Y', 'Custom skin'],
                'Click a character, then a skin - click the character again to confirm - drag or Q / E to turn');
 }
 
@@ -1847,6 +1882,7 @@ function FGUYInputChar(key) {
         if (list.length > 0) FGUYCostumeSel = (FGUYCostumeSel + (key == 82 ? 1 : list.length - 1)) % list.length;
         FGUYSound('change');
     } else if (key == 88 && mode.teams) { FGUYPickTeam = 1 - FGUYPickTeam; FGUYSound('change'); }
+    else if (key == 89) FGUYCycleCustomSkin(1);
     else if (key == 13 || key == 36) {
         var by = FGUYStoryTakenBy(FGUYChars[FGUYCharSel], false);
         if (by != null && FGUYChars[FGUYCharSel] != FGUYPickChar) {   // (story co-op: someone else plays them)

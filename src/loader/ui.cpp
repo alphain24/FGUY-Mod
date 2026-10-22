@@ -366,6 +366,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnString(movie, OnlinePauseDeathMouse(ArgString(args, argc, 0)));
         } else if (strcmp(fn, "MenuMouse") == 0) {    // (the end of the match's menu) -> the Windows pointer shown?
             ReturnString(movie, OnlineMenuMouse(ArgString(args, argc, 0), ArgString(args, argc, 1)));
+        } else if (strcmp(fn, "SkinOptions") == 0) {   // (the lobby: custom skins for the preview's outfit - cosmetics.cpp)
+            ReturnString(movie, CosmeticsSkinOptions());
+        } else if (strcmp(fn, "SkinPick") == 0) {
+            CosmeticsSkinPick(ArgString(args, argc, 0));
         } else if (strcmp(fn, "Rematch") == 0) {   // (the end of the match's menu: the rematch vote)
             ReturnString(movie, OnlinePauseRematch());
         } else if (strcmp(fn, "PauseSettings") == 0) {   // (the game's pause menu: OPTIONS online -> my own settings)
