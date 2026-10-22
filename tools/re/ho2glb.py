@@ -119,6 +119,34 @@ def main():
         blob.extend(b)
         return len(gl['bufferViews']) - 1
 
+    # the rig: a node a bone (its pose relative to its parent, from the bind matrices), a skin for every piece
+    import rig
+    sk = rig.skeleton_of(h, by, ids, model)
+
+    def m4(m):   # 3x4 row-major (translation in each row's w) -> glTF's 4x4 column-major
+        return [m[0][0], m[1][0], m[2][0], 0, m[0][1], m[1][1], m[2][1], 0, m[0][2], m[1][2], m[2][2], 0,
+                m[0][3], m[1][3], m[2][3], 1]
+
+    def mul(a, b):   # 3x4 * 3x4 (as 4x4 with 0 0 0 1)
+        return [[sum(a[r][k] * b[k][c] for k in range(3)) + (a[r][3] if c == 3 else 0) for c in range(4)] for r in range(3)]
+    joint0 = len(gl['nodes'])
+    for i in range(sk.count):
+        local = sk.bind[i] if sk.parent[i] < 0 else mul(sk.inv_bind[sk.parent[i]], sk.bind[i])
+        gl['nodes'].append({'name': 'bone%02d' % i, 'matrix': m4(local)})
+    for i in range(sk.count):
+        kids = [joint0 + j for j in range(sk.count) if sk.parent[j] == i]
+        if kids:
+            gl['nodes'][joint0 + i]['children'] = kids
+    roots = [joint0 + i for i in range(sk.count) if sk.parent[i] < 0]
+    gl['scenes'][0]['nodes'] += roots
+    ibm = []
+    for i in range(sk.count):
+        ibm += m4(sk.inv_bind[i])
+    a_ibm_view = view(struct.pack('<%df' % len(ibm), *ibm))
+    gl['accessors'].append({'bufferView': a_ibm_view, 'componentType': 5126, 'count': sk.count, 'type': 'MAT4'})
+    gl['skins'] = [{'joints': [joint0 + i for i in range(sk.count)], 'inverseBindMatrices': len(gl['accessors']) - 1,
+                    'skeleton': roots[0]}]
+
     tex_index = {}
     for g in parts:
         n, vb, uv, ib, mats = piece(g, by, ids)
@@ -135,6 +163,13 @@ def main():
         for o in starts:
             pos += struct.unpack_from('<3f', vd, o)
             nor += struct.unpack_from('<3f', vd, o + 12)
+        lay = vertex_layout(g.data(), n, vb.size)
+        joints, weights = [], []
+        for o, inf in rig.vertex_bones(vd, lay) if lay else []:
+            inf = (inf + [(0, 0.0)] * 4)[:4]
+            total = sum(w for _, w in inf) or 1
+            joints += [b if b < sk.count else 0 for b, _ in inf]
+            weights += [w / total for _, w in inf]
         if uv:
             ud = uv.data()
             for v in range(n):
@@ -153,6 +188,9 @@ def main():
         attrs = {'POSITION': a_pos, 'NORMAL': a_nor}
         if tc:
             attrs['TEXCOORD_0'] = acc(view(struct.pack('<%df' % len(tc), *tc), 34962), 5126, n, 'VEC2')
+        if len(joints) == 4 * n:
+            attrs['JOINTS_0'] = acc(view(struct.pack('<%dB' % len(joints), *joints), 34962), 5121, n, 'VEC4')
+            attrs['WEIGHTS_0'] = acc(view(struct.pack('<%df' % len(weights), *weights), 34962), 5126, n, 'VEC4')
         a_idx = acc(view(struct.pack('<%dH' % len(idx), *idx), 34963), 5123, len(idx), 'SCALAR')
         mat = {'name': mats[0].name if mats else 'none', 'pbrMetallicRoughness': {'metallicFactor': 0, 'roughnessFactor': 1}}
         if dds:
@@ -166,7 +204,7 @@ def main():
             mat['pbrMetallicRoughness']['baseColorTexture'] = {'index': tex_index[tname]}
         gl['materials'].append(mat)
         gl['meshes'].append({'name': g.name, 'primitives': [{'attributes': attrs, 'indices': a_idx, 'material': len(gl['materials']) - 1}]})
-        gl['nodes'].append({'mesh': len(gl['meshes']) - 1, 'name': g.name or hex(g.lo)})
+        gl['nodes'].append({'mesh': len(gl['meshes']) - 1, 'name': g.name or hex(g.lo), **({'skin': 0} if 'JOINTS_0' in attrs else {})})
         gl['scenes'][0]['nodes'].append(len(gl['nodes']) - 1)
     if info:
         return
