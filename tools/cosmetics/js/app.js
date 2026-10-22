@@ -169,9 +169,12 @@ $('showDamage').onchange = () => {
 
 function frame() {
   const box = new THREE.Box3().setFromObject(holder);
-  const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length();
+  const c = box.getCenter(new THREE.Vector3()), dims = box.getSize(new THREE.Vector3()), size = dims.length();
   controls.target.copy(c);
-  camera.position.set(c.x, c.y + size * 0.08, c.z + size * 1.5);
+  // (far enough for its height and its width - a tall, narrow view needs more room)
+  const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+  const dist = Math.max(dims.y / (2 * tan), Math.max(dims.x, dims.z) / (2 * tan * camera.aspect)) * 1.25 + dims.z / 2;
+  camera.position.set(c.x, c.y + size * 0.08, c.z + dist);
   camera.near = size / 100; camera.far = size * 20;
   camera.updateProjectionMatrix();
 }
