@@ -100,18 +100,24 @@ LONG g_shownApplied = -2;        // (render thread) the view the rectangles were
 // A cutscene playing (the game's current one, [0xbad99c], in its playing state +0xac 3): it drives the first view's
 // camera - played on one screen that's the whole screen; online every PC shows that view meanwhile (the others showed
 // their own player's - a cutscene played on the guest's PC unseen).
-bool CutscenePlaying() {
-    auto cin = *reinterpret_cast<unsigned char* volatile*>(0xbad99c);
-    return cin && !IsBadReadPtr(cin + 0xac, 4) && *reinterpret_cast<int*>(cin + 0xac) == 3;
+// The game's own test (its tick, 0x69f400, before START may skip it): its player's running flag, [+0x7c] +0x38. The
+// playing state alone missed some: Chicken Fight's between its rounds are state 2 - START paused there, not skipped.
+bool CutsceneRunning(unsigned char* cin) {
+    if (!cin || cin != *reinterpret_cast<unsigned char* volatile*>(0xbad99c) || IsBadReadPtr(cin, 0xb0)) return false;
+    if (*reinterpret_cast<int*>(cin + 0xac) == 3) return true;
+    auto run = *reinterpret_cast<unsigned char**>(cin + 0x7c);
+    return run && !IsBadReadPtr(run + 0x38, 1) && run[0x38] != 0;
 }
+bool CutscenePlaying() { return CutsceneRunning(*reinterpret_cast<unsigned char* volatile*>(0xbad99c)); }
 
 }  // namespace
 bool SplitViewCutscenePlaying() { return CutscenePlaying(); }
-// ...and START would skip it (the game's own check, 0x9680c0: seen before, +0x88 - or every one skippable, [0xbad69f]);
-// one that can't be skipped: START pauses the game, as offline
+bool SplitViewCutsceneRunning(unsigned char* cin) { return CutsceneRunning(cin); }
+// ...and START would skip it (the game's own check, 0x9680c0: seen before, +0x88 - or every one skippable, [0xbad69f] -
+// and its own skippable flag, +0x89); one that can't be skipped: START pauses the game, as offline
 bool SplitViewCutsceneSkippable() {
     auto cin = *reinterpret_cast<unsigned char* volatile*>(0xbad99c);
-    return CutscenePlaying() && (*reinterpret_cast<volatile unsigned char*>(0xbad69f) || cin[0x88]);
+    return CutscenePlaying() && (*reinterpret_cast<volatile unsigned char*>(0xbad69f) || cin[0x88]) && cin[0x89];
 }
 namespace {
 

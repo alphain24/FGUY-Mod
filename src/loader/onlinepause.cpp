@@ -35,6 +35,12 @@ int g_openCount = 0, g_players = 0;
 int g_injectSlot = -1, g_injectTicks = 0;
 ULONGLONG g_storyPauseUntil = 0;   // story co-op: my pause goes out with my input until then (0.4 s: free-running,
                                    //   the others see my latest input - one input's worth could be passed over)
+// The game's mode ([0xaee080]): 7 playing, 2 its pause menu (or a level's results). Story co-op checks the game really
+// paused: a START put in for a player can be taken by something else - a cutscene still playing there skips instead.
+const uintptr_t kGameMode = 0xaee080;
+int GameMode() { return *reinterpret_cast<volatile int*>(kGameMode); }
+ULONGLONG g_pausedAt = 0;   // (story co-op: when g_gamePaused went on; how many STARTs put in for it)
+int g_pauseTries = 0;
 bool g_pauseKeyHeld = false;   // the START / Esc that paused: not the game's while still held (it would pause the
                                //   others' games itself, as my player's press - outside the mod's pause)
 bool g_swallowBack = false;    // my SETTINGS closed over the game's pause menu: its back press stays mine
@@ -375,7 +381,7 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
         }
         ListMouse(kbm, click);
     }
-    if (ResultsShown()) {
+    if (ResultsShown() && !NetplayStoryCoop()) {
         if (pressed('Y') || (down & XINPUT_GAMEPAD_Y)) {
             g_vote = !g_vote;
             Log(L"Pause: rematch vote %s", g_vote ? L"yes" : L"withdrawn");
@@ -510,8 +516,26 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
             g_open = false;
             g_injectSlot = s;
             g_injectTicks = 4 * NetplayRate() / 60;
+            g_pausedAt = GetTickCount64();
+            g_pauseTries = 1;
             Log(L"Pause: player %d paused the game (story co-op)", s);
         }
+    if (NetplayStoryCoop() && g_gamePaused && g_injectTicks <= 0) {   // (its START in: is the game paused?)
+        ULONGLONG now = GetTickCount64();
+        if (GameMode() == 2) {
+            g_pauseTries = 3;
+        } else if (GameMode() == 7 && now - g_pausedAt > 600) {
+            if (g_pauseTries < 3) {
+                ++g_pauseTries;
+                g_pausedAt = now;
+                g_injectTicks = 4 * NetplayRate() / 60;
+                Log(L"Pause: the game didn't pause here (the press went to something else) - START again for player %d", g_injectSlot);
+            } else if (now - g_pausedAt > 1500) {
+                g_gamePaused = false;
+                Log(L"Pause: the game isn't paused here - the pause is over");
+            }
+        }
+    }
     // (two players at least: alone - the others gone - the online menu stays the menu; the game's own came up on top
     //  of it the moment it opened)
     if (!g_gamePaused && here > 1 && open == here) {
@@ -531,8 +555,22 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
 
 // ui.cpp: a menu command ran (GAME_Unpause: the game's pause menu resumed - the same tick everywhere; QUIT GAME,
 // RESTART LEVEL, MISSION SELECT leave the paused level - its pause goes with it: START in the next one pauses everyone).
-void OnlinePauseCommand(const char* command) {
-    if (!g_gamePaused || !command) return;
+// (Story co-op: the game's pause menu came up by itself - a START held on past the cutscene it skipped - its player's
+//  pause for everyone, as one press of theirs: theirs here already.)
+void OnlinePauseCommand(const char* command, const char* args) {
+    if (!command) return;
+    if (!g_gamePaused && NetplayStoryCoop() && NetplayLevelLive() && strcmp(command, "SNDS_PlaySoundFX") == 0 && args &&
+        strcmp(args, "EnterPause") == 0) {
+        g_gamePaused = true;
+        g_open = false;
+        g_storyPauseUntil = GetTickCount64() + 400;
+        g_pausedAt = GetTickCount64();
+        g_pauseTries = 3;
+        g_injectSlot = NetplayLocalSlot();
+        Log(L"Pause: the game paused itself here - pausing everyone's (story co-op)");
+        return;
+    }
+    if (!g_gamePaused) return;
     if (strcmp(command, "GAME_Unpause") == 0) {
         g_gamePaused = false;
         Log(L"Pause: the game resumed");
@@ -635,7 +673,7 @@ bool OnlinePauseBotVotes() { return IsBot() && ResultsShown(); }
 const char* OnlinePauseRematch() {
     static std::string out;
     out.clear();
-    if (!NetplayEnabled()) return out.c_str();
+    if (!NetplayEnabled() || NetplayStoryCoop()) return out.c_str();   // (story: the level's results - no rematch)
     int voted = 0;
     std::string names;
     for (int s = 0; s < 4; ++s) {
@@ -663,6 +701,7 @@ void OnlinePauseHudTakesStart(bool up) {
 // netplay.cpp (my view turning at once): does a menu have my input now - my pause menu, the game's own pause, a HUD
 // menu (death, weapons wheel...), the end of the match?
 bool OnlinePauseMenusUp() { return g_open || g_gamePaused || BoxesShown() || ResultsShown(); }
+bool OnlinePauseGamePaused() { return g_gamePaused; }
 
 bool OnlinePauseResultsShown() { return ResultsShown(); }
 bool OnlinePauseTakeLeave() { return InterlockedExchange(&g_leave, 0) != 0; }

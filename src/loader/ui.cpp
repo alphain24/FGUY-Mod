@@ -575,7 +575,7 @@ void __fastcall Hook_Command(void* self, void* edx, void* movie, const char* com
         }
     }
     Real_Command(self, edx, movie, command, args);
-    OnlinePauseCommand(command);
+    OnlinePauseCommand(command, args);
 }
 
 // ---- vtable patching -------------------------------------------------------------------------------

@@ -1648,6 +1648,7 @@ bool g_sessionCtf = false;       // a Capture the Flag one (the Greased-Up Deaf 
 volatile LONG g_sessionLevelAsked = 0;  // the menu launched the level (taken at the next tick)
 unsigned g_levelTick = 0;
 extern unsigned short g_storyEpoch;
+unsigned char* PlayerBySlot(int slot);
 
 void TakeSessionPresses() {      // main thread, start of a tick
     EnterCriticalSection(&g_pressLock);
@@ -1672,20 +1673,26 @@ void TakeSessionPresses() {      // main thread, start of a tick
     const int kViewportCount = 0xb53e60;
     if (g_free) {   // free-running: ticks are frames (not 60 a second) and each PC presses on its own - by the clock: once
         // this level instance has been up 5 s (its first view there, no cutscene, no menu - a START then would skip
-        // the cutscene for everyone, or work the menu), then every 3 s; a new level instance (MISSION SELECT,
-        // CONTINUE, a restart) starts over - the last one's views can still be up while it loads
+        // the cutscene for everyone, or work the menu), then 3 s later once more if still not in; a new level instance
+        // (MISSION SELECT, CONTINUE, a restart - its players are new objects) starts over - the last one's views can
+        // still be up while it loads. Twice at most: a one-player level asks "If you join, this level will restart" -
+        // answered no (Chicken Fight's one-player fight), it isn't asked every 3 s from then on
         static unsigned epoch = ~0u;
+        static unsigned char* host = nullptr;
         static ULONGLONG upSince = 0, next = 0;
+        static int tries = 0;
         ULONGLONG now = GetTickCount64();
         int views = *reinterpret_cast<volatile int*>(kViewportCount);
-        if (epoch != g_storyEpoch) { epoch = g_storyEpoch; upSince = 0; next = now + 3000; }
+        unsigned char* p0 = PlayerBySlot(0);
+        if (epoch != g_storyEpoch || host != p0) { epoch = g_storyEpoch; host = p0; upSince = 0; next = now + 3000; tries = 0; }
         bool up = g_sessionStory && g_levelTick && views >= 1 && !SplitViewCutscenePlaying() && !OnlinePauseMenusUp();
         if (!up) { upSince = 0; return; }
         if (!upSince) upSince = now;
-        if (now - upSince < 5000 || now < next) return;
+        if (now - upSince < 5000 || now < next || tries >= 2) return;
         next = now + 3000;
         for (int s = 1; s < g_players; ++s)
             if (views < s + 1) {
+                ++tries;
                 g_pressActive.push_back({s, XINPUT_GAMEPAD_START, 0, g_tick});
                 g_current[s].buttons |= XINPUT_GAMEPAD_START;
                 Log(L"Netplay: session - player %d drops in (tick %u)", s, g_tick);
@@ -3662,8 +3669,7 @@ void FreeStoryApply() {
             unsigned char* to = e.toSlot != 0xff ? PlayerBySlot(e.toSlot)
                                                  : reinterpret_cast<unsigned char*(__cdecl*)(unsigned, unsigned)>(kFindObject)(e.toLo, e.toHi);
             if (e.fromNone) {   // (a cutscene's end: only if that one is still playing here)
-                bool playing = to && *reinterpret_cast<unsigned char**>(0xbad99c) == to && !IsBadReadPtr(to, 0xb0) &&
-                               *reinterpret_cast<int*>(to + 0xac) == 3;
+                bool playing = SplitViewCutsceneRunning(to);
                 Log(L"Netplay: free - story: player %d's PC ended cutscene %x - %s", s, e.toLo, playing ? L"here too" : L"not playing here");
                 if (!playing) continue;
             } else if (!from || !to) {
@@ -4407,17 +4413,25 @@ Pad FreeRemotePad(int s) {
     p.kbm.dx = p.kbm.dy = 0;
     p.kbm.sync = 0;
     // START: only for their death menu's weapons screen (it respawns them - their PC sends it only then). Their character
-    // here may not be at the same point (it isn't down here yet, or is up already): then it would pause my game.
+    // here may not be at the same point (it isn't down here yet, or is up already): then it would pause my game. And in
+    // the game's own pause menu (story co-op, everyone's paused): START closes it, as offline - stripped, the game went
+    // on on their PC and stayed paused here (theirs then finished the level alone)
     unsigned char* them = PlayerBySlot(s);
-    if (!them || PlayerHealth(them) > 0) p.buttons &= ~XINPUT_GAMEPAD_START;
+    if (!OnlinePauseGamePaused() && (!them || PlayerHealth(them) > 0)) p.buttons &= ~XINPUT_GAMEPAD_START;
     return p;
 }
 
 // ui.cpp: the game's menu restarted the level (SCEN_Reset) or goes to another one (GAME_Portal / GAME_Reload) - story
 // co-op: a new level instance here (the players' events of the old one aren't played in it), and what the others hold
 // down now isn't a press in it.
+// The game also loads levels by itself - the results' CONTINUE, Chicken Fight's "join: the level restarts" (its
+// two-player one): a level's package opening (config.cpp) not after the menus' GAME_Portal / GAME_Reload is one too
+// (taken at the next tick: the load may not be on the game's thread).
+volatile LONG g_levelFileOpen = 0;
+ULONGLONG g_levelLoadAskedAt = 0;   // (the menus' GAME_Portal / GAME_Reload: its level's package follows - counted then)
 void StoryLevelChange(const char* what) {
     if (!g_enabled || !g_free || !g_sessionStory) return;
+    if (strcmp(what, "GAME_Portal") == 0 || strcmp(what, "GAME_Reload") == 0) g_levelLoadAskedAt = GetTickCount64();
     EnterCriticalSection(&g_netLock);
     ++g_storyEpoch;
     for (int s = 0; s < 4; ++s) {
@@ -4436,6 +4450,18 @@ void StoryLevelChange(const char* what) {
     }
     LeaveCriticalSection(&g_netLock);
     Log(L"Netplay: free - story: %S - level instance %u (the others' held buttons not pressed in it)", what, g_storyEpoch);
+}
+void FreeLevelFileTick() {   // (the game thread, each tick)
+    if (!InterlockedExchange(&g_levelFileOpen, 0)) return;
+    static ULONGLONG lastLoad = 0;   // (a load opens its package several times, the game ticking in between: one load)
+    ULONGLONG now = GetTickCount64();
+    bool sameLoad = lastLoad && now - lastLoad < 10000;
+    lastLoad = now;
+    if (g_levelLoadAskedAt && now - g_levelLoadAskedAt < 60000) {   // (the menus' - a slow PC's load can take a while)
+        g_levelLoadAskedAt = 0;
+        return;
+    }
+    if (!sameLoad) StoryLevelChange("the game loads a level by itself");
 }
 
 // Everyone lets go of the lockstep at this tick (the same one on every PC).
@@ -4485,6 +4511,8 @@ void FreeStart() {
     g_carrySeqIn = 0;
     g_storySeq = g_storySentUpTo = 0;
     g_storyEpoch = 0;
+    InterlockedExchange(&g_levelFileOpen, 0);   // (this level's own package, before the match ran free)
+    g_levelLoadAskedAt = 0;
     for (int s = 0; s < 4; ++s) { g_storyIn[s].clear(); g_storyPlayed[s] = 0; g_storyGapSince[s] = 0; }
     InterlockedExchange(&g_resultsLeave, 0);
     AcquireSRWLockExclusive(&g_buyLock);   // (nothing left over from a match before)
@@ -4591,6 +4619,7 @@ void FreeTick() {
     FreeApplyRounds();
     FreePointsTick();
     FreeCarryTick();
+    if (g_sessionStory) FreeLevelFileTick();
     if (g_sessionStory && g_npcSync) {
         FreeLinkLevelNpcs(false);
         FreeTestSendEvent();
@@ -5157,9 +5186,10 @@ bool NetplayFreeRun() { return g_enabled && g_free; }
 // ui.cpp, a menu command: the end of the match's pick while the match runs free. 0: run it; 2: run the menu's quit to
 // the lobby instead (GAME_Quit - the pick stopped the menu, so its poll can't). RESTART MAP / NEXT MAP picked on a PC
 // takes it back to the lobby for the next match (its lobby readies by itself); picked on the host's, everyone (the
-// host's pick goes out); the host's MAIN MENU takes everyone back to the lobby, a guest's only them.
+// host's pick goes out); the host's MAIN MENU takes everyone back to the lobby, a guest's only them. (Story co-op: a
+// level's results - CONTINUE / RETRY / MAIN MENU are the game's, as offline: the next level, again, the main menu.)
 int NetplayResultsCommand(const char* command) {
-    if (!command || !NetplayFreeRun() || g_resultsQuitting || !OnlinePauseResultsShown()) return 0;
+    if (!command || !NetplayFreeRun() || g_sessionStory || g_resultsQuitting || !OnlinePauseResultsShown()) return 0;
     int choice = !strcmp(command, "GAME_Reload") ? 1 : !strcmp(command, "GAME_Portal") ? 2 : !strcmp(command, "GAME_Quit") ? 3 : 0;
     if (!choice) return 0;
     EnterCriticalSection(&g_netLock);
@@ -5312,6 +5342,17 @@ void NetplayTestGod(bool on) {
     Log(L"Netplay: test - my player %s", on ? L"takes no hits" : L"takes hits again");
 }
 void NetplayTestKillNpcs() { InterlockedExchange(&g_testKillNpcs, 1); }
+void NetplayLevelFileOpened(const wchar_t* path) {   // (any thread) a level's package: <world><mode>.ho in Levels
+    if (!g_enabled || !g_sessionStory || !path) return;
+    const wchar_t* levels = wcsstr(path, L"Levels");
+    if (!levels || (levels[6] != L'\\' && levels[6] != L'/')) return;
+    const wchar_t* name = wcsrchr(path, L'\\');
+    const wchar_t* slash = wcsrchr(path, L'/');
+    if (!name || (slash && slash > name)) name = slash;
+    name = name ? name + 1 : path;
+    if (wcslen(name) != 7 || _wcsicmp(name + 4, L".ho") != 0) return;
+    InterlockedExchange(&g_levelFileOpen, 1);
+}
 void NetplayTestHitNpc(unsigned id, int amount) {
     InterlockedExchange(&g_testHitNpcAmount, amount);
     InterlockedExchange(&g_testHitNpc, (LONG)id);

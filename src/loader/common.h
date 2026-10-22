@@ -81,6 +81,7 @@ void NetplayStoryLevelChange(const char* what);   // ui.cpp: the menu restarts t
 void NetplayTestPointOn(unsigned id);                 //   test pipe "pointon <id>": the host's control point on
 void NetplayTestKillNpcs();                          //   test pipe "killnpcs": the host's enemies all down
 void NetplayTestHitNpc(unsigned id, int amount);     //   test pipe "hitnpc <id> <amount>": my player hits that enemy
+void NetplayLevelFileOpened(const wchar_t* path);   // config.cpp: a file opened (a level's package: story co-op)
 void NetplayTestHurt(int player, float amount);   //   test pipe "hurt": my player there takes a hit nobody caused
 void OnlineMenuLogYaw();               //   test pipe "yaw": the lobby preview's facing (onlinemenu.cpp)
 void NetplayTestResolution(int w, int h);   //   test pipe: the game changes resolution (Options > Screen)               //   test pipe: my player moves a little here only (out of sync)
@@ -122,6 +123,7 @@ void SplitViewPredict(bool on, float turn, float x, float z);   //   netplay: my
 unsigned NetplayShownTick();           // netplay.cpp: the tick the frame being drawn shows
 float NetplayModelTurn(unsigned from, unsigned to);   //   the model's turn of my inputs of ticks (from, to]
 bool OnlinePauseMenusUp();             // onlinepause.cpp: a menu has my input (mine, the game's pause, a HUD menu)
+bool OnlinePauseGamePaused();          //   story co-op: the game's own pause menu is up (everyone's paused)
 void SplitViewSpectateTick(int rate);  //   netplay, every tick: dead in Multiverse Madness - spectate
 const wchar_t* SplitViewSpectating();  //   FGUYMOD_Spectating: whose view ("" mine)
 float NetplayPlayerHealth(const unsigned char* player);   // netplay.cpp: a player's health (0: down)
@@ -190,11 +192,12 @@ void OverlayHide();
 struct KbmRaw;
 bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool keyboardPlayer);  // netplay: my input
 int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyboard); //   everyone's
-void OnlinePauseCommand(const char* command);  //   ui.cpp: a menu command ran
+void OnlinePauseCommand(const char* command, const char* args);  //   ui.cpp: a menu command ran
 const char* OnlinePauseMenu();                 //   FGUYMOD_PauseMenu (the HUD)
 const char* OnlinePauseCursor();
 void SplitViewNoMarkers(bool on);
 bool SplitViewCutscenePlaying();
+bool SplitViewCutsceneRunning(unsigned char* cinematic);   //   that one is the game's current cutscene, running
 bool SplitViewCutsceneSkippable();             //   ...and START would skip it               //   a cutscene of the game's playing (story)              //   FGUYMOD_DeathPanel: no name tags while my death menu's panel is up
 const char* OnlinePauseDeathMouse(const char* boxes);   //   FGUYMOD_DeathMouse (the HUD): my death menu's buttons
 void OnlinePauseHudTakesStart(bool up);                 //   FGUYMOD_HudTakesStart (the HUD): my weapons screen is up
