@@ -146,12 +146,13 @@ DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
         return NetplayPadConnected(pad) ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
     }
     if (pad == 0) ModsTick();
-    DWORD r = state ? PadRead(pad, state) : Real_XInputGetState(pad, state);
+    DWORD r = Real_XInputGetState(pad, state);   // (offline the emote wheel looks at it last: the test pipe's presses too)
     if (IsBot() && state && r == ERROR_SUCCESS) ZeroMemory(&state->Gamepad, sizeof(state->Gamepad));  // not your pad
     static LONG calls[4];
     if (pad < 4 && InterlockedIncrement(&calls[pad]) == 1)
         Log(L"VPad: game polls pad %lu (real pad %s)", pad, r == ERROR_SUCCESS ? L"connected" : L"absent");
     if (pad >= 4 || !g_padActive[pad] || !state) {
+        if (state && r == ERROR_SUCCESS) EmotesPad(pad, state);
         if (state) NoteButtons(pad, r == ERROR_SUCCESS ? state->Gamepad.wButtons : 0);
         return r;
     }
@@ -176,6 +177,7 @@ DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
         }
     }
     state->dwPacketNumber += g_packet;
+    EmotesPad(pad, state);
     NoteButtons(pad, state->Gamepad.wButtons);
     return ERROR_SUCCESS;
 }
@@ -346,7 +348,14 @@ void HandleCommand(char* line) {
         MotionCommand(cmd, a, b);
         return;
     }
-    if (cmd && _stricmp(cmd, "emote") == 0) {   // test tools: emote <player slot> <1-4> - as Back + D-pad / F5-F8
+    if (cmd && _stricmp(cmd, "emotekey") == 0) {   // test tools: emotekey <0|1> [dx dy] - B held / let go, the mouse moved
+        char* down = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* dx = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* dy = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (down) EmotesTestKey(atoi(down) != 0, dx ? atoi(dx) : 0, dy ? atoi(dy) : 0);
+        return;
+    }
+    if (cmd && _stricmp(cmd, "emote") == 0) {   // test tools: emote <player slot> <n> - the nth emote of its character
         char* slot = strtok_s(nullptr, " \t\r\n", &ctx);
         char* nth = strtok_s(nullptr, " \t\r\n", &ctx);
         if (slot && nth) EmotesRequest(atoi(slot), atoi(nth) - 1);

@@ -24,13 +24,17 @@ function FGUYPauseBox(mc, x, y, w, h, r, fill, alpha, line, lineAlpha, thick) {
     mc.endFill();
 }
 
-function FGUYPauseText(mc, x, y, w, h, str, display, size, color, align) {
+function FGUYPauseText(mc, x, y, w, h, str, display, size, color, align, wrap) {   // (wrap: long text on more lines)
     FGUYPauseN = FGUYPauseN + 1;
     var name = 't' + FGUYPauseN;
     mc.createTextField(name, mc.getNextHighestDepth(), x, y, w, h);
     var t = mc[name];
     t.embedFonts = true;
     t.selectable = false;
+    if (wrap) {
+        t.multiline = true;
+        t.wordWrap = true;
+    }
     var fmt = new TextFormat();
     fmt.font = display ? '$font_displayText' : '$font_bodyText';
     fmt.size = size;

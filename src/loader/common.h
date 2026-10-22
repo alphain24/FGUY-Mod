@@ -120,6 +120,7 @@ DWORD HandoffLobbyPid();               // handoff.cpp: the session game's lobby 
 std::string NetplayStats();            //   FGUYMOD_NetStats: "name:ping ms|..." of the other players
 bool OnlineShowPing();                 // onlinesettings.cpp: the match shows the pings
 void VideoHudShown(bool shown);        // d3d9.cpp: the level's HUD is showing (the chosen frame rate; else 60 at most)
+bool VideoHudUp();                     //   it showed just now (a level is being played)
 bool OnlineDirectConnection();         //   direct connections to players who have them on too (netplay.cpp)
 void SplitViewHudHas4Way(bool has);    //   the level's HUD: does it have the 4-way layout? (the story's has none)
 int SplitViewMyViewport();             //   online: my player's viewport (-1: offline / not in the level yet)
@@ -157,11 +158,12 @@ void MotionPlay(int slot, std::shared_ptr<const MotionClip> clip, const std::vec
 void MotionStop(int slot);             //   (blending back to the game's own)
 bool MotionPlaying(int slot);
 struct _XINPUT_STATE;
-void EmotesPad(DWORD pad, _XINPUT_STATE* st);   // emotes.cpp: Back + D-pad, kept from the game   (emotes.cpp)
-void EmotesFrame();                    //   d3d9.cpp: a frame was drawn (F5-F8, starting / stopping)
-void EmotesRequest(int slot, int nth); //   test pipe "emote <slot> <1-4>"
-const char* EmotesList();              //   FGUYMOD_EmoteList: the MODS page's emote packs
-void EmotesToggle(const char* file);   //   FGUYMOD_EmoteToggle: on / off
+void EmotesPad(DWORD pad, _XINPUT_STATE* st);   // emotes.cpp: held Back is the emote wheel     (emotes.cpp)
+bool EmotesMouse(LONG* dx, LONG* dy, LONG* dz);  //   kbm.cpp: the mouse, the keyboard's wheel open (true: taken)
+const char* EmotesWheelText();         //   FGUYMOD_EmoteWheel: what the HUD draws
+void EmotesFrame();                    //   d3d9.cpp: a frame was drawn (B, the wheel, starting / stopping)
+void EmotesRequest(int slot, int nth); //   test pipe "emote <slot> <n>"
+void EmotesTestKey(bool down, int dx, int dy);   //   test pipe "emotekey <0|1> [dx dy]"
 bool EmotesLocalPack(unsigned crc, std::vector<unsigned char>& out);   //   netplay.cpp: that pack, if it's here too
 void EmotesRemote(int slot, const std::vector<unsigned char>* pack);   //   netplay.cpp: another player's emote (nullptr: stop)
 void NetplayEmote(const std::vector<unsigned char>* pack);   // netplay.cpp: I play an emote (nullptr: stop) - everyone sees it

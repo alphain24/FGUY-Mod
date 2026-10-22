@@ -1,11 +1,10 @@
-// Emotes (the emote mod): emote packs made with the Skin Studio's Emotes tab, in FGUYMod\emotes (*.fgemote) - a zip
-// with emote.json (its name, character, the outfits of that character "models": [[lo, hi], ...], the game bones it
-// moves "uses", "loop", "duration") and motion.bin (motion.cpp's format), both stored.
-// Playing one: hold Back and press a D-pad direction (up, right, down, left: slots 1-4) on a controller - the game
-// doesn't see those presses - or press F5-F8 on the keyboard. A slot is the nth emote switched on ([Emotes] in
-// FGUYMod.ini, on unless switched off) for the character you're playing, by name. Only the bones an emote moves
-// leave the game's animation (a wave while walking is fine); one that loops or moves the hips / legs stops when you
-// move. Pressing its slot again stops it.
+// Emotes (the FGUY Emotes mod): emote packs (*.fgemote, made with the Skin Studio's Emotes tab) in the emotes folder of
+// the mods that are on (and the loose FGUYMod\emotes) - a zip with emote.json (its name, character, the outfits of that
+// character "models": [[lo, hi], ...], the game bones it moves "uses", "loop", "duration") and motion.bin (motion.cpp's
+// format), both stored.
+// Playing one: the emote wheel (below) - the emotes for the character you're playing, by name. Only the bones an emote
+// moves leave the game's animation (a wave while walking is fine); one that loops or moves the hips / legs stops when
+// you move. Picking the one playing again stops it. Online everyone sees it (netplay.cpp).
 #include "common.h"
 
 #include <xinput.h>
@@ -73,11 +72,6 @@ std::vector<double> JsNumbers(const std::string& js, const char* key) {   // (an
         }
     }
     return out;
-}
-
-std::wstring IniPath() { return std::wstring(g_modDir) + L"\\FGUYMod.ini"; }
-bool EmoteOn(const std::wstring& file) {
-    return GetPrivateProfileIntW(L"Emotes", file.c_str(), 1, IniPath().c_str()) != 0;
 }
 
 bool ParseEmote(const std::vector<unsigned char>& d, Emote& e) {
@@ -181,24 +175,33 @@ bool Where(int slot, float* x, float* z) {
     return true;
 }
 
-void Start(int slot, int nth) {
-    Scan();
-    unsigned lo = 0, hi = 0;
-    if (!CosmeticsPlayerModel(slot, 0, &lo, &hi)) return;
-    std::vector<int> mine;   // (the emotes switched on for this character)
-    for (int i = 0; i < (int)g_emotes.size(); ++i) {
-        const Emote& e = g_emotes[i];
-        if (!EmoteOn(e.file)) continue;
-        if (std::find(e.models.begin(), e.models.end(), std::make_pair(lo, hi)) != e.models.end()) mine.push_back(i);
+// the emotes for the character a player plays now: g_emotes' indexes, by name ("" none)
+std::vector<int> EmotesOf(int slot) {
+    std::vector<int> out;
+    unsigned char* p = PlayerOf(slot);
+    auto xf = p ? *reinterpret_cast<unsigned char**>(p + 0x38) : nullptr;
+    unsigned char* model = xf && !IsBadReadPtr(xf + 0x1d4, 4) ? *reinterpret_cast<unsigned char**>(xf + 0x1d4) : nullptr;
+    if (!model) return out;
+    static unsigned char* known[4];   // (the outfit's id, found once a model: a walk through the scene's assets)
+    static unsigned knownLo[4], knownHi[4];
+    if (known[slot & 3] != model) {
+        unsigned lo = 0, hi = 0;
+        if (!CosmeticsPlayerModel(slot, 0, &lo, &hi)) return out;
+        known[slot & 3] = model;
+        knownLo[slot & 3] = lo;
+        knownHi[slot & 3] = hi;
     }
-    if (nth >= (int)mine.size()) {
-        Log(L"Emotes: player %d - no emote in slot %d for this character (%zu on)", slot, nth + 1, mine.size());
-        return;
-    }
-    int i = mine[nth];
+    auto id = std::make_pair(knownLo[slot & 3], knownHi[slot & 3]);
+    for (int i = 0; i < (int)g_emotes.size(); ++i)
+        if (std::find(g_emotes[i].models.begin(), g_emotes[i].models.end(), id) != g_emotes[i].models.end()) out.push_back(i);
+    return out;
+}
+
+void Start(int slot, int i) {
+    if (i < 0 || i >= (int)g_emotes.size()) return;
     Playing& pl = g_playing[slot];
     bool online = NetplayEnabled() && slot == NetplayLocalSlot();
-    if (pl.on && pl.emote == i && MotionPlaying(slot)) {   // (its slot again: stop)
+    if (pl.on && pl.emote == i && MotionPlaying(slot)) {   // (the one playing again: stop)
         MotionStop(slot);
         pl.on = false;
         if (online) NetplayEmote(nullptr);
@@ -234,36 +237,137 @@ int SlotFor(int pad) {
     return mine >= 0 ? mine : pad;
 }
 
+// ---- the emote wheel ------------------------------------------------------------------------------------------------
+// Held Back (a controller) or B (the keyboard) opens it - in a level, when the character you play has emotes: 8 a
+// page around a circle; the left stick / the mouse points at one, LB / RB / the mouse wheel turn the page; let go,
+// and the one pointed at plays. While it's open the game doesn't get the left stick (the controller's wheel) or the
+// mouse (the keyboard's). A short Back (the wheel not open yet) still reaches the game: its objective screen.
+// The HUD draws it (pause.as2js FGUYEmotePoll) from FGUYMOD_EmoteWheel.
+const int kPerPage = 8;
+const DWORD kOpenAfter = 180;   // (ms Back is held before the wheel opens - a short press stays the game's)
+struct Wheel {
+    bool open = false, play = false;
+    int by = 0, pad = 0, slot = 0;   // by: 1 a controller (pad), 2 the keyboard
+    float x = 0, y = 0;              // where it points: the stick (-1..1), the mouse (counts, up +)
+    int page = 0, turn = 0, sel = -1;
+    std::vector<int> items;          // (the character's emotes, g_emotes' indexes)
+};
+Wheel g_wheel;
+volatile LONG g_wheelOk = 0;
+volatile bool g_testKey = false;     // (test pipe "emotekey": B held)         // (a wheel may open now: in a level, HUD up, no menu, emotes there)
+CRITICAL_SECTION& WheelCs() { static LocalLock l; return l.cs; }
+std::string g_wheelText = "0";
+
+void WheelOpen(int by, int pad, int slot) {
+    if (g_wheel.open) return;
+    g_wheel = Wheel();
+    g_wheel.open = true;
+    g_wheel.by = by;
+    g_wheel.pad = pad;
+    g_wheel.slot = slot;
+}
+
+// (the render thread) what it shows: "1|selected|page|pages|by|name~name~..." - or "0"
+void WheelUpdate() {
+    EnterCriticalSection(&WheelCs());
+    Wheel& w = g_wheel;
+    if (w.open && w.items.empty()) w.items = EmotesOf(w.slot);
+    if (w.open && w.items.empty()) w.open = false;
+    std::string text = "0";
+    if (w.open) {
+        int pages = ((int)w.items.size() + kPerPage - 1) / kPerPage;
+        if (w.turn) { w.page = ((w.page + w.turn) % pages + pages) % pages; w.turn = 0; w.sel = -1; }
+        int first = w.page * kPerPage, n = (int)w.items.size() - first < kPerPage ? (int)w.items.size() - first : kPerPage;
+        float len = sqrtf(w.x * w.x + w.y * w.y);
+        if (len >= (w.by == 1 ? 0.45f : 40.0f)) {   // (pointing: the slice that way - 0 at the top, clockwise)
+            float a = atan2f(w.x, w.y);
+            if (a < 0) a += 6.2831853f;
+            w.sel = (int)floorf(a / (6.2831853f / n) + 0.5f) % n;
+        }
+        if (w.by == 2 && len > 160.0f) { w.x *= 160.0f / len; w.y *= 160.0f / len; }   // (the mouse: no further out)
+        char head[64];
+        sprintf_s(head, "1|%d|%d|%d|%d|", w.sel, w.page, pages, w.by);
+        text = head;
+        for (int k = 0; k < n; ++k) {
+            std::string name = g_emotes[w.items[first + k]].name;
+            for (char& c : name) if (c == '|' || c == '~') c = ' ';
+            text += (k ? "~" : "") + name;
+        }
+    }
+    int play = -1, slot = w.slot;
+    if (w.play) {   // (let go: the one pointed at)
+        if (w.sel >= 0 && w.page * kPerPage + w.sel < (int)w.items.size()) play = w.items[w.page * kPerPage + w.sel];
+        g_wheel = Wheel();
+        text = "0";
+    }
+    g_wheelText = text;
+    LeaveCriticalSection(&WheelCs());
+    if (play >= 0) Start(slot, play);
+}
+
 }  // namespace
 
-// a controller's state, before the game (or the lockstep) reads it: Back + a D-pad direction is an emote - neither
-// reaches the game. Back is kept from the game while it's held; let go without a direction, the game gets it then
-// (a short press of its own).
+// a controller's state, before the game (or the lockstep) reads it: held Back is the emote wheel (see above)
 void EmotesPad(DWORD pad, XINPUT_STATE* st) {
     if (pad >= 4 || !st) return;
-    const WORD dpad = XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_RIGHT | XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_DPAD_LEFT;
-    static bool held[4], combo[4];
+    static bool held[4], opened[4];
+    static ULONGLONG heldAt[4], backUntil[4];   // (backUntil: Back let go early - the game's own press until then)
     static WORD last[4];
-    static ULONGLONG backUntil[4];   // (Back let go alone: the game's own press, until then)
     WORD& b = st->Gamepad.wButtons;
     WORD pressed = b & ~last[pad];
     last[pad] = b;
-    if (b & XINPUT_GAMEPAD_BACK) {
-        if (!held[pad]) { held[pad] = true; combo[pad] = false; }
-        const WORD dirs[4] = {XINPUT_GAMEPAD_DPAD_UP, XINPUT_GAMEPAD_DPAD_RIGHT, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_LEFT};
-        for (int k = 0; k < 4; ++k)
-            if (pressed & dirs[k]) {
-                combo[pad] = true;
-                InterlockedExchange(&g_request[SlotFor((int)pad) & 3], k);
-            }
-        b &= ~(XINPUT_GAMEPAD_BACK | dpad);
+    ULONGLONG now = GetTickCount64();
+    if ((b & XINPUT_GAMEPAD_BACK) && (held[pad] || g_wheelOk)) {
+        if (!held[pad]) { held[pad] = true; opened[pad] = false; heldAt[pad] = now; }
+        float lx = st->Gamepad.sThumbLX / 32767.0f, ly = st->Gamepad.sThumbLY / 32767.0f;
+        EnterCriticalSection(&WheelCs());
+        if (!opened[pad] && (now - heldAt[pad] >= kOpenAfter || lx * lx + ly * ly > 0.25f)) {
+            opened[pad] = true;
+            WheelOpen(1, (int)pad, SlotFor((int)pad));
+        }
+        if (opened[pad] && g_wheel.open && g_wheel.by == 1 && g_wheel.pad == (int)pad) {
+            g_wheel.x = lx;
+            g_wheel.y = ly;
+            if (pressed & XINPUT_GAMEPAD_LEFT_SHOULDER) --g_wheel.turn;
+            if (pressed & XINPUT_GAMEPAD_RIGHT_SHOULDER) ++g_wheel.turn;
+        }
+        LeaveCriticalSection(&WheelCs());
+        b &= ~(XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_LEFT_SHOULDER | XINPUT_GAMEPAD_RIGHT_SHOULDER);
+        if (opened[pad]) st->Gamepad.sThumbLX = st->Gamepad.sThumbLY = 0;   // (the stick is the wheel's: no walking)
         return;
     }
     if (held[pad]) {
         held[pad] = false;
-        if (!combo[pad]) backUntil[pad] = GetTickCount64() + 60;
+        EnterCriticalSection(&WheelCs());
+        if (opened[pad] && g_wheel.open && g_wheel.by == 1 && g_wheel.pad == (int)pad) g_wheel.play = true;
+        LeaveCriticalSection(&WheelCs());
+        if (!opened[pad]) backUntil[pad] = now + 60;
     }
-    if (backUntil[pad] > GetTickCount64()) b |= XINPUT_GAMEPAD_BACK;
+    if (backUntil[pad] > now) b |= XINPUT_GAMEPAD_BACK;
+}
+
+// the mouse's movement (offline the game's raw poll, online what this PC sends): the keyboard's wheel open, it's the
+// wheel's - true: taken (zeroed)
+bool EmotesMouse(LONG* dx, LONG* dy, LONG* dz) {
+    EnterCriticalSection(&WheelCs());
+    bool mine = g_wheel.open && g_wheel.by == 2;
+    if (mine) {
+        g_wheel.x += *dx;
+        g_wheel.y -= *dy;   // (the mouse's y grows downward)
+        if (*dz) g_wheel.turn += *dz > 0 ? -1 : 1;
+        *dx = *dy = *dz = 0;
+    }
+    LeaveCriticalSection(&WheelCs());
+    return mine;
+}
+
+// FGUYMOD_EmoteWheel (the HUD, every poll): "1|selected|page|pages|by|name~name~..." - or "0" (closed)
+const char* EmotesWheelText() {
+    static std::string copy;
+    EnterCriticalSection(&WheelCs());
+    copy = g_wheelText;
+    LeaveCriticalSection(&WheelCs());
+    return copy.c_str();
 }
 
 // netplay.cpp: an emote pack someone plays, if it's here too (the same Emotes mod) - by its CRC
@@ -285,60 +389,49 @@ void EmotesRemote(int slot, const std::vector<unsigned char>* pack) {
     LeaveCriticalSection(&g_remoteLock);
 }
 
-// FGUYMOD_EmoteList (the MODS page): "<file>|<name>|<character>|<on>|<slot: 1-4 for its character, 0 none>\n..."
-const char* EmotesList() {
-    static std::string text;
-    g_scannedAt = 0;   // (fresh)
-    Scan();
-    text.clear();
-    std::vector<std::pair<std::string, int>> count;   // (a character's emotes switched on so far: its slots)
-    for (const Emote& e : g_emotes) {
-        char f[MAX_PATH * 3];
-        WideCharToMultiByte(CP_UTF8, 0, e.file.c_str(), -1, f, sizeof(f), nullptr, nullptr);
-        std::string n = e.name, c = e.character;
-        for (char& ch : n) if (ch == '|' || ch == '\n') ch = ' ';
-        for (char& ch : c) if (ch == '|' || ch == '\n') ch = ' ';
-        bool on = EmoteOn(e.file);
-        int slot = 0;
-        if (on) {
-            auto it = std::find_if(count.begin(), count.end(), [&](const auto& x) { return x.first == e.character; });
-            if (it == count.end()) { count.push_back({e.character, 0}); it = count.end() - 1; }
-            slot = ++it->second <= 4 ? it->second : 0;
-        }
-        text += std::string(f) + "|" + n + "|" + c + "|" + (on ? "1" : "0") + "|" + std::to_string(slot) + "\n";
-    }
-    return text.c_str();
+void EmotesTestKey(bool down, int dx, int dy) {   // (test pipe "emotekey <0|1> [dx dy]": B, and the mouse moved)
+    g_testKey = down;
+    LONG x = dx, y = dy, z = 0;
+    if (dx || dy) EmotesMouse(&x, &y, &z);
 }
 
-// FGUYMOD_EmoteToggle(<file>): on / off
-void EmotesToggle(const char* file) {
-    wchar_t w[MAX_PATH] = L"";
-    if (file) MultiByteToWideChar(CP_UTF8, 0, file, -1, w, MAX_PATH);
-    if (!w[0] || wcschr(w, L'\\') || wcschr(w, L'/')) return;
-    bool on = EmoteOn(w);
-    WritePrivateProfileStringW(L"Emotes", w, on ? L"0" : L"1", IniPath().c_str());
-    Log(L"Emotes: %s %s", w, on ? L"off" : L"on");
+void EmotesRequest(int slot, int nth) {   // (test pipe "emote <slot> <n>": the character's nth emote)
+    if (slot >= 0 && slot < 4 && nth >= 0) InterlockedExchange(&g_request[slot], nth);
 }
 
-void EmotesRequest(int slot, int nth) {   // (test pipe "emote <slot> <1-4>")
-    if (slot >= 0 && slot < 4 && nth >= 0 && nth < 4) InterlockedExchange(&g_request[slot], nth);
-}
-
-// every frame (the render thread): F5-F8, the presses, stopping when the player moves
+// every frame (the render thread): B, the wheel, others' emotes, stopping when the player moves
 void EmotesFrame() {
-    static bool keyDown[4];
+    Scan();   // (every 2 s at most: the mods' emotes - and, online, the packs here for the others' emotes)
     HWND wnd = DisplayMainWindow();
     bool front = wnd && GetForegroundWindow() == wnd;
-    for (int k = 0; k < 4; ++k) {
-        bool down = front && (GetAsyncKeyState(VK_F5 + k) & 0x8000);
-        if (down && !keyDown[k]) InterlockedExchange(&g_request[SlotFor(0) & 3], k);
-        keyDown[k] = down;
+    int me = SlotFor(0);
+    bool hud = VideoHudUp(), menus = OnlinePauseMenusUp(), some = !EmotesOf(me < 0 ? 0 : me).empty();
+    bool ok = hud && !menus && some;
+    static int lastWhy = -1;
+    int why = (hud ? 1 : 0) | (menus ? 2 : 0) | (some ? 4 : 0);
+    if (why != lastWhy) {
+        lastWhy = why;
+        Log(L"Emotes: the wheel %s (HUD %s, a menu %s, emotes for this character %s)", ok ? L"can open" : L"can't open",
+            hud ? L"up" : L"not up", menus ? L"up" : L"not up", some ? L"there" : L"none");
     }
+    InterlockedExchange(&g_wheelOk, ok ? 1 : 0);
+    static bool keyDown;
+    bool down = (front && (GetAsyncKeyState('B') & 0x8000)) || g_testKey;
+    EnterCriticalSection(&WheelCs());
+    if (down && !keyDown && ok) WheelOpen(2, 0, me);
+    if (!down && keyDown && g_wheel.open && g_wheel.by == 2) g_wheel.play = true;
+    if (!ok && g_wheel.open && !g_wheel.play) g_wheel = Wheel();   // (a menu came up, the level ended...)
+    LeaveCriticalSection(&WheelCs());
+    keyDown = down;
+    WheelUpdate();
     if (!g_remoteInit) { InitializeCriticalSection(&g_remoteLock); g_remoteInit = true; }
-    if (NetplayEnabled()) Scan();   // (online: the packs here, for the others' emotes - every 2 s at most)
     for (int s = 0; s < 4; ++s) {
         LONG nth = InterlockedExchange(&g_request[s], -1);
-        if (nth >= 0) Start(s, nth);
+        if (nth >= 0) {
+            std::vector<int> mine = EmotesOf(s);
+            if (nth < (int)mine.size()) Start(s, mine[nth]);
+            else Log(L"Emotes: player %d - no emote %d for this character (%zu)", s, nth + 1, mine.size());
+        }
         EnterCriticalSection(&g_remoteLock);
         Remote r;
         std::swap(r, g_remote[s]);

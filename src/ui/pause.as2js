@@ -376,6 +376,7 @@ function FGUYPausePoll() {
     FGUYTestAnnounce();
     FGUYPingPoll();
     FGUYSpectatePoll();
+    FGUYEmotePoll();
     if (FGUYHudDumpWait == undefined) FGUYHudDumpWait = 0;
     FGUYHudDump();
     FGUYHudZoom();
@@ -408,6 +409,58 @@ function FGUYPausePoll() {
         ui.pointer._y = r.y + Number(c[1]) / 10000 * r.h;
     }
     FGUYDeathMouse();
+}
+
+// The emote wheel (src/loader/emotes.cpp: held BACK / B), over the HUD - what FGUYMOD_EmoteWheel says, drawn again
+// when it changes: "1|selected|page|pages|by (1 controller, 2 keyboard)|name~name~..." or "0" (closed).
+function FGUYEmotePoll() {
+    var s = flash.external.ExternalInterface.call('FGUYMOD_EmoteWheel');
+    if (s == undefined) return;   // (not the loader we know)
+    s = String(s);
+    if (s == FGUYEmoteLast) return;
+    FGUYEmoteLast = s;
+    _root.FGUYEmoteUI.removeMovieClip();
+    var f = s.split('|');
+    if (f[0] != '1') return;
+    var ui = _root.createEmptyMovieClip('FGUYEmoteUI', 29990);
+    FGUYPauseN = 0;   // (FGUYPauseText's field names count from it - offline nothing else set it yet)
+    var r = FGUYPauseRect(), size = r.h / 720;
+    var names = f[5].split('~'), n = names.length, sel = Number(f[1]), page = Number(f[2]), pages = Number(f[3]);
+    var cx = r.x + r.w / 2, cy = r.y + r.h * 0.48, R = r.h * 0.3, R0 = R * 0.36;
+    var bg = ui.createEmptyMovieClip('bg', 1), tx = ui.createEmptyMovieClip('txt', 2);   // (the words above the wheel)
+    FGUYPauseBox(bg, r.x, r.y, r.w, r.h, 0, 0x000000, 30, 0, 0, 0);
+    var step = Math.PI * 2 / n;
+    for (var k = 0; k < n; k++) {   // (a slice an emote: the first at the top, then clockwise)
+        var on = k == sel;
+        FGUYEmoteSlice(bg, cx, cy, R0, R, (k - 0.5) * step, (k + 0.5) * step, on ? 0xF5D33A : 0x13213C, on ? 100 : 88,
+                       on ? 0xFFFFFF : 0x2E5C9A);
+        var ta = k * step, tr = (R0 + R) / 2, tw = R * 0.62;
+        FGUYPauseText(tx, cx + Math.sin(ta) * tr - tw / 2, cy - Math.cos(ta) * tr - 18 * size, tw, 50 * size, names[k], true,
+                      16 * size, on ? 0x1A1A1A : 0xFFFFFF, 'center', true);
+    }
+    FGUYEmoteSlice(bg, cx, cy, 0, R0 * 0.92, 0, Math.PI * 2, 0x0B1730, 92, 0x2E5C9A);
+    FGUYPauseText(tx, cx - R0, cy - 20 * size, R0 * 2, 30 * size, 'EMOTES', true, 22 * size, 0xF5D33A, 'center');
+    if (pages > 1) FGUYPauseText(tx, cx - R0, cy + 8 * size, R0 * 2, 24 * size, (page + 1) + ' / ' + pages, false, 15 * size, 0xBFD0EA, 'center');
+    var hint = f[4] == '1' ? 'Left stick: pick  -  let go of BACK to play' + (pages > 1 ? '  -  LB / RB: more' : '')
+                           : 'Mouse: pick  -  let go of B to play' + (pages > 1 ? '  -  mouse wheel: more' : '');
+    FGUYPauseText(tx, r.x, cy + R + 14 * size, r.w, 30 * size, hint, false, 16 * size, 0xFFFFFF, 'center');
+}
+
+// a ring's slice from angle a0 to a1 (0 = up, clockwise), radius r0 to r1 (r0 0: to the middle)
+function FGUYEmoteSlice(mc, cx, cy, r0, r1, a0, a1, fill, alpha, line) {
+    mc.lineStyle(2, line, 100);
+    mc.beginFill(fill, alpha);
+    var steps = Math.max(2, Math.ceil((a1 - a0) / 0.08));
+    for (var i = 0; i <= steps; i++) {
+        var a = a0 + (a1 - a0) * i / steps;
+        if (i == 0) mc.moveTo(cx + Math.sin(a) * r1, cy - Math.cos(a) * r1);
+        else mc.lineTo(cx + Math.sin(a) * r1, cy - Math.cos(a) * r1);
+    }
+    for (var j = steps; j >= 0 && r0 > 0; j--) {   // (r0 0: a disc - no line to the middle)
+        var b = a0 + (a1 - a0) * j / steps;
+        mc.lineTo(cx + Math.sin(b) * r0, cy - Math.cos(b) * r0);
+    }
+    mc.endFill();
 }
 
 // Online, my keyboard player's death menu takes the mouse: the game feeds the HUD no mouse in a match (and a click

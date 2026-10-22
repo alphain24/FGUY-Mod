@@ -317,6 +317,7 @@ LONG CALLBACK ExitCrashHandler(EXCEPTION_POINTERS* e) {
 
 // The level's HUD, 30 times a second (pause.as2js FGUYPausePoll): is it showing? (the game hides it for cutscenes)
 void VideoHudShown(bool shown) { g_hudShownAt = shown ? GetTickCount64() : 0; }
+bool VideoHudUp() { return GetTickCount64() - g_hudShownAt < 400; }
 
 void QuitGame() {
     static volatile LONG once = 0;

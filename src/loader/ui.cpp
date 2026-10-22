@@ -395,11 +395,9 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnString(movie, CosmeticsSkinList());
         } else if (strcmp(fn, "SkinToggle") == 0) {
             CosmeticsSkinToggle(ArgString(args, argc, 0));
-        } else if (strcmp(fn, "EmoteList") == 0) {       // (the MODS page: the emote packs - emotes.cpp)
-            ReturnString(movie, EmotesList());
-        } else if (strcmp(fn, "EmoteToggle") == 0) {
-            EmotesToggle(ArgString(args, argc, 0));
             ReturnBool(movie, true);
+        } else if (strcmp(fn, "EmoteWheel") == 0) {      // (the HUD: the emote wheel - emotes.cpp)
+            ReturnString(movie, EmotesWheelText());
         } else if (strcmp(fn, "ModsOpenFolder") == 0) {  // (the mods folder in Explorer)
             ModsOpenFolder();
             ReturnBool(movie, true);

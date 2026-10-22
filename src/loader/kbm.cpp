@@ -102,7 +102,25 @@ POINT CursorClient(const KbmRaw& raw) {
     return p;
 }
 
+// Outside sessions the raw poll is the game's own, hooked with a trampoline (g_rawOriginal) so the emote wheel can
+// take the mouse while it's open (emotes.cpp: the camera doesn't turn meanwhile).
+using RawPoll_t = bool(__cdecl*)();
+RawPoll_t g_rawOriginal = nullptr;
+
 bool __cdecl Hook_RawPoll() {
+    if (!g_session) {
+        bool r = g_rawOriginal ? g_rawOriginal() : false;
+        LONG dx = *gMouseDx, dy = *gMouseDy, dz = *gMouseDz;
+        if (EmotesMouse(&dx, &dy, &dz)) {   // (taken: none of it for the game)
+            *gMouseSumX -= *gMouseDx - dx;
+            *gMouseSumY -= *gMouseDy - dy;
+            *gMouseSumZ -= *gMouseDz - dz;
+            *gMouseDx = dx;
+            *gMouseDy = dy;
+            *gMouseDz = dz;
+        }
+        return r;
+    }
     if (!g_feed && g_menuFeedReady) {       // the game's own slot polls at the start of each tick
         g_feed = &g_menuFeed;
         g_menuFeedReady = false;
@@ -268,8 +286,8 @@ void KbmSessionStart(const char* session) {
     for (int s = 0; s < 4; ++s) g_session |= g_kbmSlot[s];
     if (!g_session) return;
     LoadKeyBindings();
-    if (!PatchJump(kRawPoll, kRawPollStart, sizeof(kRawPollStart), (void*)Hook_RawPoll)) {
-        g_session = false;
+    if (!g_rawOriginal && !PatchJump(kRawPoll, kRawPollStart, sizeof(kRawPollStart), (void*)Hook_RawPoll)) {
+        g_session = false;   // (with the trampoline in, the hook is already there: it serves the session now)
         return;
     }
     HookMenuInput();
@@ -363,11 +381,13 @@ void KbmLeaveSession() {
     // CTRL_SetKeyboardMouseInputEnabled, which also moves the menus' controller over - session.as2js)
     g_menuKeysLive = false;
     g_menuFeedReady = false;
-    DWORD old;   // the raw poll's own first bytes back
-    VirtualProtect((void*)kRawPoll, sizeof(kRawPollStart), PAGE_EXECUTE_READWRITE, &old);
-    memcpy((void*)kRawPoll, kRawPollStart, sizeof(kRawPollStart));
-    VirtualProtect((void*)kRawPoll, sizeof(kRawPollStart), old, &old);
-    FlushInstructionCache(GetCurrentProcess(), (void*)kRawPoll, sizeof(kRawPollStart));
+    if (!g_rawOriginal) {   // the raw poll's own first bytes back (with the trampoline in, the hook stays: offline it
+        DWORD old;          // calls the game's own poll)
+        VirtualProtect((void*)kRawPoll, sizeof(kRawPollStart), PAGE_EXECUTE_READWRITE, &old);
+        memcpy((void*)kRawPoll, kRawPollStart, sizeof(kRawPollStart));
+        VirtualProtect((void*)kRawPoll, sizeof(kRawPollStart), old, &old);
+        FlushInstructionCache(GetCurrentProcess(), (void*)kRawPoll, sizeof(kRawPollStart));
+    }
     if (g_wnd) ClipCursor(nullptr);
     Log(L"Input: keyboard and mouse straight to the game again");
 }
@@ -427,7 +447,20 @@ void KbmBackInLobby(bool keyboard) {
 }
 
 // display.cpp: the game's main window exists.
-void KbmInit(HWND wnd) { g_wnd = wnd; }
+void KbmInit(HWND wnd) {
+    g_wnd = wnd;
+    if (g_rawOriginal || g_session) return;
+    auto at = reinterpret_cast<unsigned char*>(kRawPoll);   // (the raw poll's trampoline - see Hook_RawPoll)
+    if (IsBadReadPtr(at, sizeof(kRawPollStart)) || memcmp(at, kRawPollStart, sizeof(kRawPollStart)) != 0) return;
+    auto t = static_cast<unsigned char*>(VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!t) return;
+    memcpy(t, kRawPollStart, sizeof(kRawPollStart));
+    t[sizeof(kRawPollStart)] = 0xE9;
+    *reinterpret_cast<int*>(t + sizeof(kRawPollStart) + 1) =
+        (int)((kRawPoll + sizeof(kRawPollStart)) - (reinterpret_cast<uintptr_t>(t) + sizeof(kRawPollStart) + 5));
+    g_rawOriginal = reinterpret_cast<RawPoll_t>(t);
+    if (!PatchJump(kRawPoll, kRawPollStart, sizeof(kRawPollStart), (void*)Hook_RawPoll)) g_rawOriginal = nullptr;
+}
 
 // display.cpp's window procedure. Returns true if the message was ours.
 bool KbmOnMessage(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT* result) {
@@ -515,6 +548,7 @@ void KbmCapture(KbmRaw* out) {
 void KbmCaptureRaw(KbmRaw* out) {
     memset(out, 0, sizeof(*out));
     LONG dx = InterlockedExchange(&g_dx, 0), dy = InterlockedExchange(&g_dy, 0), dz = InterlockedExchange(&g_dz, 0);
+    EmotesMouse(&dx, &dy, &dz);   // (the emote wheel open: the mouse is its - not the match's)
     static ULONGLONG lastClaim = 0;
     if (g_wnd && GetTickCount64() - lastClaim > 2000) {
         lastClaim = GetTickCount64();
