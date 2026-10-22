@@ -475,6 +475,11 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnBool(movie, SettingInt(L"Debug", L"No3DFix", L"FGUYMOD_TEST_NO3DFIX", 0) != 0);
         } else if (strcmp(fn, "SessionLevel") == 0) {
             NetplaySessionLevel();
+        } else if (strcmp(fn, "SessionLeave") == 0) {   // (story co-op: the main menu's ONLINE - back to the lobby)
+            NetplaySessionLeaveAsked();
+            ReturnBool(movie, true);
+        } else if (strcmp(fn, "SessionStarted") == 0) {
+            ReturnBool(movie, NetplaySessionStarted());
         } else if (strcmp(fn, "SessionLog") == 0) {
             Log(L"Session: %S", ArgString(args, argc, 0));
         } else {

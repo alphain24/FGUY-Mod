@@ -91,7 +91,9 @@ bool NetplayLevelLive();               //   session: every player's level HUD is
 void NetplaySessionPress(int pad, WORD buttons, int delayTicks);  // session autopilot
 void NetplaySessionLevel();            //   the menu launched the level
 void NetplayLeave(const wchar_t* why); //   leave the session (back to the lobby): run on our own
-bool NetplaySessionReturn();           //   the menus: the match is over - back to the lobby (leaves the session)
+bool NetplaySessionReturn();
+void NetplaySessionLeaveAsked();      //   story co-op: the main menu's ONLINE - back to the lobby
+bool NetplaySessionStarted();         //   a level of this session ran already (the menus: no autopilot again)           //   the menus: the match is over - back to the lobby (leaves the session)
 void InitLoadSync();
 void LoadSyncTickStart();              //   each session tick: wait for menu movies still loading                   // online: level start-up the same tick on every PC (loadsync.cpp)
 DWORD NetplayGameThread();             //   the game logic thread (netplay.cpp)

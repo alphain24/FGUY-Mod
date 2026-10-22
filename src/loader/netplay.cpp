@@ -5185,12 +5185,24 @@ void NetplayLeave(const wchar_t* why) {
     Log(L"Netplay: left the session at tick %u (%s) - this game runs on its own now", g_tick, why);
 }
 
+// Story co-op in the new netcode: the front end is part of the session, as offline (QUIT GAME to the main menu,
+// then CONTINUE / a level - the speedrunners' warps go through it): the main menu stays the players' (the host's to
+// drive, as player 1's offline) until they go back to the lobby - ONLINE there (FGUYMOD_SessionLeave).
+volatile LONG g_storyLeaveAsked = 0;
+bool StoryFrontEnd() { return g_sessionStory && g_freeWanted; }
+void NetplaySessionLeaveAsked() {
+    if (InterlockedExchange(&g_storyLeaveAsked, 1) == 0) Log(L"Netplay: story - back to the lobby (from the main menu)");
+}
+// (the menu movie, as it starts again: a level of this session ran already - no walking the menus into one again)
+bool NetplaySessionStarted() { return g_inSession && g_levelLaunched; }
+
 // The menus, when a page of the front end opens: is the match over (back to the lobby)? Yes once this
 // session's level has been launched - the front end only comes back after the match (its results) or a quit.
 bool NetplaySessionReturn() {
     static bool returned = false;
     if (returned) return true;
     if (!g_inSession || !g_levelLaunched) return false;
+    if (StoryFrontEnd() && !g_storyLeaveAsked) return false;   // (story co-op: the main menu's, until ONLINE)
     returned = true;
     NetplayLeave(L"the match is over");
     char code[16] = "", token[40] = "";

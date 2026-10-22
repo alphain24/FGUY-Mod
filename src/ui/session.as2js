@@ -38,6 +38,11 @@ function FGUYSessionInit() {
         FGUYSessionCheckReturn();
         return;
     }
+    if (flash.external.ExternalInterface.call('FGUYMOD_SessionStarted') == true) {   // story co-op: back in the main
+        FGUYSessStage = 'started';   //   menu after a quit - the players' own (no walking into the level again)
+        FGUYSessLog('the main menu - the players\' (story co-op)');
+        return;
+    }
     var parts = String(cfg).split('|');
     var c = parts[0].split(',');
     FGUYSess = {mode: c[0], map: c[1], time: Number(c[2]), score: Number(c[3]), ff: Number(c[4]), picks: []};

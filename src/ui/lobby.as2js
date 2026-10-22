@@ -660,6 +660,11 @@ function OnModsSelect() {
 }
 
 function OnOnlineSelect() {
+    if (FGUYSessOn && FGUYSessStage == 'started') {   // story co-op, the session's main menu: back to the lobby
+        flash.external.ExternalInterface.call('FGUYMOD_SessionLeave');
+        FGUYSessionCheckReturn();
+        return;
+    }
     FGUYOnline = true;
     PauseTVSound();
     PlayOptionsSubMenuMusic();
