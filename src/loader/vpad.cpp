@@ -132,14 +132,21 @@ void VPadPressLater(DWORD pad, WORD buttons, DWORD ms) {
 }
 namespace {
 
+// the real pad, the emote buttons taken out (emotes.cpp) - what the game, or the lockstep, reads
+DWORD WINAPI PadRead(DWORD pad, XINPUT_STATE* state) {
+    DWORD r = Real_XInputGetState(pad, state);
+    if (r == ERROR_SUCCESS) EmotesPad(pad, state);
+    return r;
+}
+
 DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
     if (pad == 0) AudioTick();
-    if (state && NetplayPad(pad, state, Real_XInputGetState)) {
+    if (state && NetplayPad(pad, state, PadRead)) {
         if (pad == 0) ModsTick();   // the mods' plugins (after the lockstep has this tick's inputs)
         return NetplayPadConnected(pad) ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
     }
     if (pad == 0) ModsTick();
-    DWORD r = Real_XInputGetState(pad, state);
+    DWORD r = state ? PadRead(pad, state) : Real_XInputGetState(pad, state);
     if (IsBot() && state && r == ERROR_SUCCESS) ZeroMemory(&state->Gamepad, sizeof(state->Gamepad));  // not your pad
     static LONG calls[4];
     if (pad < 4 && InterlockedIncrement(&calls[pad]) == 1)
@@ -337,6 +344,12 @@ void HandleCommand(char* line) {
         char* a = strtok_s(nullptr, " \t\r\n", &ctx);   // research: characters' poses (motion.cpp)
         char* b = strtok_s(nullptr, " \t\r\n", &ctx);
         MotionCommand(cmd, a, b);
+        return;
+    }
+    if (cmd && _stricmp(cmd, "emote") == 0) {   // test tools: emote <player slot> <1-4> - as Back + D-pad / F5-F8
+        char* slot = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* nth = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (slot && nth) EmotesRequest(atoi(slot), atoi(nth) - 1);
         return;
     }
     if (cmd && _stricmp(cmd, "texdraws") == 0) {   // research: texdraws <lo> <hi> - a frame's draws with that texture

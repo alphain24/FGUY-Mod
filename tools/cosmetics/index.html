@@ -19,6 +19,7 @@
   --accent: #ffcf33; --accent2: #5cc8ff; --danger: #ff6b6b; --radius: 14px;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 Nunito, system-ui, sans-serif; }
 button, input, select { font: inherit; color: inherit; }
 h1 { font: 28px 'Lilita One', sans-serif; margin: 0; letter-spacing: .5px; color: var(--accent2); text-shadow: 0 2px 0 #06101f; }
@@ -60,6 +61,18 @@ input[type=text] { background: var(--panel2); border: 2px solid var(--line); bor
 .muted { color: var(--muted); font-size: 13px; }
 .sep { border-top: 2px solid var(--line); margin: 12px 0; }
 .status { color: var(--muted); font-size: 13px; min-height: 18px; }
+.tabs { display: flex; gap: 6px; }
+.tab { background: var(--panel2); border: 2px solid var(--line); border-radius: 999px; padding: 5px 16px; cursor: pointer; font-weight: 800; }
+.tab.on { border-color: var(--accent); color: var(--accent); }
+select { background: var(--panel2); border: 2px solid var(--line); border-radius: 8px; padding: 6px 9px; width: 100%; }
+input[type=number] { background: var(--panel2); border: 2px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+.timeline { position: absolute; left: 12px; right: 12px; bottom: 34px; display: flex; gap: 12px; align-items: center;
+  background: rgba(11, 23, 48, .88); border: 2px solid var(--line); border-radius: 12px; padding: 8px 12px; }
+.track { position: relative; flex: 1; padding-top: 12px; }
+.track input { width: 100%; }
+.keys { position: absolute; left: 8px; right: 8px; top: 0; height: 12px; }
+.key { position: absolute; top: 1px; width: 10px; height: 10px; background: var(--accent); border-radius: 2px;
+  transform: translateX(-50%) rotate(45deg); cursor: pointer; }
 @media (max-width: 900px) {
   .app { grid-template-columns: 1fr; grid-template-rows: auto auto 60vh auto; height: auto; }
 }
@@ -69,7 +82,8 @@ input[type=text] { background: var(--panel2); border: 2px solid var(--line); bor
 <div class="app">
   <header>
     <h1>FGUY SKIN STUDIO</h1>
-    <span class="sub">Make skins for Family Guy: Back to the Multiverse - your game's files stay on your PC</span>
+    <nav class="tabs"><button class="tab on" id="tabSkins">Skins</button><button class="tab" id="tabEmotes">Emotes</button></nav>
+    <span class="sub">Skins and emotes for Family Guy: Back to the Multiverse - your game's files stay on your PC</span>
     <span style="flex:1"></span>
     <button class="btn primary" id="openFolder">Open game folder</button>
     <label class="btn" style="display:inline-block">Or pick PLYS.ho <input type="file" id="openFile" accept=".ho" hidden></label>
@@ -89,7 +103,12 @@ input[type=text] { background: var(--panel2); border: 2px solid var(--line); bor
       <p class="muted">Chrome or Edge. In other browsers use "Or pick PLYS.ho" (it's in <code>FGUY\Global_Scenes\Players</code>).</p>
     </div></div>
     <div class="hint" id="hint">Drag to turn - scroll to zoom - click the character to pick a color</div>
-    <label class="viewopt"><input type="checkbox" id="showDamage"> Show battle damage</label>
+    <label class="viewopt" id="damageOpt"><input type="checkbox" id="showDamage"> Show battle damage</label>
+    <div class="timeline" id="timeline" hidden>
+      <button class="btn primary" id="playEmote">Play</button>
+      <div class="track"><div class="keys" id="timeKeys"></div><input type="range" id="timeSlider" min="0" max="2" step="0.01" value="0"></div>
+      <span class="muted" id="timeLabel">0.00 / 2.00 s</span>
+    </div>
   </main>
 
   <aside class="panel" id="side">
@@ -127,6 +146,48 @@ input[type=text] { background: var(--panel2); border: 2px solid var(--line); bor
       <label class="btn">Open pack <input type="file" id="openPack" accept=".fgskin,.zip" hidden></label>
     </div>
     <div class="status" id="status"></div>
+  </aside>
+
+  <aside class="panel" id="emoteSide" hidden>
+    <h2>Emote</h2>
+    <div class="row"><input type="text" id="emoteName" placeholder="Emote name, e.g. Victory Dance" maxlength="40"></div>
+    <div class="row">
+      <span class="muted">Length</span><input type="number" id="emoteLength" value="2" min="0.2" max="20" step="0.1" style="width:80px"><span class="muted">s</span>
+      <label class="muted"><input type="checkbox" id="emoteLoop" checked> Loop</label>
+    </div>
+    <div class="sep"></div>
+    <h2>Pose</h2>
+    <div id="boneName">Click a dot (a joint) on the character</div>
+    <div class="row"><select id="boneList"></select></div>
+    <div class="row">
+      <button class="btn" id="resetBone" disabled>Reset joint</button>
+      <label class="muted"><input type="checkbox" id="emoteMove"> Move instead of turn</label>
+    </div>
+    <div class="muted">Drag the rings to turn the joint. Each change becomes a key at the timeline's time - move the
+    time, pose again, then Play.</div>
+    <div class="sep"></div>
+    <h2>Keys</h2>
+    <div class="row">
+      <button class="btn" id="prevKey" title="previous key">&larr;</button>
+      <button class="btn" id="addKey">Set key</button>
+      <button class="btn" id="delKey" disabled>Delete key</button>
+      <button class="btn" id="nextKey" title="next key">&rarr;</button>
+    </div>
+    <div class="row"><button class="btn" id="clearKeys">Clear all</button></div>
+    <div class="sep"></div>
+    <h2>Other programs</h2>
+    <div class="row">
+      <button class="btn" id="exportGlb" disabled>Export rigged .glb</button>
+      <label class="btn">Import animation <input type="file" id="importGlb" accept=".glb,.gltf" hidden></label>
+    </div>
+    <div class="muted">Animate the exported character in Blender (keep its bone names), export a .glb, import it here.</div>
+    <div class="sep"></div>
+    <h2>Emote pack</h2>
+    <div class="row">
+      <button class="btn primary" id="saveEmote" disabled>Save emote</button>
+      <label class="btn">Open emote <input type="file" id="openEmote" accept=".fgemote,.zip" hidden></label>
+    </div>
+    <div class="status" id="status2"></div>
   </aside>
 </div>
 <script type="module" src="js/app.js"></script>

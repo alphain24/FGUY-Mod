@@ -3,6 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -147,6 +148,18 @@ void CosmeticsTrace(unsigned lo, unsigned hi);   //   test pipe "texdraws": a fr
 void InitMotion();                     // characters' poses: read / ours instead              (motion.cpp)
 void MotionFrame();                    //   d3d9.cpp: a frame was drawn
 void MotionCommand(const char* cmd, const char* a, const char* b);   //   test pipe "poserec" / "posefreeze" / "poseplay" / "posestop" / "findptr"
+struct MotionClip;                     //   a motion (motion.bin)
+std::shared_ptr<const MotionClip> MotionParse(const unsigned char* data, size_t size);
+int MotionBones(const MotionClip& m);
+float MotionLength(const MotionClip& m);
+void MotionPlay(int slot, std::shared_ptr<const MotionClip> clip, const std::vector<bool>& uses, bool loop);   //   on a player
+void MotionStop(int slot);             //   (blending back to the game's own)
+bool MotionPlaying(int slot);
+struct _XINPUT_STATE;
+void EmotesPad(DWORD pad, _XINPUT_STATE* st);   // emotes.cpp: Back + D-pad, kept from the game   (emotes.cpp)
+void EmotesFrame();                    //   d3d9.cpp: a frame was drawn (F5-F8, starting / stopping)
+void EmotesRequest(int slot, int nth); //   test pipe "emote <slot> <1-4>"
+bool ZipRead(const std::vector<unsigned char>& zip, const std::string& name, std::vector<unsigned char>& out);   // cosmetics.cpp: a stored zip entry
 void CosmeticsSetSkin(int slot, const std::vector<unsigned char>& pack, const wchar_t* name);   //   a player wears a skin pack
 void CosmeticsLoadSkinFile(int slot, const wchar_t* path);   //   test pipe "skinload <slot> <file.fgskin>"
 bool CosmeticsPackInfo(const std::vector<unsigned char>& pack, std::string* name, unsigned* lo, unsigned* hi);   //   a pack's name, its outfit

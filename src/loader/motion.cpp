@@ -6,14 +6,16 @@
 // palette skins the character's pieces on the CPU (0x4b02d0 a piece). The entity is the player's [player + 0x38]
 // (its +0x1d4: the World::ModelPrototypeEntity). So, hooked there: a player's pose read (export), or ours instead
 // (custom motion), with the game's own skinning, attachments and everything after it unchanged.
-// Test pipe: "poserec <slot> <frames>" (the player's local pose each frame, to FGUYMod\motion_<slot>.bin),
-// "posefreeze <slot>" (the pose now, kept), "poseplay <slot> <file>" (a recorded motion, looped), "posestop <slot>",
-// "findptr <value> <slot | address>" (research: where a value is, two pointers deep).
+// MotionPlay: a motion on a player - the bones it moves (the others keep the game's own animation), blended in and
+// out (emotes.cpp). Test pipe: "poserec <slot> <frames>" (the player's local pose each frame, to
+// FGUYMod\motion_<slot>.bin), "posefreeze <slot>" (the pose now, kept), "poseplay <slot> <file>" (a motion, looped),
+// "posestop <slot>", "findptr <value> <slot | address>" (research: where a value is, two pointers deep).
 // motion_<slot>.bin: "FGMO", version 1, bones, frames (int32s); a frame: its time (s), then a bone: rotation x y z w,
 // translation x y z, scale x y z (floats).
 #include "common.h"
 
 #include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -26,7 +28,14 @@ PoseBuild_t g_poseOriginal = nullptr;
 
 const int kFloats = 10;   // a bone's: rotation 4, translation 3, scale 3
 
-struct Motion { int bones = 0; std::vector<float> times; std::vector<float> data; };   // data: frames x bones x 10
+}  // namespace
+
+struct MotionClip { int bones = 0; std::vector<float> times; std::vector<float> data; };   // data: frames x bones x 10
+
+namespace {
+
+using Motion = MotionClip;
+const double kBlendIn = 0.15, kBlendOut = 0.25;   // (seconds)
 
 struct Track {
     unsigned char* ent = nullptr;   // the player's entity, this frame
@@ -36,8 +45,10 @@ struct Track {
     bool recThisFrame = false;
     bool freeze = false;            // freezing: the pose captured, kept
     std::vector<float> frozen;
-    Motion play;                    // playing: a motion, looped
-    double playStart = 0;
+    std::shared_ptr<const Motion> play;   // playing: a motion, on the bones it moves
+    std::vector<bool> uses;
+    bool loop = false;
+    double playStart = 0, stopAt = 0;     // (stopAt: blending back to the game's own since then)
 };
 Track g_tracks[4];
 CRITICAL_SECTION g_lock;
@@ -64,11 +75,13 @@ void Scatter(const float* in, int bones, float* rot, float* pos, float* scale) {
     }
 }
 
-// a motion's pose at time t (looped): between its two frames, the rotations normalized-lerped (the shorter way)
-void Sample(const Motion& m, double t, float* out) {
+// a motion's pose at time t (looped, or held at its end): between its two frames, the rotations normalized-lerped
+// (the shorter way)
+void Sample(const Motion& m, double t, bool loop, float* out) {
     size_t frames = m.times.size();
     double length = m.times.back() - m.times.front();
-    t = length > 0 ? fmod(t, length) + m.times.front() : m.times.front();
+    t = length <= 0 ? 0 : loop ? fmod(t, length) : (t < length ? t : length);
+    t += m.times.front();
     size_t i = 0;
     while (i + 2 < frames && m.times[i + 1] <= t) ++i;
     size_t j = frames > 1 ? i + 1 : i;
@@ -99,10 +112,27 @@ void __cdecl Hook_PoseBuild(unsigned char* ent, float* rot, float* pos, float* s
         if (tr.freeze) {
             if (tr.frozen.empty()) { tr.frozen.resize(bones * kFloats); Gather(rot, pos, scale, bones, tr.frozen.data()); }
             if ((int)tr.frozen.size() == bones * kFloats) Scatter(tr.frozen.data(), bones, rot, pos, scale);
-        } else if (tr.play.bones == bones && !tr.play.times.empty()) {
-            std::vector<float> now(bones * kFloats);
-            Sample(tr.play, Now() - tr.playStart, now.data());
-            Scatter(now.data(), bones, rot, pos, scale);
+        } else if (tr.play && tr.play->bones == bones) {
+            double now = Now(), e = now - tr.playStart, length = tr.play->times.back() - tr.play->times.front();
+            if (!tr.loop && !tr.stopAt && e >= length) tr.stopAt = tr.playStart + length;   // (its end: back to the game's)
+            double w = e < kBlendIn ? e / kBlendIn : 1.0;
+            if (tr.stopAt) w *= 1.0 - (now - tr.stopAt) / kBlendOut;
+            if (w <= 0 && tr.stopAt) { tr.play.reset(); continue; }
+            std::vector<float> mine(bones * kFloats), game(bones * kFloats);
+            Sample(*tr.play, e, tr.loop, mine.data());
+            Gather(rot, pos, scale, bones, game.data());
+            float k = (float)(w > 1 ? 1 : w);
+            for (int b = 0; b < bones; ++b) {   // (the bones it moves: from the game's pose toward its own by k)
+                if (b < (int)tr.uses.size() && !tr.uses[b]) continue;
+                float* g = &game[b * kFloats];
+                const float* m = &mine[b * kFloats];
+                float dot = g[0] * m[0] + g[1] * m[1] + g[2] * m[2] + g[3] * m[3], sign = dot < 0 ? -1.0f : 1.0f, len = 0;
+                for (int c = 0; c < 4; ++c) { g[c] += (sign * m[c] - g[c]) * k; len += g[c] * g[c]; }
+                len = len > 0 ? 1.0f / sqrtf(len) : 1.0f;
+                for (int c = 0; c < 4; ++c) g[c] *= len;
+                for (int c = 4; c < kFloats; ++c) g[c] += (m[c] - g[c]) * k;
+            }
+            Scatter(game.data(), bones, rot, pos, scale);
         }
     }
     LeaveCriticalSection(&g_lock);
@@ -122,22 +152,19 @@ bool SaveMotion(const Motion& m, const wchar_t* path) {
     return true;
 }
 
-bool LoadMotion(const wchar_t* path, Motion& m) {
+std::vector<unsigned char> ReadAll(const wchar_t* path) {
+    std::vector<unsigned char> d;
     FILE* f = nullptr;
-    if (_wfopen_s(&f, path, L"rb") != 0 || !f) return false;
-    int head[4] = {};
-    bool ok = fread(head, sizeof(head), 1, f) == 1 && head[0] == 0x4f4d4746 && head[1] == 1 && head[2] > 0 &&
-              head[2] <= 255 && head[3] > 0 && head[3] < 100000;
-    if (ok) {
-        m.bones = head[2];
-        m.times.resize(head[3]);
-        m.data.resize((size_t)head[3] * m.bones * kFloats);
-        for (int i = 0; ok && i < head[3]; ++i)
-            ok = fread(&m.times[i], 4, 1, f) == 1 &&
-                 fread(&m.data[(size_t)i * m.bones * kFloats], 4, m.bones * kFloats, f) == (size_t)m.bones * kFloats;
+    if (_wfopen_s(&f, path, L"rb") != 0 || !f) return d;
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (size > 0 && size < 64 * 1024 * 1024) {
+        d.resize(size);
+        if (fread(d.data(), 1, size, f) != (size_t)size) d.clear();
     }
     fclose(f);
-    return ok;
+    return d;
 }
 
 unsigned char* PlayerEntity(int slot) {
@@ -163,6 +190,55 @@ void FindValue(const unsigned char* at, DWORD value, int bytes, int depth, std::
 }
 
 }  // namespace
+
+std::shared_ptr<const MotionClip> MotionParse(const unsigned char* d, size_t size) {
+    int head[4] = {};
+    if (size < sizeof(head)) return nullptr;
+    memcpy(head, d, sizeof(head));
+    if (head[0] != 0x4f4d4746 || head[1] != 1 || head[2] <= 0 || head[2] > 255 || head[3] <= 0 || head[3] > 100000)
+        return nullptr;
+    size_t frame = 4 + (size_t)head[2] * kFloats * 4;
+    if (size < sizeof(head) + frame * head[3]) return nullptr;
+    auto m = std::make_shared<Motion>();
+    m->bones = head[2];
+    m->times.resize(head[3]);
+    m->data.resize((size_t)head[3] * m->bones * kFloats);
+    for (int i = 0; i < head[3]; ++i) {
+        const unsigned char* at = d + sizeof(head) + frame * i;
+        memcpy(&m->times[i], at, 4);
+        memcpy(&m->data[(size_t)i * m->bones * kFloats], at + 4, frame - 4);
+        if (i && !(m->times[i] >= m->times[i - 1])) return nullptr;   // (times only go forward)
+    }
+    return m;
+}
+int MotionBones(const MotionClip& m) { return m.bones; }
+float MotionLength(const MotionClip& m) { return m.times.back() - m.times.front(); }
+
+void MotionPlay(int slot, std::shared_ptr<const MotionClip> clip, const std::vector<bool>& uses, bool loop) {
+    if (slot < 0 || slot >= 4 || !g_poseOriginal) return;
+    EnterCriticalSection(&g_lock);
+    Track& tr = g_tracks[slot];
+    tr.play = std::move(clip);
+    tr.uses = uses;
+    tr.loop = loop;
+    tr.playStart = Now();
+    tr.stopAt = 0;
+    tr.freeze = false;
+    LeaveCriticalSection(&g_lock);
+}
+void MotionStop(int slot) {
+    if (slot < 0 || slot >= 4 || !g_poseOriginal) return;
+    EnterCriticalSection(&g_lock);
+    if (g_tracks[slot].play && !g_tracks[slot].stopAt) g_tracks[slot].stopAt = Now();
+    LeaveCriticalSection(&g_lock);
+}
+bool MotionPlaying(int slot) {
+    if (slot < 0 || slot >= 4 || !g_poseOriginal) return false;
+    EnterCriticalSection(&g_lock);
+    bool on = g_tracks[slot].play && !g_tracks[slot].stopAt;
+    LeaveCriticalSection(&g_lock);
+    return on;
+}
 
 void MotionFrame() {
     if (!g_poseOriginal) return;
@@ -199,25 +275,23 @@ void MotionCommand(const char* cmd, const char* a, const char* b) {
         g_tracks[slot].frozen.clear();
         Log(L"Motion: player %d - %s", slot, g_tracks[slot].freeze ? L"pose frozen" : L"pose free");
     }
-    if (_stricmp(cmd, "poseplay") == 0 && forSlot && b) {
-        wchar_t path[MAX_PATH];
-        swprintf_s(path, L"%s\\%S", g_modDir, b);
-        Motion m;
-        if (LoadMotion(path, m)) {
-            g_tracks[slot].play = m;
-            g_tracks[slot].playStart = Now();
-            g_tracks[slot].freeze = false;
-            Log(L"Motion: player %d - playing %s (%zu frames, %d bones)", slot, path, m.times.size(), m.bones);
-        } else {
-            Log(L"Motion: can't read %s", path);
-        }
-    }
     if (_stricmp(cmd, "posestop") == 0 && forSlot) {
-        g_tracks[slot].play = Motion();
+        if (g_tracks[slot].play && !g_tracks[slot].stopAt) g_tracks[slot].stopAt = Now();
         g_tracks[slot].freeze = false;
         Log(L"Motion: player %d - the game's own pose again", slot);
     }
     LeaveCriticalSection(&g_lock);
+    if (_stricmp(cmd, "poseplay") == 0 && forSlot && b) {
+        wchar_t path[MAX_PATH];
+        swprintf_s(path, L"%s\\%S", g_modDir, b);
+        std::vector<unsigned char> d = ReadAll(path);
+        if (auto m = MotionParse(d.data(), d.size())) {
+            Log(L"Motion: player %d - playing %s (%zu frames, %d bones)", slot, path, m->times.size(), m->bones);
+            MotionPlay(slot, m, {}, true);
+        } else {
+            Log(L"Motion: can't read %s", path);
+        }
+    }
     if (_stricmp(cmd, "findptr") == 0 && a && b) {   // findptr <value> <player slot 0-3 | hex address>
         DWORD value = strtoul(a, nullptr, 16);
         const unsigned char* from = strlen(b) == 1 ? nullptr : reinterpret_cast<const unsigned char*>(strtoul(b, nullptr, 16));

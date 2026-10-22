@@ -1,15 +1,18 @@
 // FGUY Skin Studio: pick the game folder, a character and outfit, see it in 3D, recolor / repaint its textures, save a
-// skin pack (.fgskin: a zip with skin.json and the changed textures as PNGs) for the game's cosmetics mod.
+// skin pack (.fgskin: a zip with skin.json and the changed textures as PNGs) for the game's cosmetics mod - or, on the
+// Emotes tab, pose the character on a timeline and save an emote pack (.fgemote, emotes.js) for the emote mod.
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {zipSync, unzipSync, strToU8, strFromU8} from 'fflate';
 import {Ho} from './ho.js';
 import {decodeDds, encodeDds} from './dds.js';
-import {loadModel, outfitsOf, CHARACTERS} from './model.js';
+import {loadModel, loadSkeleton, outfitsOf, CHARACTERS} from './model.js';
+import {createEmoteEditor} from './emotes.js';
 
 const $ = id => document.getElementById(id);
 const NICE = {AdamWest: 'Adam West'};
-const state = {ho: null, outfits: [], current: null, textures: new Map(), selected: null, picked: null};
+const state = {ho: null, outfits: [], current: null, textures: new Map(), selected: null, picked: null, mode: 'skins'};
+let emotes = null;   // (the emote editor, made below)
 
 // ---- 3D view ---------------------------------------------------------------------------------------------------
 const view = $('view');
@@ -35,7 +38,13 @@ function resize() {
   camera.updateProjectionMatrix();
 }
 new ResizeObserver(resize).observe(view);
-renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta();
+  if (state.mode === 'emotes') emotes?.tick(dt);
+  controls.update();
+  renderer.render(scene, camera);
+});
 
 // ---- opening the game ------------------------------------------------------------------------------------------
 async function openPackage(file) {
@@ -120,6 +129,15 @@ async function selectOutfit(o) {
   for (const b of document.querySelectorAll('.item')) b.classList.toggle('on', b.dataset.char === o.character);
   setStatus('Loading ' + (NICE[o.character] || o.character) + '...');
   const pieces = await loadModel(state.ho, o.model);
+  if (state.mode === 'emotes') {   // (the rigged character, to pose)
+    const skel = await loadSkeleton(state.ho, o.model);
+    if (!skel) { setStatus('No skeleton found for this outfit.'); return; }
+    await emotes.build(o, pieces, skel);
+    frame();
+    if (!$('emoteName').value) $('emoteName').placeholder = 'My ' + (NICE[o.character] || o.character) + ' emote';
+    setStatus('');
+    return;
+  }
   holder.clear();
   const texs = [];
   for (const p of pieces) {
@@ -235,6 +253,7 @@ let downAt = null;
 renderer.domElement.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
 renderer.domElement.addEventListener('pointerup', e => {
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;   // (a drag turns the view)
+  if (state.mode === 'emotes') { emotes.click(e); return; }
   const r = renderer.domElement.getBoundingClientRect();
   ray.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), camera);
   const hit = ray.intersectObjects(holder.children)[0];
@@ -400,7 +419,27 @@ $('openPack').onchange = async e => {
   }
 };
 
-function setStatus(s) { $('status').textContent = s; }
+function setStatus(s) { $('status').textContent = s; $('status2').textContent = s; }
+
+// ---- Skins / Emotes --------------------------------------------------------------------------------------------
+emotes = createEmoteEditor({scene, camera, controls, renderer, holder, $, setStatus, download, textureFor,
+  outfitsOf: ch => state.outfits.filter(o => o.character === ch)});
+function setMode(mode) {
+  if (mode === state.mode) return;
+  if (state.mode === 'emotes') emotes.leave();
+  state.mode = mode;
+  $('tabSkins').classList.toggle('on', mode === 'skins');
+  $('tabEmotes').classList.toggle('on', mode === 'emotes');
+  $('side').hidden = mode !== 'skins';
+  $('emoteSide').hidden = mode !== 'emotes';
+  $('timeline').hidden = mode !== 'emotes';
+  $('damageOpt').hidden = mode !== 'skins';
+  $('hint').textContent = mode === 'emotes' ? 'Drag to turn - scroll to zoom - click a joint to pose it'
+    : 'Drag to turn - scroll to zoom - click the character to pick a color';
+  if (state.current) selectOutfit(state.current);
+}
+$('tabSkins').onclick = () => setMode('skins');
+$('tabEmotes').onclick = () => setMode('emotes');
 resize();
 
 // (development only: dev_server.py on this PC hands over the game file - index.html?dev)
@@ -408,4 +447,4 @@ if (new URLSearchParams(location.search).has('dev') && ['127.0.0.1', 'localhost'
   fetch('/game/PLYS.ho').then(r => r.ok ? r.blob() : null).then(b => b && openPackage(new File([b], 'PLYS.ho')));
 }
 window.studio = state;   // (for checking in the browser's console)
-window.studioView = {holder, camera, controls};
+window.studioView = {holder, camera, controls, setMode, emotes, render: () => renderer.render(scene, camera)};

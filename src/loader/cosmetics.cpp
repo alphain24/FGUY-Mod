@@ -305,6 +305,10 @@ unsigned g_traceLo = 0, g_traceHi = 0;
 
 }  // namespace
 
+bool ZipRead(const std::vector<unsigned char>& zip, const std::string& name, std::vector<unsigned char>& out) {
+    return ZipEntry(zip, name, out);
+}
+
 void CosmeticsDeviceCreated(IDirect3DDevice9* dev) {
     if (void* o = Patch(dev, 65, (void*)Hook_SetTexture)) Real_SetTexture = (SetTexture_t)o;
     if (void* o = Patch(dev, 94, (void*)Hook_SetVSConstF)) Real_SetVSConstF = (SetVSConstF_t)o;

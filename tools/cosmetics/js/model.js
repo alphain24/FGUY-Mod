@@ -5,6 +5,7 @@
 //   A vertex: position, normal (12 + 12), with tangents also tangent + sign (16), then - moved by more than one bone -
 //   its weights (4 bytes), then its bones (4). The record has a table of vertex counts by bone count (one-bone ones first).
 import {T} from './ho.js';
+import {parseSkeleton, vertexBones} from './rig.js';
 
 const u32 = (dv, o) => dv.getUint32(o, true);
 
@@ -25,16 +26,17 @@ function boneTables(d, n) {
   return out.length ? out : [[n]];
 }
 
-function vertexOffsets(d, n, vbSize) {
+// each vertex: where it starts (o), its size without the weights (base), how many bones move it (k)
+function vertexLayout(d, n, vbSize) {
   for (const tab of boneTables(d, n)) for (const tangents of [false, true]) {
     const base = 28 + (tangents ? 16 : 0);
     if (tab[0] * base + (n - tab[0]) * (base + 4) !== vbSize) continue;
     const out = [];
     let o = 0;
-    tab.forEach((cnt, k) => { for (let i = 0; i < cnt; i++) { out.push(o); o += base + (k > 0 ? 4 : 0); } });
+    tab.forEach((cnt, k) => { for (let i = 0; i < cnt; i++) { out.push({o, base, k: k + 1}); o += base + (k > 0 ? 4 : 0); } });
     return out;
   }
-  if (vbSize % n === 0 && vbSize / n >= 24) return Array.from({length: n}, (_, i) => i * (vbSize / n));
+  if (vbSize % n === 0 && vbSize / n >= 24) return Array.from({length: n}, (_, i) => ({o: i * (vbSize / n), base: vbSize / n, k: 0}));
   return null;
 }
 
@@ -70,11 +72,11 @@ export async function loadModel(ho, model) {
     const rest = raws.filter(a => a !== uv).sort((a, b) => b.size - a.size);
     const vb = rest[0], ib = rest[1];
     if (!vb || !ib || !n) continue;
-    const offs = vertexOffsets(d, n, vb.size);
-    if (!offs) { console.warn('piece not decoded', g.name, n, vb.size); continue; }
+    const layout = vertexLayout(d, n, vb.size);
+    if (!layout) { console.warn('piece not decoded', g.name, n, vb.size); continue; }
     const vbytes = await vb.bytes(), vdv = new DataView(vbytes.buffer, vbytes.byteOffset, vbytes.byteLength);
     const position = new Float32Array(n * 3), normal = new Float32Array(n * 3), uvs = new Float32Array(n * 2);
-    offs.forEach((o, i) => {
+    layout.forEach(({o}, i) => {
       for (let k = 0; k < 3; k++) {
         position[i * 3 + k] = vdv.getFloat32(o + 4 * k, true);
         normal[i * 3 + k] = vdv.getFloat32(o + 12 + 4 * k, true);
@@ -88,9 +90,16 @@ export async function loadModel(ho, model) {
     let index = new Uint16Array(ibytes.buffer.slice(ibytes.byteOffset, ibytes.byteOffset + (ibytes.byteLength & ~1)));
     index = index.subarray(0, index.length - index.length % 3);
     if (index.some(i => i >= n)) { console.warn('piece triangles out of range', g.name); continue; }
-    pieces.push({position, normal, uv: uvs, index, material: mat, texture: mat ? await materialTexture(ho, mat) : null});
+    const skin = layout[0].k ? vertexBones(vdv, layout) : null;   // (k 0: a layout not understood - no bones)
+    pieces.push({position, normal, uv: uvs, index, skin, material: mat, texture: mat ? await materialTexture(ho, mat) : null});
   }
   return pieces;
+}
+
+// the model's skeleton (its SkeletonBlob)
+export async function loadSkeleton(ho, model) {
+  const blob = ho.refs(await model.bytes()).map(r => r.asset).find(a => a.type === T.SkeletonBlob);
+  return blob ? parseSkeleton(await blob.bytes()) : null;
 }
 
 // The playable characters and their outfits (Model assets "<Character><Outfit>_Rig_Geo")
