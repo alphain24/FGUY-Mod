@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {zipSync, unzipSync, strToU8, strFromU8} from 'fflate';
 import {Ho} from './ho.js';
-import {decodeDds} from './dds.js';
+import {decodeDds, encodeDds} from './dds.js';
 import {loadModel, outfitsOf, CHARACTERS} from './model.js';
 
 const $ = id => document.getElementById(id);
@@ -108,7 +108,8 @@ async function textureFor(info) {
   const tex = new THREE.CanvasTexture(canvas);
   tex.flipY = false;
   tex.colorSpace = THREE.SRGBColorSpace;
-  const t = {name: key, canvas, ctx, original, tex, history: [], modified: false, format: dds.format};
+  const t = {name: key, canvas, ctx, original, tex, history: [], modified: false, format: dds.format, mips: dds.mips,
+    id: [info.texture.lo, info.texture.hi]};
   state.textures.set(key, t);
   return t;
 }
@@ -344,10 +345,15 @@ async function buildPack() {
     tool: 'FGUY Skin Studio'};
   for (const t of edited) {
     const path = 'textures/' + t.name + '.png';
-    manifest.textures[t.name] = {file: path, width: t.canvas.width, height: t.canvas.height};
+    // (and a game-ready copy: the game's texture's own format and mip levels - the mod copies it in as it is)
+    const dds = 'textures/' + t.name + '.dds';
+    manifest.textures[t.name] = {file: path, dds, id: t.id, width: t.canvas.width, height: t.canvas.height,
+      format: t.format, mips: t.mips};
     files[path] = new Uint8Array(await (await pngOf(t)).arrayBuffer());
+    const px = t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height).data;
+    files[dds] = [encodeDds(px, t.canvas.width, t.canvas.height, t.format, t.mips), {level: 0}];   // (stored: the mod reads it as is)
   }
-  files['skin.json'] = strToU8(JSON.stringify(manifest, null, 2));
+  files['skin.json'] = [strToU8(JSON.stringify(manifest, null, 2)), {level: 0}];   // (stored: the mod reads it as is)
   return {name, count: edited.length, blob: new Blob([zipSync(files)])};
 }
 state.buildPack = buildPack;
