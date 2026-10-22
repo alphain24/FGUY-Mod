@@ -80,7 +80,88 @@ void Fill(IDirect3DTexture9* tex, unsigned rgb) {
     }
 }
 
+// ---- which player a draw is of (research) -----------------------------------------------------------------------
+// The device's own calls, seen: the textures set (stage 0), the vertex shader constants (a shadow copy - a skinned
+// character's bone matrices go there before its draw), the draws. "texdraws <lo> <hi>": for one frame, each draw with
+// that texture - and which player's position the constants' matrix translations are near.
+using SetTexture_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, DWORD, IDirect3DBaseTexture9*);
+using SetVSConstF_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, UINT, const float*, UINT);
+using DrawIndexed_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
+SetTexture_t Real_SetTexture;
+SetVSConstF_t Real_SetVSConstF;
+DrawIndexed_t Real_DrawIndexed;
+IDirect3DBaseTexture9* g_stage0 = nullptr;
+IDirect3DBaseTexture9* g_stages[8] = {};
+int g_traceAllDraws = 0, g_traceStageHit[8] = {};
+float g_vsConst[256][4];
+volatile LONG g_traceArm = 0;          // (the next frame: trace)
+bool g_tracing = false;
+IDirect3DBaseTexture9* g_traceTex = nullptr;
+int g_traceDraws = 0;
+float g_tracePlayers[4][3];
+int g_tracePlayerCount = 0;
+
+HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* self, DWORD stage, IDirect3DBaseTexture9* tex) {
+    if (stage == 0) g_stage0 = tex;
+    if (stage < 8) g_stages[stage] = tex;
+    return Real_SetTexture(self, stage, tex);
+}
+HRESULT STDMETHODCALLTYPE Hook_SetVSConstF(IDirect3DDevice9* self, UINT reg, const float* data, UINT count) {
+    if (data && reg < 256) memcpy(g_vsConst[reg], data, sizeof(float) * 4 * min(count, 256 - reg));
+    return Real_SetVSConstF(self, reg, data, count);
+}
+HRESULT STDMETHODCALLTYPE Hook_DrawIndexed(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT base, UINT minIdx,
+                                           UINT verts, UINT start, UINT prims) {
+    if (g_tracing) {
+        ++g_traceAllDraws;
+        for (int st = 0; st < 8; ++st) if (g_stages[st] == g_traceTex) ++g_traceStageHit[st];
+    }
+    if (g_tracing && g_traceTex && (g_stages[0] == g_traceTex || g_stages[1] == g_traceTex || g_stages[2] == g_traceTex) && g_traceDraws < 40) {
+        ++g_traceDraws;
+        std::wstring hits;
+        for (int r = 0; r + 2 < 256; ++r)   // (a 3x4 row-major matrix: translation in each row's w)
+            for (int p = 0; p < g_tracePlayerCount; ++p) {
+                float dx = g_vsConst[r][3] - g_tracePlayers[p][0], dy = g_vsConst[r + 1][3] - g_tracePlayers[p][1],
+                      dz = g_vsConst[r + 2][3] - g_tracePlayers[p][2];
+                if (dx * dx + dy * dy + dz * dz < 4.0f) {
+                    wchar_t b[48];
+                    swprintf_s(b, L" c%d~p%d", r, p);
+                    hits += b;
+                    r += 2;
+                    break;
+                }
+            }
+        Log(L"Cosmetics: trace - draw %d: %u vertices, %u triangles; near players:%s", g_traceDraws, verts, prims,
+            hits.empty() ? L" none" : hits.c_str());
+    }
+    return Real_DrawIndexed(self, type, base, minIdx, verts, start, prims);
+}
+
+void* Patch(void* object, int slot, void* hook) {
+    void** vtable = *reinterpret_cast<void***>(object);
+    if (vtable[slot] == hook) return nullptr;
+    DWORD old;
+    VirtualProtect(&vtable[slot], sizeof(void*), PAGE_READWRITE, &old);
+    void* original = vtable[slot];
+    vtable[slot] = hook;
+    VirtualProtect(&vtable[slot], sizeof(void*), old, &old);
+    return original;
+}
+
+unsigned g_traceLo = 0, g_traceHi = 0;
+
 }  // namespace
+
+void CosmeticsDeviceCreated(IDirect3DDevice9* dev) {
+    if (void* o = Patch(dev, 65, (void*)Hook_SetTexture)) Real_SetTexture = (SetTexture_t)o;
+    if (void* o = Patch(dev, 94, (void*)Hook_SetVSConstF)) Real_SetVSConstF = (SetVSConstF_t)o;
+    if (void* o = Patch(dev, 82, (void*)Hook_DrawIndexed)) Real_DrawIndexed = (DrawIndexed_t)o;
+}
+
+void CosmeticsTrace(unsigned lo, unsigned hi) {
+    g_traceLo = lo; g_traceHi = hi;
+    InterlockedExchange(&g_traceArm, 1);
+}
 
 void CosmeticsTest(bool fill, unsigned lo, unsigned hi, unsigned rgb) {
     Lock();
@@ -91,6 +172,26 @@ void CosmeticsTest(bool fill, unsigned lo, unsigned hi, unsigned rgb) {
 // d3d9.cpp, the render thread after each Present
 void CosmeticsFrame(IDirect3DDevice9* dev) {
     (void)dev;
+    if (g_tracing) {   // (a frame traced: done)
+        g_tracing = false;
+        Log(L"Cosmetics: trace - %d draws with the texture this frame (%d draws in all; with it on stages 0-3: %d %d %d %d)",
+            g_traceDraws, g_traceAllDraws, g_traceStageHit[0], g_traceStageHit[1], g_traceStageHit[2], g_traceStageHit[3]);
+    }
+    if (InterlockedExchange(&g_traceArm, 0)) {
+        g_traceTex = TextureOf(g_traceLo, g_traceHi);
+        unsigned char* players[4];
+        g_tracePlayerCount = GamePlayers(players, 4);
+        for (int p = 0; p < g_tracePlayerCount; ++p) {
+            auto xf = *reinterpret_cast<unsigned char**>(players[p] + 0x38);
+            if (xf) memcpy(g_tracePlayers[p], xf + 0x30, 12);
+            Log(L"Cosmetics: trace - player %d at %.1f %.1f %.1f", p, g_tracePlayers[p][0], g_tracePlayers[p][1], g_tracePlayers[p][2]);
+        }
+        g_traceDraws = g_traceAllDraws = 0;
+        memset(g_traceStageHit, 0, sizeof(g_traceStageHit));
+        g_tracing = g_traceTex != nullptr;
+        Log(L"Cosmetics: trace - the texture is %p", g_traceTex);
+        if (!g_traceTex) Log(L"Cosmetics: trace - no texture %x:%x here", g_traceLo, g_traceHi);
+    }
     if (!g_lockInit) return;
     std::vector<TestCmd> tests;
     Lock();

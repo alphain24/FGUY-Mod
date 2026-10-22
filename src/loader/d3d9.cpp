@@ -494,6 +494,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DD
         if (void* o = PatchVtable(*out, 16, (void*)Hook_Reset)) Real_Reset = (Reset_t)o;
         if (void* o = PatchVtable(*out, 17, (void*)Hook_Present)) Real_Present = (Present_t)o;
         if (void* o = PatchVtable(*out, 23, (void*)Hook_CreateTexture)) Real_CreateTexture = (CreateTexture_t)o;
+        CosmeticsDeviceCreated(*out);   // (skins: which player a draw is of - cosmetics.cpp)
     }
     return hr;
 }

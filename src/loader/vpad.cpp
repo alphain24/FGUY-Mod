@@ -324,6 +324,12 @@ void HandleCommand(char* line) {
         NetplayTestKillNpcs();
         return;
     }
+    if (cmd && _stricmp(cmd, "texdraws") == 0) {   // research: texdraws <lo> <hi> - a frame's draws with that texture
+        char* lo = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* hi = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (lo && hi) CosmeticsTrace(strtoul(lo, nullptr, 16), strtoul(hi, nullptr, 16));
+        return;
+    }
     if (cmd && (_stricmp(cmd, "texinfo") == 0 || _stricmp(cmd, "texfill") == 0)) {   // research: texinfo <lo> <hi> /
         char* lo = strtok_s(nullptr, " \t\r\n", &ctx);                                // texfill <lo> <hi> <rrggbb>
         char* hi = strtok_s(nullptr, " \t\r\n", &ctx);

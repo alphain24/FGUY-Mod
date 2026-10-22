@@ -142,6 +142,8 @@ void ModsFrame();                      //   d3d9.cpp: a frame was drawn
 struct IDirect3DDevice9;
 void CosmeticsFrame(IDirect3DDevice9* dev);   // cosmetics.cpp: skins, on the render thread after each frame
 void CosmeticsTest(bool fill, unsigned lo, unsigned hi, unsigned rgb);   //   test pipe "texinfo" / "texfill"
+void CosmeticsDeviceCreated(IDirect3DDevice9* dev);   //   d3d9.cpp: the game's device
+void CosmeticsTrace(unsigned lo, unsigned hi);   //   test pipe "texdraws": a frame's draws with that texture
 std::string ModsOnlineKey();           //   the gameplay mods that are on (the lobby server matches by it)
 const char* ModsList();                //   FGUYMOD_ModsList (the MODS page)
 bool ModsToggle(const char* folder);   //   FGUYMOD_ModsToggle
