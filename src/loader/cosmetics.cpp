@@ -387,7 +387,16 @@ void CosmeticsLoadSkinFile(int slot, const wchar_t* path) {
 // (FGUYMOD_MY_SKIN, online.cpp) and sends it to everyone (netplay.cpp). The pick is remembered per outfit (FGUYMod.ini
 // [Skins] <model lo>_<model hi>=<file>).
 namespace {
-struct PackEntry { std::wstring file; std::string name; unsigned lo, hi; FILETIME written; };
+std::string JsonField(const std::vector<unsigned char>& pack, const char* key) {   // (skin.json's "key": "value")
+    std::vector<unsigned char> js;
+    if (!ZipEntry(pack, "skin.json", js)) return "";
+    std::string s(js.begin(), js.end()), k = std::string("\"") + key + "\"";
+    size_t at = s.find(k);
+    if (at == std::string::npos) return "";
+    size_t q1 = s.find('"', s.find(':', at) + 1), q2 = q1 == std::string::npos ? q1 : s.find('"', q1 + 1);
+    return q2 == std::string::npos ? "" : s.substr(q1 + 1, q2 - q1 - 1);
+}
+struct PackEntry { std::wstring file; std::string name; unsigned lo, hi; FILETIME written; std::string who; };
 std::vector<PackEntry> g_packs;
 ULONGLONG g_packsAt = 0;
 std::wstring g_myPick;              // (the file picked for the outfit shown - empty: none)
@@ -421,8 +430,14 @@ void ScanPacks() {
         auto known = std::find_if(g_packs.begin(), g_packs.end(), [&](const PackEntry& e) {
             return e.file == fd.cFileName && CompareFileTime(&e.written, &fd.ftLastWriteTime) == 0; });
         if (known != g_packs.end()) { out.push_back(*known); continue; }   // (unchanged: not read again)
-        PackEntry e{fd.cFileName, "", 0, 0, fd.ftLastWriteTime};
-        if (CosmeticsPackInfo(ReadAll(SkinsDir() + L"\\" + fd.cFileName), &e.name, &e.lo, &e.hi)) out.push_back(e);
+        PackEntry e{fd.cFileName, "", 0, 0, fd.ftLastWriteTime, ""};
+        std::vector<unsigned char> d = ReadAll(SkinsDir() + L"\\" + fd.cFileName);
+        if (CosmeticsPackInfo(d, &e.name, &e.lo, &e.hi)) {
+            e.who = JsonField(d, "character");   // ("Stewie - Default": the MODS page)
+            std::string outfit = JsonField(d, "outfit");
+            if (!outfit.empty()) e.who += " - " + outfit;
+            out.push_back(e);
+        }
         else Log(L"Cosmetics: %s isn't a skin pack this version can use (made by an older Skin Studio?)", fd.cFileName);
     } while (FindNextFileW(h, &fd));
     FindClose(h);
@@ -430,7 +445,85 @@ void ScanPacks() {
 }
 
 std::wstring IniPath() { return std::wstring(g_modDir) + L"\\FGUYMod.ini"; }
+
+// the file picked for an outfit ("" none) - FGUYMod.ini [Skins] <lo>_<hi>
+std::wstring PickFor(unsigned lo, unsigned hi) {
+    wchar_t key[32], file[MAX_PATH] = L"";
+    swprintf_s(key, L"%x_%x", lo, hi);
+    GetPrivateProfileStringW(L"Skins", key, L"", file, MAX_PATH, IniPath().c_str());
+    return file;
+}
+void SetPickFor(unsigned lo, unsigned hi, const std::wstring& file) {
+    wchar_t key[32];
+    swprintf_s(key, L"%x_%x", lo, hi);
+    WritePrivateProfileStringW(L"Skins", key, file.empty() ? nullptr : file.c_str(), IniPath().c_str());
+}
+
+// Offline (no session): every player whose outfit has a skin switched on wears it - the menus' characters too.
+// Looked at once a second (the render thread); a pack read only when what a player should wear changes.
+std::wstring g_offlineWorn[4];
+void OfflineSkins() {
+    static ULONGLONG last = 0;
+    ULONGLONG now = GetTickCount64();
+    if (now - last < 1000) return;
+    last = now;
+    ScanPacks();
+    unsigned char* players[8];
+    int n = GamePlayers(players, 8);
+    bool seen[4] = {};
+    for (int i = 0; i < n; ++i) {
+        int slot = *reinterpret_cast<int*>(players[i] + 0xdf8);
+        if (slot < 0 || slot >= 4) continue;
+        seen[slot] = true;
+        unsigned lo = 0, hi = 0;
+        std::wstring want;
+        if (CosmeticsPlayerModel(slot, 0, &lo, &hi)) {
+            std::wstring f = PickFor(lo, hi);
+            if (!f.empty() && std::any_of(g_packs.begin(), g_packs.end(), [&](const PackEntry& e) {
+                    return e.file == f && e.lo == lo && e.hi == hi; }))
+                want = f;
+        }
+        if (want == g_offlineWorn[slot]) continue;
+        g_offlineWorn[slot] = want;
+        CosmeticsLoadSkinFile(slot, want.empty() ? L"" : (SkinsDir() + L"\\" + want).c_str());
+    }
+    for (int s = 0; s < 4; ++s)
+        if (!seen[s] && !g_offlineWorn[s].empty()) { g_offlineWorn[s].clear(); CosmeticsLoadSkinFile(s, L""); }
+}
+std::string g_listText;
 }  // namespace
+
+void CosmeticsOfflineTick() { OfflineSkins(); }
+
+// FGUYMOD_SkinList (the MODS page): "<file>|<name>|<character - outfit>|<on>\n..."
+const char* CosmeticsSkinList() {
+    g_packsAt = 0;   // (fresh)
+    ScanPacks();
+    g_listText.clear();
+    for (const PackEntry& e : g_packs) {
+        char f[MAX_PATH * 3];
+        WideCharToMultiByte(CP_UTF8, 0, e.file.c_str(), -1, f, sizeof(f), nullptr, nullptr);
+        std::string n = e.name, w = e.who;
+        for (char& c : n) if (c == '|' || c == '\n') c = ' ';
+        for (char& c : w) if (c == '|' || c == '\n') c = ' ';
+        g_listText += std::string(f) + "|" + n + "|" + w + "|" + (PickFor(e.lo, e.hi) == e.file ? "1" : "0") + "\n";
+    }
+    return g_listText.c_str();
+}
+
+// FGUYMOD_SkinToggle(<file>): that skin on for its outfit (the outfit's other one off), or off
+void CosmeticsSkinToggle(const char* file) {
+    wchar_t w[MAX_PATH] = L"";
+    if (file) MultiByteToWideChar(CP_UTF8, 0, file, -1, w, MAX_PATH);
+    for (const PackEntry& e : g_packs) {
+        if (e.file != w) continue;
+        bool on = PickFor(e.lo, e.hi) == e.file;
+        SetPickFor(e.lo, e.hi, on ? L"" : e.file);
+        if (e.lo == g_myPickLo && e.hi == g_myPickHi) g_myPickLo = g_myPickHi = 0;   // (the lobby reads it again)
+        Log(L"Cosmetics: skin %s %s", e.file.c_str(), on ? L"off" : L"on");
+        return;
+    }
+}
 
 // FGUYMOD_SkinOptions: "<model lo>_<model hi>|<picked file>|<name>~<file>;..." - the packs for the outfit the lobby's
 // preview shows (none known: "|" only)
@@ -500,8 +593,10 @@ void CosmeticsTest(bool fill, unsigned lo, unsigned hi, unsigned rgb) {
 }
 
 // d3d9.cpp, the render thread after each Present
+void CosmeticsOfflineTick();
 void CosmeticsFrame(IDirect3DDevice9* dev) {
     (void)dev;
+    if (!NetplayEnabled()) CosmeticsOfflineTick();   // (offline: the skins switched on - MODS page)
     if (g_tracing) {   // (a frame traced: done)
         g_tracing = false;
         Log(L"Cosmetics: trace - %d draws with the texture this frame (%d draws in all; with it on stages 0-3: %d %d %d %d)",

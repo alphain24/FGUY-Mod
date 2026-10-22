@@ -1970,18 +1970,27 @@ function FGUYModsRead() {
         FGUYMods.push({folder: f[0], name: f[1], version: f[2], author: f[3], type: f[4], on: f[5] == '1', running: f[6] == '1',
                        about: f[7]});
     }
+    // and the skin packs (FGUYMod\\skins, from the Skin Studio): on = worn offline, and the pick for that outfit online
+    var skins = String(flash.external.ExternalInterface.call('FGUYMOD_SkinList')).split('\n');
+    for (var k = 0; k < skins.length; k++) {
+        if (skins[k] == '') continue;
+        var g = skins[k].split('|');
+        FGUYMods.push({folder: g[0], name: g[1], version: '', author: '', who: g[2], type: 'skin', on: g[3] == '1',
+                       running: false, about: 'Skin pack for ' + g[2] + ' (FGUYMod\\skins\\' + g[0] + ')'});
+    }
     if (FGUYModsSel >= FGUYMods.length) FGUYModsSel = Math.max(0, FGUYMods.length - 1);
 }
 
 function FGUYDrawMods(ui) {
     FGUYTitle(ui, 48, 26, 600, 80, 'MODS', 60, FGUYC.title, 'left');
-    FGUYText(ui, 640, 50, 912, 30, 'Separate mods from FGUYMod\\mods - switching takes effect after a restart', false, 20,
+    FGUYText(ui, 640, 50, 912, 30, 'Mods from FGUYMod\\mods (after a restart) - skins from FGUYMod\\skins (at once)', false, 20,
              FGUYC.muted2, 'right');
     FGUYPanel(ui, 48, 130, 1504, 690, 28, FGUYC.panel, FGUYC.glow);
     if (FGUYMods.length == 0) {
         FGUYText(ui, 90, 200, 1400, 40, 'No mods yet.', false, 30, FGUYC.white, 'left');
         FGUYText(ui, 90, 250, 1400, 30, 'Put a mod\'s folder in FGUYMod\\mods\\ (Y opens it), then come back here to switch it on.',
                  false, 20, FGUYC.soft, 'left');
+        FGUYText(ui, 90, 286, 1400, 30, 'Skin packs (.fgskin, made with the Skin Studio) go in FGUYMod\\skins\\.', false, 20, FGUYC.soft, 'left');
     }
     // 7 rows at a time: more scroll - the selection (up / down), the wheel, or the arrows beside the list
     var shown = FGUYModsShown(), more = FGUYMods.length > shown, rowW = more ? 1376 : 1448;
@@ -2007,17 +2016,20 @@ function FGUYDrawMods(ui) {
         FGUYRect(ui, 76, y, rowW, 62, 16, hot ? FGUYC.rowHot : FGUYC.row, 100, hot ? FGUYC.yellow : FGUYC.rowLine, 100, hot ? 3 : 2);
         FGUYHit(76, y, rowW, 62, 'modRow', i);
         FGUYText(ui, 100, y + 6, 760, 30, m.name + '  ' + m.version, false, 22, FGUYC.white, 'left');
-        FGUYText(ui, 100, y + 34, 760, 26, m.author != '' ? 'by ' + m.author : m.folder, false, 16, FGUYC.muted2, 'left');
-        var gameplay = m.type == 'gameplay';
+        FGUYText(ui, 100, y + 34, 760, 26, m.type == 'skin' ? 'for ' + m.who : (m.author != '' ? 'by ' + m.author : m.folder),
+                 false, 16, FGUYC.muted2, 'left');
+        var gameplay = m.type == 'gameplay', skin = m.type == 'skin';
         var sx = more ? -72 : 0;   // (the arrows' room)
         FGUYRect(ui, 1080 + sx, y + 16, 170, 32, 10, FGUYC.ink, 100, gameplay ? FGUYC.yellow : FGUYC.glow, 100, 2);
-        FGUYText(ui, 1080 + sx, y + 20, 170, 28, gameplay ? 'GAMEPLAY' : 'COSMETIC', false, 15, gameplay ? FGUYC.yellow : FGUYC.soft, 'center');
+        FGUYText(ui, 1080 + sx, y + 20, 170, 28, skin ? 'SKIN' : (gameplay ? 'GAMEPLAY' : 'COSMETIC'), false, 15,
+                 gameplay ? FGUYC.yellow : FGUYC.soft, 'center');
         FGUYRect(ui, 1290 + sx, y + 12, 200, 40, 14, m.on ? FGUYC.green : FGUYC.bg, 100, m.on ? FGUYC.greenLine : FGUYC.redLine, 100, 2);
         FGUYText(ui, 1290 + sx, y + 18, 200, 30, m.on ? 'ON' : 'OFF', false, 20, m.on ? FGUYC.white : FGUYC.red, 'center');
     }
     if (FGUYMods.length > 0) {   // the chosen one's description, and what on / off means for it
         var c = FGUYMods[FGUYModsSel];
-        var note = c.type == 'gameplay' ? 'Gameplay mod: online, everyone in the lobby needs it (the same version).'
+        var note = c.type == 'skin' ? 'On: worn whenever this outfit is played offline, and picked for it online (one skin per outfit).'
+                 : c.type == 'gameplay' ? 'Gameplay mod: online, everyone in the lobby needs it (the same version).'
                                         : 'Cosmetic mod: online, the others don\'t need it.';
         if (c.on && c.running) note = note + '  Its plugin is running.';
         FGUYText(ui, 90, 676, 1420, 30, c.about, false, 20, FGUYC.white, 'left');
@@ -2052,7 +2064,9 @@ function FGUYInputMods(key) {
     if (key == 38) { FGUYModsSel = (FGUYModsSel + n - 1) % n; FGUYSound('nav'); }
     else if (key == 40) { FGUYModsSel = (FGUYModsSel + 1) % n; FGUYSound('nav'); }
     else if (key == 13 || key == 37 || key == 39) {
-        flash.external.ExternalInterface.call('FGUYMOD_ModsToggle', FGUYMods[FGUYModsSel].folder);
+        var m = FGUYMods[FGUYModsSel];
+        if (m.type == 'skin') flash.external.ExternalInterface.call('FGUYMOD_SkinToggle', m.folder);
+        else flash.external.ExternalInterface.call('FGUYMOD_ModsToggle', m.folder);
         FGUYModsRead();
         FGUYSound('change');
     }

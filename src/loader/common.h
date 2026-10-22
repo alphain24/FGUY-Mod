@@ -150,7 +150,9 @@ bool CosmeticsPackInfo(const std::vector<unsigned char>& pack, std::string* name
 bool CosmeticsPlayerModel(int which, int nth, unsigned* lo, unsigned* hi);   //   the model (outfit) a player wears now
 const char* CosmeticsSkinOptions();                //   FGUYMOD_SkinOptions: the skins for the lobby preview's outfit
 void CosmeticsSkinPick(const char* file);           //   FGUYMOD_SkinPick: my skin for it
-std::wstring CosmeticsMySkinPath();                 //   online.cpp: my skin pack for the match ("" none)
+std::wstring CosmeticsMySkinPath();
+const char* CosmeticsSkinList();                   //   FGUYMOD_SkinList: the MODS page's skins
+void CosmeticsSkinToggle(const char* file);         //   FGUYMOD_SkinToggle: on / off for its outfit                 //   online.cpp: my skin pack for the match ("" none)
 std::string ModsOnlineKey();           //   the gameplay mods that are on (the lobby server matches by it)
 const char* ModsList();                //   FGUYMOD_ModsList (the MODS page)
 bool ModsToggle(const char* folder);   //   FGUYMOD_ModsToggle

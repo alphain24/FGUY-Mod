@@ -391,6 +391,11 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnString(movie, ModsList());
         } else if (strcmp(fn, "ModsToggle") == 0) {      // (switch one on / off - from the next start)
             ReturnBool(movie, ModsToggle(ArgString(args, argc, 0)));
+        } else if (strcmp(fn, "SkinList") == 0) {        // (the MODS page: the skin packs - cosmetics.cpp)
+            ReturnString(movie, CosmeticsSkinList());
+        } else if (strcmp(fn, "SkinToggle") == 0) {
+            CosmeticsSkinToggle(ArgString(args, argc, 0));
+            ReturnBool(movie, true);
         } else if (strcmp(fn, "ModsOpenFolder") == 0) {  // (the mods folder in Explorer)
             ModsOpenFolder();
             ReturnBool(movie, true);
