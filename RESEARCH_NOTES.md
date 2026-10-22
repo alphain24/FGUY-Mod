@@ -639,3 +639,25 @@ ematch_<lobby pid>.txt`), whose lobby then
 - The outfits of one character have the same skeleton (1-4 header dwords differ), so pieces fit across outfits. A
   piece's runtime World::SkinGeometryEntity (vtable 0x9fb30c) has Direct3D objects at +0xac and [+0xc8] - present for
   every outfit in the package even when nobody wears it (the main menu): a piece of another outfit can be drawn.
+
+## Rigs and motion (2026-10-22)
+- SkeletonBlob: +4 u16 bone count, +0x14 offset of the parent table (a byte a bone, 0xff root), +0x18 the mirror table,
+  +0x20 the matrices: a 3x4 row-major inverse bind matrix a bone. A vertex moved by one bone: its last dword a u16, that
+  bone's matrix offset (bone * 48); by more: its bytes the bones, the dword before them the weights (`tools/re/rig.py`).
+- Characters are skinned on the CPU, not in the vertex shader (which gets c0..c10 only): every frame, 0x4b02d0
+  (__thiscall piece, instance) skins one piece - a per-frame Graphics::SkinGeometry render instance (vtable 0x9fcb78;
+  +0xb0 bones, +0xb4 the bone palette) - into a staging buffer that 0x44da30 copies into one big dynamic vertex
+  buffer (positions, 12 bytes a vertex). Instances and palettes are frame-allocated: no lasting pointer to them.
+- The pose: the animation blend tree (0x522fb0) samples and blends into a local pose - per bone a rotation quaternion
+  (x y z w), translation and scale in the parent's space, as glTF animation channels - and calls
+  0x4fac80 (cdecl entity, rotations, translations, scales, bones). That builds the model-space bone matrices (down the
+  parent table of [[[entity +0x1d4] +0x80] +0x283c]) into the palette; 0x42c330 / 0x4af270 multiply in the inverse bind
+  matrices. The entity is the player's [player +0x38]. The game's pose has one bone more than the SkeletonBlob: its
+  bone 0 is the root (the entity's origin), its bone n + 1 the skeleton's bone n.
+- `src/loader/motion.cpp` hooks 0x4fac80: test pipe "poserec <slot> <frames>" saves a player's pose each frame
+  (FGUYMod\motion_<slot>.bin), "poseplay <slot> <file>" plays one on that player instead of the game's own (looped,
+  interpolated), "posefreeze", "posestop". Tested: Stewie standing, alive, drawn in a recorded knocked-down pose - his
+  gun follows his hand. `tools/re/motion.py` reads a recording; `tools/re/motion2glb.py` adds it to an ho2glb .glb as a
+  glTF animation (three.js plays it: the same pose as in the game).
+- ComboAnimBlob (the animations themselves, e.g. STEWIE_Walk): a compressed format, not decoded; a watchpoint on one in
+  the loaded package saw no reads while walking - sampled from a copy, or the data unpacked elsewhere at load.

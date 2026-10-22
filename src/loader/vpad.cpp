@@ -332,6 +332,13 @@ void HandleCommand(char* line) {
         if (slot) CosmeticsLoadSkinFile(atoi(slot), wpath);
         return;
     }
+    if (cmd && (_stricmp(cmd, "poserec") == 0 || _stricmp(cmd, "posefreeze") == 0 || _stricmp(cmd, "poseplay") == 0 ||
+                _stricmp(cmd, "posestop") == 0 || _stricmp(cmd, "findptr") == 0)) {
+        char* a = strtok_s(nullptr, " \t\r\n", &ctx);   // research: characters' poses (motion.cpp)
+        char* b = strtok_s(nullptr, " \t\r\n", &ctx);
+        MotionCommand(cmd, a, b);
+        return;
+    }
     if (cmd && _stricmp(cmd, "texdraws") == 0) {   // research: texdraws <lo> <hi> - a frame's draws with that texture
         char* lo = strtok_s(nullptr, " \t\r\n", &ctx);
         char* hi = strtok_s(nullptr, " \t\r\n", &ctx);

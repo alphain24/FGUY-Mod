@@ -144,6 +144,9 @@ void CosmeticsFrame(IDirect3DDevice9* dev);   // cosmetics.cpp: skins, on the re
 void CosmeticsTest(bool fill, unsigned lo, unsigned hi, unsigned rgb);   //   test pipe "texinfo" / "texfill"
 void CosmeticsDeviceCreated(IDirect3DDevice9* dev);   //   d3d9.cpp: the game's device
 void CosmeticsTrace(unsigned lo, unsigned hi);   //   test pipe "texdraws": a frame's draws with that texture
+void InitMotion();                     // characters' poses: read / ours instead              (motion.cpp)
+void MotionFrame();                    //   d3d9.cpp: a frame was drawn
+void MotionCommand(const char* cmd, const char* a, const char* b);   //   test pipe "poserec" / "posefreeze" / "poseplay" / "posestop" / "findptr"
 void CosmeticsSetSkin(int slot, const std::vector<unsigned char>& pack, const wchar_t* name);   //   a player wears a skin pack
 void CosmeticsLoadSkinFile(int slot, const wchar_t* path);   //   test pipe "skinload <slot> <file.fgskin>"
 bool CosmeticsPackInfo(const std::vector<unsigned char>& pack, std::string* name, unsigned* lo, unsigned* hi);   //   a pack's name, its outfit

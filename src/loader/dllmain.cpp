@@ -92,6 +92,7 @@ void Init() {
     InitVirtualPad(exe);
     InitUi();
     InitResearch();
+    InitMotion();
     InitSplitView();
     InitRngTrace();
     InitLoadSync();

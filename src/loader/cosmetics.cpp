@@ -82,8 +82,8 @@ void Fill(IDirect3DTexture9* tex, unsigned rgb) {
 }
 
 // ---- which player a draw is of (research) -----------------------------------------------------------------------
-// The device's own calls, seen: the textures set (stage 0), the vertex shader constants (a shadow copy - a skinned
-// character's bone matrices go there before its draw), the draws. "texdraws <lo> <hi>": for one frame, each draw with
+// The device's own calls, seen: the textures set (stage 0), the vertex shader constants (a shadow copy - c0..c10 only:
+// characters are skinned on the CPU, see motion.cpp), the draws. "texdraws <lo> <hi>": for one frame, each draw with
 // that texture - and which player's position the constants' matrix translations are near.
 using SetTexture_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, DWORD, IDirect3DBaseTexture9*);
 using SetVSConstF_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, UINT, const float*, UINT);
