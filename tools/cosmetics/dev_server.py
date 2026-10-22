@@ -19,6 +19,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return os.path.join(PLAYERS, os.path.basename(p))
         return super().translate_path(path)
 
+    def do_PUT(self):   # (testing: the page saves a pack to build/research - PUT /save/<name>)
+        name = os.path.basename(self.path.split('?')[0])
+        out = os.path.join(HERE, '..', '..', 'build', 'research')
+        os.makedirs(out, exist_ok=True)
+        data = self.rfile.read(int(self.headers.get('Content-Length', 0)))
+        open(os.path.join(out, name), 'wb').write(data)
+        self.send_response(200)
+        self.end_headers()
+
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store')
         super().end_headers()

@@ -144,6 +144,8 @@ void CosmeticsFrame(IDirect3DDevice9* dev);   // cosmetics.cpp: skins, on the re
 void CosmeticsTest(bool fill, unsigned lo, unsigned hi, unsigned rgb);   //   test pipe "texinfo" / "texfill"
 void CosmeticsDeviceCreated(IDirect3DDevice9* dev);   //   d3d9.cpp: the game's device
 void CosmeticsTrace(unsigned lo, unsigned hi);   //   test pipe "texdraws": a frame's draws with that texture
+void CosmeticsSetSkin(int slot, const std::vector<unsigned char>& pack, const wchar_t* name);   //   a player wears a skin pack
+void CosmeticsLoadSkinFile(int slot, const wchar_t* path);   //   test pipe "skinload <slot> <file.fgskin>"
 std::string ModsOnlineKey();           //   the gameplay mods that are on (the lobby server matches by it)
 const char* ModsList();                //   FGUYMOD_ModsList (the MODS page)
 bool ModsToggle(const char* folder);   //   FGUYMOD_ModsToggle

@@ -6,6 +6,7 @@
 // World::TextureResourceEntity (vtable 0x9fb2b8), its [+0x28] +0x14 the IDirect3DTexture9.
 #include "common.h"
 #include <d3d9.h>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -101,6 +102,136 @@ int g_traceDraws = 0;
 float g_tracePlayers[4][3];
 int g_tracePlayerCount = 0;
 
+// ---- skins: each player's own textures ----------------------------------------------------------------------------
+// A skin pack (.fgskin, from the Skin Studio): a zip - skin.json (its textures: asset id, the game-ready copy's path)
+// and, stored uncompressed, each texture's game-ready DDS (the game texture's own format, size and mip levels). A player
+// wearing one: for each of its textures, a texture of ours with the pack's pixels; a draw of that player's character
+// (its world translation, the vertex shader's c4..c6 .w, at that player's position) with the game's texture bound
+// gets ours instead - for that draw only. Everyone else using that outfit keeps the game's.
+struct SkinTex {
+    unsigned lo = 0, hi = 0;
+    std::vector<unsigned char> dds;
+    IDirect3DTexture9* mine = nullptr;     // (ours: made on the render thread)
+    IDirect3DBaseTexture9* game = nullptr; // (the game's, found through the asset tree - looked up again now and then)
+};
+struct Skin {
+    std::wstring name;
+    std::vector<SkinTex> textures;
+};
+Skin* g_skins[4] = {};                     // (by player index - the render thread's)
+struct PendingSkin { int slot; std::vector<unsigned char> pack; std::wstring name; };
+std::vector<PendingSkin> g_pending;        // (from any thread, under g_lock)
+struct Swap { IDirect3DTexture9* perSlot[4]; };
+std::vector<std::pair<IDirect3DBaseTexture9*, Swap>> g_swaps;   // (the game's texture -> each player's own)
+float g_playerPos[4][3];
+bool g_playerHere[4];
+
+bool ZipEntry(const std::vector<unsigned char>& z, const std::string& want, std::vector<unsigned char>& out) {
+    // (stored entries only - the Skin Studio stores what the mod reads)
+    if (z.size() < 22) return false;
+    size_t eocd = std::string::npos;
+    for (size_t i = z.size() - 22; i + 1 > 0 && i + 22 + 65535 >= z.size(); --i) {
+        if (*reinterpret_cast<const unsigned*>(&z[i]) == 0x06054b50) { eocd = i; break; }
+        if (i == 0) break;
+    }
+    if (eocd == std::string::npos) return false;
+    unsigned count = *reinterpret_cast<const unsigned short*>(&z[eocd + 10]);
+    size_t cd = *reinterpret_cast<const unsigned*>(&z[eocd + 16]);
+    for (unsigned e = 0; e < count && cd + 46 <= z.size(); ++e) {
+        if (*reinterpret_cast<const unsigned*>(&z[cd]) != 0x02014b50) return false;
+        unsigned short method = *reinterpret_cast<const unsigned short*>(&z[cd + 10]);
+        unsigned size = *reinterpret_cast<const unsigned*>(&z[cd + 20]);
+        unsigned short nameLen = *reinterpret_cast<const unsigned short*>(&z[cd + 28]);
+        unsigned short extra = *reinterpret_cast<const unsigned short*>(&z[cd + 30]);
+        unsigned short comment = *reinterpret_cast<const unsigned short*>(&z[cd + 32]);
+        size_t local = *reinterpret_cast<const unsigned*>(&z[cd + 42]);
+        std::string name(reinterpret_cast<const char*>(&z[cd + 46]), nameLen);
+        if (name == want) {
+            if (method != 0 || local + 30 > z.size()) return false;
+            size_t data = local + 30 + *reinterpret_cast<const unsigned short*>(&z[local + 26]) +
+                          *reinterpret_cast<const unsigned short*>(&z[local + 28]);
+            if (data + size > z.size()) return false;
+            out.assign(z.begin() + data, z.begin() + data + size);
+            return true;
+        }
+        cd += 46 + nameLen + extra + comment;
+    }
+    return false;
+}
+
+// skin.json, as the Skin Studio writes it: each texture's "dds": "<path>" then "id": [lo, hi]
+Skin* ParsePack(const std::vector<unsigned char>& pack, const std::wstring& name) {
+    std::vector<unsigned char> js;
+    if (!ZipEntry(pack, "skin.json", js)) return nullptr;
+    std::string s(js.begin(), js.end());
+    auto skin = new Skin{name, {}};
+    size_t at = 0;
+    while ((at = s.find("\"dds\"", at)) != std::string::npos) {
+        size_t q1 = s.find('"', s.find(':', at) + 1), q2 = s.find('"', q1 + 1);
+        size_t id = s.find("\"id\"", q2);
+        if (q1 == std::string::npos || q2 == std::string::npos || id == std::string::npos) break;
+        size_t br = s.find('[', id);
+        SkinTex t;
+        if (sscanf_s(s.c_str() + br, "[%u, %u]", &t.lo, &t.hi) != 2 && sscanf_s(s.c_str() + br, "[%u,%u]", &t.lo, &t.hi) != 2) break;
+        if (ZipEntry(pack, s.substr(q1 + 1, q2 - q1 - 1), t.dds) && t.dds.size() > 128) skin->textures.push_back(std::move(t));
+        at = br;
+    }
+    if (skin->textures.empty()) { delete skin; return nullptr; }
+    return skin;
+}
+
+// ours: the game texture's format, filled from the DDS's levels
+IDirect3DTexture9* MakeTexture(IDirect3DDevice9* dev, const SkinTex& t) {
+    const unsigned char* d = t.dds.data();
+    if (*reinterpret_cast<const unsigned*>(d) != 0x20534444) return nullptr;
+    unsigned h = *reinterpret_cast<const unsigned*>(d + 12), w = *reinterpret_cast<const unsigned*>(d + 16);
+    unsigned mips = max(1u, *reinterpret_cast<const unsigned*>(d + 28));
+    unsigned pf = *reinterpret_cast<const unsigned*>(d + 80), four = *reinterpret_cast<const unsigned*>(d + 84);
+    D3DFORMAT fmt = !(pf & 4) ? D3DFMT_A8R8G8B8 : four == MAKEFOURCC('D', 'X', 'T', '1') ? D3DFMT_DXT1 : D3DFMT_DXT5;
+    IDirect3DTexture9* tex = nullptr;
+    if (FAILED(dev->CreateTexture(w, h, mips, 0, fmt, D3DPOOL_MANAGED, &tex, nullptr))) return nullptr;
+    size_t o = 128;
+    for (unsigned l = 0; l < mips && l < tex->GetLevelCount(); ++l) {
+        unsigned lw = max(1u, w >> l), lh = max(1u, h >> l);
+        unsigned bw = max(1u, (lw + 3) / 4), bh = max(1u, (lh + 3) / 4);
+        unsigned rowBytes = fmt == D3DFMT_A8R8G8B8 ? lw * 4 : bw * (fmt == D3DFMT_DXT1 ? 8 : 16);
+        unsigned rows = fmt == D3DFMT_A8R8G8B8 ? lh : bh;
+        if (o + (size_t)rowBytes * rows > t.dds.size()) break;
+        D3DLOCKED_RECT lr;
+        if (FAILED(tex->LockRect(l, &lr, nullptr, 0))) break;
+        for (unsigned r = 0; r < rows; ++r) memcpy(static_cast<unsigned char*>(lr.pBits) + r * lr.Pitch, d + o + (size_t)r * rowBytes, rowBytes);
+        tex->UnlockRect(l);
+        o += (size_t)rowBytes * rows;
+    }
+    return tex;
+}
+
+void RebuildSwaps() {
+    g_swaps.clear();
+    for (int s = 0; s < 4; ++s) {
+        if (!g_skins[s]) continue;
+        for (SkinTex& t : g_skins[s]->textures) {
+            if (!t.game || !t.mine) continue;
+            auto it = std::find_if(g_swaps.begin(), g_swaps.end(), [&](const auto& p) { return p.first == t.game; });
+            if (it == g_swaps.end()) { g_swaps.push_back({t.game, Swap{}}); it = g_swaps.end() - 1; }
+            it->second.perSlot[s] = t.mine;
+        }
+    }
+}
+
+// which player this draw is of: the one whose position its world translation (c4..c6 .w) is nearest, within 3 units
+int DrawPlayer() {
+    int best = -1;
+    float bd = 9.0f;
+    for (int p = 0; p < 4; ++p) {
+        if (!g_playerHere[p]) continue;
+        float dx = g_vsConst[4][3] - g_playerPos[p][0], dy = g_vsConst[5][3] - g_playerPos[p][1], dz = g_vsConst[6][3] - g_playerPos[p][2];
+        float d = dx * dx + dy * dy + dz * dz;
+        if (d < bd) { bd = d; best = p; }
+    }
+    return best;
+}
+
 HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* self, DWORD stage, IDirect3DBaseTexture9* tex) {
     if (stage == 0) g_stage0 = tex;
     if (stage < 8) g_stages[stage] = tex;
@@ -134,6 +265,28 @@ HRESULT STDMETHODCALLTYPE Hook_DrawIndexed(IDirect3DDevice9* self, D3DPRIMITIVET
         Log(L"Cosmetics: trace - draw %d: %u vertices, %u triangles; near players:%s", g_traceDraws, verts, prims,
             hits.empty() ? L" none" : hits.c_str());
     }
+    if (!g_swaps.empty()) {   // a skinned player's character: their own textures for this draw
+        IDirect3DBaseTexture9* restore[3] = {};
+        int player = -2;
+        for (int st = 0; st < 3; ++st) {
+            IDirect3DBaseTexture9* bound = g_stages[st];
+            if (!bound) continue;
+            for (const auto& sw : g_swaps) {
+                if (sw.first != bound) continue;
+                if (player == -2) player = DrawPlayer();
+                if (player >= 0 && sw.second.perSlot[player]) {
+                    restore[st] = bound;
+                    Real_SetTexture(self, st, sw.second.perSlot[player]);
+                }
+                break;
+            }
+        }
+        if (player != -2) {
+            HRESULT hr = Real_DrawIndexed(self, type, base, minIdx, verts, start, prims);
+            for (int st = 0; st < 3; ++st) if (restore[st]) Real_SetTexture(self, st, restore[st]);
+            return hr;
+        }
+    }
     return Real_DrawIndexed(self, type, base, minIdx, verts, start, prims);
 }
 
@@ -156,6 +309,27 @@ void CosmeticsDeviceCreated(IDirect3DDevice9* dev) {
     if (void* o = Patch(dev, 65, (void*)Hook_SetTexture)) Real_SetTexture = (SetTexture_t)o;
     if (void* o = Patch(dev, 94, (void*)Hook_SetVSConstF)) Real_SetVSConstF = (SetVSConstF_t)o;
     if (void* o = Patch(dev, 82, (void*)Hook_DrawIndexed)) Real_DrawIndexed = (DrawIndexed_t)o;
+}
+
+// A player wears a skin pack (any thread; the pack's bytes - empty: none). Made ready on the render thread.
+void CosmeticsSetSkin(int slot, const std::vector<unsigned char>& pack, const wchar_t* name) {
+    if (slot < 0 || slot >= 4) return;
+    Lock();
+    g_pending.push_back({slot, pack, name ? name : L""});
+    LeaveCriticalSection(&g_lock);
+}
+// test pipe "skinload <slot> <file.fgskin>" (empty path: off)
+void CosmeticsLoadSkinFile(int slot, const wchar_t* path) {
+    std::vector<unsigned char> d;
+    if (path && *path) {
+        HANDLE f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (f == INVALID_HANDLE_VALUE) { Log(L"Cosmetics: no skin pack %s", path); return; }
+        DWORD size = GetFileSize(f, nullptr), got = 0;
+        d.resize(size);
+        ReadFile(f, d.data(), size, &got, nullptr);
+        CloseHandle(f);
+    }
+    CosmeticsSetSkin(slot, d, path);
 }
 
 void CosmeticsTrace(unsigned lo, unsigned hi) {
@@ -194,9 +368,55 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
     }
     if (!g_lockInit) return;
     std::vector<TestCmd> tests;
+    std::vector<PendingSkin> pending;
     Lock();
     tests.swap(g_tests);
+    pending.swap(g_pending);
     LeaveCriticalSection(&g_lock);
+    bool changed = false;
+    for (PendingSkin& p : pending) {   // a player's skin: ours made from the pack
+        if (Skin* old = g_skins[p.slot]) {
+            for (SkinTex& t : old->textures) if (t.mine) t.mine->Release();
+            delete old;
+            g_skins[p.slot] = nullptr;
+        }
+        if (!p.pack.empty()) {
+            Skin* s = ParsePack(p.pack, p.name);
+            if (s) for (SkinTex& t : s->textures) t.mine = MakeTexture(dev, t);
+            g_skins[p.slot] = s;
+            Log(L"Cosmetics: player %d wears %s (%d textures)%s", p.slot, p.name.c_str(), s ? (int)s->textures.size() : 0,
+                s ? L"" : L" - not a skin pack");
+        } else {
+            Log(L"Cosmetics: player %d wears no skin", p.slot);
+        }
+        changed = true;
+    }
+    static ULONGLONG lastLookup = 0;   // (the game's textures, looked up now and then: a level loads new ones)
+    ULONGLONG now = GetTickCount64();
+    if (changed || now - lastLookup > 2000) {
+        lastLookup = now;
+        bool any = false;
+        for (Skin* s : g_skins)
+            if (s) for (SkinTex& t : s->textures) {
+                IDirect3DBaseTexture9* g = TextureOf(t.lo, t.hi);
+                if (g != t.game) { t.game = g; changed = true; }
+                any = true;
+            }
+        if (changed) RebuildSwaps();
+        if (!any) g_swaps.clear();
+    }
+    if (!g_swaps.empty()) {   // where the players are (for which player a draw is of)
+        unsigned char* players[8];
+        int n = GamePlayers(players, 8);
+        memset(g_playerHere, 0, sizeof(g_playerHere));
+        for (int i = 0; i < n; ++i) {
+            int slot = *reinterpret_cast<int*>(players[i] + 0xdf8);
+            auto xf = *reinterpret_cast<unsigned char**>(players[i] + 0x38);
+            if (slot < 0 || slot >= 4 || !xf || IsBadReadPtr(xf + 0x30, 12)) continue;
+            memcpy(g_playerPos[slot], xf + 0x30, 12);
+            g_playerHere[slot] = true;
+        }
+    }
     for (const TestCmd& t : tests) {
         IDirect3DTexture9* tex = TextureOf(t.lo, t.hi);
         if (!tex) { Log(L"Cosmetics: test - no texture %x:%x here", t.lo, t.hi); continue; }

@@ -324,6 +324,14 @@ void HandleCommand(char* line) {
         NetplayTestKillNpcs();
         return;
     }
+    if (cmd && _stricmp(cmd, "skinload") == 0) {   // test tools: skinload <slot> [file.fgskin] - that player wears it
+        char* slot = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* path = strtok_s(nullptr, "\r\n", &ctx);
+        wchar_t wpath[MAX_PATH] = L"";
+        if (path) MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, MAX_PATH);
+        if (slot) CosmeticsLoadSkinFile(atoi(slot), wpath);
+        return;
+    }
     if (cmd && _stricmp(cmd, "texdraws") == 0) {   // research: texdraws <lo> <hi> - a frame's draws with that texture
         char* lo = strtok_s(nullptr, " \t\r\n", &ctx);
         char* hi = strtok_s(nullptr, " \t\r\n", &ctx);
