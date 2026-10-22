@@ -28,6 +28,15 @@ there's a new version, and installs it for you.
 **Mods** (Main Menu > MODS)
 - Put separate mods in `FGUYMod\mods\` and switch them on and off. Making one: see [`sdk/`](sdk/README.md).
 
+**Skins and emotes** (made with the Skin Studio, a page in your browser that reads your own game files - nothing is
+uploaded)
+- **Skins**: recolor or repaint any outfit, save a skin pack (`.fgskin`) into `FGUYMod\skins\`. Switch it on in
+  MODS to wear it offline; online, pick it on the lobby's character screen - everyone sees it.
+- **Emotes**: on the Studio's Emotes tab, pose your character's joints on a timeline (or bring in an animation made
+  in Blender on the character the Studio exports), save an emote pack (`.fgemote`) into `FGUYMod\emotes\`. In a
+  level, **Back + a D-pad direction** (or **F5-F8**) plays it; only the joints it moves leave the game's own
+  animation, so a wave works while walking. Online, everyone sees it. MODS lists your emotes and their keys.
+
 **PC fixes**
 - Runs on **Vulkan** ([DXVK](https://github.com/doitsujin/dxvk), the translation Valve's Proton uses) for
   smoother, more reliable play on modern PCs. A PC without Vulkan 1.3 falls back to DirectX 9 by itself; to always
@@ -47,6 +56,9 @@ lobby server. Most display settings are also in the game's own Options > Screen.
 - `src/ui/`, `tools/ui/`: the in-game screens (Scaleform ActionScript, compiled into `dist/FGUYMod/ui/*.fgpatch`
   patches that hold only our changes, never game data).
 - `server/`: the lobby + relay server (one Python file, see its README).
+- `tools/cosmetics/`: the Skin Studio (a static web page; `dev_server.py` serves it locally). In the game:
+  `cosmetics.cpp` (skins), `motion.cpp` (characters' poses), `emotes.cpp`.
+- `tools/re/`: research tools - read `.ho` packages, export characters (rigged, with recorded motions) as `.glb`.
 - `src/installer/`, `tools/make_release.ps1`: the setup and the release files.
 - `tools/test_*.ps1`: automated tests that run copies of the game on one PC.
 - `RESEARCH_NOTES.md`: what we've learned about the game's internals.
