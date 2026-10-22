@@ -547,7 +547,8 @@ void* g_cmdMovie = nullptr;
 
 void __fastcall Hook_Command(void* self, void* edx, void* movie, const char* command, const char* args) {
     if (self) { g_cmdSelf = self; g_cmdMovie = movie; }
-    if (command && (strcmp(command, "GAME_Portal") == 0 || strcmp(command, "GAME_Reload") == 0))
+    if (command && (strcmp(command, "GAME_Portal") == 0 || strcmp(command, "GAME_Reload") == 0 ||
+                    strcmp(command, "GAME_Start") == 0))   // (CONTINUE: the saved level, from its checkpoint)
         NetplayStoryLevelChange(command);   // (story co-op: another level / the same again)
     if (NetplayResultsCommand(command) == 2) {   // (the end of the match's pick, free-running: netplay.cpp)
         Log(L"UI: command %S(%S) - online, back to the lobby for the next match instead (GAME_Quit)", command, args ? args : "");

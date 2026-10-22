@@ -1075,6 +1075,13 @@ void FreeNpcDownIn(int s, const PktNpcDown* p);
 struct PktStoryRestart;
 void FreeStoryRestartIn(const PktStoryRestart* p);
 extern const int kPktStoryRestartSize;
+struct PktSaveAsk;
+struct PktSaveChunk;
+struct PktSaveHave;
+void StorySaveAskIn(int s, const PktSaveAsk* p);
+void StorySaveChunkIn(const PktSaveChunk* p, int n);
+void StorySaveHaveIn(int s, const PktSaveHave* p);
+extern const int kPktSaveAskSize, kPktSaveChunkHead, kPktSaveHaveSize;
 extern const int kPktNpcDownSize;
 extern const int kPktStatsSize;
 void FreeState(int s, const PktState* p, bool withMoney, bool withClock);
@@ -1178,6 +1185,12 @@ void Receive() {
             if (g_free) FreeHitIn(slot, reinterpret_cast<PktHit*>(buf), n >= kPktHitSize);
         } else if (h->type == 'o') {   // story co-op: the host went back to the lobby from the main menu - everyone does
             if (slot == 0 && g_slot != 0) NetplaySessionLeaveAsked();
+        } else if (h->type == 'h' && n >= kPktSaveAskSize) {   // story co-op: a player rejoining asks for the host's save
+            if (g_slot == 0) StorySaveAskIn(slot, reinterpret_cast<PktSaveAsk*>(buf));
+        } else if (h->type == 'c' && n >= kPktSaveChunkHead) {   // a piece of the host's save (for me, rejoining)
+            if (slot == 0) StorySaveChunkIn(reinterpret_cast<PktSaveChunk*>(buf), n);
+        } else if (h->type == 'g' && n >= kPktSaveHaveSize) {   // a player rejoining has the host's save (which one)
+            if (g_slot == 0) StorySaveHaveIn(slot, reinterpret_cast<PktSaveHave*>(buf));
         } else if (h->type == 'y' && n >= kPktStoryRestartSize) {   // story co-op: the host restarts the level for everyone
             if (g_free && slot == 0 && g_slot != 0) FreeStoryRestartIn(reinterpret_cast<PktStoryRestart*>(buf));
         } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
@@ -2276,6 +2289,9 @@ char __fastcall Free_TakeDamage(void* self, void*, void* info) {
 }
 
 void StoryRestartFor(int s);
+extern unsigned g_rejoinSaveCrc[4];
+extern std::vector<BYTE> g_saveOut;
+extern unsigned g_saveGotCrc;
 // A player rejoined ('B'): a new game of theirs - its counts start over. Their character plays again here.
 void FreeBack(int s) {
     if (s == g_slot || s < 0 || s >= 4) return;
@@ -4454,7 +4470,8 @@ volatile LONG g_levelFileOpen = 0;
 ULONGLONG g_levelLoadAskedAt = 0;   // (the menus' GAME_Portal / GAME_Reload: its level's package follows - counted then)
 void StoryLevelChange(const char* what) {
     if (!g_enabled || !g_free || !g_sessionStory) return;
-    if (strcmp(what, "GAME_Portal") == 0 || strcmp(what, "GAME_Reload") == 0) g_levelLoadAskedAt = GetTickCount64();
+    if (strcmp(what, "GAME_Portal") == 0 || strcmp(what, "GAME_Reload") == 0 ||
+        strcmp(what, "GAME_Start") == 0) g_levelLoadAskedAt = GetTickCount64();
     EnterCriticalSection(&g_netLock);
     ++g_storyEpoch;
     for (int s = 0; s < 4; ++s) {
@@ -4494,7 +4511,8 @@ void FreeLevelFileTick() {   // (the game thread, each tick)
 // path its game opened it by: a made-up one crashes the game) and its level instance after the restart - and every PC
 // loads that level from its start (GAME_ClearCheckPoint, GAME_Portal), the rejoiner taking the host's instance count.
 #pragma pack(push, 1)
-struct PktStoryRestart { PktHeader h; unsigned seq; unsigned short epoch; char level[96]; };
+struct PktStoryRestart { PktHeader h; unsigned seq; unsigned short epoch; char level[96];
+                         BYTE fromCheckpoint; unsigned cpLo, cpHi; int savedLevel; };
 #pragma pack(pop)
 const int kPktStoryRestartSize = (int)sizeof(PktStoryRestart);
 SRWLOCK g_storyLevelLock = SRWLOCK_INIT;
@@ -4516,22 +4534,169 @@ void FreeStoryRestartIn(const PktStoryRestart* p) {
     g_restartIn.level[sizeof(g_restartIn.level) - 1] = 0;
     g_restartInPending = true;
 }
-void StoryRestartRun(const char* level, unsigned short epoch) {   // (the game thread, the net lock held)
-    g_storyEpoch = (unsigned short)(epoch - 1);   // (GAME_Portal: +1 - the host's after its restart)
+// The game's saved checkpoint and level ([0xbad960] / [0xbad964], [0xbad9e0]): its "Start" (the main menu's CONTINUE)
+// loads that level with what the save has of it - the checkpoint and the level's progress (its objects' states).
+const uintptr_t kSavedCheckpoint = 0xbad960, kSavedLevel = 0xbad9e0;
+void StoryRestartRun(const PktStoryRestart& r) {   // (the game thread, the net lock held)
+    g_storyEpoch = (unsigned short)(r.epoch - 1);   // (the load: +1 - the host's after its restart)
     LeaveCriticalSection(&g_netLock);   // (the commands come back into the netcode)
-    UiRunCommand("GAME_ClearCheckPoint", "");
-    UiRunCommand("GAME_Portal", level);
+    if (r.fromCheckpoint) {
+        *reinterpret_cast<volatile unsigned*>(kSavedCheckpoint) = r.cpLo;
+        *reinterpret_cast<volatile unsigned*>(kSavedCheckpoint + 4) = r.cpHi;
+        *reinterpret_cast<volatile int*>(kSavedLevel) = r.savedLevel;
+        UiRunCommand("GAME_Start", "");
+    } else {
+        UiRunCommand("GAME_ClearCheckPoint", "");
+        UiRunCommand("GAME_Portal", r.level);
+    }
     EnterCriticalSection(&g_netLock);
+}
+
+// The host's save, to a player rejoining: their new game boots with the save the session started with - the progress
+// since (the checkpoints' saves) is the host's. Their game asks ('h', the pieces missing) before it reads its save
+// (config.cpp - it waits), the host sends it in pieces of 1 KB ('c'), and the rejoined game says which one it has
+// ('g', its CRC): the level restarts from the saved checkpoint only if that's the host's save now.
+#pragma pack(push, 1)
+struct PktSaveAsk { PktHeader h; unsigned first; unsigned short count; };
+struct PktSaveChunk { PktHeader h; BYTE to; unsigned total, crc, index; unsigned short len; BYTE data[1024]; };
+struct PktSaveHave { PktHeader h; unsigned crc; };
+#pragma pack(pop)
+const int kPktSaveAskSize = (int)sizeof(PktSaveAsk), kPktSaveChunkHead = (int)offsetof(PktSaveChunk, data);
+const int kPktSaveHaveSize = (int)sizeof(PktSaveHave);
+const unsigned kSaveChunk = 1024;
+
+unsigned SaveCrc(const BYTE* p, size_t n) {
+    static unsigned table[256];
+    if (!table[1])
+        for (unsigned i = 0; i < 256; ++i) {
+            unsigned c = i;
+            for (int k = 0; k < 8; ++k) c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+            table[i] = c;
+        }
+    unsigned c = 0xFFFFFFFFu;
+    for (size_t i = 0; i < n; ++i) c = table[(c ^ p[i]) & 0xff] ^ (c >> 8);
+    return c ^ 0xFFFFFFFFu;
+}
+bool ReadSaveFile(std::vector<BYTE>& out) {
+    wchar_t path[MAX_PATH];
+    swprintf_s(path, L"%s\\player0_default.sav", ConfigSaveDir());
+    HANDLE f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    DWORD size = GetFileSize(f, nullptr), got = 0;
+    out.resize(size);
+    bool ok = size != INVALID_FILE_SIZE && size > 0 && size < 8 * 1024 * 1024 && ReadFile(f, out.data(), size, &got, nullptr) && got == size;
+    CloseHandle(f);
+    return ok;
+}
+
+// the host
+std::vector<BYTE> g_saveOut;
+unsigned g_saveOutCrc = 0;
+ULONGLONG g_saveOutAt = 0;
+unsigned g_rejoinSaveCrc[4] = {};
+void StorySaveAskIn(int s, const PktSaveAsk* p) {
+    if (!g_sessionStory || s <= 0 || s >= 4) return;
+    ULONGLONG now = GetTickCount64();
+    if (g_saveOut.empty() || now - g_saveOutAt > 30000 || p->first == 0) {   // (the file as it is now - once a request)
+        std::vector<BYTE> d;
+        if (!ReadSaveFile(d)) return;
+        if (g_saveOut.empty() || now - g_saveOutAt > 30000 || SaveCrc(d.data(), d.size()) != g_saveOutCrc) {
+            g_saveOut.swap(d);
+            g_saveOutCrc = SaveCrc(g_saveOut.data(), g_saveOut.size());
+            Log(L"Netplay: free - story: player %d (rejoining) asks for my save - %u bytes", s, (unsigned)g_saveOut.size());
+        }
+        g_saveOutAt = now;
+    }
+    unsigned chunks = ((unsigned)g_saveOut.size() + kSaveChunk - 1) / kSaveChunk;
+    for (unsigned i = p->first; i < p->first + p->count && i < chunks; ++i) {
+        PktSaveChunk c{};
+        c.h = {'c', (BYTE)g_slot};
+        c.to = (BYTE)s;
+        c.total = (unsigned)g_saveOut.size();
+        c.crc = g_saveOutCrc;
+        c.index = i;
+        c.len = (unsigned short)min(kSaveChunk, (unsigned)g_saveOut.size() - i * kSaveChunk);
+        memcpy(c.data, g_saveOut.data() + i * kSaveChunk, c.len);
+        SendAll(&c, kPktSaveChunkHead + c.len);
+    }
+}
+void StorySaveHaveIn(int s, const PktSaveHave* p) {
+    if (s > 0 && s < 4 && g_rejoinSaveCrc[s] != p->crc) {
+        g_rejoinSaveCrc[s] = p->crc;
+        Log(L"Netplay: free - story: player %d has my save %08x", s, p->crc);
+    }
+}
+
+// the player rejoining
+std::vector<BYTE> g_saveIn;
+std::vector<bool> g_saveInHave;
+unsigned g_saveInCrc = 0, g_saveInLeft = 0;
+unsigned g_saveGotCrc = 0;   // (the host's save I booted with - 'g')
+void StorySaveChunkIn(const PktSaveChunk* p, int n) {
+    if (p->to != g_slot || !p->total || p->total > 8 * 1024 * 1024 || n < kPktSaveChunkHead + p->len) return;
+    if (p->crc != g_saveInCrc || g_saveIn.size() != p->total) {   // (another save of the host's: start over)
+        g_saveIn.assign(p->total, 0);
+        g_saveInHave.assign((p->total + kSaveChunk - 1) / kSaveChunk, false);
+        g_saveInLeft = (unsigned)g_saveInHave.size();
+        g_saveInCrc = p->crc;
+    }
+    if (p->index >= g_saveInHave.size() || g_saveInHave[p->index] || p->len > kSaveChunk) return;
+    memcpy(g_saveIn.data() + p->index * kSaveChunk, p->data, p->len);
+    g_saveInHave[p->index] = true;
+    --g_saveInLeft;
+}
+// config.cpp, the game opening its save to read it: rejoining story co-op - the host's first (up to 20 s), written there.
+void FetchSave(const wchar_t* path) {
+    static bool done = false;
+    if (done || !g_enabled || !g_freeRejoin || !g_sessionStory || g_slot == 0 || !path) return;
+    done = true;
+    Log(L"Netplay: rejoining story co-op - asking the host for its save");
+    ULONGLONG start = GetTickCount64(), lastAsk = 0;
+    bool ok = false;
+    while (GetTickCount64() - start < 20000) {
+        EnterCriticalSection(&g_netLock);
+        Receive();
+        bool complete = !g_saveInHave.empty() && g_saveInLeft == 0;
+        if (complete && SaveCrc(g_saveIn.data(), g_saveIn.size()) == g_saveInCrc) ok = true;
+        else if (complete) { g_saveIn.clear(); g_saveInHave.clear(); g_saveInCrc = 0; }   // (garbled: again)
+        ULONGLONG now = GetTickCount64();
+        if (!ok && now - lastAsk >= 150) {
+            lastAsk = now;
+            PktSaveAsk a{};
+            a.h = {'h', (BYTE)g_slot};
+            unsigned first = 0;
+            while (first < g_saveInHave.size() && g_saveInHave[first]) ++first;
+            a.first = first;
+            a.count = 48;
+            SendAll(&a, sizeof(a));
+        }
+        LeaveCriticalSection(&g_netLock);
+        if (ok) break;
+        Real_Sleep(10);
+    }
+    if (!ok) {
+        Log(L"Netplay: rejoining - no save from the host in 20 s - the session's own (the level restarts from its start)");
+        return;
+    }
+    HANDLE f = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+    DWORD put = 0;
+    bool written = f != INVALID_HANDLE_VALUE && WriteFile(f, g_saveIn.data(), (DWORD)g_saveIn.size(), &put, nullptr) &&
+                   put == g_saveIn.size();
+    if (f != INVALID_HANDLE_VALUE) CloseHandle(f);
+    if (written) g_saveGotCrc = g_saveInCrc;
+    Log(L"Netplay: rejoining - the host's save (%u bytes, %08x) in %.1f s%s", (unsigned)g_saveIn.size(), g_saveInCrc,
+        (GetTickCount64() - start) / 1000.0, written ? L"" : L" - COULDN'T WRITE IT");
 }
 void FreeStoryRestartTick() {   // (the game thread, each tick; the net lock held)
     ULONGLONG now = GetTickCount64();
     if (g_slot != 0) {
         if (!g_restartInPending) return;
         g_restartInPending = false;
-        Log(L"Netplay: free - story: the host restarts the level for everyone (a player rejoined) - %S, level instance %u",
-            g_restartIn.level, g_restartIn.epoch);
-        OverlayShow(L"A player rejoined - the level restarts", 4000);
-        StoryRestartRun(g_restartIn.level, g_restartIn.epoch);
+        Log(L"Netplay: free - story: the host restarts the level for everyone (a player rejoined) - %S, level instance %u%s",
+            g_restartIn.level, g_restartIn.epoch, g_restartIn.fromCheckpoint ? L", from the saved checkpoint" : L"");
+        OverlayShow(g_restartIn.fromCheckpoint ? L"A player rejoined - back to the last checkpoint"
+                                               : L"A player rejoined - the level restarts", 4000);
+        StoryRestartRun(g_restartIn);
         return;
     }
     if (now < g_restartSendUntil && now >= g_restartNextSend) {   // (a few copies: packets get lost)
@@ -4559,13 +4724,32 @@ void FreeStoryRestartTick() {   // (the game thread, each tick; the net lock hel
     g_restartOut.seq = ++seq;
     g_restartOut.epoch = (unsigned short)(g_storyEpoch + 1);
     strcpy_s(g_restartOut.level, level);
+    // From the saved checkpoint (the game's own CONTINUE: it and the level's progress, from the save) - if the game has
+    // one saved in this level (it saves at some checkpoints, and only on the furthest level reached), and the player
+    // rejoining has my save as it is now (they booted with it). Else the level from its start.
+    unsigned cpLo = *reinterpret_cast<volatile unsigned*>(kSavedCheckpoint);
+    unsigned cpHi = *reinterpret_cast<volatile unsigned*>(kSavedCheckpoint + 4);
+    auto cp = (cpLo || cpHi) ? reinterpret_cast<unsigned char*(__cdecl*)(unsigned, unsigned)>(kFindObject)(cpLo, cpHi) : nullptr;
+    bool here = cp && !IsBadReadPtr(cp, 4) && *reinterpret_cast<ULONG_PTR*>(cp) == 0xa8e2c4;   // (zCheckpoint, this level's)
+    std::vector<BYTE> save;
+    unsigned crc = here && ReadSaveFile(save) ? SaveCrc(save.data(), save.size()) : 0;
+    bool same = true;
+    for (int s = 1; s < g_players && s < 4; ++s)
+        if (!g_gone[s] && s == who && g_rejoinSaveCrc[s] != crc) same = false;
+    g_restartOut.fromCheckpoint = here && crc && same ? 1 : 0;
+    g_restartOut.cpLo = cpLo;
+    g_restartOut.cpHi = cpHi;
+    g_restartOut.savedLevel = *reinterpret_cast<volatile int*>(kSavedLevel);
     SendAll(&g_restartOut, sizeof(g_restartOut));
     g_restartSendUntil = now + 2000;
     g_restartNextSend = now + 100;
-    Log(L"Netplay: free - story: player %d rejoined - the level restarts for everyone (%S, level instance %u)", who,
-        level, g_restartOut.epoch);
-    OverlayShow((PlayerName(who) + L" rejoined - the level restarts").c_str(), 4000);
-    StoryRestartRun(level, g_restartOut.epoch);
+    Log(L"Netplay: free - story: player %d rejoined - the level restarts for everyone (%S, level instance %u) - %s", who,
+        level, g_restartOut.epoch, g_restartOut.fromCheckpoint ? L"from the saved checkpoint"
+                                   : !here ? L"from its start (no checkpoint saved in this level)"
+                                           : L"from its start (they don't have my save as it is now)");
+    OverlayShow((PlayerName(who) + (g_restartOut.fromCheckpoint ? L" rejoined - back to the last checkpoint"
+                                                                : L" rejoined - the level restarts")).c_str(), 4000);
+    StoryRestartRun(g_restartOut);
 }
 
 // Everyone lets go of the lockstep at this tick (the same one on every PC).
@@ -4618,6 +4802,8 @@ void FreeStart() {
     InterlockedExchange(&g_levelFileOpen, 0);   // (this level's own package, before the match ran free)
     g_levelLoadAskedAt = 0;
     for (int s = 0; s < 4; ++s) g_restartPending[s] = false;
+    memset(g_rejoinSaveCrc, 0, sizeof(g_rejoinSaveCrc));
+    g_saveOut.clear();
     g_restartSendUntil = 0;
     g_restartSeqSeen = 0;
     g_restartInPending = false;
@@ -4685,6 +4871,10 @@ void FreeTick() {
             lastBack = nowMs;
             PktHeader b{'B', (BYTE)g_slot};
             SendAll(&b, sizeof(b));
+            if (g_sessionStory) {   // (and which save of the host's I have - restart from its checkpoint)
+                PktSaveHave hv{{'g', (BYTE)g_slot}, g_saveGotCrc};
+                SendAll(&hv, sizeof(hv));
+            }
         }
     }
     {
@@ -5490,6 +5680,7 @@ void NetplayTestGod(bool on) {
     Log(L"Netplay: test - my player %s", on ? L"takes no hits" : L"takes hits again");
 }
 void NetplayTestKillNpcs() { InterlockedExchange(&g_testKillNpcs, 1); }
+void NetplayFetchSave(const wchar_t* path) { FetchSave(path); }
 void NetplayLevelFileOpened(const wchar_t* path) {   // (any thread) a level's package: <world><mode>.ho in Levels
     if (!g_enabled || !g_sessionStory || !path) return;
     const wchar_t* levels = wcsstr(path, L"Levels");

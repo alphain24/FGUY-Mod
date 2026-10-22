@@ -76,6 +76,7 @@ HANDLE WINAPI Hook_CreateFileW(LPCWSTR path, DWORD access, DWORD share, LPSECURI
     } else if (!(access & GENERIC_WRITE) && ModsFileOverride(path, saveRedirect)) {   // (a mod's copy of the file)
         actual = saveRedirect;
     }
+    if (!(access & GENERIC_WRITE) && actual && wcsstr(actual, L"player0_default.sav")) NetplayFetchSave(actual);
     HANDLE h = Real_CreateFileW(actual, access, share, sa, disposition, flags, templ);
     if (h != INVALID_HANDLE_VALUE) SoundsOnFileOpen(path);  // a level's package: loading music
     if (h != INVALID_HANDLE_VALUE) NetplayLevelFileOpened(path);   // (story co-op: a level the game loads by itself)

@@ -85,6 +85,7 @@ void NetplayTestFreeze(int ms);                      //   test pipe "freeze <ms>
 void NetplayTestCommand(const char* command, const char* args);   //   test pipe "uicmd <command> [args]"
 bool UiRunCommand(const char* command, const char* args);   // ui.cpp: a menu command of the mod's own (game thread)
 void NetplayLevelFileOpened(const wchar_t* path);   // config.cpp: a file opened (a level's package: story co-op)
+void NetplayFetchSave(const wchar_t* path);         // config.cpp: the save about to be read - rejoining story: the host's
 void NetplayTestHurt(int player, float amount);   //   test pipe "hurt": my player there takes a hit nobody caused
 void OnlineMenuLogYaw();               //   test pipe "yaw": the lobby preview's facing (onlinemenu.cpp)
 void NetplayTestResolution(int w, int h);   //   test pipe: the game changes resolution (Options > Screen)               //   test pipe: my player moves a little here only (out of sync)
