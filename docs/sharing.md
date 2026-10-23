@@ -4,7 +4,7 @@
 
 ## Before you share
 
-- [ ] Packed into one file: `python tools/make_fgmod.py YourMod`
+- [ ] Packed into one file: the Skin Studio's **Save as mod**, or `tools/make_fgmod.py` (double-click it, drag the folder in)
 - [ ] `mod.ini` has a clear **Name**, **Version**, **Author** and **Description**
 - [ ] The right **Type** — `gameplay` if it changes how the game plays in any way
 - [ ] Tested offline, and online if it's a gameplay mod (see [Testing](testing.md))

@@ -161,6 +161,19 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
       <button class="btn primary" id="savePack" disabled>Save skin pack</button>
       <label class="btn">Open pack <input type="file" id="openPack" accept=".fgskin,.zip" hidden></label>
     </div>
+
+    <div class="sep"></div>
+    <h2>Make a mod</h2>
+    <div class="muted">One file to share: this skin (if you've changed something) and any other packs you add. Players put it in the
+      game's <b>FGUYMod\mods</b> folder and switch it on in Main Menu &gt; MODS.</div>
+    <div class="row"><input type="text" id="modName" placeholder="Mod name, e.g. My Skins" maxlength="40"></div>
+    <div class="row"><input type="text" id="modAuthor" placeholder="Your name" maxlength="40"></div>
+    <div class="row">
+      <label class="btn">Add packs <input type="file" id="modAdd" accept=".fgskin,.fgemote" multiple hidden></label>
+      <button class="btn" id="modClear" hidden>Clear</button>
+    </div>
+    <div class="muted" id="modInfo">Add skin packs (.fgskin) and emote packs (.fgemote) you've saved.</div>
+    <div class="row"><button class="btn primary" id="saveMod">Save as mod (.fgmod)</button></div>
     <div class="status" id="status"></div>
   </aside>
 

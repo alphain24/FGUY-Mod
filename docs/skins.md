@@ -226,7 +226,7 @@ MySkins\
     └── Peter_Adventurer.fgskin
 ```
 
-Then pack it with `python tools/make_fgmod.py MySkins`. When the mod is on, its skins are offered just like loose
+Then pack it — the Skin Studio's **Save as mod** (add the packs, save), or `tools/make_fgmod.py` on the folder. When the mod is on, its skins are offered just like loose
 ones (the MODS page shows which mod each comes from). Updating the mod later with more skins is just a new
 `.fgmod` with the same name.
 

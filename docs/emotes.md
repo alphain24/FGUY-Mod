@@ -145,7 +145,7 @@ MyEmotes\
     └── Peter_Dance.fgemote
 ```
 
-Pack it with `python tools/make_fgmod.py MyEmotes`. Loose packs in `FGUYMod\emotes\` work too (for testing).
+Pack it with the Skin Studio's **Save as mod** (add the emote packs), or `tools/make_fgmod.py` on the folder. Loose packs in `FGUYMod\emotes\` work too (for testing).
 
 > [!TIP]
 > Emotes are `cosmetic`: they only change how a character looks for a moment. Online, everyone sees them whether

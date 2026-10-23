@@ -862,6 +862,49 @@ $('savePack').onclick = async () => {
     (state.packModel ? ', with its model' : '') + ').');
 };
 
+// ---- a mod: one .fgmod with skin and emote packs (what tools/make_fgmod.py makes of a folder - no command line) ----
+// The zip format, every entry stored, in name order, with a fixed date: mod.ini, skins\*.fgskin, emotes\*.fgemote.
+state.modPacks = [];
+function showModPacks() {
+  const p = state.modPacks;
+  $('modClear').hidden = !p.length;
+  $('modInfo').textContent = p.length ? 'In it: ' + p.map(x => x.file).join(', ') + (state.current ? ' (and this skin, if changed)' : '') + '.'
+    : 'Add skin packs (.fgskin) and emote packs (.fgemote) you\'ve saved.';
+}
+$('modAdd').onchange = async e => {
+  for (const f of e.target.files) {
+    const kind = /\.fgemote$/i.test(f.name) ? 'emotes' : /\.fgskin$/i.test(f.name) ? 'skins' : '';
+    if (!kind) continue;
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    state.modPacks = state.modPacks.filter(x => x.file !== f.name);
+    state.modPacks.push({file: f.name, kind, bytes});
+  }
+  e.target.value = '';
+  showModPacks();
+};
+$('modClear').onclick = () => { state.modPacks = []; showModPacks(); };
+$('saveMod').onclick = async () => {
+  const packs = state.modPacks.slice();
+  const mine = state.current ? await buildPack() : null;   // (this skin, if anything's changed)
+  if (mine) {
+    const file = mine.name.replace(/[^\w\- ]+/g, '').trim().replace(/ +/g, '_') + '.fgskin';
+    if (!packs.some(x => x.file === file)) packs.push({file, kind: 'skins', bytes: new Uint8Array(await mine.blob.arrayBuffer())});
+  }
+  if (!packs.length) { setStatus('Nothing to put in it yet - make a skin or add packs.'); return; }
+  const name = ($('modName').value || $('modName').placeholder.replace(/^Mod name, e\.g\. /, '')).trim().replace(/[\r\n=\[\]]/g, ' ');
+  const author = $('modAuthor').value.trim().replace(/[\r\n=\[\]]/g, ' ');
+  const skins = packs.filter(x => x.kind === 'skins').length, emotes = packs.length - skins;
+  const what = [skins && skins + (skins === 1 ? ' skin' : ' skins'), emotes && emotes + (emotes === 1 ? ' emote' : ' emotes')].filter(Boolean).join(', ');
+  const ini = ['[Mod]', 'Name=' + name, 'Version=1.0', 'Author=' + author, 'Description=' + what + ' (made with the FGUY Skin Studio)',
+               'Type=cosmetic', ''].join('\r\n');
+  const when = new Date(2026, 0, 1), files = {};
+  const entries = [['mod.ini', strToU8(ini)], ...packs.map(x => [x.kind + '/' + x.file, x.bytes])].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  for (const [k, v] of entries) files[k] = [v, {level: 0, mtime: when}];
+  const file = name.replace(/[^\w\- ]+/g, '').trim().replace(/ +/g, '_') || 'My_Mod';
+  download(new Blob([zipSync(files)]), file + '.fgmod');
+  setStatus(`Saved "${file}.fgmod" (${what}). Put it in the game's FGUYMod\\mods folder, then switch it on in Main Menu > MODS.`);
+};
+
 $('openPack').onchange = async e => {
   const f = e.target.files[0];
   e.target.value = '';

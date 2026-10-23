@@ -81,7 +81,8 @@ are meant to change, or read your own settings file).
 
 ## One file: `.fgmod`
 
-Pack a mod folder into one file with:
+The Skin Studio's **Save as mod** makes one from skin and emote packs. A mod folder of any kind packs into one
+file with `tools/make_fgmod.py` — double-click it and drag the folder into its window, or:
 
 ```bash
 python tools/make_fgmod.py path/to/YourMod            # → path/to/YourMod.fgmod

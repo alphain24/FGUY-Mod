@@ -86,6 +86,16 @@ Copy the `.fgskin` into **`FGUYMod\skins\`** and start the game.
 
 A loose skin is just for you. To share it — or a whole collection of skins — make it a mod.
 
+**The easy way — in the Skin Studio:** under **Make a mod**, type the mod's name and your name, click **Add packs**
+to add any skin (`.fgskin`) or emote (`.fgemote`) packs you've saved, and click **Save as mod (.fgmod)**. The skin
+you're working on goes in too. You get `My_Skins.fgmod` — the whole mod in one file.
+
+Put it into the game's **`FGUYMod\mods\`** folder, start the game, and switch it on in *Main Menu › MODS* (mods take
+effect after a restart).
+
+<details>
+<summary>By hand, from a folder (for mods with more than skins and emotes)</summary>
+
 1. Make a folder named after your mod, with a `mod.ini` and a `skins` folder:
 
    ```
@@ -96,7 +106,7 @@ A loose skin is just for you. To share it — or a whole collection of skins —
        └── Goth_Meg.fgskin
    ```
 
-2. Write `mod.ini`:
+2. Write `mod.ini` (in Notepad):
 
    ```ini
    [Mod]
@@ -107,16 +117,16 @@ A loose skin is just for you. To share it — or a whole collection of skins —
    Type=cosmetic
    ```
 
-3. Pack it into **one file**:
+3. Pack it into **one file**: in the project's files (the `FGUY-Mod` folder you downloaded), open `tools` and
+   **double-click `make_fgmod.py`**. Drag your `MySkins` folder into the window that opens and press Enter. You get
+   `MySkins.fgmod` next to the folder.
 
-   ```bash
-   python tools/make_fgmod.py MySkins
-   ```
+   > [!NOTE]
+   > From a command line instead: open **Command Prompt** (not Python itself — no `>>>` prompt), go to the
+   > `FGUY-Mod` folder, and run `py tools\make_fgmod.py "C:\path\to\MySkins"`. Typed from another folder, Windows
+   > can't find `tools\make_fgmod.py`.
 
-   You get `MySkins.fgmod`, the whole mod in one file.
-
-4. Put `MySkins.fgmod` into `FGUYMod\mods\`, start the game, and switch **My Skins** on in *Main Menu › MODS*
-   (mods take effect after a restart).
+</details>
 
 That's it: `MySkins.fgmod` is ready to share. Read [Sharing your mod](sharing.md) before you post it.
 
