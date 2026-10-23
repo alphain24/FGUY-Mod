@@ -91,6 +91,24 @@ async function openLibrarySkin(entry) {
   for (const c of document.querySelectorAll('.chip')) c.classList.toggle('on', c === entry.chip);
 }
 
+// An opened skin pack (from the library or a file) is left when another outfit or character is clicked: the textures
+// it changed go back to the game's own, its model comes off - it doesn't follow you onto the next outfit.
+function leavePack() {
+  if (!state.fromPack) return;
+  state.fromPack = false;
+  for (const t of state.textures.values()) {
+    if (!t.modified && !t.ops.length) continue;
+    t.ctx.putImageData(t.original, 0, 0);
+    t.ops = [];
+    t.history = [];
+    t.modified = false;
+    t.tex.needsUpdate = true;
+  }
+  state.packModel = null;
+  showPackModel();
+  $('packName').value = '';
+}
+
 function buildCharacterList(lib = {skins: []}) {
   const box = $('chars');
   box.innerHTML = '';
@@ -107,7 +125,7 @@ function buildCharacterList(lib = {skins: []}) {
       const c = document.createElement('span');
       c.className = 'chip';
       c.textContent = o.outfit.replace(/([a-z])([A-Z])/g, '$1 $2');
-      c.onclick = () => selectOutfit(o);
+      c.onclick = () => { leavePack(); selectOutfit(o); };
       o.chip = c;
       row.append(c);
     }
@@ -120,7 +138,7 @@ function buildCharacterList(lib = {skins: []}) {
       e.chip = c;
       row.append(c);
     }
-    b.onclick = () => selectOutfit(outfits[0]);
+    b.onclick = () => { leavePack(); selectOutfit(outfits[0]); };
     box.append(b, row);
   }
 }
@@ -569,6 +587,7 @@ async function openPackBytes(bytes, label) {
     state.packModel = files['model.fgmodel'] ? {name: m.withModel || modelPackInfo(files['model.fgmodel']).name,
       bytes: files['model.fgmodel'], character: o.character} : null;
     showPackModel();
+    state.fromPack = true;
     setStatus('Opened "' + (m.name || label) + '"' + (state.packModel ? ', with its model' : '') + '.');
   } catch (err) {
     setStatus("Couldn't open that pack: " + err.message);
