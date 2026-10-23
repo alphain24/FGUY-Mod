@@ -46,14 +46,18 @@ Get the project's files: on the [repository page](https://github.com/alphain24/F
 
 ### The Skin Studio
 
-The Skin Studio is a web page that runs on your own PC. It reads the characters from **your own copy of the
-game** — nothing is uploaded anywhere. Start it from the project folder:
+Open **[the Skin Studio](https://alphain24.github.io/FGUY-Mod/)** in Chrome or Edge and click **Open game folder**.
+It reads the characters from **your own copy of the game**, right in your browser — nothing is uploaded anywhere.
+
+<details>
+<summary>Running it from the project's files instead</summary>
 
 ```bash
 python tools/cosmetics/dev_server.py "C:/path/to/your/game folder"
 ```
 
-Then open **http://127.0.0.1:8766** in Chrome or Edge and click **Open game folder**.
+Then open **http://127.0.0.1:8766**.
+</details>
 
 > [!NOTE]
 > In browsers without folder access (Firefox, Safari), use **Or pick PLYS.ho** instead and choose

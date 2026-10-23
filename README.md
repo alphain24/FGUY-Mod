@@ -27,6 +27,8 @@ there's a new version, and installs it for you.
 
 **Mods** (Main Menu > MODS)
 - Put separate mods in `FGUYMod\mods\` (a mod is one `.fgmod` file, or a folder) and switch them on and off.
+- **Making skins:** the [**FGUY Skin Studio**](https://alphain24.github.io/FGUY-Mod/) — in your browser (Chrome or Edge),
+  it reads your own game; nothing is uploaded.
 - **Making mods:** the [**modding guide**](docs/README.md) covers skins, outfits, emotes, menu patches, plugins and
   online play, step by step.
 

@@ -1,0 +1,44 @@
+# The FGUY Skin Studio on GitHub Pages (https://alphain24.github.io/FGUY-Mod/): the page and its scripts
+# (tools/cosmetics - not dev_server.py, which is for local testing) and the FGUY Cosmetics mod's skins, which the Studio
+# offers as ★ chips. Published again whenever they change. The Studio reads each person's own game files on their PC
+# - nothing of the game is on the site.
+name: Skin Studio
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/cosmetics/**'
+      - 'dist/FGUYMod/mods/FGUYCosmetics/**'
+      - '.github/workflows/studio.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The Studio's files
+        run: |
+          mkdir -p site/mods/FGUYCosmetics/skins
+          cp -r tools/cosmetics/index.html tools/cosmetics/js tools/cosmetics/library.json site/
+          cp dist/FGUYMod/mods/FGUYCosmetics/skins/*.fgskin site/mods/FGUYCosmetics/skins/
+          touch site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

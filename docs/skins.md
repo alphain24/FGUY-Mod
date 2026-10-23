@@ -15,8 +15,8 @@ pieces worn over it ([Outfits & models](models.md)). A skin is one file, a **ski
 
 ## The Skin Studio
 
-Start it as described in [Getting started](getting-started.md#the-skin-studio), click **Open game folder**, and pick
-a character and outfit on the left. The **Skins** tab is where skins are made.
+Open **[the Skin Studio](https://alphain24.github.io/FGUY-Mod/)** in Chrome or Edge, click **Open game folder** (the
+folder with `FGUY.exe`), and pick a character and outfit on the left. The **Skins** tab is where skins are made.
 
 ### The view
 

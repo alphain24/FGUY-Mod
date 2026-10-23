@@ -24,7 +24,7 @@
 
 | Kind | What it changes | Made with | Needs code? |
 |---|---|---|:---:|
-| 🎨 **Skin** | A character's colours and painted details | The [Skin Studio](skins.md#the-skin-studio) | No |
+| 🎨 **Skin** | A character's colours and painted details | The [Skin Studio](https://alphain24.github.io/FGUY-Mod/) | No |
 | 🤠 **Outfit / model** | New 3D pieces worn over a character (a hat, a vest) or a whole new character | Blender, img2threejs, … + the Skin Studio | No |
 | 💃 **Emote** | An animation you play from the emote wheel | The Skin Studio's Emotes tab, or Blender | No |
 | 🖥️ **Menu / HUD patch** | The game's Flash (Scaleform) menus and HUD | `tools/ui/` (Python) | A little (ActionScript-like) |
