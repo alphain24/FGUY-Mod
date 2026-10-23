@@ -25,9 +25,10 @@ export function parseSkeleton(d) {
   return {count, parent, mirror, invBind, bind, local, names: boneNames(count, parent, mirror, bind)};
 }
 
-// Names to help find a bone: the middle of the body (no mirror) "Root", "Hips", "Spine n", the top one "Head"; a limb on
-// one side (it has a mirror) "Arm L 1..", "Hand L", "Finger L 1.1.." or "Leg R..", "Foot R", "Toe R.." - the character
-// faces +z, its left is +x.
+// Names to help find a bone: the middle of the body (no mirror) "Root", "Hips", "Spine n", above the arms "Neck", "Head",
+// "Head 2.."; a limb on one side (it has a mirror) "Arm L 1..", "Hand L", "Finger L 1.1.." or "Leg R..", "Foot R",
+// "Toe R..", and a pair that hardly spreads out (eyes, brows, lids: under 12% of the height) "Face L 1.." - the
+// character faces +z, its left is +x.
 function boneNames(count, parent, mirror, bind) {
   const pos = i => new THREE.Vector3().setFromMatrixPosition(bind[i]);
   const names = new Array(count).fill('');
@@ -42,12 +43,19 @@ function boneNames(count, parent, mirror, bind) {
   const lowest = i => Math.min(pos(i).y, ...children[i].map(lowest));
   const widest = i => Math.max(Math.abs(pos(i).x), ...children[i].map(widest));
   const isLeg = r => pos(r).y - lowest(r) > widest(r) - Math.abs(pos(r).x);   // (a leg goes down more than out)
+  const height = Math.max(...[...Array(count).keys()].map(i => pos(i).y));
+  const isFace = r => widest(r) < height * 0.12 && pos(r).y > height * 0.6;   // (a pair that hardly spreads out, up high)
+  // (the middle bones above where the arms hang: the neck, then the head)
+  const armRoots = [...Array(count).keys()].filter(r => !centre.includes(r) && centre.includes(parent[r]) && !isLeg(r) && !isFace(r));
+  const armY = armRoots.length ? Math.max(...armRoots.map(r => pos(r).y)) : height;
+  const above = centre.filter(i => parent[i] >= 0 && names[i] !== 'Hips' && pos(i).y > armY);
+  above.forEach((i, k) => { names[i] = above.length === 1 ? 'Head' : k === 0 ? 'Neck' : k === 1 ? 'Head' : 'Head ' + k; });
   // a limb (a side bone hanging off the middle): a chain ("Arm L 1, 2..."), where it branches its hand / foot, then
   // each branch a finger / toe; one hanging off the head: "Face"
   for (let r = 0; r < count; r++) {
     if (names[r] || !centre.includes(parent[r])) continue;
     const side = pos(r).x >= 0 ? 'L' : 'R';
-    const kind = names[parent[r]] === 'Head' ? 'Face' : isLeg(r) ? 'Leg' : 'Arm';
+    const kind = isFace(r) || /^Head/.test(names[parent[r]]) && widest(r) < height * 0.2 ? 'Face' : isLeg(r) ? 'Leg' : 'Arm';
     let cur = r, n = 0;
     while (children[cur].length === 1) { names[cur] = kind + ' ' + side + ' ' + ++n; cur = children[cur][0]; }
     if (!children[cur].length) { names[cur] = kind + ' ' + side + ' ' + ++n; continue; }
