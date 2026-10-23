@@ -165,7 +165,7 @@ class Lobby:
         self.members = [host]
         self.save = None
         self.lang = '-'
-        self.conf = ['DM', 'FR', '0', '0', '0', '0', '0']  # mode, map, time, score, friendly fire, rate (0 auto), netcode (1 new)
+        self.conf = ['DM', 'FR', '0', '0', '0', '0', '1']  # mode, map, time, score, friendly fire, rate (0 auto), netcode (1 new: the default)
         self.own = None                           # the host's characters and costumes
         self.token = None                         # the running match's session token (hex)
         self.playing = False                      # its match runs and the host isn't back yet

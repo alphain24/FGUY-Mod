@@ -64,7 +64,8 @@ int g_chatSeq = 0;
 std::vector<LobbyInfo> g_lobbies;
 std::string g_conf = "DM|FR|0|0|0";  // mode|map|time|score|ff, as the menu uses it
 std::string g_confRate = "0";        // the match's frames per second (0 = auto: the lowest monitor among us)
-std::string g_confNet = "0";         // the match's netcode: 0 classic (lockstep), 1 new (free-running, being built)
+std::string g_confNet = "1";         // the match's netcode: 0 classic (lockstep), 1 new (free-running - the default)
+bool g_newLobby = false;              // (a lobby I just made: the new netcode set in it - the server's default is classic)
 std::string g_own;                  // the host's characters and costumes: Peter:0.1.3;Lois:0.2 (the session
                                     // plays on the host's save, so everyone picks from it)
 bool g_ready = false;
@@ -302,6 +303,15 @@ void HandleLine(const std::string& line) {
         g_conf = f[1] + "|" + f[2] + "|" + f[3] + "|" + f[4] + "|" + f[5];
         g_confRate = f.size() >= 7 ? CleanToken(f[6]) : "0";
         g_confNet = f.size() >= 8 && f[7] == "1" ? "1" : "0";
+        if (g_newLobby && g_mySlot == 0) {   // (my new lobby: the new netcode, unless I pick classic)
+            g_newLobby = false;
+            if (g_confNet != "1") {
+                g_confNet = "1";
+                std::string send = "CONF";
+                for (auto& v : Split(g_conf, '|')) send += " " + v;
+                SendLine(send + " " + g_confRate + " " + g_confNet);
+            }
+        }
     } else if (cmd == "CLOSED") {
         g_returning = false;
         g_matchOpen = false;
@@ -814,6 +824,7 @@ void LobbyDo(const char* command, const char* a, const char* b, const char* c, c
     if (cmd == "host" || cmd == "join" || cmd == "ready" || cmd == "start" || cmd == "pick")
         Log(L"Online: lobby action %S %S %S", cmd.c_str(), a ? a : "", cmd == "pick" && b ? b : "");
     if (cmd == "host" && g_state == State::Connected) {
+        g_newLobby = true;
         SendLine("HOST " + CleanToken(a) + " " + CleanToken(b));
     } else if (cmd == "join" && g_state == State::Connected) {
         std::string code = CleanToken(a);
