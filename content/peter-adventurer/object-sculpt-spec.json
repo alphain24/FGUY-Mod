@@ -4505,7 +4505,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "vest-shell",
@@ -4647,7 +4647,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "vest-shell",
@@ -4789,7 +4789,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "vest-shell",
@@ -4931,7 +4931,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "vest-shell",
@@ -5073,7 +5073,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "vest-shell",
@@ -5215,7 +5215,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "vest-shell",
@@ -5357,7 +5357,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "vest-shell",
@@ -5499,7 +5499,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "vest-shell",
@@ -5641,7 +5641,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "vest-shell",
@@ -5783,7 +5783,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "vest-shell",
@@ -6188,7 +6188,7 @@
         "normalStrategy": "smooth vertex normals",
         "torusTubeRatio": 0.3,
         "decimate": {
-          "targetRatio": 0.3
+          "targetRatio": 0.6
         }
       },
       "parent": "pendant-claw",
@@ -7240,7 +7240,7 @@
         "normalStrategy": "smooth vertex normals",
         "torusTubeRatio": 0.1,
         "decimate": {
-          "targetRatio": 0.3
+          "targetRatio": 0.6
         }
       },
       "parent": "hat-crown",
@@ -8139,7 +8139,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-l",
@@ -8281,7 +8281,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-l",
@@ -8423,7 +8423,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-l",
@@ -8565,7 +8565,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-l",
@@ -8707,7 +8707,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-l",
@@ -8849,7 +8849,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-l",
@@ -8991,7 +8991,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-l",
@@ -9133,7 +9133,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-l",
@@ -11940,7 +11940,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-r",
@@ -12082,7 +12082,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-r",
@@ -12224,7 +12224,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-r",
@@ -12366,7 +12366,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-r",
@@ -12508,7 +12508,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-r",
@@ -12650,7 +12650,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-r",
@@ -12792,7 +12792,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-r",
@@ -12934,7 +12934,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "boot-shell-r",
@@ -15574,7 +15574,7 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "sheath-strap",
@@ -15704,7 +15704,7 @@
       "confidence": 0.8,
       "primitive": "torus",
       "topologyClass": "assembled-solid",
-      "topologyRationale": "A rolled band around the sleeve end: a torus ring.",
+      "topologyRationale": "A rolled band round the sleeve end: a flattened torus ring, wider along the arm than it is thick.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -15715,25 +15715,25 @@
         "deformationStack": [],
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
-        "torusTubeRatio": 0.2,
+        "torusTubeRatio": 0.1579,
         "decimate": {
-          "targetRatio": 0.3
+          "targetRatio": 0.6
         }
       },
       "parent": "vest-shell",
       "attachment": null,
       "dimensions": {
-        "width": 0.37,
-        "height": 0.37,
-        "depth": 0.5,
+        "width": 0.4222,
+        "height": 0.4222,
+        "depth": 0.8444,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          0.63,
-          1.17,
-          -0.015
+          0.615,
+          1.168,
+          -0.035
         ],
         "rotation": [
           0,
@@ -15741,9 +15741,9 @@
           0
         ],
         "scale": [
-          0.37,
-          0.37,
-          0.5
+          0.4222,
+          0.4222,
+          0.8444
         ]
       },
       "actionProfile": {
@@ -15795,12 +15795,12 @@
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
-          "debrisMaterial": "cuff"
+          "debrisMaterial": "cuff-fold"
         }
       },
-      "material": "cuff",
+      "material": "cuff-fold",
       "materialLayers": [
-        "cuff"
+        "cuff-fold"
       ],
       "deformations": [],
       "joints": [],
@@ -15829,12 +15829,12 @@
       "details": [],
       "fidelityTier": "form",
       "colorMaterialRecipe": {
-        "dominantAlbedo": "rgba(127, 160, 109, 1.0)",
-        "secondaryAlbedo": "rgba(96, 124, 82, 1.0)",
+        "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
+        "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
         "materialClass": "fabric",
         "materialClassConfidence": 0.7,
         "evidenceRefs": [
-          "material-evidence/cuff.png"
+          "material-evidence/cuff-fold.png"
         ]
       }
     },
@@ -15847,7 +15847,7 @@
       "confidence": 0.8,
       "primitive": "box",
       "topologyClass": "assembled-solid",
-      "topologyRationale": "The roll-up strap: a thin tab on the outer side.",
+      "topologyRationale": "The roll-up strap: a thin tab up the outer side of the sleeve.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -15862,17 +15862,17 @@
       "parent": "sleeve-cuff-l",
       "attachment": null,
       "dimensions": {
-        "width": 0.1,
-        "height": 0.018,
-        "depth": 0.055,
+        "width": 0.12,
+        "height": 0.02,
+        "depth": 0.058,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          -0.005,
-          0.158,
-          -0.065
+          0.0,
+          0.183,
+          -0.07
         ],
         "rotation": [
           0.0,
@@ -15880,9 +15880,9 @@
           0.0
         ],
         "scale": [
-          0.1,
-          0.018,
-          0.055
+          0.12,
+          0.02,
+          0.058
         ]
       },
       "actionProfile": {
@@ -15934,12 +15934,12 @@
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
-          "debrisMaterial": "cuff"
+          "debrisMaterial": "cuff-fold"
         }
       },
-      "material": "cuff",
+      "material": "cuff-fold",
       "materialLayers": [
-        "cuff"
+        "cuff-fold"
       ],
       "deformations": [],
       "joints": [],
@@ -15968,12 +15968,12 @@
       "details": [],
       "fidelityTier": "form",
       "colorMaterialRecipe": {
-        "dominantAlbedo": "rgba(127, 160, 109, 1.0)",
-        "secondaryAlbedo": "rgba(96, 124, 82, 1.0)",
+        "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
+        "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
         "materialClass": "fabric",
         "materialClassConfidence": 0.7,
         "evidenceRefs": [
-          "material-evidence/cuff.png"
+          "material-evidence/cuff-fold.png"
         ]
       }
     },
@@ -15998,22 +15998,22 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "sleeve-tab-l",
       "attachment": null,
       "dimensions": {
-        "width": 0.03,
-        "height": 0.018,
-        "depth": 0.03,
+        "width": 0.036,
+        "height": 0.022,
+        "depth": 0.036,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          -0.025,
-          0.014,
+          -0.04,
+          0.012,
           0.0
         ],
         "rotation": [
@@ -16022,9 +16022,9 @@
           -0.0
         ],
         "scale": [
-          0.03,
-          0.018,
-          0.03
+          0.036,
+          0.022,
+          0.036
         ]
       },
       "actionProfile": {
@@ -16128,7 +16128,7 @@
       "confidence": 0.8,
       "primitive": "torus",
       "topologyClass": "assembled-solid",
-      "topologyRationale": "A rolled band around the sleeve end: a torus ring.",
+      "topologyRationale": "A rolled band round the sleeve end: a flattened torus ring, wider along the arm than it is thick.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -16139,25 +16139,25 @@
         "deformationStack": [],
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
-        "torusTubeRatio": 0.2,
+        "torusTubeRatio": 0.1579,
         "decimate": {
-          "targetRatio": 0.3
+          "targetRatio": 0.6
         }
       },
       "parent": "vest-shell",
       "attachment": null,
       "dimensions": {
-        "width": 0.37,
-        "height": 0.37,
-        "depth": 0.5,
+        "width": 0.4222,
+        "height": 0.4222,
+        "depth": 0.8444,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          -0.63,
-          1.17,
-          -0.015
+          -0.615,
+          1.168,
+          -0.035
         ],
         "rotation": [
           0,
@@ -16165,9 +16165,9 @@
           0
         ],
         "scale": [
-          0.37,
-          0.37,
-          0.5
+          0.4222,
+          0.4222,
+          0.8444
         ]
       },
       "actionProfile": {
@@ -16219,12 +16219,12 @@
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
-          "debrisMaterial": "cuff"
+          "debrisMaterial": "cuff-fold"
         }
       },
-      "material": "cuff",
+      "material": "cuff-fold",
       "materialLayers": [
-        "cuff"
+        "cuff-fold"
       ],
       "deformations": [],
       "joints": [],
@@ -16253,12 +16253,12 @@
       "details": [],
       "fidelityTier": "form",
       "colorMaterialRecipe": {
-        "dominantAlbedo": "rgba(127, 160, 109, 1.0)",
-        "secondaryAlbedo": "rgba(96, 124, 82, 1.0)",
+        "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
+        "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
         "materialClass": "fabric",
         "materialClassConfidence": 0.7,
         "evidenceRefs": [
-          "material-evidence/cuff.png"
+          "material-evidence/cuff-fold.png"
         ]
       }
     },
@@ -16271,7 +16271,7 @@
       "confidence": 0.8,
       "primitive": "box",
       "topologyClass": "assembled-solid",
-      "topologyRationale": "The roll-up strap: a thin tab on the outer side.",
+      "topologyRationale": "The roll-up strap: a thin tab up the outer side of the sleeve.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -16286,17 +16286,17 @@
       "parent": "sleeve-cuff-r",
       "attachment": null,
       "dimensions": {
-        "width": 0.1,
-        "height": 0.018,
-        "depth": 0.055,
+        "width": 0.12,
+        "height": 0.02,
+        "depth": 0.058,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          0.005,
-          0.158,
-          -0.065
+          -0.0,
+          0.183,
+          -0.07
         ],
         "rotation": [
           0.0,
@@ -16304,9 +16304,9 @@
           0.0
         ],
         "scale": [
-          0.1,
-          0.018,
-          0.055
+          0.12,
+          0.02,
+          0.058
         ]
       },
       "actionProfile": {
@@ -16358,12 +16358,12 @@
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
-          "debrisMaterial": "cuff"
+          "debrisMaterial": "cuff-fold"
         }
       },
-      "material": "cuff",
+      "material": "cuff-fold",
       "materialLayers": [
-        "cuff"
+        "cuff-fold"
       ],
       "deformations": [],
       "joints": [],
@@ -16392,12 +16392,12 @@
       "details": [],
       "fidelityTier": "form",
       "colorMaterialRecipe": {
-        "dominantAlbedo": "rgba(127, 160, 109, 1.0)",
-        "secondaryAlbedo": "rgba(96, 124, 82, 1.0)",
+        "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
+        "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
         "materialClass": "fabric",
         "materialClassConfidence": 0.7,
         "evidenceRefs": [
-          "material-evidence/cuff.png"
+          "material-evidence/cuff-fold.png"
         ]
       }
     },
@@ -16422,22 +16422,22 @@
         "uvStrategy": "generated procedural coordinates",
         "normalStrategy": "smooth vertex normals",
         "decimate": {
-          "targetRatio": 0.06
+          "targetRatio": 0.12
         }
       },
       "parent": "sleeve-tab-r",
       "attachment": null,
       "dimensions": {
-        "width": 0.03,
-        "height": 0.018,
-        "depth": 0.03,
+        "width": 0.036,
+        "height": 0.022,
+        "depth": 0.036,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          0.025,
-          0.014,
+          0.04,
+          0.012,
           0.0
         ],
         "rotation": [
@@ -16446,9 +16446,9 @@
           -0.0
         ],
         "scale": [
-          0.03,
-          0.018,
-          0.03
+          0.036,
+          0.022,
+          0.036
         ]
       },
       "actionProfile": {
@@ -17180,6 +17180,69 @@
         "declared": true,
         "evidence": [
           "material-evidence/cuff.texture.json: mottle 0.031, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"
+        ]
+      }
+    },
+    {
+      "id": "cuff-fold",
+      "name": "Rolled cuff band",
+      "type": "standard",
+      "shaderModel": "MeshStandardMaterial / PBR approximation",
+      "baseColor": "#709060",
+      "color": "#709060",
+      "albedo": {
+        "dominant": "#709060",
+        "secondary": [
+          "#5A764E"
+        ],
+        "samplingNotes": "Lit / shadow cel tones measured from material-evidence/cuff-fold.png."
+      },
+      "colorVariation": {
+        "palette": [
+          "#709060",
+          "#5A764E"
+        ],
+        "pattern": "cel two-tone (lit / shadow)",
+        "amplitude": 0.0,
+        "heightCorrelation": 0.0
+      },
+      "roughness": {
+        "base": 0.9,
+        "variation": 0.0,
+        "map": "none",
+        "localResponse": "uniform: the game draws cel shading, no roughness maps reach it"
+      },
+      "metalness": {
+        "base": 0.0,
+        "variation": 0.0
+      },
+      "ambientOcclusion": {
+        "cavityStrength": 0.25,
+        "contactShadowBias": 0.35,
+        "notes": "Darken creases, seams, intersections, and recessed local features."
+      },
+      "wear": {
+        "edgeWear": 0.0,
+        "scratches": [],
+        "chips": []
+      },
+      "dirt": {
+        "amount": 0.0,
+        "cavityBias": 0.0,
+        "color": "#2F2A22"
+      },
+      "localOverrides": [],
+      "shaderNotes": [
+        "Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.",
+        "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.",
+        "Use normal/bump/displacement only when they map to observed surface relief.",
+        "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."
+      ],
+      "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.",
+      "textureless": {
+        "declared": true,
+        "evidence": [
+          "material-evidence/cuff-fold.texture.json: mottle 0.031, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"
         ]
       }
     }

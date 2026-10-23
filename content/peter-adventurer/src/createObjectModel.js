@@ -1952,6 +1952,69 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     }, options);
+    materialMap["cuff-fold"] = createSculptMaterial("cuff-fold", {
+        "id": "cuff-fold",
+        "name": "Rolled cuff band",
+        "type": "standard",
+        "shaderModel": "MeshStandardMaterial / PBR approximation",
+        "baseColor": "#709060",
+        "color": "#709060",
+        "albedo": {
+            "dominant": "#709060",
+            "secondary": [
+                "#5A764E"
+            ],
+            "samplingNotes": "Lit / shadow cel tones measured from material-evidence/cuff-fold.png."
+        },
+        "colorVariation": {
+            "palette": [
+                "#709060",
+                "#5A764E"
+            ],
+            "pattern": "cel two-tone (lit / shadow)",
+            "amplitude": 0.0,
+            "heightCorrelation": 0.0
+        },
+        "roughness": {
+            "base": 0.9,
+            "variation": 0.0,
+            "map": "none",
+            "localResponse": "uniform: the game draws cel shading, no roughness maps reach it"
+        },
+        "metalness": {
+            "base": 0.0,
+            "variation": 0.0
+        },
+        "ambientOcclusion": {
+            "cavityStrength": 0.25,
+            "contactShadowBias": 0.35,
+            "notes": "Darken creases, seams, intersections, and recessed local features."
+        },
+        "wear": {
+            "edgeWear": 0.0,
+            "scratches": [],
+            "chips": []
+        },
+        "dirt": {
+            "amount": 0.0,
+            "cavityBias": 0.0,
+            "color": "#2F2A22"
+        },
+        "localOverrides": [],
+        "shaderNotes": [
+            "Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.",
+            "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.",
+            "Use normal/bump/displacement only when they map to observed surface relief.",
+            "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."
+        ],
+        "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.",
+        "textureless": {
+            "declared": true,
+            "evidence": [
+                "material-evidence/cuff-fold.texture.json: mottle 0.031, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"
+            ]
+        }
+    }, options);
     const nodes = {
         root
     };
@@ -11896,7 +11959,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -12072,7 +12135,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["vest-shell"] ?? root).add(node_vest_chest_button_l_9);
     nodes["vest-chest-button-l"] = node_vest_chest_button_l_9;
     const mesh_vest_chest_button_l_9GeometryDense = endpoint_vest_chest_button_l_9 ? new THREE.CylinderGeometry(endpoint_vest_chest_button_l_9.endRadius, endpoint_vest_chest_button_l_9.baseRadius, endpoint_vest_chest_button_l_9.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_vest_chest_button_l_9Geometry = decimateGeometry(mesh_vest_chest_button_l_9GeometryDense, 0.06);
+    const mesh_vest_chest_button_l_9Geometry = decimateGeometry(mesh_vest_chest_button_l_9GeometryDense, 0.12);
     if (!endpoint_vest_chest_button_l_9) {
         mesh_vest_chest_button_l_9Geometry.scale(0.035, 0.035, 0.022);
     }
@@ -12107,7 +12170,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -12279,7 +12342,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -12455,7 +12518,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["vest-shell"] ?? root).add(node_vest_chest_button_r_10);
     nodes["vest-chest-button-r"] = node_vest_chest_button_r_10;
     const mesh_vest_chest_button_r_10GeometryDense = endpoint_vest_chest_button_r_10 ? new THREE.CylinderGeometry(endpoint_vest_chest_button_r_10.endRadius, endpoint_vest_chest_button_r_10.baseRadius, endpoint_vest_chest_button_r_10.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_vest_chest_button_r_10Geometry = decimateGeometry(mesh_vest_chest_button_r_10GeometryDense, 0.06);
+    const mesh_vest_chest_button_r_10Geometry = decimateGeometry(mesh_vest_chest_button_r_10GeometryDense, 0.12);
     if (!endpoint_vest_chest_button_r_10) {
         mesh_vest_chest_button_r_10Geometry.scale(0.035, 0.035, 0.022);
     }
@@ -12490,7 +12553,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -12662,7 +12725,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -12838,7 +12901,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["vest-shell"] ?? root).add(node_vest_lower_button_l_11);
     nodes["vest-lower-button-l"] = node_vest_lower_button_l_11;
     const mesh_vest_lower_button_l_11GeometryDense = endpoint_vest_lower_button_l_11 ? new THREE.CylinderGeometry(endpoint_vest_lower_button_l_11.endRadius, endpoint_vest_lower_button_l_11.baseRadius, endpoint_vest_lower_button_l_11.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_vest_lower_button_l_11Geometry = decimateGeometry(mesh_vest_lower_button_l_11GeometryDense, 0.06);
+    const mesh_vest_lower_button_l_11Geometry = decimateGeometry(mesh_vest_lower_button_l_11GeometryDense, 0.12);
     if (!endpoint_vest_lower_button_l_11) {
         mesh_vest_lower_button_l_11Geometry.scale(0.035, 0.035, 0.022);
     }
@@ -12873,7 +12936,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -13045,7 +13108,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -13221,7 +13284,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["vest-shell"] ?? root).add(node_vest_lower_button_r_12);
     nodes["vest-lower-button-r"] = node_vest_lower_button_r_12;
     const mesh_vest_lower_button_r_12GeometryDense = endpoint_vest_lower_button_r_12 ? new THREE.CylinderGeometry(endpoint_vest_lower_button_r_12.endRadius, endpoint_vest_lower_button_r_12.baseRadius, endpoint_vest_lower_button_r_12.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_vest_lower_button_r_12Geometry = decimateGeometry(mesh_vest_lower_button_r_12GeometryDense, 0.06);
+    const mesh_vest_lower_button_r_12Geometry = decimateGeometry(mesh_vest_lower_button_r_12GeometryDense, 0.12);
     if (!endpoint_vest_lower_button_r_12) {
         mesh_vest_lower_button_r_12Geometry.scale(0.035, 0.035, 0.022);
     }
@@ -13256,7 +13319,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -13428,7 +13491,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -13604,7 +13667,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["vest-shell"] ?? root).add(node_vest_stud_l0_13);
     nodes["vest-stud-l0"] = node_vest_stud_l0_13;
     const mesh_vest_stud_l0_13GeometryDense = endpoint_vest_stud_l0_13 ? new THREE.CylinderGeometry(endpoint_vest_stud_l0_13.endRadius, endpoint_vest_stud_l0_13.baseRadius, endpoint_vest_stud_l0_13.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_vest_stud_l0_13Geometry = decimateGeometry(mesh_vest_stud_l0_13GeometryDense, 0.06);
+    const mesh_vest_stud_l0_13Geometry = decimateGeometry(mesh_vest_stud_l0_13GeometryDense, 0.12);
     if (!endpoint_vest_stud_l0_13) {
         mesh_vest_stud_l0_13Geometry.scale(0.035, 0.035, 0.022);
     }
@@ -13639,7 +13702,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -13811,7 +13874,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -13987,7 +14050,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["vest-shell"] ?? root).add(node_vest_stud_l1_14);
     nodes["vest-stud-l1"] = node_vest_stud_l1_14;
     const mesh_vest_stud_l1_14GeometryDense = endpoint_vest_stud_l1_14 ? new THREE.CylinderGeometry(endpoint_vest_stud_l1_14.endRadius, endpoint_vest_stud_l1_14.baseRadius, endpoint_vest_stud_l1_14.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_vest_stud_l1_14Geometry = decimateGeometry(mesh_vest_stud_l1_14GeometryDense, 0.06);
+    const mesh_vest_stud_l1_14Geometry = decimateGeometry(mesh_vest_stud_l1_14GeometryDense, 0.12);
     if (!endpoint_vest_stud_l1_14) {
         mesh_vest_stud_l1_14Geometry.scale(0.035, 0.035, 0.022);
     }
@@ -14022,7 +14085,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -14194,7 +14257,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -14370,7 +14433,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["vest-shell"] ?? root).add(node_vest_stud_l2_15);
     nodes["vest-stud-l2"] = node_vest_stud_l2_15;
     const mesh_vest_stud_l2_15GeometryDense = endpoint_vest_stud_l2_15 ? new THREE.CylinderGeometry(endpoint_vest_stud_l2_15.endRadius, endpoint_vest_stud_l2_15.baseRadius, endpoint_vest_stud_l2_15.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_vest_stud_l2_15Geometry = decimateGeometry(mesh_vest_stud_l2_15GeometryDense, 0.06);
+    const mesh_vest_stud_l2_15Geometry = decimateGeometry(mesh_vest_stud_l2_15GeometryDense, 0.12);
     if (!endpoint_vest_stud_l2_15) {
         mesh_vest_stud_l2_15Geometry.scale(0.035, 0.035, 0.022);
     }
@@ -14405,7 +14468,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -14577,7 +14640,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -14753,7 +14816,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["vest-shell"] ?? root).add(node_vest_stud_r0_16);
     nodes["vest-stud-r0"] = node_vest_stud_r0_16;
     const mesh_vest_stud_r0_16GeometryDense = endpoint_vest_stud_r0_16 ? new THREE.CylinderGeometry(endpoint_vest_stud_r0_16.endRadius, endpoint_vest_stud_r0_16.baseRadius, endpoint_vest_stud_r0_16.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_vest_stud_r0_16Geometry = decimateGeometry(mesh_vest_stud_r0_16GeometryDense, 0.06);
+    const mesh_vest_stud_r0_16Geometry = decimateGeometry(mesh_vest_stud_r0_16GeometryDense, 0.12);
     if (!endpoint_vest_stud_r0_16) {
         mesh_vest_stud_r0_16Geometry.scale(0.035, 0.035, 0.022);
     }
@@ -14788,7 +14851,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -14960,7 +15023,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -15136,7 +15199,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["vest-shell"] ?? root).add(node_vest_stud_r1_17);
     nodes["vest-stud-r1"] = node_vest_stud_r1_17;
     const mesh_vest_stud_r1_17GeometryDense = endpoint_vest_stud_r1_17 ? new THREE.CylinderGeometry(endpoint_vest_stud_r1_17.endRadius, endpoint_vest_stud_r1_17.baseRadius, endpoint_vest_stud_r1_17.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_vest_stud_r1_17Geometry = decimateGeometry(mesh_vest_stud_r1_17GeometryDense, 0.06);
+    const mesh_vest_stud_r1_17Geometry = decimateGeometry(mesh_vest_stud_r1_17GeometryDense, 0.12);
     if (!endpoint_vest_stud_r1_17) {
         mesh_vest_stud_r1_17Geometry.scale(0.035, 0.035, 0.022);
     }
@@ -15171,7 +15234,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -15343,7 +15406,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -15519,7 +15582,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["vest-shell"] ?? root).add(node_vest_stud_r2_18);
     nodes["vest-stud-r2"] = node_vest_stud_r2_18;
     const mesh_vest_stud_r2_18GeometryDense = endpoint_vest_stud_r2_18 ? new THREE.CylinderGeometry(endpoint_vest_stud_r2_18.endRadius, endpoint_vest_stud_r2_18.baseRadius, endpoint_vest_stud_r2_18.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_vest_stud_r2_18Geometry = decimateGeometry(mesh_vest_stud_r2_18GeometryDense, 0.06);
+    const mesh_vest_stud_r2_18Geometry = decimateGeometry(mesh_vest_stud_r2_18GeometryDense, 0.12);
     if (!endpoint_vest_stud_r2_18) {
         mesh_vest_stud_r2_18Geometry.scale(0.035, 0.035, 0.022);
     }
@@ -15554,7 +15617,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "vest-shell",
@@ -16471,7 +16534,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "normalStrategy": "smooth vertex normals",
             "torusTubeRatio": 0.3,
             "decimate": {
-                "targetRatio": 0.3
+                "targetRatio": 0.6
             }
         },
         "parent": "pendant-claw",
@@ -16647,7 +16710,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["pendant-claw"] ?? root).add(node_pendant_bail_20);
     nodes["pendant-bail"] = node_pendant_bail_20;
     const mesh_pendant_bail_20GeometryDense = endpoint_pendant_bail_20 ? new THREE.CylinderGeometry(endpoint_pendant_bail_20.endRadius, endpoint_pendant_bail_20.baseRadius, endpoint_pendant_bail_20.length, 16, 6) : new THREE.TorusGeometry(0.45, 0.135, 12, 48);
-    const mesh_pendant_bail_20Geometry = decimateGeometry(mesh_pendant_bail_20GeometryDense, 0.3);
+    const mesh_pendant_bail_20Geometry = decimateGeometry(mesh_pendant_bail_20GeometryDense, 0.6);
     if (!endpoint_pendant_bail_20) {
         mesh_pendant_bail_20Geometry.scale(0.045, 0.045, 0.045);
     }
@@ -16683,7 +16746,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "normalStrategy": "smooth vertex normals",
             "torusTubeRatio": 0.3,
             "decimate": {
-                "targetRatio": 0.3
+                "targetRatio": 0.6
             }
         },
         "parent": "pendant-claw",
@@ -19594,7 +19657,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "normalStrategy": "smooth vertex normals",
             "torusTubeRatio": 0.1,
             "decimate": {
-                "targetRatio": 0.3
+                "targetRatio": 0.6
             }
         },
         "parent": "hat-crown",
@@ -19770,7 +19833,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["hat-crown"] ?? root).add(node_hat_band_22);
     nodes["hat-band"] = node_hat_band_22;
     const mesh_hat_band_22GeometryDense = endpoint_hat_band_22 ? new THREE.CylinderGeometry(endpoint_hat_band_22.endRadius, endpoint_hat_band_22.baseRadius, endpoint_hat_band_22.length, 16, 6) : new THREE.TorusGeometry(0.45, 0.045, 12, 48);
-    const mesh_hat_band_22Geometry = decimateGeometry(mesh_hat_band_22GeometryDense, 0.3);
+    const mesh_hat_band_22Geometry = decimateGeometry(mesh_hat_band_22GeometryDense, 0.6);
     if (!endpoint_hat_band_22) {
         mesh_hat_band_22Geometry.scale(0.5622, 0.6289, 0.6);
     }
@@ -19806,7 +19869,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "normalStrategy": "smooth vertex normals",
             "torusTubeRatio": 0.1,
             "decimate": {
-                "targetRatio": 0.3
+                "targetRatio": 0.6
             }
         },
         "parent": "hat-crown",
@@ -22265,7 +22328,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -22441,7 +22504,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l0a_24);
     nodes["boot-eyelet-l0a"] = node_boot_eyelet_l0a_24;
     const mesh_boot_eyelet_l0a_24GeometryDense = endpoint_boot_eyelet_l0a_24 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l0a_24.endRadius, endpoint_boot_eyelet_l0a_24.baseRadius, endpoint_boot_eyelet_l0a_24.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_l0a_24Geometry = decimateGeometry(mesh_boot_eyelet_l0a_24GeometryDense, 0.06);
+    const mesh_boot_eyelet_l0a_24Geometry = decimateGeometry(mesh_boot_eyelet_l0a_24GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_l0a_24) {
         mesh_boot_eyelet_l0a_24Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -22476,7 +22539,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -22648,7 +22711,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -22824,7 +22887,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l0b_25);
     nodes["boot-eyelet-l0b"] = node_boot_eyelet_l0b_25;
     const mesh_boot_eyelet_l0b_25GeometryDense = endpoint_boot_eyelet_l0b_25 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l0b_25.endRadius, endpoint_boot_eyelet_l0b_25.baseRadius, endpoint_boot_eyelet_l0b_25.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_l0b_25Geometry = decimateGeometry(mesh_boot_eyelet_l0b_25GeometryDense, 0.06);
+    const mesh_boot_eyelet_l0b_25Geometry = decimateGeometry(mesh_boot_eyelet_l0b_25GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_l0b_25) {
         mesh_boot_eyelet_l0b_25Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -22859,7 +22922,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -23031,7 +23094,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -23207,7 +23270,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l1a_26);
     nodes["boot-eyelet-l1a"] = node_boot_eyelet_l1a_26;
     const mesh_boot_eyelet_l1a_26GeometryDense = endpoint_boot_eyelet_l1a_26 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l1a_26.endRadius, endpoint_boot_eyelet_l1a_26.baseRadius, endpoint_boot_eyelet_l1a_26.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_l1a_26Geometry = decimateGeometry(mesh_boot_eyelet_l1a_26GeometryDense, 0.06);
+    const mesh_boot_eyelet_l1a_26Geometry = decimateGeometry(mesh_boot_eyelet_l1a_26GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_l1a_26) {
         mesh_boot_eyelet_l1a_26Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -23242,7 +23305,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -23414,7 +23477,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -23590,7 +23653,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l1b_27);
     nodes["boot-eyelet-l1b"] = node_boot_eyelet_l1b_27;
     const mesh_boot_eyelet_l1b_27GeometryDense = endpoint_boot_eyelet_l1b_27 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l1b_27.endRadius, endpoint_boot_eyelet_l1b_27.baseRadius, endpoint_boot_eyelet_l1b_27.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_l1b_27Geometry = decimateGeometry(mesh_boot_eyelet_l1b_27GeometryDense, 0.06);
+    const mesh_boot_eyelet_l1b_27Geometry = decimateGeometry(mesh_boot_eyelet_l1b_27GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_l1b_27) {
         mesh_boot_eyelet_l1b_27Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -23625,7 +23688,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -23797,7 +23860,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -23973,7 +24036,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l2a_28);
     nodes["boot-eyelet-l2a"] = node_boot_eyelet_l2a_28;
     const mesh_boot_eyelet_l2a_28GeometryDense = endpoint_boot_eyelet_l2a_28 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l2a_28.endRadius, endpoint_boot_eyelet_l2a_28.baseRadius, endpoint_boot_eyelet_l2a_28.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_l2a_28Geometry = decimateGeometry(mesh_boot_eyelet_l2a_28GeometryDense, 0.06);
+    const mesh_boot_eyelet_l2a_28Geometry = decimateGeometry(mesh_boot_eyelet_l2a_28GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_l2a_28) {
         mesh_boot_eyelet_l2a_28Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -24008,7 +24071,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -24180,7 +24243,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -24356,7 +24419,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l2b_29);
     nodes["boot-eyelet-l2b"] = node_boot_eyelet_l2b_29;
     const mesh_boot_eyelet_l2b_29GeometryDense = endpoint_boot_eyelet_l2b_29 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l2b_29.endRadius, endpoint_boot_eyelet_l2b_29.baseRadius, endpoint_boot_eyelet_l2b_29.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_l2b_29Geometry = decimateGeometry(mesh_boot_eyelet_l2b_29GeometryDense, 0.06);
+    const mesh_boot_eyelet_l2b_29Geometry = decimateGeometry(mesh_boot_eyelet_l2b_29GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_l2b_29) {
         mesh_boot_eyelet_l2b_29Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -24391,7 +24454,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -24563,7 +24626,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -24739,7 +24802,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l3a_30);
     nodes["boot-eyelet-l3a"] = node_boot_eyelet_l3a_30;
     const mesh_boot_eyelet_l3a_30GeometryDense = endpoint_boot_eyelet_l3a_30 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l3a_30.endRadius, endpoint_boot_eyelet_l3a_30.baseRadius, endpoint_boot_eyelet_l3a_30.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_l3a_30Geometry = decimateGeometry(mesh_boot_eyelet_l3a_30GeometryDense, 0.06);
+    const mesh_boot_eyelet_l3a_30Geometry = decimateGeometry(mesh_boot_eyelet_l3a_30GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_l3a_30) {
         mesh_boot_eyelet_l3a_30Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -24774,7 +24837,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -24946,7 +25009,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -25122,7 +25185,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l3b_31);
     nodes["boot-eyelet-l3b"] = node_boot_eyelet_l3b_31;
     const mesh_boot_eyelet_l3b_31GeometryDense = endpoint_boot_eyelet_l3b_31 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l3b_31.endRadius, endpoint_boot_eyelet_l3b_31.baseRadius, endpoint_boot_eyelet_l3b_31.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_l3b_31Geometry = decimateGeometry(mesh_boot_eyelet_l3b_31GeometryDense, 0.06);
+    const mesh_boot_eyelet_l3b_31Geometry = decimateGeometry(mesh_boot_eyelet_l3b_31GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_l3b_31) {
         mesh_boot_eyelet_l3b_31Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -25157,7 +25220,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-l",
@@ -32860,7 +32923,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -33036,7 +33099,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r0a_45);
     nodes["boot-eyelet-r0a"] = node_boot_eyelet_r0a_45;
     const mesh_boot_eyelet_r0a_45GeometryDense = endpoint_boot_eyelet_r0a_45 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r0a_45.endRadius, endpoint_boot_eyelet_r0a_45.baseRadius, endpoint_boot_eyelet_r0a_45.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r0a_45Geometry = decimateGeometry(mesh_boot_eyelet_r0a_45GeometryDense, 0.06);
+    const mesh_boot_eyelet_r0a_45Geometry = decimateGeometry(mesh_boot_eyelet_r0a_45GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_r0a_45) {
         mesh_boot_eyelet_r0a_45Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -33071,7 +33134,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -33243,7 +33306,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -33419,7 +33482,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r0b_46);
     nodes["boot-eyelet-r0b"] = node_boot_eyelet_r0b_46;
     const mesh_boot_eyelet_r0b_46GeometryDense = endpoint_boot_eyelet_r0b_46 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r0b_46.endRadius, endpoint_boot_eyelet_r0b_46.baseRadius, endpoint_boot_eyelet_r0b_46.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r0b_46Geometry = decimateGeometry(mesh_boot_eyelet_r0b_46GeometryDense, 0.06);
+    const mesh_boot_eyelet_r0b_46Geometry = decimateGeometry(mesh_boot_eyelet_r0b_46GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_r0b_46) {
         mesh_boot_eyelet_r0b_46Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -33454,7 +33517,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -33626,7 +33689,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -33802,7 +33865,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r1a_47);
     nodes["boot-eyelet-r1a"] = node_boot_eyelet_r1a_47;
     const mesh_boot_eyelet_r1a_47GeometryDense = endpoint_boot_eyelet_r1a_47 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r1a_47.endRadius, endpoint_boot_eyelet_r1a_47.baseRadius, endpoint_boot_eyelet_r1a_47.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r1a_47Geometry = decimateGeometry(mesh_boot_eyelet_r1a_47GeometryDense, 0.06);
+    const mesh_boot_eyelet_r1a_47Geometry = decimateGeometry(mesh_boot_eyelet_r1a_47GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_r1a_47) {
         mesh_boot_eyelet_r1a_47Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -33837,7 +33900,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -34009,7 +34072,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -34185,7 +34248,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r1b_48);
     nodes["boot-eyelet-r1b"] = node_boot_eyelet_r1b_48;
     const mesh_boot_eyelet_r1b_48GeometryDense = endpoint_boot_eyelet_r1b_48 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r1b_48.endRadius, endpoint_boot_eyelet_r1b_48.baseRadius, endpoint_boot_eyelet_r1b_48.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r1b_48Geometry = decimateGeometry(mesh_boot_eyelet_r1b_48GeometryDense, 0.06);
+    const mesh_boot_eyelet_r1b_48Geometry = decimateGeometry(mesh_boot_eyelet_r1b_48GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_r1b_48) {
         mesh_boot_eyelet_r1b_48Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -34220,7 +34283,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -34392,7 +34455,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -34568,7 +34631,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r2a_49);
     nodes["boot-eyelet-r2a"] = node_boot_eyelet_r2a_49;
     const mesh_boot_eyelet_r2a_49GeometryDense = endpoint_boot_eyelet_r2a_49 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r2a_49.endRadius, endpoint_boot_eyelet_r2a_49.baseRadius, endpoint_boot_eyelet_r2a_49.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r2a_49Geometry = decimateGeometry(mesh_boot_eyelet_r2a_49GeometryDense, 0.06);
+    const mesh_boot_eyelet_r2a_49Geometry = decimateGeometry(mesh_boot_eyelet_r2a_49GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_r2a_49) {
         mesh_boot_eyelet_r2a_49Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -34603,7 +34666,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -34775,7 +34838,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -34951,7 +35014,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r2b_50);
     nodes["boot-eyelet-r2b"] = node_boot_eyelet_r2b_50;
     const mesh_boot_eyelet_r2b_50GeometryDense = endpoint_boot_eyelet_r2b_50 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r2b_50.endRadius, endpoint_boot_eyelet_r2b_50.baseRadius, endpoint_boot_eyelet_r2b_50.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r2b_50Geometry = decimateGeometry(mesh_boot_eyelet_r2b_50GeometryDense, 0.06);
+    const mesh_boot_eyelet_r2b_50Geometry = decimateGeometry(mesh_boot_eyelet_r2b_50GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_r2b_50) {
         mesh_boot_eyelet_r2b_50Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -34986,7 +35049,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -35158,7 +35221,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -35334,7 +35397,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r3a_51);
     nodes["boot-eyelet-r3a"] = node_boot_eyelet_r3a_51;
     const mesh_boot_eyelet_r3a_51GeometryDense = endpoint_boot_eyelet_r3a_51 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r3a_51.endRadius, endpoint_boot_eyelet_r3a_51.baseRadius, endpoint_boot_eyelet_r3a_51.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r3a_51Geometry = decimateGeometry(mesh_boot_eyelet_r3a_51GeometryDense, 0.06);
+    const mesh_boot_eyelet_r3a_51Geometry = decimateGeometry(mesh_boot_eyelet_r3a_51GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_r3a_51) {
         mesh_boot_eyelet_r3a_51Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -35369,7 +35432,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -35541,7 +35604,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -35717,7 +35780,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r3b_52);
     nodes["boot-eyelet-r3b"] = node_boot_eyelet_r3b_52;
     const mesh_boot_eyelet_r3b_52GeometryDense = endpoint_boot_eyelet_r3b_52 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r3b_52.endRadius, endpoint_boot_eyelet_r3b_52.baseRadius, endpoint_boot_eyelet_r3b_52.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r3b_52Geometry = decimateGeometry(mesh_boot_eyelet_r3b_52GeometryDense, 0.06);
+    const mesh_boot_eyelet_r3b_52Geometry = decimateGeometry(mesh_boot_eyelet_r3b_52GeometryDense, 0.12);
     if (!endpoint_boot_eyelet_r3b_52) {
         mesh_boot_eyelet_r3b_52Geometry.scale(0.027, 0.027, 0.015);
     }
@@ -35752,7 +35815,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "boot-shell-r",
@@ -42913,7 +42976,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "sheath-strap",
@@ -43089,7 +43152,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["sheath-strap"] ?? root).add(node_sheath_stud_67);
     nodes["sheath-stud"] = node_sheath_stud_67;
     const mesh_sheath_stud_67GeometryDense = endpoint_sheath_stud_67 ? new THREE.CylinderGeometry(endpoint_sheath_stud_67.endRadius, endpoint_sheath_stud_67.baseRadius, endpoint_sheath_stud_67.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_sheath_stud_67Geometry = decimateGeometry(mesh_sheath_stud_67GeometryDense, 0.06);
+    const mesh_sheath_stud_67Geometry = decimateGeometry(mesh_sheath_stud_67GeometryDense, 0.12);
     if (!endpoint_sheath_stud_67) {
         mesh_sheath_stud_67Geometry.scale(0.025, 0.025, 0.025);
     }
@@ -43124,7 +43187,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "sheath-strap",
@@ -43272,7 +43335,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_sleeve_cuff_l_68.position.copy(endpoint_sleeve_cuff_l_68.start);
         node_sleeve_cuff_l_68.rotation.set(0.0, 1.5708, 0.0);
     } else {
-        node_sleeve_cuff_l_68.position.set(0.63, 1.17, -0.015);
+        node_sleeve_cuff_l_68.position.set(0.615, 1.168, -0.035);
         node_sleeve_cuff_l_68.rotation.set(0.0, 1.5708, 0.0);
     }
     node_sleeve_cuff_l_68.userData.sculptComponent = {
@@ -43284,7 +43347,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "confidence": 0.8,
         "primitive": "torus",
         "topologyClass": "assembled-solid",
-        "topologyRationale": "A rolled band around the sleeve end: a torus ring.",
+        "topologyRationale": "A rolled band round the sleeve end: a flattened torus ring, wider along the arm than it is thick.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -43295,25 +43358,25 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "deformationStack": [],
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
-            "torusTubeRatio": 0.2,
+            "torusTubeRatio": 0.1579,
             "decimate": {
-                "targetRatio": 0.3
+                "targetRatio": 0.6
             }
         },
         "parent": "vest-shell",
         "attachment": null,
         "dimensions": {
-            "width": 0.37,
-            "height": 0.37,
-            "depth": 0.5,
+            "width": 0.4222,
+            "height": 0.4222,
+            "depth": 0.8444,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.63,
-                1.17,
-                -0.015
+                0.615,
+                1.168,
+                -0.035
             ],
             "rotation": [
                 0,
@@ -43321,9 +43384,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.37,
-                0.37,
-                0.5
+                0.4222,
+                0.4222,
+                0.8444
             ]
         },
         "actionProfile": {
@@ -43375,12 +43438,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
-                "debrisMaterial": "cuff"
+                "debrisMaterial": "cuff-fold"
             }
         },
-        "material": "cuff",
+        "material": "cuff-fold",
         "materialLayers": [
-            "cuff"
+            "cuff-fold"
         ],
         "deformations": [],
         "joints": [],
@@ -43409,12 +43472,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "details": [],
         "fidelityTier": "form",
         "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(127, 160, 109, 1.0)",
-            "secondaryAlbedo": "rgba(96, 124, 82, 1.0)",
+            "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
+            "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
             "materialClass": "fabric",
             "materialClassConfidence": 0.7,
             "evidenceRefs": [
-                "material-evidence/cuff.png"
+                "material-evidence/cuff-fold.png"
             ]
         }
     };
@@ -43467,17 +43530,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
-            "debrisMaterial": "cuff"
+            "debrisMaterial": "cuff-fold"
         }
     };
     (nodes["vest-shell"] ?? root).add(node_sleeve_cuff_l_68);
     nodes["sleeve-cuff-l"] = node_sleeve_cuff_l_68;
-    const mesh_sleeve_cuff_l_68GeometryDense = endpoint_sleeve_cuff_l_68 ? new THREE.CylinderGeometry(endpoint_sleeve_cuff_l_68.endRadius, endpoint_sleeve_cuff_l_68.baseRadius, endpoint_sleeve_cuff_l_68.length, 16, 6) : new THREE.TorusGeometry(0.45, 0.09, 12, 48);
-    const mesh_sleeve_cuff_l_68Geometry = decimateGeometry(mesh_sleeve_cuff_l_68GeometryDense, 0.3);
+    const mesh_sleeve_cuff_l_68GeometryDense = endpoint_sleeve_cuff_l_68 ? new THREE.CylinderGeometry(endpoint_sleeve_cuff_l_68.endRadius, endpoint_sleeve_cuff_l_68.baseRadius, endpoint_sleeve_cuff_l_68.length, 16, 6) : new THREE.TorusGeometry(0.45, 0.0711, 12, 48);
+    const mesh_sleeve_cuff_l_68Geometry = decimateGeometry(mesh_sleeve_cuff_l_68GeometryDense, 0.6);
     if (!endpoint_sleeve_cuff_l_68) {
-        mesh_sleeve_cuff_l_68Geometry.scale(0.37, 0.37, 0.5);
+        mesh_sleeve_cuff_l_68Geometry.scale(0.4222, 0.4222, 0.8444);
     }
-    const mesh_sleeve_cuff_l_68 = new THREE.Mesh(mesh_sleeve_cuff_l_68Geometry, materialMap["cuff"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sleeve_cuff_l_68 = new THREE.Mesh(mesh_sleeve_cuff_l_68Geometry, materialMap["cuff-fold"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
     mesh_sleeve_cuff_l_68.name = "Rolled sleeve cuff (l)";
@@ -43496,7 +43559,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "confidence": 0.8,
         "primitive": "torus",
         "topologyClass": "assembled-solid",
-        "topologyRationale": "A rolled band around the sleeve end: a torus ring.",
+        "topologyRationale": "A rolled band round the sleeve end: a flattened torus ring, wider along the arm than it is thick.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -43507,25 +43570,25 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "deformationStack": [],
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
-            "torusTubeRatio": 0.2,
+            "torusTubeRatio": 0.1579,
             "decimate": {
-                "targetRatio": 0.3
+                "targetRatio": 0.6
             }
         },
         "parent": "vest-shell",
         "attachment": null,
         "dimensions": {
-            "width": 0.37,
-            "height": 0.37,
-            "depth": 0.5,
+            "width": 0.4222,
+            "height": 0.4222,
+            "depth": 0.8444,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.63,
-                1.17,
-                -0.015
+                0.615,
+                1.168,
+                -0.035
             ],
             "rotation": [
                 0,
@@ -43533,9 +43596,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.37,
-                0.37,
-                0.5
+                0.4222,
+                0.4222,
+                0.8444
             ]
         },
         "actionProfile": {
@@ -43587,12 +43650,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
-                "debrisMaterial": "cuff"
+                "debrisMaterial": "cuff-fold"
             }
         },
-        "material": "cuff",
+        "material": "cuff-fold",
         "materialLayers": [
-            "cuff"
+            "cuff-fold"
         ],
         "deformations": [],
         "joints": [],
@@ -43621,12 +43684,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "details": [],
         "fidelityTier": "form",
         "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(127, 160, 109, 1.0)",
-            "secondaryAlbedo": "rgba(96, 124, 82, 1.0)",
+            "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
+            "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
             "materialClass": "fabric",
             "materialClassConfidence": 0.7,
             "evidenceRefs": [
-                "material-evidence/cuff.png"
+                "material-evidence/cuff-fold.png"
             ]
         }
     };
@@ -43657,7 +43720,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_sleeve_tab_l_69.position.copy(endpoint_sleeve_tab_l_69.start);
         node_sleeve_tab_l_69.rotation.set(0.0, -1.57079, 0.0);
     } else {
-        node_sleeve_tab_l_69.position.set(-0.005, 0.158, -0.065);
+        node_sleeve_tab_l_69.position.set(0.0, 0.183, -0.07);
         node_sleeve_tab_l_69.rotation.set(0.0, -1.57079, 0.0);
     }
     node_sleeve_tab_l_69.userData.sculptComponent = {
@@ -43669,7 +43732,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "confidence": 0.8,
         "primitive": "box",
         "topologyClass": "assembled-solid",
-        "topologyRationale": "The roll-up strap: a thin tab on the outer side.",
+        "topologyRationale": "The roll-up strap: a thin tab up the outer side of the sleeve.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -43684,17 +43747,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "sleeve-cuff-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.1,
-            "height": 0.018,
-            "depth": 0.055,
+            "width": 0.12,
+            "height": 0.02,
+            "depth": 0.058,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.005,
-                0.158,
-                -0.065
+                0.0,
+                0.183,
+                -0.07
             ],
             "rotation": [
                 0.0,
@@ -43702,9 +43765,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0.0
             ],
             "scale": [
-                0.1,
-                0.018,
-                0.055
+                0.12,
+                0.02,
+                0.058
             ]
         },
         "actionProfile": {
@@ -43756,12 +43819,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
-                "debrisMaterial": "cuff"
+                "debrisMaterial": "cuff-fold"
             }
         },
-        "material": "cuff",
+        "material": "cuff-fold",
         "materialLayers": [
-            "cuff"
+            "cuff-fold"
         ],
         "deformations": [],
         "joints": [],
@@ -43790,12 +43853,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "details": [],
         "fidelityTier": "form",
         "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(127, 160, 109, 1.0)",
-            "secondaryAlbedo": "rgba(96, 124, 82, 1.0)",
+            "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
+            "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
             "materialClass": "fabric",
             "materialClassConfidence": 0.7,
             "evidenceRefs": [
-                "material-evidence/cuff.png"
+                "material-evidence/cuff-fold.png"
             ]
         }
     };
@@ -43848,16 +43911,16 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
-            "debrisMaterial": "cuff"
+            "debrisMaterial": "cuff-fold"
         }
     };
     (nodes["sleeve-cuff-l"] ?? root).add(node_sleeve_tab_l_69);
     nodes["sleeve-tab-l"] = node_sleeve_tab_l_69;
     const mesh_sleeve_tab_l_69Geometry = endpoint_sleeve_tab_l_69 ? new THREE.CylinderGeometry(endpoint_sleeve_tab_l_69.endRadius, endpoint_sleeve_tab_l_69.baseRadius, endpoint_sleeve_tab_l_69.length, 16, 6) : new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
     if (!endpoint_sleeve_tab_l_69) {
-        mesh_sleeve_tab_l_69Geometry.scale(0.1, 0.018, 0.055);
+        mesh_sleeve_tab_l_69Geometry.scale(0.12, 0.02, 0.058);
     }
-    const mesh_sleeve_tab_l_69 = new THREE.Mesh(mesh_sleeve_tab_l_69Geometry, materialMap["cuff"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sleeve_tab_l_69 = new THREE.Mesh(mesh_sleeve_tab_l_69Geometry, materialMap["cuff-fold"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
     mesh_sleeve_tab_l_69.name = "Sleeve strap tab (l)";
@@ -43876,7 +43939,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "confidence": 0.8,
         "primitive": "box",
         "topologyClass": "assembled-solid",
-        "topologyRationale": "The roll-up strap: a thin tab on the outer side.",
+        "topologyRationale": "The roll-up strap: a thin tab up the outer side of the sleeve.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -43891,17 +43954,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "sleeve-cuff-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.1,
-            "height": 0.018,
-            "depth": 0.055,
+            "width": 0.12,
+            "height": 0.02,
+            "depth": 0.058,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.005,
-                0.158,
-                -0.065
+                0.0,
+                0.183,
+                -0.07
             ],
             "rotation": [
                 0.0,
@@ -43909,9 +43972,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0.0
             ],
             "scale": [
-                0.1,
-                0.018,
-                0.055
+                0.12,
+                0.02,
+                0.058
             ]
         },
         "actionProfile": {
@@ -43963,12 +44026,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
-                "debrisMaterial": "cuff"
+                "debrisMaterial": "cuff-fold"
             }
         },
-        "material": "cuff",
+        "material": "cuff-fold",
         "materialLayers": [
-            "cuff"
+            "cuff-fold"
         ],
         "deformations": [],
         "joints": [],
@@ -43997,12 +44060,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "details": [],
         "fidelityTier": "form",
         "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(127, 160, 109, 1.0)",
-            "secondaryAlbedo": "rgba(96, 124, 82, 1.0)",
+            "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
+            "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
             "materialClass": "fabric",
             "materialClassConfidence": 0.7,
             "evidenceRefs": [
-                "material-evidence/cuff.png"
+                "material-evidence/cuff-fold.png"
             ]
         }
     };
@@ -44033,7 +44096,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_sleeve_button_l_70.position.copy(endpoint_sleeve_button_l_70.start);
         node_sleeve_button_l_70.rotation.set(-0.0, 0.0, -0.0);
     } else {
-        node_sleeve_button_l_70.position.set(-0.025, 0.014, 0.0);
+        node_sleeve_button_l_70.position.set(-0.04, 0.012, 0.0);
         node_sleeve_button_l_70.rotation.set(-0.0, 0.0, -0.0);
     }
     node_sleeve_button_l_70.userData.sculptComponent = {
@@ -44057,22 +44120,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "sleeve-tab-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.03,
-            "height": 0.018,
-            "depth": 0.03,
+            "width": 0.036,
+            "height": 0.022,
+            "depth": 0.036,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.025,
-                0.014,
+                -0.04,
+                0.012,
                 0.0
             ],
             "rotation": [
@@ -44081,9 +44144,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 -0.0
             ],
             "scale": [
-                0.03,
-                0.018,
-                0.03
+                0.036,
+                0.022,
+                0.036
             ]
         },
         "actionProfile": {
@@ -44233,9 +44296,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["sleeve-tab-l"] ?? root).add(node_sleeve_button_l_70);
     nodes["sleeve-button-l"] = node_sleeve_button_l_70;
     const mesh_sleeve_button_l_70GeometryDense = endpoint_sleeve_button_l_70 ? new THREE.CylinderGeometry(endpoint_sleeve_button_l_70.endRadius, endpoint_sleeve_button_l_70.baseRadius, endpoint_sleeve_button_l_70.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_sleeve_button_l_70Geometry = decimateGeometry(mesh_sleeve_button_l_70GeometryDense, 0.06);
+    const mesh_sleeve_button_l_70Geometry = decimateGeometry(mesh_sleeve_button_l_70GeometryDense, 0.12);
     if (!endpoint_sleeve_button_l_70) {
-        mesh_sleeve_button_l_70Geometry.scale(0.03, 0.018, 0.03);
+        mesh_sleeve_button_l_70Geometry.scale(0.036, 0.022, 0.036);
     }
     const mesh_sleeve_button_l_70 = new THREE.Mesh(mesh_sleeve_button_l_70Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
@@ -44268,22 +44331,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "sleeve-tab-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.03,
-            "height": 0.018,
-            "depth": 0.03,
+            "width": 0.036,
+            "height": 0.022,
+            "depth": 0.036,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.025,
-                0.014,
+                -0.04,
+                0.012,
                 0.0
             ],
             "rotation": [
@@ -44292,9 +44355,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 -0.0
             ],
             "scale": [
-                0.03,
-                0.018,
-                0.03
+                0.036,
+                0.022,
+                0.036
             ]
         },
         "actionProfile": {
@@ -44416,7 +44479,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_sleeve_cuff_r_71.position.copy(endpoint_sleeve_cuff_r_71.start);
         node_sleeve_cuff_r_71.rotation.set(0.0, -1.5708, 0.0);
     } else {
-        node_sleeve_cuff_r_71.position.set(-0.63, 1.17, -0.015);
+        node_sleeve_cuff_r_71.position.set(-0.615, 1.168, -0.035);
         node_sleeve_cuff_r_71.rotation.set(0.0, -1.5708, 0.0);
     }
     node_sleeve_cuff_r_71.userData.sculptComponent = {
@@ -44428,7 +44491,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "confidence": 0.8,
         "primitive": "torus",
         "topologyClass": "assembled-solid",
-        "topologyRationale": "A rolled band around the sleeve end: a torus ring.",
+        "topologyRationale": "A rolled band round the sleeve end: a flattened torus ring, wider along the arm than it is thick.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -44439,25 +44502,25 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "deformationStack": [],
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
-            "torusTubeRatio": 0.2,
+            "torusTubeRatio": 0.1579,
             "decimate": {
-                "targetRatio": 0.3
+                "targetRatio": 0.6
             }
         },
         "parent": "vest-shell",
         "attachment": null,
         "dimensions": {
-            "width": 0.37,
-            "height": 0.37,
-            "depth": 0.5,
+            "width": 0.4222,
+            "height": 0.4222,
+            "depth": 0.8444,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.63,
-                1.17,
-                -0.015
+                -0.615,
+                1.168,
+                -0.035
             ],
             "rotation": [
                 0,
@@ -44465,9 +44528,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.37,
-                0.37,
-                0.5
+                0.4222,
+                0.4222,
+                0.8444
             ]
         },
         "actionProfile": {
@@ -44519,12 +44582,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
-                "debrisMaterial": "cuff"
+                "debrisMaterial": "cuff-fold"
             }
         },
-        "material": "cuff",
+        "material": "cuff-fold",
         "materialLayers": [
-            "cuff"
+            "cuff-fold"
         ],
         "deformations": [],
         "joints": [],
@@ -44553,12 +44616,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "details": [],
         "fidelityTier": "form",
         "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(127, 160, 109, 1.0)",
-            "secondaryAlbedo": "rgba(96, 124, 82, 1.0)",
+            "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
+            "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
             "materialClass": "fabric",
             "materialClassConfidence": 0.7,
             "evidenceRefs": [
-                "material-evidence/cuff.png"
+                "material-evidence/cuff-fold.png"
             ]
         }
     };
@@ -44611,17 +44674,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
-            "debrisMaterial": "cuff"
+            "debrisMaterial": "cuff-fold"
         }
     };
     (nodes["vest-shell"] ?? root).add(node_sleeve_cuff_r_71);
     nodes["sleeve-cuff-r"] = node_sleeve_cuff_r_71;
-    const mesh_sleeve_cuff_r_71GeometryDense = endpoint_sleeve_cuff_r_71 ? new THREE.CylinderGeometry(endpoint_sleeve_cuff_r_71.endRadius, endpoint_sleeve_cuff_r_71.baseRadius, endpoint_sleeve_cuff_r_71.length, 16, 6) : new THREE.TorusGeometry(0.45, 0.09, 12, 48);
-    const mesh_sleeve_cuff_r_71Geometry = decimateGeometry(mesh_sleeve_cuff_r_71GeometryDense, 0.3);
+    const mesh_sleeve_cuff_r_71GeometryDense = endpoint_sleeve_cuff_r_71 ? new THREE.CylinderGeometry(endpoint_sleeve_cuff_r_71.endRadius, endpoint_sleeve_cuff_r_71.baseRadius, endpoint_sleeve_cuff_r_71.length, 16, 6) : new THREE.TorusGeometry(0.45, 0.0711, 12, 48);
+    const mesh_sleeve_cuff_r_71Geometry = decimateGeometry(mesh_sleeve_cuff_r_71GeometryDense, 0.6);
     if (!endpoint_sleeve_cuff_r_71) {
-        mesh_sleeve_cuff_r_71Geometry.scale(0.37, 0.37, 0.5);
+        mesh_sleeve_cuff_r_71Geometry.scale(0.4222, 0.4222, 0.8444);
     }
-    const mesh_sleeve_cuff_r_71 = new THREE.Mesh(mesh_sleeve_cuff_r_71Geometry, materialMap["cuff"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sleeve_cuff_r_71 = new THREE.Mesh(mesh_sleeve_cuff_r_71Geometry, materialMap["cuff-fold"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
     mesh_sleeve_cuff_r_71.name = "Rolled sleeve cuff (r)";
@@ -44640,7 +44703,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "confidence": 0.8,
         "primitive": "torus",
         "topologyClass": "assembled-solid",
-        "topologyRationale": "A rolled band around the sleeve end: a torus ring.",
+        "topologyRationale": "A rolled band round the sleeve end: a flattened torus ring, wider along the arm than it is thick.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -44651,25 +44714,25 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "deformationStack": [],
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
-            "torusTubeRatio": 0.2,
+            "torusTubeRatio": 0.1579,
             "decimate": {
-                "targetRatio": 0.3
+                "targetRatio": 0.6
             }
         },
         "parent": "vest-shell",
         "attachment": null,
         "dimensions": {
-            "width": 0.37,
-            "height": 0.37,
-            "depth": 0.5,
+            "width": 0.4222,
+            "height": 0.4222,
+            "depth": 0.8444,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.63,
-                1.17,
-                -0.015
+                -0.615,
+                1.168,
+                -0.035
             ],
             "rotation": [
                 0,
@@ -44677,9 +44740,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.37,
-                0.37,
-                0.5
+                0.4222,
+                0.4222,
+                0.8444
             ]
         },
         "actionProfile": {
@@ -44731,12 +44794,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
-                "debrisMaterial": "cuff"
+                "debrisMaterial": "cuff-fold"
             }
         },
-        "material": "cuff",
+        "material": "cuff-fold",
         "materialLayers": [
-            "cuff"
+            "cuff-fold"
         ],
         "deformations": [],
         "joints": [],
@@ -44765,12 +44828,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "details": [],
         "fidelityTier": "form",
         "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(127, 160, 109, 1.0)",
-            "secondaryAlbedo": "rgba(96, 124, 82, 1.0)",
+            "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
+            "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
             "materialClass": "fabric",
             "materialClassConfidence": 0.7,
             "evidenceRefs": [
-                "material-evidence/cuff.png"
+                "material-evidence/cuff-fold.png"
             ]
         }
     };
@@ -44801,7 +44864,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_sleeve_tab_r_72.position.copy(endpoint_sleeve_tab_r_72.start);
         node_sleeve_tab_r_72.rotation.set(0.0, 1.57079, 0.0);
     } else {
-        node_sleeve_tab_r_72.position.set(0.005, 0.158, -0.065);
+        node_sleeve_tab_r_72.position.set(-0.0, 0.183, -0.07);
         node_sleeve_tab_r_72.rotation.set(0.0, 1.57079, 0.0);
     }
     node_sleeve_tab_r_72.userData.sculptComponent = {
@@ -44813,7 +44876,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "confidence": 0.8,
         "primitive": "box",
         "topologyClass": "assembled-solid",
-        "topologyRationale": "The roll-up strap: a thin tab on the outer side.",
+        "topologyRationale": "The roll-up strap: a thin tab up the outer side of the sleeve.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -44828,17 +44891,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "sleeve-cuff-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.1,
-            "height": 0.018,
-            "depth": 0.055,
+            "width": 0.12,
+            "height": 0.02,
+            "depth": 0.058,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.005,
-                0.158,
-                -0.065
+                -0.0,
+                0.183,
+                -0.07
             ],
             "rotation": [
                 0.0,
@@ -44846,9 +44909,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0.0
             ],
             "scale": [
-                0.1,
-                0.018,
-                0.055
+                0.12,
+                0.02,
+                0.058
             ]
         },
         "actionProfile": {
@@ -44900,12 +44963,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
-                "debrisMaterial": "cuff"
+                "debrisMaterial": "cuff-fold"
             }
         },
-        "material": "cuff",
+        "material": "cuff-fold",
         "materialLayers": [
-            "cuff"
+            "cuff-fold"
         ],
         "deformations": [],
         "joints": [],
@@ -44934,12 +44997,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "details": [],
         "fidelityTier": "form",
         "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(127, 160, 109, 1.0)",
-            "secondaryAlbedo": "rgba(96, 124, 82, 1.0)",
+            "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
+            "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
             "materialClass": "fabric",
             "materialClassConfidence": 0.7,
             "evidenceRefs": [
-                "material-evidence/cuff.png"
+                "material-evidence/cuff-fold.png"
             ]
         }
     };
@@ -44992,16 +45055,16 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
-            "debrisMaterial": "cuff"
+            "debrisMaterial": "cuff-fold"
         }
     };
     (nodes["sleeve-cuff-r"] ?? root).add(node_sleeve_tab_r_72);
     nodes["sleeve-tab-r"] = node_sleeve_tab_r_72;
     const mesh_sleeve_tab_r_72Geometry = endpoint_sleeve_tab_r_72 ? new THREE.CylinderGeometry(endpoint_sleeve_tab_r_72.endRadius, endpoint_sleeve_tab_r_72.baseRadius, endpoint_sleeve_tab_r_72.length, 16, 6) : new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
     if (!endpoint_sleeve_tab_r_72) {
-        mesh_sleeve_tab_r_72Geometry.scale(0.1, 0.018, 0.055);
+        mesh_sleeve_tab_r_72Geometry.scale(0.12, 0.02, 0.058);
     }
-    const mesh_sleeve_tab_r_72 = new THREE.Mesh(mesh_sleeve_tab_r_72Geometry, materialMap["cuff"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sleeve_tab_r_72 = new THREE.Mesh(mesh_sleeve_tab_r_72Geometry, materialMap["cuff-fold"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
     mesh_sleeve_tab_r_72.name = "Sleeve strap tab (r)";
@@ -45020,7 +45083,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "confidence": 0.8,
         "primitive": "box",
         "topologyClass": "assembled-solid",
-        "topologyRationale": "The roll-up strap: a thin tab on the outer side.",
+        "topologyRationale": "The roll-up strap: a thin tab up the outer side of the sleeve.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -45035,17 +45098,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "sleeve-cuff-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.1,
-            "height": 0.018,
-            "depth": 0.055,
+            "width": 0.12,
+            "height": 0.02,
+            "depth": 0.058,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.005,
-                0.158,
-                -0.065
+                -0.0,
+                0.183,
+                -0.07
             ],
             "rotation": [
                 0.0,
@@ -45053,9 +45116,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0.0
             ],
             "scale": [
-                0.1,
-                0.018,
-                0.055
+                0.12,
+                0.02,
+                0.058
             ]
         },
         "actionProfile": {
@@ -45107,12 +45170,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
-                "debrisMaterial": "cuff"
+                "debrisMaterial": "cuff-fold"
             }
         },
-        "material": "cuff",
+        "material": "cuff-fold",
         "materialLayers": [
-            "cuff"
+            "cuff-fold"
         ],
         "deformations": [],
         "joints": [],
@@ -45141,12 +45204,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "details": [],
         "fidelityTier": "form",
         "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(127, 160, 109, 1.0)",
-            "secondaryAlbedo": "rgba(96, 124, 82, 1.0)",
+            "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
+            "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
             "materialClass": "fabric",
             "materialClassConfidence": 0.7,
             "evidenceRefs": [
-                "material-evidence/cuff.png"
+                "material-evidence/cuff-fold.png"
             ]
         }
     };
@@ -45177,7 +45240,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_sleeve_button_r_73.position.copy(endpoint_sleeve_button_r_73.start);
         node_sleeve_button_r_73.rotation.set(-0.0, 0.0, -0.0);
     } else {
-        node_sleeve_button_r_73.position.set(0.025, 0.014, 0.0);
+        node_sleeve_button_r_73.position.set(0.04, 0.012, 0.0);
         node_sleeve_button_r_73.rotation.set(-0.0, 0.0, -0.0);
     }
     node_sleeve_button_r_73.userData.sculptComponent = {
@@ -45201,22 +45264,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "sleeve-tab-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.03,
-            "height": 0.018,
-            "depth": 0.03,
+            "width": 0.036,
+            "height": 0.022,
+            "depth": 0.036,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.025,
-                0.014,
+                0.04,
+                0.012,
                 0.0
             ],
             "rotation": [
@@ -45225,9 +45288,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 -0.0
             ],
             "scale": [
-                0.03,
-                0.018,
-                0.03
+                0.036,
+                0.022,
+                0.036
             ]
         },
         "actionProfile": {
@@ -45377,9 +45440,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     (nodes["sleeve-tab-r"] ?? root).add(node_sleeve_button_r_73);
     nodes["sleeve-button-r"] = node_sleeve_button_r_73;
     const mesh_sleeve_button_r_73GeometryDense = endpoint_sleeve_button_r_73 ? new THREE.CylinderGeometry(endpoint_sleeve_button_r_73.endRadius, endpoint_sleeve_button_r_73.baseRadius, endpoint_sleeve_button_r_73.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_sleeve_button_r_73Geometry = decimateGeometry(mesh_sleeve_button_r_73GeometryDense, 0.06);
+    const mesh_sleeve_button_r_73Geometry = decimateGeometry(mesh_sleeve_button_r_73GeometryDense, 0.12);
     if (!endpoint_sleeve_button_r_73) {
-        mesh_sleeve_button_r_73Geometry.scale(0.03, 0.018, 0.03);
+        mesh_sleeve_button_r_73Geometry.scale(0.036, 0.022, 0.036);
     }
     const mesh_sleeve_button_r_73 = new THREE.Mesh(mesh_sleeve_button_r_73Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
@@ -45412,22 +45475,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "uvStrategy": "generated procedural coordinates",
             "normalStrategy": "smooth vertex normals",
             "decimate": {
-                "targetRatio": 0.06
+                "targetRatio": 0.12
             }
         },
         "parent": "sleeve-tab-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.03,
-            "height": 0.018,
-            "depth": 0.03,
+            "width": 0.036,
+            "height": 0.022,
+            "depth": 0.036,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.025,
-                0.014,
+                0.04,
+                0.012,
                 0.0
             ],
             "rotation": [
@@ -45436,9 +45499,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 -0.0
             ],
             "scale": [
-                0.03,
-                0.018,
-                0.03
+                0.036,
+                0.022,
+                0.036
             ]
         },
         "actionProfile": {

@@ -28,8 +28,10 @@ MAT = {  # id: (lit rgb, shadow rgb, name, roughness, materialClass)
     'sheath-leather': ((128, 88, 22), (94, 63, 16), 'Sheath leather', 0.75, 'fabric'),
     'pendant': ((28, 22, 20), (22, 16, 14), 'Claw pendant', 0.35, 'ceramic'),
     'cuff': ((127, 160, 109), (96, 124, 82), 'Rolled shirt cuff', 0.9, 'fabric'),
+    # (the rolled band a step darker than the sleeve: the reference draws its fold with ink lines, our pieces get none)
+    'cuff-fold': ((112, 144, 96), (90, 118, 78), 'Rolled cuff band', 0.9, 'fabric'),
 }
-TEX = {m: json.load(open(f'material-evidence/{m}.texture.json')) for m in MAT}
+TEX = {m: json.load(open(f'material-evidence/{"cuff" if m == "cuff-fold" else m}.texture.json')) for m in MAT}
 
 
 def hexof(c):
@@ -581,16 +583,23 @@ node('sheath-stud', 'Sheath strap stud', 'sphere', 'sheath-strap', 'brass', leve
 
 # ---- rolled sleeve cuffs at the short-sleeve hems (arm along X; centre y 1.17, z -.015; sleeve radius ~.17)
 for side, sx in (('l', 1), ('r', -1)):
-    x = sx * 0.63
-    node(f'sleeve-cuff-{side}', f'Rolled sleeve cuff ({side})', 'torus', 'vest-shell', 'cuff', importance=0.75,
-         pos=(x, 1.17, -0.015), rot=(0, sx * 1.5708, 0), scale=(0.37, 0.37, 0.5), desc={'torusTubeRatio': 0.2},
-         rationale='A rolled band around the sleeve end: a torus ring.',
+    # the sleeve (measured): radius .175 round y 1.168, z -.035, ending at |x| .66. The roll: a flat band 0.11 wide on
+    # its end, half sunk into it; the strap up the outer side (on top in the T-pose) from under the band, buttoned
+    # (ring radius .19, .03 thick each way - its inside .16, under the sleeve's .175, its outside over the sleeve's own
+    #  flared hem lip, which would show past a thinner band)
+    x = sx * 0.615
+    ring = 0.19 / 0.45
+    tube = 0.03 / ring
+    node(f'sleeve-cuff-{side}', f'Rolled sleeve cuff ({side})', 'torus', 'vest-shell', 'cuff-fold', importance=0.75,
+         pos=(x, 1.168, -0.035), rot=(0, sx * 1.5708, 0), scale=(round(ring, 4), round(ring, 4), round(0.06 / tube, 4)),
+         desc={'torusTubeRatio': round(tube / 0.45, 4)},
+         rationale='A rolled band round the sleeve end: a flattened torus ring, wider along the arm than it is thick.',
          feats=[feat(f'cuff-roll-{side}', 'ridge', 'rolled band')])
-    node(f'sleeve-tab-{side}', f'Sleeve strap tab ({side})', 'box', f'sleeve-cuff-{side}', 'cuff', importance=0.5,
-         pos=(x - sx * 0.065, 1.17 + 0.158, -0.01), scale=(0.1, 0.018, 0.055),
-         rationale='The roll-up strap: a thin tab on the outer side.', feats=[feat(f'cuff-tab-{side}', 'seam', 'tab')])
+    node(f'sleeve-tab-{side}', f'Sleeve strap tab ({side})', 'box', f'sleeve-cuff-{side}', 'cuff-fold', importance=0.5,
+         pos=(sx * 0.545, 1.168 + 0.175 + 0.008, -0.035), scale=(0.12, 0.02, 0.058),
+         rationale='The roll-up strap: a thin tab up the outer side of the sleeve.', feats=[feat(f'cuff-tab-{side}', 'seam', 'tab')])
     node(f'sleeve-button-{side}', f'Sleeve tab button ({side})', 'sphere', f'sleeve-tab-{side}', 'brass',
-         level='micro', importance=0.4, pos=(x - sx * 0.09, 1.17 + 0.172, -0.01), scale=(0.03, 0.018, 0.03),
+         level='micro', importance=0.4, pos=(sx * 0.505, 1.168 + 0.175 + 0.02, -0.035), scale=(0.036, 0.022, 0.036),
          rationale='A brass button: a squashed sphere.', feats=[feat(f'cuff-button-{side}', 'fastener', 'button')])
 
 def rot_m(e):
@@ -614,7 +623,7 @@ def m_euler(m):
 # (8,680 triangles): the implicit shells and the many small spheres / tori are decimated (quadric collapse)
 DECIMATE = {'vest-shell': 0.12, 'boot-shell-l': 0.1, 'boot-shell-r': 0.1, 'hat-crown': 0.15, 'sheath-body': 0.25}
 for c in C:
-    r = DECIMATE.get(c['id']) or {'sphere': 0.06, 'torus': 0.3}.get(c['primitive'] if c['topologyClass'] != 'implicit'
+    r = DECIMATE.get(c['id']) or {'sphere': 0.12, 'torus': 0.6}.get(c['primitive'] if c['topologyClass'] != 'implicit'
                                                                      else '')
     if r:
         c['geometryDescriptor']['decimate'] = {'targetRatio': r}
