@@ -120,16 +120,66 @@ function FGUYPicture(mc, linkage, x, y, w, h, r, fy, zoom) {
 
 // A skin's own picture (a Skin Studio pack's icon: src/loader/icons.cpp makes the movie the url loads) covering a box
 // like FGUYPicture - scaled once it has loaded.
-function FGUYIconPicture(mc, url, x, y, w, h, r) {
-    FGUYTextN = FGUYTextN + 1;
-    var holder = mc.createEmptyMovieClip('p' + FGUYTextN, mc.getNextHighestDepth());
+// (label: a name along its bottom, over the picture - in the same layer)
+function FGUYIconPicture(mc, url, x, y, w, h, r, label, labelColor) {
+    var e = FGUYIconEntry(url + '@' + x + ',' + y + ',' + w + ',' + h + (label != undefined ? '|' + label + '|' + labelColor : ''));
+    if (!e.fresh) return e.mc;
+    var holder = e.mc.createEmptyMovieClip('p', 1);
     holder.createEmptyMovieClip('pic', 1).loadMovie(url);
     holder.box = [x, y, w, h];
     holder.onEnterFrame = FGUYIconLoaded;
-    var mask = mc.createEmptyMovieClip('m' + FGUYTextN, mc.getNextHighestDepth());
+    var mask = e.mc.createEmptyMovieClip('m', 2);
     FGUYRect(mask, x, y, w, h, r, 0xFFFFFF, 100, 0, 0, 0);
     holder.setMask(mask);
-    return holder;
+    if (label != undefined) {
+        var band = e.mc.createEmptyMovieClip('b', 3);
+        FGUYRect(band, x, y + h - 24, w, 24, 0, FGUYC.ink, 75, 0, 0, 0);
+        FGUYText(band, x, y + h - 22, w, 22, label, false, 13, labelColor, 'center');
+    }
+    return e.mc;
+}
+
+// Our own pictures (skins' icons: movies loaded from the mod) can't be part of FGUYDraw's screen, which is rebuilt
+// at every change - each would load again, and blink (the loading screen redraws all the time). They sit in a layer
+// of their own over it, each kept as long as the draws still ask for it at the same place.
+function FGUYIconBegin(ui) {
+    var layer = _root.FGUYIconLayer;
+    if (layer == undefined) layer = _root.createEmptyMovieClip('FGUYIconLayer', 20001);
+    layer._x = ui._x;
+    layer._y = ui._y;
+    layer._xscale = ui._xscale;
+    layer._yscale = ui._yscale;
+    if (FGUYIconKeys == undefined) { FGUYIconKeys = []; FGUYIconClips = []; FGUYIconN = 0; }
+    FGUYIconUsed = [];
+}
+
+function FGUYIconEntry(key) {   // ({mc, fresh}: fresh - new, to fill)
+    for (var i = 0; i < FGUYIconKeys.length; i++)
+        if (FGUYIconKeys[i] == key) { FGUYIconUsed.push(key); return {mc: FGUYIconClips[i], fresh: false}; }
+    FGUYIconN = FGUYIconN + 1;
+    var layer = _root.FGUYIconLayer;
+    var mc = layer.createEmptyMovieClip('e' + FGUYIconN, layer.getNextHighestDepth());
+    FGUYIconKeys.push(key);
+    FGUYIconClips.push(mc);
+    FGUYIconUsed.push(key);
+    return {mc: mc, fresh: true};
+}
+
+function FGUYIconEnd() {   // (the ones this draw didn't ask for: gone)
+    var keys = [], clips = [];
+    for (var i = 0; i < FGUYIconKeys.length; i++) {
+        var used = false;
+        for (var j = 0; j < FGUYIconUsed.length && !used; j++) if (FGUYIconUsed[j] == FGUYIconKeys[i]) used = true;
+        if (used) { keys.push(FGUYIconKeys[i]); clips.push(FGUYIconClips[i]); }
+        else FGUYIconClips[i].removeMovieClip();
+    }
+    FGUYIconKeys = keys;
+    FGUYIconClips = clips;
+}
+
+function FGUYIconClear() {   // (the online screens closed)
+    _root.FGUYIconLayer.removeMovieClip();
+    FGUYIconKeys = undefined;
 }
 
 function FGUYIconLoaded() {
@@ -284,16 +334,17 @@ function FGUYPlayerPortrait(mc, m, cx, cy, r) {
     if (m.head == undefined || m.head == '') { FGUYPortrait(mc, FGUYCostumePic(m.character, m.costume), cx, cy, r); return; }
     var h = String(m.head).split('~');
     FGUYCircle(mc, cx, cy, r, 0x2A6AA6, 100, FGUYC.glow, 0);
-    FGUYTextN = FGUYTextN + 1;
-    var holder = mc.createEmptyMovieClip('p' + FGUYTextN, mc.getNextHighestDepth());
+    var e = FGUYIconEntry(m.head + '@' + cx + ',' + cy + ',' + r);   // (kept across redraws - see FGUYIconBegin)
+    if (!e.fresh) return;
+    var holder = e.mc.createEmptyMovieClip('p', 1);
     holder.createEmptyMovieClip('pic', 1).loadMovie(h[0]);
     holder.face = h.length >= 4 ? [Number(h[1]), Number(h[2]), Number(h[3])] : [0, 1, 1];
     holder.at = [cx, cy, r];
     holder.onEnterFrame = FGUYHeadLoaded;
-    var mask = mc.createEmptyMovieClip('m' + FGUYTextN, mc.getNextHighestDepth());
+    var mask = e.mc.createEmptyMovieClip('m', 2);
     FGUYCircle(mask, cx, cy, r, 0xFFFFFF, 100, 0, 0);
     holder.setMask(mask);
-    var ring = mc.createEmptyMovieClip('r' + FGUYTextN, mc.getNextHighestDepth());
+    var ring = e.mc.createEmptyMovieClip('r', 3);
     FGUYCircle(ring, cx, cy, r, 0, 0, FGUYC.glow, 2);
 }
 
@@ -815,6 +866,7 @@ function OnOnlineExit() {
         clearInterval(FGUYModsTimer);
         FGUYModsPage = false;
         _root.FGUYLobbyUI.removeMovieClip();
+        FGUYIconClear();
         _root.subMenu._visible = true;
         FGUYOnline = false;
         return;
@@ -823,6 +875,7 @@ function OnOnlineExit() {
     FGUY3DStop();
     flash.external.ExternalInterface.call('FGUYMOD_OnlineExit');
     _root.FGUYLobbyUI.removeMovieClip();
+    FGUYIconClear();
     _root.subMenu._visible = true;
     FGUYOnline = false;
 }
@@ -1003,6 +1056,7 @@ function FGUYDraw() {
     ui._x = left;
     ui._xscale = width / 1600 * 100;
     ui._yscale = 720 / 900 * 100;
+    FGUYIconBegin(ui);
     FGUYTextN = 0;
     FGUYHits = [];
     // the background, with a window left open for the 3D character on the lobby and character screens
@@ -1023,6 +1077,7 @@ function FGUYDraw() {
     else if (FGUYScreen == 'char') FGUYDrawChar(ui);
     else if (FGUYScreen == 'loading') FGUYDrawLoading(ui);
     else FGUYDrawSettings(ui);
+    FGUYIconEnd();
     FGUYMakeHits(ui);
 }
 
@@ -1240,7 +1295,7 @@ function FGUYDrawLobby(ui) {
             else if (it == 'map') { label = mode.code == 'ST' ? 'LEVEL' : 'MAP'; value = FGUYMapName(FGUYS.map, FGUYS.mode); }
             else if (it == 'settings') { label = 'MATCH SETTINGS'; value = FGUYRulesLine(true); }
             else if (it == 'char') { label = 'CHARACTER'; value = FGUYCharName(FGUYPickChar); }
-            else if (it == 'skin') { label = 'SKIN'; value = FGUYCostumeName(FGUYPickChar, FGUYPickCostume); }
+            else if (it == 'skin') { label = 'SKIN'; value = FGUYSkinLabel(FGUYPickChar, FGUYPickCostume); }
             else if (it == 'team') { label = 'TEAM'; value = mode.teams ? (FGUYPickTeam == 1 ? 'Evil' : 'Good') : 'Everyone together'; }
             else if (it == 'controls') { label = 'CONTROLS'; value = FGUYInputName(FGUYPickInput); }
             else if (it == 'chat') { label = 'CHAT'; value = FGUYQuickChat()[FGUYChatQuick]; }
@@ -1269,8 +1324,8 @@ function FGUYDrawLobby(ui) {
     FGUYText(ui, cx + 16, 326, 170, 26, "YOU'RE PLAYING", false, 15, FGUYC.muted2, 'center');
     FGUYRect(ui, cx + 3, 744, cw - 6, 67, 4, FGUYC.ink, 78, 0, 0, 0);
     FGUYTitle(ui, cx + 22, 748, 280, 56, FGUYCharName(FGUYPickChar), 40, FGUYC.yellow, 'left');
-    FGUYText(ui, cx + 290, 750, cw - 312, 28, 'Skin: ' + FGUYCostumeName(FGUYPickChar, FGUYPickCostume) +
-             (mySkin != 'None' ? ' + ' + mySkin : ''), false, 18, FGUYC.soft, 'right');
+    FGUYText(ui, cx + 290, 750, cw - 312, 28, 'Skin: ' + (mySkin != 'None' ? mySkin : FGUYCostumeName(FGUYPickChar, FGUYPickCostume)),
+             false, 18, FGUYC.soft, 'right');
     FGUYText(ui, cx + 290, 778, cw - 312, 28, (mode.teams ? 'Team ' + (FGUYPickTeam == 1 ? 'Evil' : 'Good') + ' - ' : '') + 'Y to change', false, 17, FGUYC.muted, 'right');
 
     // right: players
@@ -1489,19 +1544,11 @@ function FGUYDrawChar(ui) {
     FGUYTitle(ui, px + 26, 588, pw - 52, 56, FGUYCharName(c2), 42, FGUYC.yellow, 'left');
     var skinName = costumes.length > 0 ? FGUYCostumeName(c2, costumes[FGUYCostumeSel].CostumeIndex) : 'Classic';
     var customName = FGUYCustomSkinName(cs);
-    FGUYText(ui, px + 26, 646, pw - 52, 30, 'Skin: ' + skinName + (customName != 'None' ? ' + ' + customName : '') + '   (' +
-             (FGUYCostumeSel + 1) + ' / ' + Math.max(1, costumes.length) + ')', false, 20, FGUYC.white, 'left');
-    // the tiles: the outfits, the one picked followed by its custom skins (their own pictures)
-    var row = [], at = 0;
-    for (var k = 0; k < costumes.length; k++) {
-        if (k == FGUYCostumeSel) at = row.length;
-        row.push({kind: 'skin', i: k});
-        if (k == FGUYCostumeSel)
-            for (var j = 0; j < cs.list.length; j++) {
-                if (cs.list[j].file == cs.pick) at = row.length;
-                row.push({kind: 'customTile', i: j});
-            }
-    }
+    // the tiles: the outfits, the one picked followed by its custom skins (their own pictures) - each a skin of its own
+    var row = FGUYSkinRow(costumes.length, FGUYCostumeSel, cs), at = row.at;
+    row = row.tiles;
+    FGUYText(ui, px + 26, 646, pw - 52, 30, 'Skin: ' + (customName != 'None' ? customName : skinName) + '   (' + (at + 1) + ' / ' +
+             Math.max(1, row.length) + ')', false, 20, FGUYC.white, 'left');
     var first = Math.max(0, Math.min(at - 2, row.length - 5));
     for (var t = first; t < row.length && t < first + 5; t++) {
         var tile = row[t], tx = px + 26 + (t - first) * 92, custom = tile.kind == 'customTile';
@@ -1514,13 +1561,14 @@ function FGUYDrawChar(ui) {
         FGUYHit(tx, 690, 82, 112, tile.kind, tile.i);
         if (!custom) FGUYPicture(ui, FGUYEntryPic(c2, costumes[tile.i]), tx + 3, 693, 76, 106, 9, 0.05);
         else {
-            if (mine.icon != '') {   // (on the game's tiles' blue)
+            if (mine.icon != '') {   // (on the game's tiles' blue - its name along the bottom, over the picture)
                 FGUYRect(ui, tx + 3, 693, 76, 106, 9, 0x2a80c8, 100, 0, 0, 0);
-                FGUYIconPicture(ui, mine.icon, tx + 3, 693, 76, 106, 9);
+                FGUYIconPicture(ui, mine.icon, tx + 3, 693, 76, 106, 9, mine.name, on ? FGUYC.yellow : FGUYC.white);
+            } else {
+                FGUYPicture(ui, FGUYEntryPic(c2, costumes[FGUYCostumeSel]), tx + 3, 693, 76, 106, 9, 0.05);
+                FGUYRect(ui, tx + 3, 775, 76, 24, 0, FGUYC.ink, 75, 0, 0, 0);
+                FGUYText(ui, tx + 3, 777, 76, 22, mine.name, false, 13, on ? FGUYC.yellow : FGUYC.white, 'center');
             }
-            else FGUYPicture(ui, FGUYEntryPic(c2, costumes[FGUYCostumeSel]), tx + 3, 693, 76, 106, 9, 0.05);
-            FGUYRect(ui, tx + 3, 775, 76, 24, 0, FGUYC.ink, 75, 0, 0, 0);   // (its name along the bottom)
-            FGUYText(ui, tx + 3, 777, 76, 22, mine.name, false, 13, on ? FGUYC.yellow : FGUYC.white, 'center');
         }
     }
     FGUYFooter(ui, ['A', 'Confirm', 'B', 'Back', 'LB', 'Skin', 'RB', 'Skin', 'Y', 'Custom skin'],
@@ -1942,11 +1990,46 @@ function FGUYCycleMap(dir) {
               (maps.length == 1 ? ' (the only one unlocked)' : ''));
 }
 
-function FGUYCycleSkin(dir) {
+function FGUYCycleSkin(dir) {   // (the lobby's SKIN row: the outfits, and the custom skins of the one picked)
     var list = FGUYCostumeList(FGUYPickChar), at = 0;
     if (list.length == 0) return;
     for (var i = 0; i < list.length; i++) if (String(list[i].CostumeIndex) == String(FGUYPickCostume)) at = i;
-    FGUYPickCostume = list[(at + dir + list.length) % list.length].CostumeIndex;
+    FGUYPickCostume = list[FGUYSkinStep(list.length, at, dir)].CostumeIndex;
+}
+
+// The skins one after another: each outfit, the one shown followed by its custom skins (FGUYMOD_SkinOptions are for
+// the outfit the preview shows). {tiles: [{kind: 'skin' | 'customTile', i}], at: the one worn}
+function FGUYSkinRow(count, sel, cs) {
+    var tiles = [], at = 0;
+    for (var k = 0; k < count; k++) {
+        if (k == sel) at = tiles.length;
+        tiles.push({kind: 'skin', i: k});
+        if (k == sel)
+            for (var j = 0; j < cs.list.length; j++) {
+                if (cs.list[j].file == cs.pick) at = tiles.length;
+                tiles.push({kind: 'customTile', i: j});
+            }
+    }
+    return {tiles: tiles, at: at};
+}
+
+// One step through them from the one worn (an outfit's index of `count`, `sel` the one shown): a custom skin is
+// worn there and then (FGUYMOD_SkinPick); back on its outfit, none. Returns the outfit to show.
+function FGUYSkinStep(count, sel, dir) {
+    var cs = FGUYCustomSkins(), r = FGUYSkinRow(count, sel, cs), n = r.tiles.length;
+    var to = r.tiles[((r.at + dir) % n + n) % n];
+    if (to.kind == 'customTile') {
+        flash.external.ExternalInterface.call('FGUYMOD_SkinPick', cs.list[to.i].file);
+        return sel;
+    }
+    if (to.i == sel && cs.pick != '') flash.external.ExternalInterface.call('FGUYMOD_SkinPick', '');
+    return to.i;
+}
+
+// A skin's name for the lobby: the custom skin worn with that outfit, else the outfit's
+function FGUYSkinLabel(c, costume) {
+    var cs = FGUYCustomSkins();
+    return cs.pick != '' ? FGUYCustomSkinName(cs) : FGUYCostumeName(c, costume);
 }
 
 function FGUYCycleChar(dir) {
@@ -1982,9 +2065,9 @@ function FGUYInputChar(key) {
     if (key == 37) { FGUYCharSel = (FGUYCharSel + n - 1) % n; FGUYCostumeSel = 0; FGUYSound('nav'); }
     else if (key == 39) { FGUYCharSel = (FGUYCharSel + 1) % n; FGUYCostumeSel = 0; FGUYSound('nav'); }
     else if (key == 38 || key == 40) { FGUYCharSel = (FGUYCharSel + 5) % 10; if (FGUYCharSel >= n) FGUYCharSel = n - 1; FGUYCostumeSel = 0; FGUYSound('nav'); }
-    else if (key == 76 || key == 82) {
+    else if (key == 76 || key == 82) {   // (the next tile: an outfit, or a custom skin of the one picked)
         var list = FGUYCostumeList(FGUYChars[FGUYCharSel]);
-        if (list.length > 0) FGUYCostumeSel = (FGUYCostumeSel + (key == 82 ? 1 : list.length - 1)) % list.length;
+        if (list.length > 0) FGUYCostumeSel = FGUYSkinStep(list.length, FGUYCostumeSel, key == 82 ? 1 : -1);
         FGUYSound('change');
     } else if (key == 88 && mode.teams) { FGUYPickTeam = 1 - FGUYPickTeam; FGUYSound('change'); }
     else if (key == 89) FGUYCycleCustomSkin(1);
