@@ -190,6 +190,11 @@ CreateTexture_t Real_CreateTexture;
 HRESULT STDMETHODCALLTYPE Hook_CreateTexture(IDirect3DDevice9* self, UINT w, UINT h, UINT levels, DWORD usage,
                                              D3DFORMAT format, D3DPOOL pool, IDirect3DTexture9** out, HANDLE* share) {
     HRESULT hr = Real_CreateTexture(self, w, h, levels, usage, format, pool, out, share);
+    static int rtLog = -1;   // (test knob FGUYMOD_TEST_RTLOG=1: the game's render targets, into the log)
+    if (rtLog < 0) { wchar_t v[4]; rtLog = GetEnvironmentVariableW(L"FGUYMOD_TEST_RTLOG", v, 4) ? 1 : 0; }
+    if (rtLog && (usage & (D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL)))
+        Log(L"D3D: render target texture %ux%u usage %#lx format %u (called from %p)", w, h, usage, (unsigned)format,
+            _ReturnAddress());
     if (FAILED(hr)) {
         static volatile LONG count = 0;
         if (InterlockedIncrement(&count) <= 10)
@@ -198,6 +203,43 @@ HRESULT STDMETHODCALLTYPE Hook_CreateTexture(IDirect3DDevice9* self, UINT w, UIN
                 *reinterpret_cast<int*>(0xaf2fbc), *reinterpret_cast<int*>(0xaf2fb8));
     }
     return hr;
+}
+
+// (research, FGUYMOD_TEST_RTLOG: the game's surfaces and copies between them)
+using CreateRenderTarget_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, UINT, UINT, D3DFORMAT, D3DMULTISAMPLE_TYPE, DWORD,
+                                                         BOOL, IDirect3DSurface9**, HANDLE*);
+using CreateDepthStencil_t = CreateRenderTarget_t;
+using StretchRect_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, IDirect3DSurface9*, const RECT*, IDirect3DSurface9*,
+                                                  const RECT*, D3DTEXTUREFILTERTYPE);
+CreateRenderTarget_t Real_CreateRenderTarget;
+CreateDepthStencil_t Real_CreateDepthStencil;
+StretchRect_t Real_StretchRect;
+HRESULT STDMETHODCALLTYPE Hook_CreateRenderTarget(IDirect3DDevice9* self, UINT w, UINT h, D3DFORMAT f, D3DMULTISAMPLE_TYPE ms,
+                                                  DWORD q, BOOL lockable, IDirect3DSurface9** out, HANDLE* share) {
+    HRESULT hr = Real_CreateRenderTarget(self, w, h, f, ms, q, lockable, out, share);
+    Log(L"D3D: render target %ux%u format %u multisample %d/%lu -> %#lx (called from %p)", w, h, (unsigned)f, ms, q, hr,
+        _ReturnAddress());
+    return hr;
+}
+HRESULT STDMETHODCALLTYPE Hook_CreateDepthStencil(IDirect3DDevice9* self, UINT w, UINT h, D3DFORMAT f, D3DMULTISAMPLE_TYPE ms,
+                                                  DWORD q, BOOL discard, IDirect3DSurface9** out, HANDLE* share) {
+    HRESULT hr = Real_CreateDepthStencil(self, w, h, f, ms, q, discard, out, share);
+    Log(L"D3D: depth stencil %ux%u format %u multisample %d/%lu -> %#lx (called from %p)", w, h, (unsigned)f, ms, q, hr,
+        _ReturnAddress());
+    return hr;
+}
+HRESULT STDMETHODCALLTYPE Hook_StretchRect(IDirect3DDevice9* self, IDirect3DSurface9* s, const RECT* sr, IDirect3DSurface9* d,
+                                           const RECT* dr, D3DTEXTUREFILTERTYPE filter) {
+    static int n = 0;
+    if (n < 60) {
+        ++n;
+        D3DSURFACE_DESC a = {}, b = {};
+        if (s) s->GetDesc(&a);
+        if (d) d->GetDesc(&b);
+        Log(L"D3D: StretchRect %ux%u (ms %d) -> %ux%u (ms %d) filter %d (called from %p)", a.Width, a.Height, a.MultiSampleType,
+            b.Width, b.Height, b.MultiSampleType, filter, _ReturnAddress());
+    }
+    return Real_StretchRect(self, s, sr, d, dr, filter);
 }
 
 // Why exclusive fullscreen might be refused: what was asked, and the modes the device's adapter has at that size.
@@ -228,6 +270,7 @@ void LogFullscreenTrouble(IDirect3DDevice9* dev, const D3DPRESENT_PARAMETERS& pp
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* self, D3DPRESENT_PARAMETERS* pp) {
     D3DPRESENT_PARAMETERS original = *pp, mine = *pp;
     FixPresentParameters(&mine);
+    GraphicsBeforeReset();
     HRESULT hr = Real_Reset(self, &mine);
     Log(L"D3D: Reset %ux%u %s interval %#x refresh %u -> %#lx", mine.BackBufferWidth, mine.BackBufferHeight,
         mine.Windowed ? L"windowed" : L"fullscreen", mine.PresentationInterval, mine.FullScreen_RefreshRateInHz, hr);
@@ -254,6 +297,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* self, D3DPRESENT_PARAMETE
             g_fullscreen = false;
         }
     }
+    if (SUCCEEDED(hr)) GraphicsAfterReset(self, pp->BackBufferWidth, pp->BackBufferHeight);
     DisplayAfterReset();
     return hr;
 }
@@ -381,6 +425,7 @@ void SaveShot(IDirect3DDevice9* dev, const wchar_t* path) {
 
 HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, const RECT* dst, HWND wnd,
                                        const RGNDATA* dirty) {
+    GraphicsPresent(self);   // (graphics.cpp: anti-aliasing, sharpening, brightness)
     if (g_shotInit && g_shotPath[0]) {
         wchar_t path[1024];
         EnterCriticalSection(&g_shotLock);
@@ -496,9 +541,18 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DD
     }
     if (SUCCEEDED(hr) && out && *out) {
         g_adapter = adapter;
+        Log(L"D3D:   back buffer %ux%u format %d, multisample %d/%lu, %u back buffers", pp->BackBufferWidth,
+            pp->BackBufferHeight, pp->BackBufferFormat, pp->MultiSampleType, pp->MultiSampleQuality, pp->BackBufferCount);
         if (void* o = PatchVtable(*out, 16, (void*)Hook_Reset)) Real_Reset = (Reset_t)o;
         if (void* o = PatchVtable(*out, 17, (void*)Hook_Present)) Real_Present = (Present_t)o;
         if (void* o = PatchVtable(*out, 23, (void*)Hook_CreateTexture)) Real_CreateTexture = (CreateTexture_t)o;
+        GraphicsDeviceCreated(*out, pp->BackBufferWidth, pp->BackBufferHeight);   // (graphics.cpp - before the skins' hooks)
+        wchar_t v[4];
+        if (GetEnvironmentVariableW(L"FGUYMOD_TEST_RTLOG", v, 4)) {
+            if (void* o = PatchVtable(*out, 28, (void*)Hook_CreateRenderTarget)) Real_CreateRenderTarget = (CreateRenderTarget_t)o;
+            if (void* o = PatchVtable(*out, 29, (void*)Hook_CreateDepthStencil)) Real_CreateDepthStencil = (CreateDepthStencil_t)o;
+            if (void* o = PatchVtable(*out, 34, (void*)Hook_StretchRect)) Real_StretchRect = (StretchRect_t)o;
+        }
         CosmeticsDeviceCreated(*out);   // (skins: which player a draw is of - cosmetics.cpp)
     }
     return hr;

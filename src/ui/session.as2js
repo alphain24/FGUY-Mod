@@ -10,7 +10,11 @@
 // Config from the loader (FGUYMOD_SessionConfig): "mode,map,time,score,ff|char:costume:team;..." by slot.
 
 function FGUYEventName(name, event) {
+    FGUYGfxReturning(name, event);   // (back to the SETTINGS page from the game's page it opened)
     if (FGUYOnline && name == 'OptionsScreen') return 'Online';
+    // Main Menu > OPTIONS: the mod's SETTINGS page (menu style New - settingsmenu.as2js); Classic: the game's own
+    if (name == 'Options' && event == 'Select' && flash.external.ExternalInterface.call('FGUYMOD_GfxMenuNew') == true)
+        return 'FguySettings';
     if (!FGUYSessChecked) FGUYSessionInit();
     // after the match (its results, or a quit) the front end comes back: back to the lobby
     if (FGUYSessOn && event == 'Enter' && FGUYSessStage == 'started' && !FGUYSessReturning) FGUYSessionCheckReturn();

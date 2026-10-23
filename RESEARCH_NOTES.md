@@ -723,3 +723,17 @@ ematch_<lobby pid>.txt`), whose lobby then
   bones move are left out of its pictures.
 - First outfit made with img2threejs: content/peter-adventurer (its README) - fitted on Peter's measured bind mesh,
   16,720 triangles (Peter: 8,680). Tested in solo Multiverse Madness at 1920x1080 (tools/test_solo_mp.ps1 -God).
+
+## Graphics: the blur, filtering, post passes (2026-10-23)
+- The PC game has **no anti-aliasing**: every render target, depth buffer and the back buffer are made without
+  multisampling, whatever the embedded ini's `MSAAType` (4) says - shots with 4 and 0 are the same.
+- Its render targets at 1920x1080 (FGUYMOD_TEST_RTLOG): screen-sized A8R8G8B8 (several) and R32F (depth for its
+  effects), 960x540 / 482x272 / 240x135 (glow and blur chains), 512x512 and 256x256 (shadows), and a 1920x1080
+  StretchRect copy (no filter) every frame.
+- **The blur**: its full-screen passes read the screen-sized targets with bilinear filtering half a texel off, so each
+  pass smears the picture. Reading every screen-sized render target with point filtering (graphics.cpp, found by the
+  texture's GetLevelDesc: RENDERTARGET usage, back-buffer size) gives the same picture without the smear (the glow
+  and lighting stay). The community's fix (dgVoodoo2 set to point sampling) works for the same reason.
+- `G.CameraFOV` in the ini changes nothing on PC (80 and 105 look the same): the levels' cameras set their own.
+- Our own passes at Present (FXAA, sharpening, brightness) compile with d3dcompiler_47.dll's D3DCompile (ps_3_0) and
+  run on DXVK and plain Direct3D 9 alike; a full-screen quad with XYZRHW at -0.5 lines up texel for pixel (checked).

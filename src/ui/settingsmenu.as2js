@@ -1,0 +1,128 @@
+// The mod's SETTINGS page in the main menu (compiled into the front-end movie: tools/ui/make_menu_patch.py): DISPLAY,
+// GRAPHICS and INTERFACE, its rows from src/loader/graphics.cpp (FGUYMOD_GfxRows / FGUYMOD_GfxChange). Main Menu >
+// OPTIONS opens it (menu style New - FGUYEventName, session.as2js), or Options > GRAPHICS (Classic: the game's own
+// Options, with this row first). Like MODS, it borrows the Options > Screen page's frame (OnOnlineSelect) and is drawn
+// by lobby.as2js's FGUYDraw.
+
+function OnFguySettingsSelect() {
+    FGUYGfxPage = true;
+    OnOnlineSelect();
+}
+
+// the game's Options page (OnOptionsEnter): GRAPHICS first - in the main menu only
+function FGUYOptionsRows(list) {
+    if (GetSceneID() != 'MNUS') return;
+    var o = new Object();
+    o.name = 'FguySettings';
+    o.text = 'GRAPHICS';
+    list.push(o);
+}
+
+function FGUYGfxEnter() {
+    _root.subMenu._visible = false;
+    Selection.setFocus(null);   // (a menu button left with focus would swallow A / Enter)
+    FGUYColors();
+    FGUYScreen = 'gfx';
+    FGUYGfxTab = FGUYGfxBack ? FGUYGfxTabBack : 1;   // (back from a link row's page: where it was)
+    FGUYGfxSel = FGUYGfxBack ? FGUYGfxSelBack : 0;
+    FGUYGfxBack = false;
+    FGUYGfxRead();
+    FGUYDraw();
+}
+
+function FGUYGfxRead() {
+    FGUYGfxRows = [];
+    var lines = String(flash.external.ExternalInterface.call('FGUYMOD_GfxRows', FGUYGfxTab)).split('\n');
+    for (var i = 0; i < lines.length; i++) {
+        if (lines[i] == '') continue;
+        var f = lines[i].split('~');
+        FGUYGfxRows.push({label: f[0], value: f[1], kind: f[2], hint: f[3]});
+    }
+    if (FGUYGfxSel >= FGUYGfxRows.length) FGUYGfxSel = FGUYGfxRows.length - 1;
+    if (FGUYGfxSel < 0) FGUYGfxSel = 0;
+}
+
+function FGUYDrawGfx(ui) {
+    FGUYTitle(ui, 48, 26, 600, 80, 'SETTINGS', 60, FGUYC.title, 'left');
+    FGUYText(ui, 640, 50, 912, 30, 'Changes show at once and are kept', false, 20, FGUYC.muted2, 'right');
+    var tabs = ['DISPLAY', 'GRAPHICS', 'INTERFACE'];
+    for (var t = 0; t < tabs.length; t++) {
+        var tx = 48 + t * 252, on = t == FGUYGfxTab;
+        FGUYRect(ui, tx, 116, 236, 54, 16, on ? FGUYC.yellow : FGUYC.row, 100, on ? FGUYC.yellow : FGUYC.rowLine, 100, 2);
+        FGUYText(ui, tx, 128, 236, 32, tabs[t], false, 21, on ? FGUYC.ink : FGUYC.white, 'center');
+        FGUYHit(tx, 116, 236, 54, 'gfxTab', t);
+    }
+    FGUYPanel(ui, 48, 190, 1504, 630, 28, FGUYC.panel, FGUYC.glow);
+    for (var i = 0; i < FGUYGfxRows.length; i++) {
+        var r = FGUYGfxRows[i], y = 218 + i * 100, hot = i == FGUYGfxSel;
+        FGUYRect(ui, 76, y, 1448, 86, 16, hot ? FGUYC.rowHot : FGUYC.row, 100, hot ? FGUYC.yellow : FGUYC.rowLine, 100, hot ? 3 : 2);
+        FGUYHit(76, y, 1448, 86, 'gfxRow', i);
+        FGUYText(ui, 104, y + 10, 760, 34, r.label, false, 25, FGUYC.white, 'left');
+        FGUYText(ui, 104, y + 48, 840, 28, r.hint, false, 16, FGUYC.muted2, 'left');
+        var vx = 940, vw = 560, vy = y + 19;
+        FGUYRect(ui, vx, vy, vw, 48, 14, FGUYC.ink, 100, hot ? FGUYC.yellow : FGUYC.glow, 100, 2);
+        if (r.kind == 's') {   // a slider: the bar, its value
+            var v = Number(r.value), bx = vx + 70, bw = vw - 220;
+            FGUYRect(ui, bx, vy + 19, bw, 10, 5, FGUYC.deep, 100, FGUYC.rowLine, 100, 1);
+            FGUYRect(ui, bx, vy + 19, Math.max(10, bw * v / 100), 10, 5, FGUYC.yellow, 100, FGUYC.yellow, 100, 1);
+            FGUYText(ui, vx + vw - 140, vy + 8, 90, 32, String(v), false, 22, FGUYC.white, 'center');
+        } else {
+            FGUYText(ui, vx + 50, vy + 8, vw - 100, 32, r.value, false, 20, hot ? FGUYC.yellow : FGUYC.white, 'center');
+        }
+        var ax = vx + vw - 34, ay = vy + 24;   // (the arrows drawn: the menu's font has no '<')
+        FGUYPoly(ui, [ax - 7, ay - 11, ax + 7, ay, ax - 7, ay + 11], FGUYC.yellow, 100);
+        if (r.kind != 'l') {
+            FGUYPoly(ui, [vx + 41, ay - 11, vx + 27, ay, vx + 41, ay + 11], FGUYC.yellow, 100);
+            FGUYHit(vx, vy, 64, 48, 'gfxLeft', i);
+            FGUYHit(vx + vw - 64, vy, 64, 48, 'gfxRight', i);
+        }
+    }
+    FGUYFooter(ui, ['ARROWS', 'Change', 'A', 'Next', 'LB', 'Page', 'RB', 'Page', 'B', 'Back'], '', '');
+}
+
+function FGUYInputGfx(key) {
+    var n = FGUYGfxRows.length;
+    if (key == 27) { FGUYSound('back'); PrevPage(); return; }
+    if (key == 76 || key == 82) { FGUYGfxPageTo((FGUYGfxTab + (key == 76 ? 2 : 1)) % 3); return; }
+    if (n == 0) return;
+    if (key == 38) { FGUYGfxSel = (FGUYGfxSel + n - 1) % n; FGUYSound('nav'); }
+    else if (key == 40) { FGUYGfxSel = (FGUYGfxSel + 1) % n; FGUYSound('nav'); }
+    else if (key == 37) FGUYGfxDo(FGUYGfxSel, -1);
+    else if (key == 39) FGUYGfxDo(FGUYGfxSel, 1);
+    else if (key == 13) FGUYGfxDo(FGUYGfxSel, 0);
+}
+
+function FGUYGfxPageTo(t) {
+    if (t == FGUYGfxTab) return;
+    FGUYGfxTab = t;
+    FGUYGfxSel = 0;
+    FGUYGfxRead();
+    FGUYSound('nav');
+}
+
+// A row changed (delta -1 / +1, 0: A). A link row leaves for the game's own page.
+function FGUYGfxDo(i, delta) {
+    var r = FGUYGfxRows[i];
+    if (r == undefined) return;
+    if (r.kind == 's' && delta == 0) delta = 1;
+    var go = Number(flash.external.ExternalInterface.call('FGUYMOD_GfxChange', FGUYGfxTab, i, delta));
+    FGUYSound(r.kind == 'l' ? 'accept' : 'change');
+    if (go == 1 || go == 2) {   // the game's page on top of this one - its Back comes here again (FGUYGfxReturn)
+        FGUYGfxTabBack = FGUYGfxTab;
+        FGUYGfxSelBack = FGUYGfxSel;
+        if (go == 1) { FGUYGfxReturn = 2; OnDisplaySelect(); }   // (the Screen page is this one's frame: its own
+        else { FGUYGfxReturn = 1; OnOptionsSelect(); }           //  Enter first, then ours again)
+        return;
+    }
+    FGUYGfxRead();
+}
+
+// FGUYEventName (session.as2js): the frame's page entered again - after a link row's page, this one again
+function FGUYGfxReturning(name, event) {
+    if (FGUYGfxReturn == undefined || FGUYGfxReturn <= 0 || name != 'OptionsScreen' || event != 'Enter') return;
+    FGUYGfxReturn = FGUYGfxReturn - 1;
+    if (FGUYGfxReturn > 0) return;
+    FGUYGfxPage = true;
+    FGUYOnline = true;
+    FGUYGfxBack = true;
+}

@@ -37,6 +37,7 @@ OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
 LOBBY_SOURCE = os.path.join(HERE, '..', '..', 'src', 'ui', 'lobby.as2js')
 SESSION_SOURCE = os.path.join(HERE, '..', '..', 'src', 'ui', 'session.as2js')
 COSTUMES_SOURCE = os.path.join(HERE, '..', '..', 'src', 'ui', 'costumes.as2js')   # custom skins in the game's skin pickers
+SETTINGS_SOURCE = os.path.join(HERE, '..', '..', 'src', 'ui', 'settingsmenu.as2js')   # the mod's SETTINGS page
 MOVIE_SIZE = 290635  # the front-end menu movie inside FGUY/Global_Scenes/MNUS.ho
 
 # Frame Rate choices, in the order the loader expects (d3d9.cpp kFrameRates).
@@ -164,6 +165,7 @@ def build(data):
     funcs += as2c.compile_source(open(LOBBY_SOURCE, encoding='utf-8').read())  # the ONLINE screens
     funcs += as2c.compile_source(open(SESSION_SOURCE, encoding='utf-8').read())  # online session autopilot
     funcs += as2c.compile_source(open(COSTUMES_SOURCE, encoding='utf-8').read())  # custom skins, offline pickers
+    funcs += as2c.compile_source(open(SETTINGS_SOURCE, encoding='utf-8').read())  # the SETTINGS page
     funcs += as2c.compile_source(AUDIO_SOURCE)  # Options > Audio > MOVIES & TITLE
     p.replace(o, total, funcs)
 
@@ -317,6 +319,17 @@ def build(data):
     # 10. Custom skins in the game's own skin pickers (src/ui/costumes.as2js): Store > Costumes and Multiverse
     #     Madness' join screen.
     costume_edits(p, data, actions)
+
+    # 12. OnOptionsEnter(): GRAPHICS (the mod's SETTINGS page - src/ui/settingsmenu.as2js) first on the game's own
+    #     Options page: FGUYOptionsRows(r4) right after the page makes its row array (r4 = new Array()).
+    o, total = function_at(data, actions, 'OnOptionsEnter')
+    code_start, code_end, size_field = function2_code(data, o)
+    inner = parse_actions(data, code_start, code_end)
+    k = next(i for i, a in enumerate(inner) if a[1] == 0x87 and data[a[0] + 3] == 4)   # StoreRegister r4
+    assert inner[k - 1][1] == 0x40 and inner[k + 1][1] == 0x17, 'OnOptionsEnter not as expected'   # NewObject ... Pop
+    p.replace(inner[k + 1][0] + 1, 0, A.call('FGUYOptionsRows', Reg(4)).assemble())
+    p.fix_top_level_jumps(inner)
+    p.replace(size_field, 2, struct.pack('<H', code_end - code_start + p.delta_between(code_start, code_end)))
 
     # Fix-ups: top-level jumps across edits, DoAction tag length, file length in the GFX header.
     p.fix_top_level_jumps(actions)

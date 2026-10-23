@@ -146,6 +146,15 @@ struct IDirect3DDevice9;
 void CosmeticsFrame(IDirect3DDevice9* dev);   // cosmetics.cpp: skins, on the render thread after each frame
 void CosmeticsTest(bool fill, unsigned lo, unsigned hi, unsigned rgb);   //   test pipe "texinfo" / "texfill"
 void CosmeticsDeviceCreated(IDirect3DDevice9* dev);   //   d3d9.cpp: the game's device
+// graphics.cpp: sharp picture, texture filtering, anti-aliasing, sharpening, brightness (FGUYMod.ini [Graphics])
+void GraphicsLoadSettings();
+void GraphicsDeviceCreated(IDirect3DDevice9* dev, UINT w, UINT h);
+void GraphicsBeforeReset();
+void GraphicsAfterReset(IDirect3DDevice9* dev, UINT w, UINT h);
+void GraphicsPresent(IDirect3DDevice9* dev);   //   every frame, before it's shown
+bool GraphicsMenuNew();                        //   the main menu's SETTINGS page: Options opens it (else the game's)
+const char* GraphicsMenuRows(int page);        //   its rows ("label~value~kind~hint\n...")
+int GraphicsMenuChange(int page, int row, int delta);   //   a row changed: 1 open the game's Screen page, 2 its Options
 struct IDirect3DTexture9;
 struct IDirect3DIndexBuffer9;
 bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, const std::vector<unsigned char>& overlay,

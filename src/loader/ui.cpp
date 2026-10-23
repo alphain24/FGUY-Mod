@@ -350,6 +350,13 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnNumber(movie, VideoFrameRateIndex());
         } else if (strcmp(fn, "SetFrameRate") == 0) {
             VideoSetFrameRate((int)ArgNumber(args, argc, 0));
+        } else if (strcmp(fn, "GfxMenuNew") == 0) {     // (the SETTINGS page - graphics.cpp)
+            ReturnBool(movie, GraphicsMenuNew());
+        } else if (strcmp(fn, "GfxRows") == 0) {
+            ReturnString(movie, GraphicsMenuRows((int)ArgNumber(args, argc, 0)));
+        } else if (strcmp(fn, "GfxChange") == 0) {
+            ReturnNumber(movie, GraphicsMenuChange((int)ArgNumber(args, argc, 0), (int)ArgNumber(args, argc, 1),
+                                                   (int)ArgNumber(args, argc, 2)));
         } else if (strcmp(fn, "Log") == 0) {  // menu script debugging
             Log(L"UI: script: %S", ArgString(args, argc, 0));
         } else if (strcmp(fn, "HudDebug") == 0) {  // research: make_hud_patch.py --debug
