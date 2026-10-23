@@ -126,9 +126,9 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
       ed.src = {parts, name: f.name.replace(/\.(glb|gltf)$/i, '')};
       if (!$('modelName').value) $('modelName').value = ed.src.name;
       // (inside the character's box, about its size or smaller: made on it already - its place kept, and most likely
-      //  pieces worn over it)
+      //  pieces worn over it; above it, room for a tall hat)
       const s = srcBox(), c = charBox(), pad = c.getSize(new THREE.Vector3()).multiplyScalar(0.15);
-      const made = new THREE.Box3(c.min.clone().sub(pad), c.max.clone().add(pad)).containsBox(s);
+      const made = new THREE.Box3(c.min.clone().sub(pad), c.max.clone().add(pad).add(new THREE.Vector3(0, pad.y, 0))).containsBox(s);
       $('fitKeep').checked = made;
       $('modelOver').checked = made;
       refit(true);

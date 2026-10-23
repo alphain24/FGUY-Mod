@@ -347,7 +347,9 @@ void SaveShot(IDirect3DDevice9* dev, const wchar_t* path) {
         SUCCEEDED(dev->GetRenderTargetData(back, copy))) {
         D3DLOCKED_RECT lr;
         if (SUCCEEDED(copy->LockRect(&lr, nullptr, D3DLOCK_READONLY))) {
-            int w = (int)d.Width / 2, h = (int)d.Height / 2, row = (w * 3 + 3) & ~3;
+            size_t n = wcslen(path);   // (half size - a name ending "_full.bmp": every pixel)
+            int step = n >= 9 && _wcsicmp(path + n - 9, L"_full.bmp") == 0 ? 1 : 2;
+            int w = (int)d.Width / step, h = (int)d.Height / step, row = (w * 3 + 3) & ~3;
             std::vector<unsigned char> img(54 + (size_t)row * h, 0);
             unsigned char* hd = img.data();
             hd[0] = 'B'; hd[1] = 'M';
@@ -359,9 +361,9 @@ void SaveShot(IDirect3DDevice9* dev, const wchar_t* path) {
             *reinterpret_cast<WORD*>(hd + 26) = 1;
             *reinterpret_cast<WORD*>(hd + 28) = 24;
             for (int y = 0; y < h; ++y) {
-                const unsigned char* src = static_cast<const unsigned char*>(lr.pBits) + (size_t)(y * 2) * lr.Pitch;
+                const unsigned char* src = static_cast<const unsigned char*>(lr.pBits) + (size_t)(y * step) * lr.Pitch;
                 unsigned char* dst = hd + 54 + (size_t)(h - 1 - y) * row;
-                for (int x = 0; x < w; ++x) memcpy(dst + x * 3, src + x * 8, 3);   // B, G, R of every other pixel
+                for (int x = 0; x < w; ++x) memcpy(dst + x * 3, src + x * 4 * step, 3);   // B, G, R
             }
             copy->UnlockRect();
             HANDLE f = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);

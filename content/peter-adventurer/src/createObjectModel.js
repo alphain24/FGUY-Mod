@@ -2015,6 +2015,69 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     }, options);
+    materialMap["cuff-strap"] = createSculptMaterial("cuff-strap", {
+        "id": "cuff-strap",
+        "name": "Sleeve strap",
+        "type": "standard",
+        "shaderModel": "MeshStandardMaterial / PBR approximation",
+        "baseColor": "#607E52",
+        "color": "#607E52",
+        "albedo": {
+            "dominant": "#607E52",
+            "secondary": [
+                "#4E6844"
+            ],
+            "samplingNotes": "Lit / shadow cel tones measured from material-evidence/cuff-strap.png."
+        },
+        "colorVariation": {
+            "palette": [
+                "#607E52",
+                "#4E6844"
+            ],
+            "pattern": "cel two-tone (lit / shadow)",
+            "amplitude": 0.0,
+            "heightCorrelation": 0.0
+        },
+        "roughness": {
+            "base": 0.9,
+            "variation": 0.0,
+            "map": "none",
+            "localResponse": "uniform: the game draws cel shading, no roughness maps reach it"
+        },
+        "metalness": {
+            "base": 0.0,
+            "variation": 0.0
+        },
+        "ambientOcclusion": {
+            "cavityStrength": 0.25,
+            "contactShadowBias": 0.35,
+            "notes": "Darken creases, seams, intersections, and recessed local features."
+        },
+        "wear": {
+            "edgeWear": 0.0,
+            "scratches": [],
+            "chips": []
+        },
+        "dirt": {
+            "amount": 0.0,
+            "cavityBias": 0.0,
+            "color": "#2F2A22"
+        },
+        "localOverrides": [],
+        "shaderNotes": [
+            "Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.",
+            "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.",
+            "Use normal/bump/displacement only when they map to observed surface relief.",
+            "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."
+        ],
+        "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.",
+        "textureless": {
+            "declared": true,
+            "evidence": [
+                "material-evidence/cuff-strap.texture.json: mottle 0.031, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"
+            ]
+        }
+    }, options);
     const nodes = {
         root
     };
@@ -16924,12 +16987,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "type": "ellipsoid",
                         "center": [
                             0.0,
-                            1.9200000000000002,
+                            1.9500000000000002,
                             0.05
                         ],
                         "radii": [
-                            0.25,
-                            0.24,
+                            0.245,
+                            0.27,
                             0.28
                         ]
                     },
@@ -16938,13 +17001,13 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "type": "ellipsoid",
                         "center": [
                             0.0,
-                            2.04,
+                            2.09,
                             0.05
                         ],
                         "radii": [
-                            0.22,
-                            0.12,
-                            0.26
+                            0.215,
+                            0.13,
+                            0.255
                         ]
                     },
                     {
@@ -16952,16 +17015,16 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "type": "capsule",
                         "center": [
                             0.0,
-                            2.175,
-                            0.05
+                            2.23,
+                            0.07
                         ],
-                        "radius": 0.04,
-                        "height": 0.32,
+                        "radius": 0.062,
+                        "height": 0.3,
                         "transform": {
                             "position": [
                                 0.0,
-                                2.175,
-                                0.05
+                                2.23,
+                                0.07
                             ],
                             "rotation": [
                                 1.5708,
@@ -16969,6 +17032,34 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                                 0.0
                             ]
                         }
+                    },
+                    {
+                        "id": "pinch-l",
+                        "type": "ellipsoid",
+                        "center": [
+                            0.215,
+                            2.12,
+                            0.25
+                        ],
+                        "radii": [
+                            0.07,
+                            0.12,
+                            0.09
+                        ]
+                    },
+                    {
+                        "id": "pinch-r",
+                        "type": "ellipsoid",
+                        "center": [
+                            -0.215,
+                            2.12,
+                            0.25
+                        ],
+                        "radii": [
+                            0.07,
+                            0.12,
+                            0.09
+                        ]
                     },
                     {
                         "id": "outline",
@@ -17488,10 +17579,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "radius": 0.06
                     },
                     {
-                        "id": "creased",
+                        "id": "creased0",
                         "type": "subtract",
                         "left": "crown2",
                         "right": "crease"
+                    },
+                    {
+                        "id": "pinched",
+                        "type": "subtract",
+                        "left": "creased0",
+                        "right": "pinch-l"
+                    },
+                    {
+                        "id": "creased",
+                        "type": "subtract",
+                        "left": "pinched",
+                        "right": "pinch-r"
                     },
                     {
                         "id": "mid",
@@ -17673,7 +17776,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                     ],
                     "max": [
                         0.5,
-                        2.22,
+                        2.2600000000000002,
                         0.5700000000000001
                     ]
                 },
@@ -17867,12 +17970,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "type": "ellipsoid",
                 "center": [
                     0.0,
-                    1.9200000000000002,
+                    1.9500000000000002,
                     0.05
                 ],
                 "radii": [
-                    0.25,
-                    0.24,
+                    0.245,
+                    0.27,
                     0.28
                 ]
             },
@@ -17881,13 +17984,13 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "type": "ellipsoid",
                 "center": [
                     0.0,
-                    2.04,
+                    2.09,
                     0.05
                 ],
                 "radii": [
-                    0.22,
-                    0.12,
-                    0.26
+                    0.215,
+                    0.13,
+                    0.255
                 ]
             },
             {
@@ -17895,16 +17998,16 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "type": "capsule",
                 "center": [
                     0.0,
-                    2.175,
-                    0.05
+                    2.23,
+                    0.07
                 ],
-                "radius": 0.04,
-                "height": 0.32,
+                "radius": 0.062,
+                "height": 0.3,
                 "transform": {
                     "position": [
                         0.0,
-                        2.175,
-                        0.05
+                        2.23,
+                        0.07
                     ],
                     "rotation": [
                         1.5708,
@@ -17912,6 +18015,34 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         0.0
                     ]
                 }
+            },
+            {
+                "id": "pinch-l",
+                "type": "ellipsoid",
+                "center": [
+                    0.215,
+                    2.12,
+                    0.25
+                ],
+                "radii": [
+                    0.07,
+                    0.12,
+                    0.09
+                ]
+            },
+            {
+                "id": "pinch-r",
+                "type": "ellipsoid",
+                "center": [
+                    -0.215,
+                    2.12,
+                    0.25
+                ],
+                "radii": [
+                    0.07,
+                    0.12,
+                    0.09
+                ]
             },
             {
                 "id": "outline",
@@ -18431,10 +18562,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "radius": 0.06
             },
             {
-                "id": "creased",
+                "id": "creased0",
                 "type": "subtract",
                 "left": "crown2",
                 "right": "crease"
+            },
+            {
+                "id": "pinched",
+                "type": "subtract",
+                "left": "creased0",
+                "right": "pinch-l"
+            },
+            {
+                "id": "creased",
+                "type": "subtract",
+                "left": "pinched",
+                "right": "pinch-r"
             },
             {
                 "id": "mid",
@@ -18616,7 +18759,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ],
             "max": [
                 0.5,
-                2.22,
+                2.2600000000000002,
                 0.5700000000000001
             ]
         },
@@ -18723,12 +18866,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "type": "ellipsoid",
                         "center": [
                             0.0,
-                            1.9200000000000002,
+                            1.9500000000000002,
                             0.05
                         ],
                         "radii": [
-                            0.25,
-                            0.24,
+                            0.245,
+                            0.27,
                             0.28
                         ]
                     },
@@ -18737,13 +18880,13 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "type": "ellipsoid",
                         "center": [
                             0.0,
-                            2.04,
+                            2.09,
                             0.05
                         ],
                         "radii": [
-                            0.22,
-                            0.12,
-                            0.26
+                            0.215,
+                            0.13,
+                            0.255
                         ]
                     },
                     {
@@ -18751,16 +18894,16 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "type": "capsule",
                         "center": [
                             0.0,
-                            2.175,
-                            0.05
+                            2.23,
+                            0.07
                         ],
-                        "radius": 0.04,
-                        "height": 0.32,
+                        "radius": 0.062,
+                        "height": 0.3,
                         "transform": {
                             "position": [
                                 0.0,
-                                2.175,
-                                0.05
+                                2.23,
+                                0.07
                             ],
                             "rotation": [
                                 1.5708,
@@ -18768,6 +18911,34 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                                 0.0
                             ]
                         }
+                    },
+                    {
+                        "id": "pinch-l",
+                        "type": "ellipsoid",
+                        "center": [
+                            0.215,
+                            2.12,
+                            0.25
+                        ],
+                        "radii": [
+                            0.07,
+                            0.12,
+                            0.09
+                        ]
+                    },
+                    {
+                        "id": "pinch-r",
+                        "type": "ellipsoid",
+                        "center": [
+                            -0.215,
+                            2.12,
+                            0.25
+                        ],
+                        "radii": [
+                            0.07,
+                            0.12,
+                            0.09
+                        ]
                     },
                     {
                         "id": "outline",
@@ -19287,10 +19458,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "radius": 0.06
                     },
                     {
-                        "id": "creased",
+                        "id": "creased0",
                         "type": "subtract",
                         "left": "crown2",
                         "right": "crease"
+                    },
+                    {
+                        "id": "pinched",
+                        "type": "subtract",
+                        "left": "creased0",
+                        "right": "pinch-l"
+                    },
+                    {
+                        "id": "creased",
+                        "type": "subtract",
+                        "left": "pinched",
+                        "right": "pinch-r"
                     },
                     {
                         "id": "mid",
@@ -19472,7 +19655,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                     ],
                     "max": [
                         0.5,
-                        2.22,
+                        2.2600000000000002,
                         0.5700000000000001
                     ]
                 },
@@ -19663,8 +19846,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "hat-crown",
         "attachment": null,
         "dimensions": {
-            "width": 0.5622,
-            "height": 0.6289,
+            "width": 0.5422,
+            "height": 0.6178,
             "depth": 0.6,
             "units": "relative",
             "confidence": 0.8
@@ -19681,8 +19864,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.5622,
-                0.6289,
+                0.5422,
+                0.6178,
                 0.6
             ]
         },
@@ -19835,7 +20018,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const mesh_hat_band_22GeometryDense = endpoint_hat_band_22 ? new THREE.CylinderGeometry(endpoint_hat_band_22.endRadius, endpoint_hat_band_22.baseRadius, endpoint_hat_band_22.length, 16, 6) : new THREE.TorusGeometry(0.45, 0.045, 12, 48);
     const mesh_hat_band_22Geometry = decimateGeometry(mesh_hat_band_22GeometryDense, 0.6);
     if (!endpoint_hat_band_22) {
-        mesh_hat_band_22Geometry.scale(0.5622, 0.6289, 0.6);
+        mesh_hat_band_22Geometry.scale(0.5422, 0.6178, 0.6);
     }
     const mesh_hat_band_22 = new THREE.Mesh(mesh_hat_band_22Geometry, materialMap["hat-band"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
@@ -19875,8 +20058,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "hat-crown",
         "attachment": null,
         "dimensions": {
-            "width": 0.5622,
-            "height": 0.6289,
+            "width": 0.5422,
+            "height": 0.6178,
             "depth": 0.6,
             "units": "relative",
             "confidence": 0.8
@@ -19893,8 +20076,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.5622,
-                0.6289,
+                0.5422,
+                0.6178,
                 0.6
             ]
         },
@@ -44065,12 +44248,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
-                "debrisMaterial": "cuff-fold"
+                "debrisMaterial": "cuff-strap"
             }
         },
-        "material": "cuff-fold",
+        "material": "cuff-strap",
         "materialLayers": [
-            "cuff-fold"
+            "cuff-strap"
         ],
         "deformations": [],
         "joints": [],
@@ -44099,12 +44282,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "details": [],
         "fidelityTier": "form",
         "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
-            "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
+            "dominantAlbedo": "rgba(96, 126, 82, 1.0)",
+            "secondaryAlbedo": "rgba(78, 104, 68, 1.0)",
             "materialClass": "fabric",
             "materialClassConfidence": 0.7,
             "evidenceRefs": [
-                "material-evidence/cuff-fold.png"
+                "material-evidence/cuff-strap.png"
             ]
         }
     };
@@ -44157,7 +44340,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
-            "debrisMaterial": "cuff-fold"
+            "debrisMaterial": "cuff-strap"
         }
     };
     (nodes["sleeve-cuff-l"] ?? root).add(node_sleeve_tab_l_69);
@@ -44166,7 +44349,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     if (!endpoint_sleeve_tab_l_69) {
         mesh_sleeve_tab_l_69Geometry.scale(0.12, 0.02, 0.058);
     }
-    const mesh_sleeve_tab_l_69 = new THREE.Mesh(mesh_sleeve_tab_l_69Geometry, materialMap["cuff-fold"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sleeve_tab_l_69 = new THREE.Mesh(mesh_sleeve_tab_l_69Geometry, materialMap["cuff-strap"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
     mesh_sleeve_tab_l_69.name = "Sleeve strap tab (l)";
@@ -44272,12 +44455,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
-                "debrisMaterial": "cuff-fold"
+                "debrisMaterial": "cuff-strap"
             }
         },
-        "material": "cuff-fold",
+        "material": "cuff-strap",
         "materialLayers": [
-            "cuff-fold"
+            "cuff-strap"
         ],
         "deformations": [],
         "joints": [],
@@ -44306,12 +44489,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "details": [],
         "fidelityTier": "form",
         "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
-            "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
+            "dominantAlbedo": "rgba(96, 126, 82, 1.0)",
+            "secondaryAlbedo": "rgba(78, 104, 68, 1.0)",
             "materialClass": "fabric",
             "materialClassConfidence": 0.7,
             "evidenceRefs": [
-                "material-evidence/cuff-fold.png"
+                "material-evidence/cuff-strap.png"
             ]
         }
     };
@@ -45209,12 +45392,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
-                "debrisMaterial": "cuff-fold"
+                "debrisMaterial": "cuff-strap"
             }
         },
-        "material": "cuff-fold",
+        "material": "cuff-strap",
         "materialLayers": [
-            "cuff-fold"
+            "cuff-strap"
         ],
         "deformations": [],
         "joints": [],
@@ -45243,12 +45426,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "details": [],
         "fidelityTier": "form",
         "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
-            "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
+            "dominantAlbedo": "rgba(96, 126, 82, 1.0)",
+            "secondaryAlbedo": "rgba(78, 104, 68, 1.0)",
             "materialClass": "fabric",
             "materialClassConfidence": 0.7,
             "evidenceRefs": [
-                "material-evidence/cuff-fold.png"
+                "material-evidence/cuff-strap.png"
             ]
         }
     };
@@ -45301,7 +45484,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
-            "debrisMaterial": "cuff-fold"
+            "debrisMaterial": "cuff-strap"
         }
     };
     (nodes["sleeve-cuff-r"] ?? root).add(node_sleeve_tab_r_72);
@@ -45310,7 +45493,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     if (!endpoint_sleeve_tab_r_72) {
         mesh_sleeve_tab_r_72Geometry.scale(0.12, 0.02, 0.058);
     }
-    const mesh_sleeve_tab_r_72 = new THREE.Mesh(mesh_sleeve_tab_r_72Geometry, materialMap["cuff-fold"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sleeve_tab_r_72 = new THREE.Mesh(mesh_sleeve_tab_r_72Geometry, materialMap["cuff-strap"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
     mesh_sleeve_tab_r_72.name = "Sleeve strap tab (r)";
@@ -45416,12 +45599,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
-                "debrisMaterial": "cuff-fold"
+                "debrisMaterial": "cuff-strap"
             }
         },
-        "material": "cuff-fold",
+        "material": "cuff-strap",
         "materialLayers": [
-            "cuff-fold"
+            "cuff-strap"
         ],
         "deformations": [],
         "joints": [],
@@ -45450,12 +45633,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "details": [],
         "fidelityTier": "form",
         "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(112, 144, 96, 1.0)",
-            "secondaryAlbedo": "rgba(90, 118, 78, 1.0)",
+            "dominantAlbedo": "rgba(96, 126, 82, 1.0)",
+            "secondaryAlbedo": "rgba(78, 104, 68, 1.0)",
             "materialClass": "fabric",
             "materialClassConfidence": 0.7,
             "evidenceRefs": [
-                "material-evidence/cuff-fold.png"
+                "material-evidence/cuff-strap.png"
             ]
         }
     };

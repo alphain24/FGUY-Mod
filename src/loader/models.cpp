@@ -13,6 +13,11 @@
 // Its "hide" (the Skin Studio's): their own triangles under it - by piece (its vertex and index counts) and number -
 // left out of their draws (a copy of that piece's index buffer, those triangles collapsed), so the body never shows
 // through a boot or a hat as both move.
+// Ink lines: the game makes its own from its pieces' silhouettes on the CPU (0x4c6ed0) - ours get none. So each draw of
+// ours is followed by its outline: a copy of it pushed out along its normals by kOutline, drawn inside out (the other
+// faces culled) with a black texture - the game's own shaders, so the passes that aren't colour (depth, shadows) see
+// just a slightly bigger model. Not for its smallest parts (laces, eyelets, rivets: under kOutlineMin across) - all
+// outline, they'd be black blots.
 // Test pipe: "modelload <slot> <file.fgmodel | ''>".
 #include "common.h"
 
@@ -27,6 +32,7 @@ namespace {
 
 struct Vert { float pos[3], nrm[3], uv[2]; unsigned char bone[4], weight[4]; };
 struct Part { unsigned first, count, texture; };
+struct Run { unsigned first, count; };   // (indices with an outline)
 struct Hide { unsigned verts = 0, indices = 0; std::vector<unsigned> tris; };   // (tris: first, count, first, count...)
 struct Model {
     std::wstring name;
@@ -36,12 +42,14 @@ struct Model {
     std::vector<int> parent;
     std::vector<float> invBind;            // skel x 12
     std::vector<Part> parts;
+    std::vector<Run> outlined;
     std::vector<Vert> verts;
     std::vector<unsigned short> idx;
     std::vector<std::vector<unsigned char>> pngs;
     // (the render thread's)
     std::vector<IDirect3DTexture9*> tex;
     IDirect3DVertexBuffer9* skinned = nullptr;   // positions, then normals - every frame
+    IDirect3DVertexBuffer9* hull = nullptr;      // the outline's positions - every frame
     IDirect3DVertexBuffer9* uv = nullptr;
     IDirect3DIndexBuffer9* ib = nullptr;
     bool made = false, failed = false;
@@ -52,6 +60,8 @@ struct Pending { int slot; std::vector<unsigned char> pack; std::wstring name; }
 std::vector<Pending> g_pending;
 CRITICAL_SECTION& Cs() { static struct L { L() { InitializeCriticalSection(&c); } CRITICAL_SECTION c; } l; return l.c; }
 IDirect3DVertexDeclaration9* g_decl = nullptr;
+IDirect3DTexture9* g_black = nullptr;   // (the outline's colour)
+const float kOutline = 0.009f, kOutlineMin = 0.07f;   // (its width, the smallest part with one: Peter is 1.9 tall)
 unsigned g_frame = 1;
 // A player's character's pieces, by their index buffers: their model entity ([[player +0x38] +0x1d4], a
 // World::ModelPrototypeEntity) points to its World::SkinGeometryEntity pieces (vtable 0x9fb30c; [model +0xa4..] +0x12c),
@@ -75,6 +85,7 @@ void Free(Model* m) {
     if (!m) return;
     for (IDirect3DTexture9* t : m->tex) if (t) t->Release();
     if (m->skinned) m->skinned->Release();
+    if (m->hull) m->hull->Release();
     if (m->uv) m->uv->Release();
     if (m->ib) m->ib->Release();
     delete m;
@@ -111,6 +122,18 @@ Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
         if ((size_t)p.first + p.count > (size_t)I) { delete m; return nullptr; }
     for (unsigned short i : m->idx)
         if (i >= V) { delete m; return nullptr; }
+    for (const Part& p : m->parts) {   // (the parts outlined: their sizes across)
+        float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
+        for (unsigned k = p.first; k < p.first + p.count; ++k)
+            for (int r = 0; r < 3; ++r) {
+                lo[r] = (std::min)(lo[r], m->verts[m->idx[k]].pos[r]);
+                hi[r] = (std::max)(hi[r], m->verts[m->idx[k]].pos[r]);
+            }
+        float dx = hi[0] - lo[0], dy = hi[1] - lo[1], dz = hi[2] - lo[2];
+        if (p.count < 3 || std::sqrt(dx * dx + dy * dy + dz * dz) < kOutlineMin) continue;
+        if (!m->outlined.empty() && m->outlined.back().first + m->outlined.back().count == p.first) m->outlined.back().count += p.count;
+        else m->outlined.push_back({p.first, p.count});
+    }
     for (int s = 0; s < S; ++s)   // (parents before their children: one pass makes the matrices)
         if (m->parent[s] >= s) { delete m; return nullptr; }
     std::string js(json.begin(), json.end());   // its textures: "textures": ["textures/0.png", ...]
@@ -162,6 +185,7 @@ void Make(IDirect3DDevice9* dev, Model* m) {
     m->made = true;
     UINT V = (UINT)m->verts.size();
     if (FAILED(dev->CreateVertexBuffer(V * 24, D3DUSAGE_WRITEONLY, 0, D3DPOOL_MANAGED, &m->skinned, nullptr)) ||
+        FAILED(dev->CreateVertexBuffer(V * 12, D3DUSAGE_WRITEONLY, 0, D3DPOOL_MANAGED, &m->hull, nullptr)) ||
         FAILED(dev->CreateVertexBuffer(V * 8, D3DUSAGE_WRITEONLY, 0, D3DPOOL_MANAGED, &m->uv, nullptr)) ||
         FAILED(dev->CreateIndexBuffer((UINT)m->idx.size() * 2, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_MANAGED, &m->ib, nullptr))) {
         m->failed = true;
@@ -188,6 +212,14 @@ void Make(IDirect3DDevice9* dev, Model* m) {
             {2, 0, D3DDECLTYPE_FLOAT2, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_TEXCOORD, 0},
             D3DDECL_END()};
         dev->CreateVertexDeclaration(el, &g_decl);
+    }
+    if (!g_black && SUCCEEDED(dev->CreateTexture(4, 4, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &g_black, nullptr))) {
+        D3DLOCKED_RECT r;
+        if (SUCCEEDED(g_black->LockRect(0, &r, nullptr, 0))) {
+            for (int y = 0; y < 4; ++y)
+                for (int x = 0; x < 4; ++x) reinterpret_cast<DWORD*>(static_cast<unsigned char*>(r.pBits) + y * r.Pitch)[x] = 0xff000000;
+            g_black->UnlockRect(0);
+        }
     }
     Log(L"Models: %s - %zu vertices, %zu triangles, %zu parts, %zu textures, %d bones%s (%zu of their pieces partly under it)",
         m->name.c_str(), m->verts.size(), m->idx.size() / 3, m->parts.size(), m->tex.size(), m->skel,
@@ -234,6 +266,8 @@ bool Skin(int slot, Model* m) {
     if (FAILED(m->skinned->Lock(0, 0, &p, 0))) return false;
     float* pos = static_cast<float*>(p);
     float* nrm = pos + V * 3;
+    void* ph = nullptr;
+    float* hull = m->hull && SUCCEEDED(m->hull->Lock(0, 0, &ph, 0)) ? static_cast<float*>(ph) : nullptr;
     for (UINT i = 0; i < V; ++i) {
         const Vert& v = m->verts[i];
         float op[3] = {}, on[3] = {};
@@ -248,8 +282,13 @@ bool Skin(int slot, Model* m) {
         }
         memcpy(pos + i * 3, op, 12);
         memcpy(nrm + i * 3, on, 12);
+        if (hull) {
+            float len = std::sqrt(on[0] * on[0] + on[1] * on[1] + on[2] * on[2]), k = len > 1e-6f ? kOutline / len : 0;
+            for (int r = 0; r < 3; ++r) hull[i * 3 + r] = op[r] + on[r] * k;
+        }
     }
     m->skinned->Unlock();
+    if (hull) m->hull->Unlock();
     return true;
 }
 
@@ -452,6 +491,16 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
             if (oldTex2) dev->SetTexture(2, m->tex[p.texture]); //  through in stripes)
         }
         *hr = real(dev, (int)D3DPT_TRIANGLELIST, 0, 0, V, p.first, p.count / 3);
+    }
+    DWORD cull = D3DCULL_NONE;   // (its outline: inside out - only when the game culls a side, else it would cover it)
+    dev->GetRenderState(D3DRS_CULLMODE, &cull);
+    if (m->hull && g_black && cull != D3DCULL_NONE) {
+        dev->SetStreamSource(0, m->hull, 0, 12);
+        dev->SetTexture(1, g_black);
+        if (oldTex2) dev->SetTexture(2, g_black);
+        dev->SetRenderState(D3DRS_CULLMODE, cull == D3DCULL_CW ? D3DCULL_CCW : D3DCULL_CW);
+        for (const Run& r : m->outlined) real(dev, (int)D3DPT_TRIANGLELIST, 0, 0, V, r.first, r.count / 3);
+        dev->SetRenderState(D3DRS_CULLMODE, cull);
     }
     dev->SetVertexDeclaration(oldDecl);
     for (UINT s = 0; s < 3; ++s) dev->SetStreamSource(s, oldVb[s], oldOff[s], oldStride[s]);

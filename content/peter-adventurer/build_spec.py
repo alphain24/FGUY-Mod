@@ -30,8 +30,9 @@ MAT = {  # id: (lit rgb, shadow rgb, name, roughness, materialClass)
     'cuff': ((127, 160, 109), (96, 124, 82), 'Rolled shirt cuff', 0.9, 'fabric'),
     # (the rolled band a step darker than the sleeve: the reference draws its fold with ink lines, our pieces get none)
     'cuff-fold': ((112, 144, 96), (90, 118, 78), 'Rolled cuff band', 0.9, 'fabric'),
+    'cuff-strap': ((96, 126, 82), (78, 104, 68), 'Sleeve strap', 0.9, 'fabric'),
 }
-TEX = {m: json.load(open(f'material-evidence/{"cuff" if m == "cuff-fold" else m}.texture.json')) for m in MAT}
+TEX = {m: json.load(open(f'material-evidence/{"cuff" if m.startswith("cuff") else m}.texture.json')) for m in MAT}
 
 
 def hexof(c):
@@ -421,10 +422,14 @@ for k in range(RIM_N):
 
 hat_sdf = {
     'primitives': [
-        {'id': 'crown', 'type': 'ellipsoid', 'center': [HX, BRIM_Y + 0.1, HZ], 'radii': [0.25, 0.24, 0.28]},
-        {'id': 'crown-top', 'type': 'ellipsoid', 'center': [HX, BRIM_Y + 0.22, HZ], 'radii': [0.22, 0.12, 0.26]},
-        {'id': 'crease', 'type': 'capsule', 'center': [HX, BRIM_Y + 0.355, HZ], 'radius': 0.04, 'height': 0.32,
-         'transform': {'position': [HX, BRIM_Y + 0.355, HZ], 'rotation': [1.5708, 0.0, 0.0]}},
+        # (a taller crown, its top pinched along a deeper front-to-back crease - the reference's outback crown)
+        {'id': 'crown', 'type': 'ellipsoid', 'center': [HX, BRIM_Y + 0.13, HZ], 'radii': [0.245, 0.27, 0.28]},
+        {'id': 'crown-top', 'type': 'ellipsoid', 'center': [HX, BRIM_Y + 0.27, HZ], 'radii': [0.215, 0.13, 0.255]},
+        {'id': 'crease', 'type': 'capsule', 'center': [HX, BRIM_Y + 0.41, HZ + 0.02], 'radius': 0.062, 'height': 0.3,
+         'transform': {'position': [HX, BRIM_Y + 0.41, HZ + 0.02], 'rotation': [1.5708, 0.0, 0.0]}},
+        # (the two pinches either side of the crown's front)
+        {'id': 'pinch-l', 'type': 'ellipsoid', 'center': [HX + 0.215, BRIM_Y + 0.3, HZ + 0.2], 'radii': [0.07, 0.12, 0.09]},
+        {'id': 'pinch-r', 'type': 'ellipsoid', 'center': [HX - 0.215, BRIM_Y + 0.3, HZ + 0.2], 'radii': [0.07, 0.12, 0.09]},
         {'id': 'outline', 'type': 'ellipsoid', 'center': [HX, BRIM_Y, HZ + 0.02], 'radii': OUTLINE},
         {'id': 'brim-mid', 'type': 'box', 'center': [HX, BRIM_Y, HZ], 'size': [2 * BRIM_HINGE, BRIM_T, 2.0]},
         side_slab('brim-l', 1), side_slab('brim-r', -1),
@@ -432,7 +437,9 @@ hat_sdf = {
     ] + RIM,
     'operations': [
         {'id': 'crown2', 'type': 'smooth-union', 'left': 'crown', 'right': 'crown-top', 'radius': 0.06},
-        {'id': 'creased', 'type': 'subtract', 'left': 'crown2', 'right': 'crease'},
+        {'id': 'creased0', 'type': 'subtract', 'left': 'crown2', 'right': 'crease'},
+        {'id': 'pinched', 'type': 'subtract', 'left': 'creased0', 'right': 'pinch-l'},
+        {'id': 'creased', 'type': 'subtract', 'left': 'pinched', 'right': 'pinch-r'},
         {'id': 'mid', 'type': 'intersect', 'left': 'brim-mid', 'right': 'outline'},
         {'id': 'side1', 'type': 'intersect', 'left': 'brim-l', 'right': 'outline'},
         {'id': 'side2', 'type': 'intersect', 'left': 'brim-r', 'right': 'outline'},
@@ -443,7 +450,7 @@ hat_sdf = {
         {'id': 'hat', 'type': 'smooth-union', 'left': 'creased', 'right': f'rimmed{RIM_N - 1}', 'radius': 0.03},
         {'id': 'hat-cut', 'type': 'subtract', 'left': 'hat', 'right': 'below'},
     ],
-    'bounds': {'min': [-0.5, BRIM_Y - 0.06, HZ - 0.5], 'max': [0.5, BRIM_Y + 0.4, HZ + 0.52]},
+    'bounds': {'min': [-0.5, BRIM_Y - 0.06, HZ - 0.5], 'max': [0.5, BRIM_Y + 0.44, HZ + 0.52]},
     'resolution': 64,
 }
 node('hat-crown', 'Wide-brim hat (crown and brim)', 'ellipsoid', 'vest-shell', 'hat-felt', level='macro',
@@ -452,11 +459,11 @@ node('hat-crown', 'Wide-brim hat (crown and brim)', 'ellipsoid', 'vest-shell', '
                'continuous implicit form.',
      feats=[feat('hat-brim-curl', 'ridge', 'brim sides rolled up 0.55 rad'),
             feat('hat-crown-crease', 'groove', 'front-to-back crease on the crown top')])
-# band: on the crown above the brim fillet (crown radii there x .248, z .278); its centreline 0.005 outside the
+# band: on the crown above the brim fillet (crown radii there x .239, z .273); its centreline 0.005 outside the
 # felt, a 0.025-thick ribbon 0.054 tall (torus 0.45 / tube 0.045, scaled, then turned flat)
 BAND_Y = BRIM_Y + 0.07
 node('hat-band', 'Hat band', 'torus', 'hat-crown', 'hat-band', importance=0.9, pos=(HX, BAND_Y, HZ),
-     rot=(1.5708, 0, 0), scale=(round(0.253 / 0.45, 4), round(0.283 / 0.45, 4), 0.6), desc={'torusTubeRatio': 0.1},
+     rot=(1.5708, 0, 0), scale=(round(0.244 / 0.45, 4), round(0.278 / 0.45, 4), 0.6), desc={'torusTubeRatio': 0.1},
      rationale='A cloth ring wrapping the crown base: an oval torus slightly proud of the felt.',
      feats=[feat('hat-band-ring', 'ridge', 'blue band ring')])
 
@@ -601,7 +608,7 @@ for side, sx in (('l', 1), ('r', -1)):
          desc={'torusTubeRatio': round(tube / 0.45, 4)},
          rationale='A rolled band round the sleeve end: a flattened torus ring, wider along the arm than it is thick.',
          feats=[feat(f'cuff-roll-{side}', 'ridge', 'rolled band')])
-    node(f'sleeve-tab-{side}', f'Sleeve strap tab ({side})', 'box', f'sleeve-cuff-{side}', 'cuff-fold', importance=0.5,
+    node(f'sleeve-tab-{side}', f'Sleeve strap tab ({side})', 'box', f'sleeve-cuff-{side}', 'cuff-strap', importance=0.5,
          pos=(sx * 0.545, 1.168 + 0.175 + 0.008, -0.035), scale=(0.12, 0.02, 0.058),
          rationale='The roll-up strap: a thin tab up the outer side of the sleeve.', feats=[feat(f'cuff-tab-{side}', 'seam', 'tab')])
     node(f'sleeve-button-{side}', f'Sleeve tab button ({side})', 'sphere', f'sleeve-tab-{side}', 'brass',

@@ -3,7 +3,8 @@
 //   1. Models tab, Peter (Default): import the outfit GLB (review/index.html's exportOutfit -> build/research), saved
 //      as a model pack worn over him (its weights copied from him, the triangles of his under it listed to hide).
 //   2. Skins tab: his texture recolored (shirt, jeans, buckle), the belt and the glasses' lenses painted (our own
-//      pixels: only where his texture is near black on the belt band / near white on the face), the model added.
+//      pixels: only where his texture is near black on the belt band / near white on the face), the model added, the
+//      reference drawing as its picture in the game's menus (its skin tile, the HUD's head).
 //   3. Both written to build/research (PUT /save/<file>); nothing is downloaded.
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const $ = id => document.getElementById(id);
@@ -72,7 +73,12 @@ export async function build() {
   dt.items.add(new File([glb], 'Peter Adventurer.glb'));
   $('importModel').files = dt.files;
   $('importModel').dispatchEvent(new Event('change'));
-  await waitFor(() => window.studioView.models.state.hidden);
+  await waitFor(() => window.studioView.models.state.src);
+  for (const id of ['fitKeep', 'modelOver']) {   // (made on him, worn over him - whatever the Studio guessed)
+    if (!$(id).checked) { $(id).checked = true; $(id).dispatchEvent(new Event('change')); }
+  }
+  window.studioView.models.state.hidden = null;
+  await waitFor(() => window.studioView.models.state.hidden?.length);
   $('modelName').value = 'Peter Adventurer';
   const click = HTMLAnchorElement.prototype.click;   // (no download: the bytes go to build/research instead)
   HTMLAnchorElement.prototype.click = function () { if (!this.href.startsWith('blob:')) click.call(this); };
@@ -104,6 +110,11 @@ export async function build() {
     $('packModel').files = dt.files;
     $('packModel').dispatchEvent(new Event('change'));
     await waitFor(() => /With its model/.test($('packModelInfo').textContent));
+    dt = new DataTransfer();   // (its picture in the menus: the reference drawing itself)
+    dt.items.add(new File([await (await fetch('/content/peter-adventurer/reference.png')).blob()], 'reference.png', {type: 'image/png'}));
+    $('packPicture').files = dt.files;
+    $('packPicture').dispatchEvent(new Event('change'));
+    await waitFor(() => studio.packPicture);
     const pack = await studio.buildPack();
     await fetch('/save/Peter_Adventurer.fgskin', {method: 'PUT', body: pack.blob});
     out.skin = {bytes: pack.blob.size, textures: pack.count, ops: t.ops.length};
