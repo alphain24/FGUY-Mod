@@ -5,7 +5,8 @@ with flap pockets and brass buttons, a black claw pendant, a knife sheath on his
 sleeve cuffs. His shirt, jeans, belt and buckle are a recolour of his own texture. In the mod it is one skin pack,
 `dist/FGUYMod/mods/FGUYCosmetics/skins/Peter_Adventurer.fgskin`: the recolour recipe (no game art) and the outfit's
 model pack inside it (`model.fgmodel`, our own mesh and a 10-colour palette). Switch it on for Peter (Default) on the
-MODS page or pick it in the lobby; online it goes to the other players with the skin.
+MODS page or pick it in the lobby; online it goes to the other players with the skin. In the Skin Studio it is the
+"★ Adventurer" chip beside Peter's outfits (tools/cosmetics/library.json lists the mod's skins).
 
 ## How it was made (img2threejs)
 

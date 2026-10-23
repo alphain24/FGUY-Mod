@@ -40,6 +40,7 @@ header .sub { color: var(--muted); }
 .outfits { margin-left: 10px; display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
 .chip { font-size: 13px; padding: 3px 9px; border-radius: 999px; border: 2px solid var(--line); background: var(--panel2); cursor: pointer; font-weight: 700; }
 .chip.on { border-color: var(--accent); color: var(--accent); }
+.chip.ours { border-style: dashed; }   /* (the FGUY Cosmetics mod's own skins) */
 #view { position: relative; border-radius: var(--radius); border: 2px solid var(--line); overflow: hidden; background: radial-gradient(ellipse at 50% 35%, #26508e, #0b1730 75%); min-height: 0; }
 #view canvas { display: block; width: 100%; height: 100%; }
 .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; }
@@ -146,6 +147,7 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
       <button class="btn" id="packModelOff" hidden>No model</button>
     </div>
     <div class="muted" id="packModelInfo">Outfit pieces made in the Models tab (a hat, a vest...) can come with the skin.</div>
+    <div class="row" id="packModelShowRow" hidden><label class="muted"><input type="checkbox" id="packModelShow" checked> Show it on the character</label></div>
     <div class="row">
       <button class="btn primary" id="savePack" disabled>Save skin pack</button>
       <label class="btn">Open pack <input type="file" id="openPack" accept=".fgskin,.zip" hidden></label>
@@ -159,7 +161,7 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
     the character's bones: each part of it bends with the part of the character it's on.</div>
     <div class="row" style="margin-top:8px">
       <label class="btn primary">Import .glb <input type="file" id="importModel" accept=".glb,.gltf" hidden></label>
-      <label class="muted"><input type="checkbox" id="modelGhost" checked> Show the character</label>
+      <label class="muted">The character <select id="modelGhost" style="width:auto;padding:3px 6px"><option value="solid">solid</option><option value="xray">x-ray</option><option value="none">hidden</option></select></label>
     </div>
     <div class="sep"></div>
     <h2>Fit it</h2>

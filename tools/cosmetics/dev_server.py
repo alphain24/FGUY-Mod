@@ -6,6 +6,7 @@ import functools
 import http.server
 import os
 import sys
+import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.normpath(os.path.join(HERE, '..', '..'))
@@ -15,15 +16,17 @@ PLAYERS = os.path.join(GAME, 'FGUY', 'Global_Scenes', 'Players')
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def translate_path(self, path):
-        p = path.split('?')[0]
+        p = urllib.parse.unquote(path.split('?')[0])
         if p.startswith('/game/'):
             return os.path.join(PLAYERS, os.path.basename(p))
         if p.startswith('/research/'):   # build/research (local exports, never published)
             return os.path.join(REPO, 'build', 'research', os.path.basename(p))
-        if p.startswith('/content/'):    # content/<piece>/... (the img2threejs work and its review page)
-            rel = os.path.normpath(p[len('/content/'):]).lstrip('\\/')
-            if not rel.startswith('..'):
-                return os.path.join(REPO, 'content', rel)
+        for prefix, base in (('/mods/', os.path.join(REPO, 'dist', 'FGUYMod', 'mods')),   # (the mods' own files: the
+                             ('/content/', os.path.join(REPO, 'content'))):              #  Cosmetics skins; img2threejs work)
+            if p.startswith(prefix):
+                rel = os.path.normpath(p[len(prefix):]).lstrip('\\/')
+                if not rel.startswith('..'):
+                    return os.path.join(base, rel)
         return super().translate_path(path)
 
     def do_PUT(self):   # (testing: the page saves a pack to build/research - PUT /save/<name>)

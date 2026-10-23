@@ -462,17 +462,17 @@ node('hat-band', 'Hat band', 'torus', 'hat-crown', 'hat-band', importance=0.9, p
 BOOT_TOP = 0.37
 for side, sx in (('l', 1), ('r', -1)):
     # shaft a touch wider than his trouser leg (half x .17, half z .21 at y .35) so the leg never shows through
-    cx, SHAFT_R = sx * 0.2, (0.205, 0.33, 0.265)
+    cx, SHAFT_R = sx * 0.215, (0.2, 0.33, 0.265)   # (centres apart: the two boots never meet in the middle)
     kk = math.sqrt(1 - ((BOOT_TOP - 0.012 - 0.22) / SHAFT_R[1]) ** 2)
     collar = capsule_chain('collar', [(cx + (SHAFT_R[0] * kk + 0.004) * math.cos(2 * math.pi * k / 16), BOOT_TOP - 0.012,
                                        0.04 + (SHAFT_R[2] * kk + 0.004) * math.sin(2 * math.pi * k / 16))
-                                      for k in range(16)], 0.03, closed=True)
+                                      for k in range(16)], 0.027, closed=True)
     sdf = {
         'primitives': [
             {'id': 'shaft', 'type': 'ellipsoid', 'center': [cx, 0.22, 0.04], 'radii': list(SHAFT_R)},
             {'id': 'toe', 'type': 'ellipsoid', 'center': [cx, 0.1, 0.19], 'radii': [0.185, 0.115, 0.255]},
             # sole: the boot's own footprint (an oval a touch wider than the foot) cut to a 0.06 slab
-            {'id': 'sole-print', 'type': 'ellipsoid', 'center': [cx, 0.03, 0.12], 'radii': [0.19, 0.6, 0.31]},
+            {'id': 'sole-print', 'type': 'ellipsoid', 'center': [cx, 0.03, 0.12], 'radii': [0.185, 0.6, 0.31]},
             {'id': 'sole-slab', 'type': 'box', 'center': [cx, 0.03, 0.12], 'size': [1.0, 0.06, 1.0]},
             {'id': 'top', 'type': 'box', 'center': [cx, BOOT_TOP + 0.3, 0.1], 'size': [0.8, 0.6, 1.2]},
             {'id': 'under', 'type': 'box', 'center': [cx, -0.3, 0.1], 'size': [0.8, 0.6, 1.2]},

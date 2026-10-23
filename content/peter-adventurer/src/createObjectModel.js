@@ -19983,12 +19983,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "shaft",
                         "type": "ellipsoid",
                         "center": [
-                            0.2,
+                            0.215,
                             0.22,
                             0.04
                         ],
                         "radii": [
-                            0.205,
+                            0.2,
                             0.33,
                             0.265
                         ]
@@ -19997,7 +19997,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "toe",
                         "type": "ellipsoid",
                         "center": [
-                            0.2,
+                            0.215,
                             0.1,
                             0.19
                         ],
@@ -20011,12 +20011,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-print",
                         "type": "ellipsoid",
                         "center": [
-                            0.2,
+                            0.215,
                             0.03,
                             0.12
                         ],
                         "radii": [
-                            0.19,
+                            0.185,
                             0.6,
                             0.31
                         ]
@@ -20025,7 +20025,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-slab",
                         "type": "box",
                         "center": [
-                            0.2,
+                            0.215,
                             0.03,
                             0.12
                         ],
@@ -20039,7 +20039,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "top",
                         "type": "box",
                         "center": [
-                            0.2,
+                            0.215,
                             0.6699999999999999,
                             0.1
                         ],
@@ -20053,7 +20053,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "under",
                         "type": "box",
                         "center": [
-                            0.2,
+                            0.215,
                             -0.3,
                             0.1
                         ],
@@ -20067,22 +20067,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar0",
                         "type": "capsule",
                         "center": [
-                            0.383,
+                            0.3936,
                             0.358,
                             0.0868
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                0.383,
+                                0.3936,
                                 0.358,
                                 0.0868
                             ],
                             "rotation": [
-                                1.5472,
-                                0.1516,
-                                0.1552
+                                1.5483,
+                                0.1481,
+                                0.1515
                             ]
                         }
                     },
@@ -20090,22 +20090,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar1",
                         "type": "capsule",
                         "center": [
-                            0.3551,
+                            0.3664,
                             0.358,
                             0.1733
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                0.3551,
+                                0.3664,
                                 0.358,
                                 0.1733
                             ],
                             "rotation": [
-                                1.3358,
-                                0.4214,
-                                0.5295
+                                1.3455,
+                                0.4151,
+                                0.5169
                             ]
                         }
                     },
@@ -20113,22 +20113,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar2",
                         "type": "capsule",
                         "center": [
-                            0.3036,
+                            0.3162,
                             0.358,
                             0.2396
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                0.3036,
+                                0.3162,
                                 0.358,
                                 0.2396
                             ],
                             "rotation": [
-                                0.8479,
-                                0.5171,
-                                1.06
+                                0.865,
+                                0.519,
+                                1.0437
                             ]
                         }
                     },
@@ -20136,22 +20136,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar3",
                         "type": "capsule",
                         "center": [
-                            0.2364,
+                            0.2505,
                             0.358,
                             0.2754
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                0.2364,
+                                0.2505,
                                 0.358,
                                 0.2754
                             ],
                             "rotation": [
-                                0.2583,
-                                0.2425,
-                                1.5074
+                                0.2647,
+                                0.2478,
+                                1.5044
                             ]
                         }
                     },
@@ -20159,22 +20159,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar4",
                         "type": "capsule",
                         "center": [
-                            0.1636,
+                            0.1795,
                             0.358,
                             0.2754
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                0.1636,
+                                0.1795,
                                 0.358,
                                 0.2754
                             ],
                             "rotation": [
-                                -0.2583,
-                                -0.2425,
-                                1.5074
+                                -0.2647,
+                                -0.2478,
+                                1.5044
                             ]
                         }
                     },
@@ -20182,22 +20182,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar5",
                         "type": "capsule",
                         "center": [
-                            0.0964,
+                            0.1138,
                             0.358,
                             0.2396
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                0.0964,
+                                0.1138,
                                 0.358,
                                 0.2396
                             ],
                             "rotation": [
-                                -0.8479,
-                                -0.5171,
-                                1.06
+                                -0.865,
+                                -0.519,
+                                1.0437
                             ]
                         }
                     },
@@ -20205,22 +20205,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar6",
                         "type": "capsule",
                         "center": [
-                            0.0449,
+                            0.0636,
                             0.358,
                             0.1733
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                0.0449,
+                                0.0636,
                                 0.358,
                                 0.1733
                             ],
                             "rotation": [
-                                -1.3358,
-                                -0.4214,
-                                0.5295
+                                -1.3455,
+                                -0.4151,
+                                0.5169
                             ]
                         }
                     },
@@ -20228,22 +20228,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar7",
                         "type": "capsule",
                         "center": [
-                            0.017,
+                            0.0364,
                             0.358,
                             0.0868
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                0.017,
+                                0.0364,
                                 0.358,
                                 0.0868
                             ],
                             "rotation": [
-                                -1.5472,
-                                -0.1516,
-                                0.1552
+                                -1.5483,
+                                -0.1481,
+                                0.1515
                             ]
                         }
                     },
@@ -20251,22 +20251,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar8",
                         "type": "capsule",
                         "center": [
-                            0.017,
+                            0.0364,
                             0.358,
                             -0.0068
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                0.017,
+                                0.0364,
                                 0.358,
                                 -0.0068
                             ],
                             "rotation": [
-                                -1.5472,
-                                0.1516,
-                                -0.1552
+                                -1.5483,
+                                0.1481,
+                                -0.1515
                             ]
                         }
                     },
@@ -20274,22 +20274,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar9",
                         "type": "capsule",
                         "center": [
-                            0.0449,
+                            0.0636,
                             0.358,
                             -0.0933
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                0.0449,
+                                0.0636,
                                 0.358,
                                 -0.0933
                             ],
                             "rotation": [
-                                -1.3358,
-                                0.4214,
-                                -0.5295
+                                -1.3455,
+                                0.4151,
+                                -0.5169
                             ]
                         }
                     },
@@ -20297,22 +20297,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar10",
                         "type": "capsule",
                         "center": [
-                            0.0964,
+                            0.1138,
                             0.358,
                             -0.1596
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                0.0964,
+                                0.1138,
                                 0.358,
                                 -0.1596
                             ],
                             "rotation": [
-                                -0.8479,
-                                0.5171,
-                                -1.06
+                                -0.865,
+                                0.519,
+                                -1.0437
                             ]
                         }
                     },
@@ -20320,22 +20320,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar11",
                         "type": "capsule",
                         "center": [
-                            0.1636,
+                            0.1795,
                             0.358,
                             -0.1954
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                0.1636,
+                                0.1795,
                                 0.358,
                                 -0.1954
                             ],
                             "rotation": [
-                                -0.2583,
-                                0.2425,
-                                -1.5074
+                                -0.2647,
+                                0.2478,
+                                -1.5044
                             ]
                         }
                     },
@@ -20343,22 +20343,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar12",
                         "type": "capsule",
                         "center": [
-                            0.2364,
+                            0.2505,
                             0.358,
                             -0.1954
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                0.2364,
+                                0.2505,
                                 0.358,
                                 -0.1954
                             ],
                             "rotation": [
-                                0.2583,
-                                -0.2425,
-                                -1.5074
+                                0.2647,
+                                -0.2478,
+                                -1.5044
                             ]
                         }
                     },
@@ -20366,22 +20366,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar13",
                         "type": "capsule",
                         "center": [
-                            0.3036,
+                            0.3162,
                             0.358,
                             -0.1596
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                0.3036,
+                                0.3162,
                                 0.358,
                                 -0.1596
                             ],
                             "rotation": [
-                                0.8479,
-                                -0.5171,
-                                -1.06
+                                0.865,
+                                -0.519,
+                                -1.0437
                             ]
                         }
                     },
@@ -20389,22 +20389,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar14",
                         "type": "capsule",
                         "center": [
-                            0.3551,
+                            0.3664,
                             0.358,
                             -0.0933
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                0.3551,
+                                0.3664,
                                 0.358,
                                 -0.0933
                             ],
                             "rotation": [
-                                1.3358,
-                                -0.4214,
-                                -0.5295
+                                1.3455,
+                                -0.4151,
+                                -0.5169
                             ]
                         }
                     },
@@ -20412,22 +20412,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar15",
                         "type": "capsule",
                         "center": [
-                            0.383,
+                            0.3936,
                             0.358,
                             -0.0068
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                0.383,
+                                0.3936,
                                 0.358,
                                 -0.0068
                             ],
                             "rotation": [
-                                1.5472,
-                                -0.1516,
-                                -0.1552
+                                1.5483,
+                                -0.1481,
+                                -0.1515
                             ]
                         }
                     }
@@ -20580,12 +20580,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 ],
                 "bounds": {
                     "min": [
-                        -0.04999999999999999,
+                        -0.035,
                         -0.01,
                         -0.25
                     ],
                     "max": [
-                        0.45,
+                        0.46499999999999997,
                         0.4,
                         0.48
                     ]
@@ -20774,12 +20774,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "shaft",
                 "type": "ellipsoid",
                 "center": [
-                    0.2,
+                    0.215,
                     0.22,
                     0.04
                 ],
                 "radii": [
-                    0.205,
+                    0.2,
                     0.33,
                     0.265
                 ]
@@ -20788,7 +20788,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "toe",
                 "type": "ellipsoid",
                 "center": [
-                    0.2,
+                    0.215,
                     0.1,
                     0.19
                 ],
@@ -20802,12 +20802,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "sole-print",
                 "type": "ellipsoid",
                 "center": [
-                    0.2,
+                    0.215,
                     0.03,
                     0.12
                 ],
                 "radii": [
-                    0.19,
+                    0.185,
                     0.6,
                     0.31
                 ]
@@ -20816,7 +20816,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "sole-slab",
                 "type": "box",
                 "center": [
-                    0.2,
+                    0.215,
                     0.03,
                     0.12
                 ],
@@ -20830,7 +20830,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "top",
                 "type": "box",
                 "center": [
-                    0.2,
+                    0.215,
                     0.6699999999999999,
                     0.1
                 ],
@@ -20844,7 +20844,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "under",
                 "type": "box",
                 "center": [
-                    0.2,
+                    0.215,
                     -0.3,
                     0.1
                 ],
@@ -20858,22 +20858,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar0",
                 "type": "capsule",
                 "center": [
-                    0.383,
+                    0.3936,
                     0.358,
                     0.0868
                 ],
-                "radius": 0.03,
-                "height": 0.0948,
+                "radius": 0.027,
+                "height": 0.0947,
                 "transform": {
                     "position": [
-                        0.383,
+                        0.3936,
                         0.358,
                         0.0868
                     ],
                     "rotation": [
-                        1.5472,
-                        0.1516,
-                        0.1552
+                        1.5483,
+                        0.1481,
+                        0.1515
                     ]
                 }
             },
@@ -20881,22 +20881,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar1",
                 "type": "capsule",
                 "center": [
-                    0.3551,
+                    0.3664,
                     0.358,
                     0.1733
                 ],
-                "radius": 0.03,
-                "height": 0.0895,
+                "radius": 0.027,
+                "height": 0.089,
                 "transform": {
                     "position": [
-                        0.3551,
+                        0.3664,
                         0.358,
                         0.1733
                     ],
                     "rotation": [
-                        1.3358,
-                        0.4214,
-                        0.5295
+                        1.3455,
+                        0.4151,
+                        0.5169
                     ]
                 }
             },
@@ -20904,22 +20904,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar2",
                 "type": "capsule",
                 "center": [
-                    0.3036,
+                    0.3162,
                     0.358,
                     0.2396
                 ],
-                "radius": 0.03,
-                "height": 0.0814,
+                "radius": 0.027,
+                "height": 0.0803,
                 "transform": {
                     "position": [
-                        0.3036,
+                        0.3162,
                         0.358,
                         0.2396
                     ],
                     "rotation": [
-                        0.8479,
-                        0.5171,
-                        1.06
+                        0.865,
+                        0.519,
+                        1.0437
                     ]
                 }
             },
@@ -20927,22 +20927,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar3",
                 "type": "capsule",
                 "center": [
-                    0.2364,
+                    0.2505,
                     0.358,
                     0.2754
                 ],
-                "radius": 0.03,
-                "height": 0.0751,
+                "radius": 0.027,
+                "height": 0.0735,
                 "transform": {
                     "position": [
-                        0.2364,
+                        0.2505,
                         0.358,
                         0.2754
                     ],
                     "rotation": [
-                        0.2583,
-                        0.2425,
-                        1.5074
+                        0.2647,
+                        0.2478,
+                        1.5044
                     ]
                 }
             },
@@ -20950,22 +20950,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar4",
                 "type": "capsule",
                 "center": [
-                    0.1636,
+                    0.1795,
                     0.358,
                     0.2754
                 ],
-                "radius": 0.03,
-                "height": 0.0751,
+                "radius": 0.027,
+                "height": 0.0735,
                 "transform": {
                     "position": [
-                        0.1636,
+                        0.1795,
                         0.358,
                         0.2754
                     ],
                     "rotation": [
-                        -0.2583,
-                        -0.2425,
-                        1.5074
+                        -0.2647,
+                        -0.2478,
+                        1.5044
                     ]
                 }
             },
@@ -20973,22 +20973,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar5",
                 "type": "capsule",
                 "center": [
-                    0.0964,
+                    0.1138,
                     0.358,
                     0.2396
                 ],
-                "radius": 0.03,
-                "height": 0.0814,
+                "radius": 0.027,
+                "height": 0.0803,
                 "transform": {
                     "position": [
-                        0.0964,
+                        0.1138,
                         0.358,
                         0.2396
                     ],
                     "rotation": [
-                        -0.8479,
-                        -0.5171,
-                        1.06
+                        -0.865,
+                        -0.519,
+                        1.0437
                     ]
                 }
             },
@@ -20996,22 +20996,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar6",
                 "type": "capsule",
                 "center": [
-                    0.0449,
+                    0.0636,
                     0.358,
                     0.1733
                 ],
-                "radius": 0.03,
-                "height": 0.0895,
+                "radius": 0.027,
+                "height": 0.089,
                 "transform": {
                     "position": [
-                        0.0449,
+                        0.0636,
                         0.358,
                         0.1733
                     ],
                     "rotation": [
-                        -1.3358,
-                        -0.4214,
-                        0.5295
+                        -1.3455,
+                        -0.4151,
+                        0.5169
                     ]
                 }
             },
@@ -21019,22 +21019,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar7",
                 "type": "capsule",
                 "center": [
-                    0.017,
+                    0.0364,
                     0.358,
                     0.0868
                 ],
-                "radius": 0.03,
-                "height": 0.0948,
+                "radius": 0.027,
+                "height": 0.0947,
                 "transform": {
                     "position": [
-                        0.017,
+                        0.0364,
                         0.358,
                         0.0868
                     ],
                     "rotation": [
-                        -1.5472,
-                        -0.1516,
-                        0.1552
+                        -1.5483,
+                        -0.1481,
+                        0.1515
                     ]
                 }
             },
@@ -21042,22 +21042,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar8",
                 "type": "capsule",
                 "center": [
-                    0.017,
+                    0.0364,
                     0.358,
                     -0.0068
                 ],
-                "radius": 0.03,
-                "height": 0.0948,
+                "radius": 0.027,
+                "height": 0.0947,
                 "transform": {
                     "position": [
-                        0.017,
+                        0.0364,
                         0.358,
                         -0.0068
                     ],
                     "rotation": [
-                        -1.5472,
-                        0.1516,
-                        -0.1552
+                        -1.5483,
+                        0.1481,
+                        -0.1515
                     ]
                 }
             },
@@ -21065,22 +21065,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar9",
                 "type": "capsule",
                 "center": [
-                    0.0449,
+                    0.0636,
                     0.358,
                     -0.0933
                 ],
-                "radius": 0.03,
-                "height": 0.0895,
+                "radius": 0.027,
+                "height": 0.089,
                 "transform": {
                     "position": [
-                        0.0449,
+                        0.0636,
                         0.358,
                         -0.0933
                     ],
                     "rotation": [
-                        -1.3358,
-                        0.4214,
-                        -0.5295
+                        -1.3455,
+                        0.4151,
+                        -0.5169
                     ]
                 }
             },
@@ -21088,22 +21088,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar10",
                 "type": "capsule",
                 "center": [
-                    0.0964,
+                    0.1138,
                     0.358,
                     -0.1596
                 ],
-                "radius": 0.03,
-                "height": 0.0814,
+                "radius": 0.027,
+                "height": 0.0803,
                 "transform": {
                     "position": [
-                        0.0964,
+                        0.1138,
                         0.358,
                         -0.1596
                     ],
                     "rotation": [
-                        -0.8479,
-                        0.5171,
-                        -1.06
+                        -0.865,
+                        0.519,
+                        -1.0437
                     ]
                 }
             },
@@ -21111,22 +21111,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar11",
                 "type": "capsule",
                 "center": [
-                    0.1636,
+                    0.1795,
                     0.358,
                     -0.1954
                 ],
-                "radius": 0.03,
-                "height": 0.0751,
+                "radius": 0.027,
+                "height": 0.0735,
                 "transform": {
                     "position": [
-                        0.1636,
+                        0.1795,
                         0.358,
                         -0.1954
                     ],
                     "rotation": [
-                        -0.2583,
-                        0.2425,
-                        -1.5074
+                        -0.2647,
+                        0.2478,
+                        -1.5044
                     ]
                 }
             },
@@ -21134,22 +21134,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar12",
                 "type": "capsule",
                 "center": [
-                    0.2364,
+                    0.2505,
                     0.358,
                     -0.1954
                 ],
-                "radius": 0.03,
-                "height": 0.0751,
+                "radius": 0.027,
+                "height": 0.0735,
                 "transform": {
                     "position": [
-                        0.2364,
+                        0.2505,
                         0.358,
                         -0.1954
                     ],
                     "rotation": [
-                        0.2583,
-                        -0.2425,
-                        -1.5074
+                        0.2647,
+                        -0.2478,
+                        -1.5044
                     ]
                 }
             },
@@ -21157,22 +21157,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar13",
                 "type": "capsule",
                 "center": [
-                    0.3036,
+                    0.3162,
                     0.358,
                     -0.1596
                 ],
-                "radius": 0.03,
-                "height": 0.0814,
+                "radius": 0.027,
+                "height": 0.0803,
                 "transform": {
                     "position": [
-                        0.3036,
+                        0.3162,
                         0.358,
                         -0.1596
                     ],
                     "rotation": [
-                        0.8479,
-                        -0.5171,
-                        -1.06
+                        0.865,
+                        -0.519,
+                        -1.0437
                     ]
                 }
             },
@@ -21180,22 +21180,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar14",
                 "type": "capsule",
                 "center": [
-                    0.3551,
+                    0.3664,
                     0.358,
                     -0.0933
                 ],
-                "radius": 0.03,
-                "height": 0.0895,
+                "radius": 0.027,
+                "height": 0.089,
                 "transform": {
                     "position": [
-                        0.3551,
+                        0.3664,
                         0.358,
                         -0.0933
                     ],
                     "rotation": [
-                        1.3358,
-                        -0.4214,
-                        -0.5295
+                        1.3455,
+                        -0.4151,
+                        -0.5169
                     ]
                 }
             },
@@ -21203,22 +21203,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar15",
                 "type": "capsule",
                 "center": [
-                    0.383,
+                    0.3936,
                     0.358,
                     -0.0068
                 ],
-                "radius": 0.03,
-                "height": 0.0948,
+                "radius": 0.027,
+                "height": 0.0947,
                 "transform": {
                     "position": [
-                        0.383,
+                        0.3936,
                         0.358,
                         -0.0068
                     ],
                     "rotation": [
-                        1.5472,
-                        -0.1516,
-                        -0.1552
+                        1.5483,
+                        -0.1481,
+                        -0.1515
                     ]
                 }
             }
@@ -21371,12 +21371,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         ],
         "bounds": {
             "min": [
-                -0.04999999999999999,
+                -0.035,
                 -0.01,
                 -0.25
             ],
             "max": [
-                0.45,
+                0.46499999999999997,
                 0.4,
                 0.48
             ]
@@ -21483,12 +21483,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "shaft",
                         "type": "ellipsoid",
                         "center": [
-                            0.2,
+                            0.215,
                             0.22,
                             0.04
                         ],
                         "radii": [
-                            0.205,
+                            0.2,
                             0.33,
                             0.265
                         ]
@@ -21497,7 +21497,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "toe",
                         "type": "ellipsoid",
                         "center": [
-                            0.2,
+                            0.215,
                             0.1,
                             0.19
                         ],
@@ -21511,12 +21511,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-print",
                         "type": "ellipsoid",
                         "center": [
-                            0.2,
+                            0.215,
                             0.03,
                             0.12
                         ],
                         "radii": [
-                            0.19,
+                            0.185,
                             0.6,
                             0.31
                         ]
@@ -21525,7 +21525,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-slab",
                         "type": "box",
                         "center": [
-                            0.2,
+                            0.215,
                             0.03,
                             0.12
                         ],
@@ -21539,7 +21539,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "top",
                         "type": "box",
                         "center": [
-                            0.2,
+                            0.215,
                             0.6699999999999999,
                             0.1
                         ],
@@ -21553,7 +21553,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "under",
                         "type": "box",
                         "center": [
-                            0.2,
+                            0.215,
                             -0.3,
                             0.1
                         ],
@@ -21567,22 +21567,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar0",
                         "type": "capsule",
                         "center": [
-                            0.383,
+                            0.3936,
                             0.358,
                             0.0868
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                0.383,
+                                0.3936,
                                 0.358,
                                 0.0868
                             ],
                             "rotation": [
-                                1.5472,
-                                0.1516,
-                                0.1552
+                                1.5483,
+                                0.1481,
+                                0.1515
                             ]
                         }
                     },
@@ -21590,22 +21590,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar1",
                         "type": "capsule",
                         "center": [
-                            0.3551,
+                            0.3664,
                             0.358,
                             0.1733
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                0.3551,
+                                0.3664,
                                 0.358,
                                 0.1733
                             ],
                             "rotation": [
-                                1.3358,
-                                0.4214,
-                                0.5295
+                                1.3455,
+                                0.4151,
+                                0.5169
                             ]
                         }
                     },
@@ -21613,22 +21613,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar2",
                         "type": "capsule",
                         "center": [
-                            0.3036,
+                            0.3162,
                             0.358,
                             0.2396
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                0.3036,
+                                0.3162,
                                 0.358,
                                 0.2396
                             ],
                             "rotation": [
-                                0.8479,
-                                0.5171,
-                                1.06
+                                0.865,
+                                0.519,
+                                1.0437
                             ]
                         }
                     },
@@ -21636,22 +21636,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar3",
                         "type": "capsule",
                         "center": [
-                            0.2364,
+                            0.2505,
                             0.358,
                             0.2754
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                0.2364,
+                                0.2505,
                                 0.358,
                                 0.2754
                             ],
                             "rotation": [
-                                0.2583,
-                                0.2425,
-                                1.5074
+                                0.2647,
+                                0.2478,
+                                1.5044
                             ]
                         }
                     },
@@ -21659,22 +21659,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar4",
                         "type": "capsule",
                         "center": [
-                            0.1636,
+                            0.1795,
                             0.358,
                             0.2754
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                0.1636,
+                                0.1795,
                                 0.358,
                                 0.2754
                             ],
                             "rotation": [
-                                -0.2583,
-                                -0.2425,
-                                1.5074
+                                -0.2647,
+                                -0.2478,
+                                1.5044
                             ]
                         }
                     },
@@ -21682,22 +21682,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar5",
                         "type": "capsule",
                         "center": [
-                            0.0964,
+                            0.1138,
                             0.358,
                             0.2396
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                0.0964,
+                                0.1138,
                                 0.358,
                                 0.2396
                             ],
                             "rotation": [
-                                -0.8479,
-                                -0.5171,
-                                1.06
+                                -0.865,
+                                -0.519,
+                                1.0437
                             ]
                         }
                     },
@@ -21705,22 +21705,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar6",
                         "type": "capsule",
                         "center": [
-                            0.0449,
+                            0.0636,
                             0.358,
                             0.1733
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                0.0449,
+                                0.0636,
                                 0.358,
                                 0.1733
                             ],
                             "rotation": [
-                                -1.3358,
-                                -0.4214,
-                                0.5295
+                                -1.3455,
+                                -0.4151,
+                                0.5169
                             ]
                         }
                     },
@@ -21728,22 +21728,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar7",
                         "type": "capsule",
                         "center": [
-                            0.017,
+                            0.0364,
                             0.358,
                             0.0868
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                0.017,
+                                0.0364,
                                 0.358,
                                 0.0868
                             ],
                             "rotation": [
-                                -1.5472,
-                                -0.1516,
-                                0.1552
+                                -1.5483,
+                                -0.1481,
+                                0.1515
                             ]
                         }
                     },
@@ -21751,22 +21751,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar8",
                         "type": "capsule",
                         "center": [
-                            0.017,
+                            0.0364,
                             0.358,
                             -0.0068
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                0.017,
+                                0.0364,
                                 0.358,
                                 -0.0068
                             ],
                             "rotation": [
-                                -1.5472,
-                                0.1516,
-                                -0.1552
+                                -1.5483,
+                                0.1481,
+                                -0.1515
                             ]
                         }
                     },
@@ -21774,22 +21774,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar9",
                         "type": "capsule",
                         "center": [
-                            0.0449,
+                            0.0636,
                             0.358,
                             -0.0933
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                0.0449,
+                                0.0636,
                                 0.358,
                                 -0.0933
                             ],
                             "rotation": [
-                                -1.3358,
-                                0.4214,
-                                -0.5295
+                                -1.3455,
+                                0.4151,
+                                -0.5169
                             ]
                         }
                     },
@@ -21797,22 +21797,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar10",
                         "type": "capsule",
                         "center": [
-                            0.0964,
+                            0.1138,
                             0.358,
                             -0.1596
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                0.0964,
+                                0.1138,
                                 0.358,
                                 -0.1596
                             ],
                             "rotation": [
-                                -0.8479,
-                                0.5171,
-                                -1.06
+                                -0.865,
+                                0.519,
+                                -1.0437
                             ]
                         }
                     },
@@ -21820,22 +21820,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar11",
                         "type": "capsule",
                         "center": [
-                            0.1636,
+                            0.1795,
                             0.358,
                             -0.1954
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                0.1636,
+                                0.1795,
                                 0.358,
                                 -0.1954
                             ],
                             "rotation": [
-                                -0.2583,
-                                0.2425,
-                                -1.5074
+                                -0.2647,
+                                0.2478,
+                                -1.5044
                             ]
                         }
                     },
@@ -21843,22 +21843,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar12",
                         "type": "capsule",
                         "center": [
-                            0.2364,
+                            0.2505,
                             0.358,
                             -0.1954
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                0.2364,
+                                0.2505,
                                 0.358,
                                 -0.1954
                             ],
                             "rotation": [
-                                0.2583,
-                                -0.2425,
-                                -1.5074
+                                0.2647,
+                                -0.2478,
+                                -1.5044
                             ]
                         }
                     },
@@ -21866,22 +21866,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar13",
                         "type": "capsule",
                         "center": [
-                            0.3036,
+                            0.3162,
                             0.358,
                             -0.1596
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                0.3036,
+                                0.3162,
                                 0.358,
                                 -0.1596
                             ],
                             "rotation": [
-                                0.8479,
-                                -0.5171,
-                                -1.06
+                                0.865,
+                                -0.519,
+                                -1.0437
                             ]
                         }
                     },
@@ -21889,22 +21889,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar14",
                         "type": "capsule",
                         "center": [
-                            0.3551,
+                            0.3664,
                             0.358,
                             -0.0933
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                0.3551,
+                                0.3664,
                                 0.358,
                                 -0.0933
                             ],
                             "rotation": [
-                                1.3358,
-                                -0.4214,
-                                -0.5295
+                                1.3455,
+                                -0.4151,
+                                -0.5169
                             ]
                         }
                     },
@@ -21912,22 +21912,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar15",
                         "type": "capsule",
                         "center": [
-                            0.383,
+                            0.3936,
                             0.358,
                             -0.0068
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                0.383,
+                                0.3936,
                                 0.358,
                                 -0.0068
                             ],
                             "rotation": [
-                                1.5472,
-                                -0.1516,
-                                -0.1552
+                                1.5483,
+                                -0.1481,
+                                -0.1515
                             ]
                         }
                     }
@@ -22080,12 +22080,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 ],
                 "bounds": {
                     "min": [
-                        -0.04999999999999999,
+                        -0.035,
                         -0.01,
                         -0.25
                     ],
                     "max": [
-                        0.45,
+                        0.46499999999999997,
                         0.4,
                         0.48
                     ]
@@ -22241,7 +22241,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l0a_24.position.copy(endpoint_boot_eyelet_l0a_24.start);
         node_boot_eyelet_l0a_24.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l0a_24.position.set(0.135, 0.17, 0.3787);
+        node_boot_eyelet_l0a_24.position.set(0.15, 0.17, 0.3793);
         node_boot_eyelet_l0a_24.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l0a_24.userData.sculptComponent = {
@@ -22279,9 +22279,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.135,
+                0.15,
                 0.17,
-                0.3787
+                0.3793
             ],
             "rotation": [
                 0,
@@ -22490,9 +22490,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.135,
+                0.15,
                 0.17,
-                0.3787
+                0.3793
             ],
             "rotation": [
                 0,
@@ -22624,7 +22624,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l0b_25.position.copy(endpoint_boot_eyelet_l0b_25.start);
         node_boot_eyelet_l0b_25.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l0b_25.position.set(0.265, 0.17, 0.3787);
+        node_boot_eyelet_l0b_25.position.set(0.28, 0.17, 0.3793);
         node_boot_eyelet_l0b_25.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l0b_25.userData.sculptComponent = {
@@ -22662,9 +22662,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.265,
+                0.28,
                 0.17,
-                0.3787
+                0.3793
             ],
             "rotation": [
                 0,
@@ -22873,9 +22873,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.265,
+                0.28,
                 0.17,
-                0.3787
+                0.3793
             ],
             "rotation": [
                 0,
@@ -23007,7 +23007,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l1a_26.position.copy(endpoint_boot_eyelet_l1a_26.start);
         node_boot_eyelet_l1a_26.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l1a_26.position.set(0.135, 0.215, 0.3273);
+        node_boot_eyelet_l1a_26.position.set(0.15, 0.215, 0.3275);
         node_boot_eyelet_l1a_26.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l1a_26.userData.sculptComponent = {
@@ -23045,9 +23045,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.135,
+                0.15,
                 0.215,
-                0.3273
+                0.3275
             ],
             "rotation": [
                 0,
@@ -23256,9 +23256,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.135,
+                0.15,
                 0.215,
-                0.3273
+                0.3275
             ],
             "rotation": [
                 0,
@@ -23390,7 +23390,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l1b_27.position.copy(endpoint_boot_eyelet_l1b_27.start);
         node_boot_eyelet_l1b_27.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l1b_27.position.set(0.265, 0.215, 0.3273);
+        node_boot_eyelet_l1b_27.position.set(0.28, 0.215, 0.3275);
         node_boot_eyelet_l1b_27.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l1b_27.userData.sculptComponent = {
@@ -23428,9 +23428,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.265,
+                0.28,
                 0.215,
-                0.3273
+                0.3275
             ],
             "rotation": [
                 0,
@@ -23639,9 +23639,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.265,
+                0.28,
                 0.215,
-                0.3273
+                0.3275
             ],
             "rotation": [
                 0,
@@ -23773,7 +23773,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l2a_28.position.copy(endpoint_boot_eyelet_l2a_28.start);
         node_boot_eyelet_l2a_28.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l2a_28.position.set(0.135, 0.26, 0.2955);
+        node_boot_eyelet_l2a_28.position.set(0.15, 0.26, 0.295);
         node_boot_eyelet_l2a_28.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l2a_28.userData.sculptComponent = {
@@ -23811,9 +23811,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.135,
+                0.15,
                 0.26,
-                0.2955
+                0.295
             ],
             "rotation": [
                 0,
@@ -24022,9 +24022,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.135,
+                0.15,
                 0.26,
-                0.2955
+                0.295
             ],
             "rotation": [
                 0,
@@ -24156,7 +24156,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l2b_29.position.copy(endpoint_boot_eyelet_l2b_29.start);
         node_boot_eyelet_l2b_29.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l2b_29.position.set(0.265, 0.26, 0.2955);
+        node_boot_eyelet_l2b_29.position.set(0.28, 0.26, 0.295);
         node_boot_eyelet_l2b_29.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l2b_29.userData.sculptComponent = {
@@ -24194,9 +24194,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.265,
+                0.28,
                 0.26,
-                0.2955
+                0.295
             ],
             "rotation": [
                 0,
@@ -24405,9 +24405,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.265,
+                0.28,
                 0.26,
-                0.2955
+                0.295
             ],
             "rotation": [
                 0,
@@ -24539,7 +24539,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l3a_30.position.copy(endpoint_boot_eyelet_l3a_30.start);
         node_boot_eyelet_l3a_30.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l3a_30.position.set(0.135, 0.305, 0.2802);
+        node_boot_eyelet_l3a_30.position.set(0.15, 0.305, 0.2792);
         node_boot_eyelet_l3a_30.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l3a_30.userData.sculptComponent = {
@@ -24577,9 +24577,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.135,
+                0.15,
                 0.305,
-                0.2802
+                0.2792
             ],
             "rotation": [
                 0,
@@ -24788,9 +24788,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.135,
+                0.15,
                 0.305,
-                0.2802
+                0.2792
             ],
             "rotation": [
                 0,
@@ -24922,7 +24922,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l3b_31.position.copy(endpoint_boot_eyelet_l3b_31.start);
         node_boot_eyelet_l3b_31.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l3b_31.position.set(0.265, 0.305, 0.2802);
+        node_boot_eyelet_l3b_31.position.set(0.28, 0.305, 0.2792);
         node_boot_eyelet_l3b_31.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l3b_31.userData.sculptComponent = {
@@ -24960,9 +24960,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.265,
+                0.28,
                 0.305,
-                0.2802
+                0.2792
             ],
             "rotation": [
                 0,
@@ -25171,9 +25171,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.265,
+                0.28,
                 0.305,
-                0.2802
+                0.2792
             ],
             "rotation": [
                 0,
@@ -25305,7 +25305,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l4a_32.position.copy(endpoint_boot_eyelet_l4a_32.start);
         node_boot_eyelet_l4a_32.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l4a_32.position.set(0.135, 0.35, 0.2969);
+        node_boot_eyelet_l4a_32.position.set(0.15, 0.35, 0.2938);
         node_boot_eyelet_l4a_32.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l4a_32.userData.sculptComponent = {
@@ -25343,9 +25343,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.135,
+                0.15,
                 0.35,
-                0.2969
+                0.2938
             ],
             "rotation": [
                 0,
@@ -25554,9 +25554,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.135,
+                0.15,
                 0.35,
-                0.2969
+                0.2938
             ],
             "rotation": [
                 0,
@@ -25688,7 +25688,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l4b_33.position.copy(endpoint_boot_eyelet_l4b_33.start);
         node_boot_eyelet_l4b_33.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l4b_33.position.set(0.265, 0.35, 0.2969);
+        node_boot_eyelet_l4b_33.position.set(0.28, 0.35, 0.2938);
         node_boot_eyelet_l4b_33.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l4b_33.userData.sculptComponent = {
@@ -25726,9 +25726,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.265,
+                0.28,
                 0.35,
-                0.2969
+                0.2938
             ],
             "rotation": [
                 0,
@@ -25937,9 +25937,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                0.265,
+                0.28,
                 0.35,
-                0.2969
+                0.2938
             ],
             "rotation": [
                 0,
@@ -26066,14 +26066,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_la0_34 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.265,
+            0.28,
             0.17,
-            0.3887
+            0.3893
         ],
         "localEnd": [
-            0.135,
+            0.15,
             0.215,
-            0.3373
+            0.3375
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -26120,14 +26120,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.265,
+                0.28,
                 0.17,
-                0.3887
+                0.3893
             ],
             "localEnd": [
-                0.135,
+                0.15,
                 0.215,
-                0.3373
+                0.3375
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -26347,14 +26347,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.265,
+                0.28,
                 0.17,
-                0.3887
+                0.3893
             ],
             "localEnd": [
-                0.135,
+                0.15,
                 0.215,
-                0.3373
+                0.3375
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -26503,14 +26503,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_la1_35 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.135,
+            0.15,
             0.215,
-            0.3373
+            0.3375
         ],
         "localEnd": [
-            0.265,
+            0.28,
             0.26,
-            0.3055
+            0.305
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -26557,14 +26557,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.135,
+                0.15,
                 0.215,
-                0.3373
+                0.3375
             ],
             "localEnd": [
-                0.265,
+                0.28,
                 0.26,
-                0.3055
+                0.305
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -26784,14 +26784,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.135,
+                0.15,
                 0.215,
-                0.3373
+                0.3375
             ],
             "localEnd": [
-                0.265,
+                0.28,
                 0.26,
-                0.3055
+                0.305
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -26940,14 +26940,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_la2_36 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.265,
+            0.28,
             0.26,
-            0.3055
+            0.305
         ],
         "localEnd": [
-            0.135,
+            0.15,
             0.305,
-            0.2903
+            0.2892
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -26994,14 +26994,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.265,
+                0.28,
                 0.26,
-                0.3055
+                0.305
             ],
             "localEnd": [
-                0.135,
+                0.15,
                 0.305,
-                0.2903
+                0.2892
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -27221,14 +27221,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.265,
+                0.28,
                 0.26,
-                0.3055
+                0.305
             ],
             "localEnd": [
-                0.135,
+                0.15,
                 0.305,
-                0.2903
+                0.2892
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -27377,14 +27377,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_la3_37 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.135,
+            0.15,
             0.305,
-            0.2903
+            0.2892
         ],
         "localEnd": [
-            0.265,
+            0.28,
             0.35,
-            0.3069
+            0.3038
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -27431,14 +27431,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.135,
+                0.15,
                 0.305,
-                0.2903
+                0.2892
             ],
             "localEnd": [
-                0.265,
+                0.28,
                 0.35,
-                0.3069
+                0.3038
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -27658,14 +27658,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.135,
+                0.15,
                 0.305,
-                0.2903
+                0.2892
             ],
             "localEnd": [
-                0.265,
+                0.28,
                 0.35,
-                0.3069
+                0.3038
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -27814,14 +27814,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_lb0_38 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.135,
+            0.15,
             0.17,
-            0.3887
+            0.3893
         ],
         "localEnd": [
-            0.265,
+            0.28,
             0.215,
-            0.3373
+            0.3375
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -27868,14 +27868,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.135,
+                0.15,
                 0.17,
-                0.3887
+                0.3893
             ],
             "localEnd": [
-                0.265,
+                0.28,
                 0.215,
-                0.3373
+                0.3375
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -28095,14 +28095,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.135,
+                0.15,
                 0.17,
-                0.3887
+                0.3893
             ],
             "localEnd": [
-                0.265,
+                0.28,
                 0.215,
-                0.3373
+                0.3375
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -28251,14 +28251,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_lb1_39 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.265,
+            0.28,
             0.215,
-            0.3373
+            0.3375
         ],
         "localEnd": [
-            0.135,
+            0.15,
             0.26,
-            0.3055
+            0.305
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -28305,14 +28305,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.265,
+                0.28,
                 0.215,
-                0.3373
+                0.3375
             ],
             "localEnd": [
-                0.135,
+                0.15,
                 0.26,
-                0.3055
+                0.305
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -28532,14 +28532,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.265,
+                0.28,
                 0.215,
-                0.3373
+                0.3375
             ],
             "localEnd": [
-                0.135,
+                0.15,
                 0.26,
-                0.3055
+                0.305
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -28688,14 +28688,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_lb2_40 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.135,
+            0.15,
             0.26,
-            0.3055
+            0.305
         ],
         "localEnd": [
-            0.265,
+            0.28,
             0.305,
-            0.2903
+            0.2892
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -28742,14 +28742,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.135,
+                0.15,
                 0.26,
-                0.3055
+                0.305
             ],
             "localEnd": [
-                0.265,
+                0.28,
                 0.305,
-                0.2903
+                0.2892
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -28969,14 +28969,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.135,
+                0.15,
                 0.26,
-                0.3055
+                0.305
             ],
             "localEnd": [
-                0.265,
+                0.28,
                 0.305,
-                0.2903
+                0.2892
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -29125,14 +29125,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_lb3_41 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.265,
+            0.28,
             0.305,
-            0.2903
+            0.2892
         ],
         "localEnd": [
-            0.135,
+            0.15,
             0.35,
-            0.3069
+            0.3038
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -29179,14 +29179,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.265,
+                0.28,
                 0.305,
-                0.2903
+                0.2892
             ],
             "localEnd": [
-                0.135,
+                0.15,
                 0.35,
-                0.3069
+                0.3038
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -29406,14 +29406,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.265,
+                0.28,
                 0.305,
-                0.2903
+                0.2892
             ],
             "localEnd": [
-                0.135,
+                0.15,
                 0.35,
-                0.3069
+                0.3038
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -29596,12 +29596,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "shaft",
                         "type": "ellipsoid",
                         "center": [
-                            -0.2,
+                            -0.215,
                             0.22,
                             0.04
                         ],
                         "radii": [
-                            0.205,
+                            0.2,
                             0.33,
                             0.265
                         ]
@@ -29610,7 +29610,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "toe",
                         "type": "ellipsoid",
                         "center": [
-                            -0.2,
+                            -0.215,
                             0.1,
                             0.19
                         ],
@@ -29624,12 +29624,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-print",
                         "type": "ellipsoid",
                         "center": [
-                            -0.2,
+                            -0.215,
                             0.03,
                             0.12
                         ],
                         "radii": [
-                            0.19,
+                            0.185,
                             0.6,
                             0.31
                         ]
@@ -29638,7 +29638,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-slab",
                         "type": "box",
                         "center": [
-                            -0.2,
+                            -0.215,
                             0.03,
                             0.12
                         ],
@@ -29652,7 +29652,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "top",
                         "type": "box",
                         "center": [
-                            -0.2,
+                            -0.215,
                             0.6699999999999999,
                             0.1
                         ],
@@ -29666,7 +29666,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "under",
                         "type": "box",
                         "center": [
-                            -0.2,
+                            -0.215,
                             -0.3,
                             0.1
                         ],
@@ -29680,22 +29680,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar0",
                         "type": "capsule",
                         "center": [
-                            -0.017,
+                            -0.0364,
                             0.358,
                             0.0868
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                -0.017,
+                                -0.0364,
                                 0.358,
                                 0.0868
                             ],
                             "rotation": [
-                                1.5472,
-                                0.1516,
-                                0.1552
+                                1.5483,
+                                0.1481,
+                                0.1515
                             ]
                         }
                     },
@@ -29703,22 +29703,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar1",
                         "type": "capsule",
                         "center": [
-                            -0.0449,
+                            -0.0636,
                             0.358,
                             0.1733
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                -0.0449,
+                                -0.0636,
                                 0.358,
                                 0.1733
                             ],
                             "rotation": [
-                                1.3358,
-                                0.4214,
-                                0.5295
+                                1.3455,
+                                0.4151,
+                                0.5169
                             ]
                         }
                     },
@@ -29726,22 +29726,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar2",
                         "type": "capsule",
                         "center": [
-                            -0.0964,
+                            -0.1138,
                             0.358,
                             0.2396
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                -0.0964,
+                                -0.1138,
                                 0.358,
                                 0.2396
                             ],
                             "rotation": [
-                                0.8479,
-                                0.5171,
-                                1.06
+                                0.865,
+                                0.519,
+                                1.0437
                             ]
                         }
                     },
@@ -29749,22 +29749,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar3",
                         "type": "capsule",
                         "center": [
-                            -0.1636,
+                            -0.1795,
                             0.358,
                             0.2754
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                -0.1636,
+                                -0.1795,
                                 0.358,
                                 0.2754
                             ],
                             "rotation": [
-                                0.2583,
-                                0.2425,
-                                1.5074
+                                0.2647,
+                                0.2478,
+                                1.5044
                             ]
                         }
                     },
@@ -29772,22 +29772,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar4",
                         "type": "capsule",
                         "center": [
-                            -0.2364,
+                            -0.2505,
                             0.358,
                             0.2754
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                -0.2364,
+                                -0.2505,
                                 0.358,
                                 0.2754
                             ],
                             "rotation": [
-                                -0.2583,
-                                -0.2425,
-                                1.5074
+                                -0.2647,
+                                -0.2478,
+                                1.5044
                             ]
                         }
                     },
@@ -29795,22 +29795,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar5",
                         "type": "capsule",
                         "center": [
-                            -0.3036,
+                            -0.3162,
                             0.358,
                             0.2396
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                -0.3036,
+                                -0.3162,
                                 0.358,
                                 0.2396
                             ],
                             "rotation": [
-                                -0.8479,
-                                -0.5171,
-                                1.06
+                                -0.865,
+                                -0.519,
+                                1.0437
                             ]
                         }
                     },
@@ -29818,22 +29818,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar6",
                         "type": "capsule",
                         "center": [
-                            -0.3551,
+                            -0.3664,
                             0.358,
                             0.1733
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                -0.3551,
+                                -0.3664,
                                 0.358,
                                 0.1733
                             ],
                             "rotation": [
-                                -1.3358,
-                                -0.4214,
-                                0.5295
+                                -1.3455,
+                                -0.4151,
+                                0.5169
                             ]
                         }
                     },
@@ -29841,22 +29841,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar7",
                         "type": "capsule",
                         "center": [
-                            -0.383,
+                            -0.3936,
                             0.358,
                             0.0868
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                -0.383,
+                                -0.3936,
                                 0.358,
                                 0.0868
                             ],
                             "rotation": [
-                                -1.5472,
-                                -0.1516,
-                                0.1552
+                                -1.5483,
+                                -0.1481,
+                                0.1515
                             ]
                         }
                     },
@@ -29864,22 +29864,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar8",
                         "type": "capsule",
                         "center": [
-                            -0.383,
+                            -0.3936,
                             0.358,
                             -0.0068
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                -0.383,
+                                -0.3936,
                                 0.358,
                                 -0.0068
                             ],
                             "rotation": [
-                                -1.5472,
-                                0.1516,
-                                -0.1552
+                                -1.5483,
+                                0.1481,
+                                -0.1515
                             ]
                         }
                     },
@@ -29887,22 +29887,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar9",
                         "type": "capsule",
                         "center": [
-                            -0.3551,
+                            -0.3664,
                             0.358,
                             -0.0933
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                -0.3551,
+                                -0.3664,
                                 0.358,
                                 -0.0933
                             ],
                             "rotation": [
-                                -1.3358,
-                                0.4214,
-                                -0.5295
+                                -1.3455,
+                                0.4151,
+                                -0.5169
                             ]
                         }
                     },
@@ -29910,22 +29910,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar10",
                         "type": "capsule",
                         "center": [
-                            -0.3036,
+                            -0.3162,
                             0.358,
                             -0.1596
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                -0.3036,
+                                -0.3162,
                                 0.358,
                                 -0.1596
                             ],
                             "rotation": [
-                                -0.8479,
-                                0.5171,
-                                -1.06
+                                -0.865,
+                                0.519,
+                                -1.0437
                             ]
                         }
                     },
@@ -29933,22 +29933,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar11",
                         "type": "capsule",
                         "center": [
-                            -0.2364,
+                            -0.2505,
                             0.358,
                             -0.1954
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                -0.2364,
+                                -0.2505,
                                 0.358,
                                 -0.1954
                             ],
                             "rotation": [
-                                -0.2583,
-                                0.2425,
-                                -1.5074
+                                -0.2647,
+                                0.2478,
+                                -1.5044
                             ]
                         }
                     },
@@ -29956,22 +29956,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar12",
                         "type": "capsule",
                         "center": [
-                            -0.1636,
+                            -0.1795,
                             0.358,
                             -0.1954
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                -0.1636,
+                                -0.1795,
                                 0.358,
                                 -0.1954
                             ],
                             "rotation": [
-                                0.2583,
-                                -0.2425,
-                                -1.5074
+                                0.2647,
+                                -0.2478,
+                                -1.5044
                             ]
                         }
                     },
@@ -29979,22 +29979,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar13",
                         "type": "capsule",
                         "center": [
-                            -0.0964,
+                            -0.1138,
                             0.358,
                             -0.1596
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                -0.0964,
+                                -0.1138,
                                 0.358,
                                 -0.1596
                             ],
                             "rotation": [
-                                0.8479,
-                                -0.5171,
-                                -1.06
+                                0.865,
+                                -0.519,
+                                -1.0437
                             ]
                         }
                     },
@@ -30002,22 +30002,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar14",
                         "type": "capsule",
                         "center": [
-                            -0.0449,
+                            -0.0636,
                             0.358,
                             -0.0933
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                -0.0449,
+                                -0.0636,
                                 0.358,
                                 -0.0933
                             ],
                             "rotation": [
-                                1.3358,
-                                -0.4214,
-                                -0.5295
+                                1.3455,
+                                -0.4151,
+                                -0.5169
                             ]
                         }
                     },
@@ -30025,22 +30025,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar15",
                         "type": "capsule",
                         "center": [
-                            -0.017,
+                            -0.0364,
                             0.358,
                             -0.0068
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                -0.017,
+                                -0.0364,
                                 0.358,
                                 -0.0068
                             ],
                             "rotation": [
-                                1.5472,
-                                -0.1516,
-                                -0.1552
+                                1.5483,
+                                -0.1481,
+                                -0.1515
                             ]
                         }
                     }
@@ -30193,12 +30193,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 ],
                 "bounds": {
                     "min": [
-                        -0.45,
+                        -0.46499999999999997,
                         -0.01,
                         -0.25
                     ],
                     "max": [
-                        0.04999999999999999,
+                        0.035,
                         0.4,
                         0.48
                     ]
@@ -30387,12 +30387,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "shaft",
                 "type": "ellipsoid",
                 "center": [
-                    -0.2,
+                    -0.215,
                     0.22,
                     0.04
                 ],
                 "radii": [
-                    0.205,
+                    0.2,
                     0.33,
                     0.265
                 ]
@@ -30401,7 +30401,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "toe",
                 "type": "ellipsoid",
                 "center": [
-                    -0.2,
+                    -0.215,
                     0.1,
                     0.19
                 ],
@@ -30415,12 +30415,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "sole-print",
                 "type": "ellipsoid",
                 "center": [
-                    -0.2,
+                    -0.215,
                     0.03,
                     0.12
                 ],
                 "radii": [
-                    0.19,
+                    0.185,
                     0.6,
                     0.31
                 ]
@@ -30429,7 +30429,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "sole-slab",
                 "type": "box",
                 "center": [
-                    -0.2,
+                    -0.215,
                     0.03,
                     0.12
                 ],
@@ -30443,7 +30443,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "top",
                 "type": "box",
                 "center": [
-                    -0.2,
+                    -0.215,
                     0.6699999999999999,
                     0.1
                 ],
@@ -30457,7 +30457,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "under",
                 "type": "box",
                 "center": [
-                    -0.2,
+                    -0.215,
                     -0.3,
                     0.1
                 ],
@@ -30471,22 +30471,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar0",
                 "type": "capsule",
                 "center": [
-                    -0.017,
+                    -0.0364,
                     0.358,
                     0.0868
                 ],
-                "radius": 0.03,
-                "height": 0.0948,
+                "radius": 0.027,
+                "height": 0.0947,
                 "transform": {
                     "position": [
-                        -0.017,
+                        -0.0364,
                         0.358,
                         0.0868
                     ],
                     "rotation": [
-                        1.5472,
-                        0.1516,
-                        0.1552
+                        1.5483,
+                        0.1481,
+                        0.1515
                     ]
                 }
             },
@@ -30494,22 +30494,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar1",
                 "type": "capsule",
                 "center": [
-                    -0.0449,
+                    -0.0636,
                     0.358,
                     0.1733
                 ],
-                "radius": 0.03,
-                "height": 0.0895,
+                "radius": 0.027,
+                "height": 0.089,
                 "transform": {
                     "position": [
-                        -0.0449,
+                        -0.0636,
                         0.358,
                         0.1733
                     ],
                     "rotation": [
-                        1.3358,
-                        0.4214,
-                        0.5295
+                        1.3455,
+                        0.4151,
+                        0.5169
                     ]
                 }
             },
@@ -30517,22 +30517,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar2",
                 "type": "capsule",
                 "center": [
-                    -0.0964,
+                    -0.1138,
                     0.358,
                     0.2396
                 ],
-                "radius": 0.03,
-                "height": 0.0814,
+                "radius": 0.027,
+                "height": 0.0803,
                 "transform": {
                     "position": [
-                        -0.0964,
+                        -0.1138,
                         0.358,
                         0.2396
                     ],
                     "rotation": [
-                        0.8479,
-                        0.5171,
-                        1.06
+                        0.865,
+                        0.519,
+                        1.0437
                     ]
                 }
             },
@@ -30540,22 +30540,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar3",
                 "type": "capsule",
                 "center": [
-                    -0.1636,
+                    -0.1795,
                     0.358,
                     0.2754
                 ],
-                "radius": 0.03,
-                "height": 0.0751,
+                "radius": 0.027,
+                "height": 0.0735,
                 "transform": {
                     "position": [
-                        -0.1636,
+                        -0.1795,
                         0.358,
                         0.2754
                     ],
                     "rotation": [
-                        0.2583,
-                        0.2425,
-                        1.5074
+                        0.2647,
+                        0.2478,
+                        1.5044
                     ]
                 }
             },
@@ -30563,22 +30563,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar4",
                 "type": "capsule",
                 "center": [
-                    -0.2364,
+                    -0.2505,
                     0.358,
                     0.2754
                 ],
-                "radius": 0.03,
-                "height": 0.0751,
+                "radius": 0.027,
+                "height": 0.0735,
                 "transform": {
                     "position": [
-                        -0.2364,
+                        -0.2505,
                         0.358,
                         0.2754
                     ],
                     "rotation": [
-                        -0.2583,
-                        -0.2425,
-                        1.5074
+                        -0.2647,
+                        -0.2478,
+                        1.5044
                     ]
                 }
             },
@@ -30586,22 +30586,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar5",
                 "type": "capsule",
                 "center": [
-                    -0.3036,
+                    -0.3162,
                     0.358,
                     0.2396
                 ],
-                "radius": 0.03,
-                "height": 0.0814,
+                "radius": 0.027,
+                "height": 0.0803,
                 "transform": {
                     "position": [
-                        -0.3036,
+                        -0.3162,
                         0.358,
                         0.2396
                     ],
                     "rotation": [
-                        -0.8479,
-                        -0.5171,
-                        1.06
+                        -0.865,
+                        -0.519,
+                        1.0437
                     ]
                 }
             },
@@ -30609,22 +30609,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar6",
                 "type": "capsule",
                 "center": [
-                    -0.3551,
+                    -0.3664,
                     0.358,
                     0.1733
                 ],
-                "radius": 0.03,
-                "height": 0.0895,
+                "radius": 0.027,
+                "height": 0.089,
                 "transform": {
                     "position": [
-                        -0.3551,
+                        -0.3664,
                         0.358,
                         0.1733
                     ],
                     "rotation": [
-                        -1.3358,
-                        -0.4214,
-                        0.5295
+                        -1.3455,
+                        -0.4151,
+                        0.5169
                     ]
                 }
             },
@@ -30632,22 +30632,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar7",
                 "type": "capsule",
                 "center": [
-                    -0.383,
+                    -0.3936,
                     0.358,
                     0.0868
                 ],
-                "radius": 0.03,
-                "height": 0.0948,
+                "radius": 0.027,
+                "height": 0.0947,
                 "transform": {
                     "position": [
-                        -0.383,
+                        -0.3936,
                         0.358,
                         0.0868
                     ],
                     "rotation": [
-                        -1.5472,
-                        -0.1516,
-                        0.1552
+                        -1.5483,
+                        -0.1481,
+                        0.1515
                     ]
                 }
             },
@@ -30655,22 +30655,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar8",
                 "type": "capsule",
                 "center": [
-                    -0.383,
+                    -0.3936,
                     0.358,
                     -0.0068
                 ],
-                "radius": 0.03,
-                "height": 0.0948,
+                "radius": 0.027,
+                "height": 0.0947,
                 "transform": {
                     "position": [
-                        -0.383,
+                        -0.3936,
                         0.358,
                         -0.0068
                     ],
                     "rotation": [
-                        -1.5472,
-                        0.1516,
-                        -0.1552
+                        -1.5483,
+                        0.1481,
+                        -0.1515
                     ]
                 }
             },
@@ -30678,22 +30678,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar9",
                 "type": "capsule",
                 "center": [
-                    -0.3551,
+                    -0.3664,
                     0.358,
                     -0.0933
                 ],
-                "radius": 0.03,
-                "height": 0.0895,
+                "radius": 0.027,
+                "height": 0.089,
                 "transform": {
                     "position": [
-                        -0.3551,
+                        -0.3664,
                         0.358,
                         -0.0933
                     ],
                     "rotation": [
-                        -1.3358,
-                        0.4214,
-                        -0.5295
+                        -1.3455,
+                        0.4151,
+                        -0.5169
                     ]
                 }
             },
@@ -30701,22 +30701,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar10",
                 "type": "capsule",
                 "center": [
-                    -0.3036,
+                    -0.3162,
                     0.358,
                     -0.1596
                 ],
-                "radius": 0.03,
-                "height": 0.0814,
+                "radius": 0.027,
+                "height": 0.0803,
                 "transform": {
                     "position": [
-                        -0.3036,
+                        -0.3162,
                         0.358,
                         -0.1596
                     ],
                     "rotation": [
-                        -0.8479,
-                        0.5171,
-                        -1.06
+                        -0.865,
+                        0.519,
+                        -1.0437
                     ]
                 }
             },
@@ -30724,22 +30724,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar11",
                 "type": "capsule",
                 "center": [
-                    -0.2364,
+                    -0.2505,
                     0.358,
                     -0.1954
                 ],
-                "radius": 0.03,
-                "height": 0.0751,
+                "radius": 0.027,
+                "height": 0.0735,
                 "transform": {
                     "position": [
-                        -0.2364,
+                        -0.2505,
                         0.358,
                         -0.1954
                     ],
                     "rotation": [
-                        -0.2583,
-                        0.2425,
-                        -1.5074
+                        -0.2647,
+                        0.2478,
+                        -1.5044
                     ]
                 }
             },
@@ -30747,22 +30747,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar12",
                 "type": "capsule",
                 "center": [
-                    -0.1636,
+                    -0.1795,
                     0.358,
                     -0.1954
                 ],
-                "radius": 0.03,
-                "height": 0.0751,
+                "radius": 0.027,
+                "height": 0.0735,
                 "transform": {
                     "position": [
-                        -0.1636,
+                        -0.1795,
                         0.358,
                         -0.1954
                     ],
                     "rotation": [
-                        0.2583,
-                        -0.2425,
-                        -1.5074
+                        0.2647,
+                        -0.2478,
+                        -1.5044
                     ]
                 }
             },
@@ -30770,22 +30770,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar13",
                 "type": "capsule",
                 "center": [
-                    -0.0964,
+                    -0.1138,
                     0.358,
                     -0.1596
                 ],
-                "radius": 0.03,
-                "height": 0.0814,
+                "radius": 0.027,
+                "height": 0.0803,
                 "transform": {
                     "position": [
-                        -0.0964,
+                        -0.1138,
                         0.358,
                         -0.1596
                     ],
                     "rotation": [
-                        0.8479,
-                        -0.5171,
-                        -1.06
+                        0.865,
+                        -0.519,
+                        -1.0437
                     ]
                 }
             },
@@ -30793,22 +30793,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar14",
                 "type": "capsule",
                 "center": [
-                    -0.0449,
+                    -0.0636,
                     0.358,
                     -0.0933
                 ],
-                "radius": 0.03,
-                "height": 0.0895,
+                "radius": 0.027,
+                "height": 0.089,
                 "transform": {
                     "position": [
-                        -0.0449,
+                        -0.0636,
                         0.358,
                         -0.0933
                     ],
                     "rotation": [
-                        1.3358,
-                        -0.4214,
-                        -0.5295
+                        1.3455,
+                        -0.4151,
+                        -0.5169
                     ]
                 }
             },
@@ -30816,22 +30816,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar15",
                 "type": "capsule",
                 "center": [
-                    -0.017,
+                    -0.0364,
                     0.358,
                     -0.0068
                 ],
-                "radius": 0.03,
-                "height": 0.0948,
+                "radius": 0.027,
+                "height": 0.0947,
                 "transform": {
                     "position": [
-                        -0.017,
+                        -0.0364,
                         0.358,
                         -0.0068
                     ],
                     "rotation": [
-                        1.5472,
-                        -0.1516,
-                        -0.1552
+                        1.5483,
+                        -0.1481,
+                        -0.1515
                     ]
                 }
             }
@@ -30984,12 +30984,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         ],
         "bounds": {
             "min": [
-                -0.45,
+                -0.46499999999999997,
                 -0.01,
                 -0.25
             ],
             "max": [
-                0.04999999999999999,
+                0.035,
                 0.4,
                 0.48
             ]
@@ -31096,12 +31096,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "shaft",
                         "type": "ellipsoid",
                         "center": [
-                            -0.2,
+                            -0.215,
                             0.22,
                             0.04
                         ],
                         "radii": [
-                            0.205,
+                            0.2,
                             0.33,
                             0.265
                         ]
@@ -31110,7 +31110,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "toe",
                         "type": "ellipsoid",
                         "center": [
-                            -0.2,
+                            -0.215,
                             0.1,
                             0.19
                         ],
@@ -31124,12 +31124,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-print",
                         "type": "ellipsoid",
                         "center": [
-                            -0.2,
+                            -0.215,
                             0.03,
                             0.12
                         ],
                         "radii": [
-                            0.19,
+                            0.185,
                             0.6,
                             0.31
                         ]
@@ -31138,7 +31138,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-slab",
                         "type": "box",
                         "center": [
-                            -0.2,
+                            -0.215,
                             0.03,
                             0.12
                         ],
@@ -31152,7 +31152,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "top",
                         "type": "box",
                         "center": [
-                            -0.2,
+                            -0.215,
                             0.6699999999999999,
                             0.1
                         ],
@@ -31166,7 +31166,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "under",
                         "type": "box",
                         "center": [
-                            -0.2,
+                            -0.215,
                             -0.3,
                             0.1
                         ],
@@ -31180,22 +31180,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar0",
                         "type": "capsule",
                         "center": [
-                            -0.017,
+                            -0.0364,
                             0.358,
                             0.0868
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                -0.017,
+                                -0.0364,
                                 0.358,
                                 0.0868
                             ],
                             "rotation": [
-                                1.5472,
-                                0.1516,
-                                0.1552
+                                1.5483,
+                                0.1481,
+                                0.1515
                             ]
                         }
                     },
@@ -31203,22 +31203,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar1",
                         "type": "capsule",
                         "center": [
-                            -0.0449,
+                            -0.0636,
                             0.358,
                             0.1733
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                -0.0449,
+                                -0.0636,
                                 0.358,
                                 0.1733
                             ],
                             "rotation": [
-                                1.3358,
-                                0.4214,
-                                0.5295
+                                1.3455,
+                                0.4151,
+                                0.5169
                             ]
                         }
                     },
@@ -31226,22 +31226,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar2",
                         "type": "capsule",
                         "center": [
-                            -0.0964,
+                            -0.1138,
                             0.358,
                             0.2396
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                -0.0964,
+                                -0.1138,
                                 0.358,
                                 0.2396
                             ],
                             "rotation": [
-                                0.8479,
-                                0.5171,
-                                1.06
+                                0.865,
+                                0.519,
+                                1.0437
                             ]
                         }
                     },
@@ -31249,22 +31249,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar3",
                         "type": "capsule",
                         "center": [
-                            -0.1636,
+                            -0.1795,
                             0.358,
                             0.2754
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                -0.1636,
+                                -0.1795,
                                 0.358,
                                 0.2754
                             ],
                             "rotation": [
-                                0.2583,
-                                0.2425,
-                                1.5074
+                                0.2647,
+                                0.2478,
+                                1.5044
                             ]
                         }
                     },
@@ -31272,22 +31272,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar4",
                         "type": "capsule",
                         "center": [
-                            -0.2364,
+                            -0.2505,
                             0.358,
                             0.2754
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                -0.2364,
+                                -0.2505,
                                 0.358,
                                 0.2754
                             ],
                             "rotation": [
-                                -0.2583,
-                                -0.2425,
-                                1.5074
+                                -0.2647,
+                                -0.2478,
+                                1.5044
                             ]
                         }
                     },
@@ -31295,22 +31295,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar5",
                         "type": "capsule",
                         "center": [
-                            -0.3036,
+                            -0.3162,
                             0.358,
                             0.2396
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                -0.3036,
+                                -0.3162,
                                 0.358,
                                 0.2396
                             ],
                             "rotation": [
-                                -0.8479,
-                                -0.5171,
-                                1.06
+                                -0.865,
+                                -0.519,
+                                1.0437
                             ]
                         }
                     },
@@ -31318,22 +31318,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar6",
                         "type": "capsule",
                         "center": [
-                            -0.3551,
+                            -0.3664,
                             0.358,
                             0.1733
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                -0.3551,
+                                -0.3664,
                                 0.358,
                                 0.1733
                             ],
                             "rotation": [
-                                -1.3358,
-                                -0.4214,
-                                0.5295
+                                -1.3455,
+                                -0.4151,
+                                0.5169
                             ]
                         }
                     },
@@ -31341,22 +31341,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar7",
                         "type": "capsule",
                         "center": [
-                            -0.383,
+                            -0.3936,
                             0.358,
                             0.0868
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                -0.383,
+                                -0.3936,
                                 0.358,
                                 0.0868
                             ],
                             "rotation": [
-                                -1.5472,
-                                -0.1516,
-                                0.1552
+                                -1.5483,
+                                -0.1481,
+                                0.1515
                             ]
                         }
                     },
@@ -31364,22 +31364,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar8",
                         "type": "capsule",
                         "center": [
-                            -0.383,
+                            -0.3936,
                             0.358,
                             -0.0068
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                -0.383,
+                                -0.3936,
                                 0.358,
                                 -0.0068
                             ],
                             "rotation": [
-                                -1.5472,
-                                0.1516,
-                                -0.1552
+                                -1.5483,
+                                0.1481,
+                                -0.1515
                             ]
                         }
                     },
@@ -31387,22 +31387,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar9",
                         "type": "capsule",
                         "center": [
-                            -0.3551,
+                            -0.3664,
                             0.358,
                             -0.0933
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                -0.3551,
+                                -0.3664,
                                 0.358,
                                 -0.0933
                             ],
                             "rotation": [
-                                -1.3358,
-                                0.4214,
-                                -0.5295
+                                -1.3455,
+                                0.4151,
+                                -0.5169
                             ]
                         }
                     },
@@ -31410,22 +31410,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar10",
                         "type": "capsule",
                         "center": [
-                            -0.3036,
+                            -0.3162,
                             0.358,
                             -0.1596
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                -0.3036,
+                                -0.3162,
                                 0.358,
                                 -0.1596
                             ],
                             "rotation": [
-                                -0.8479,
-                                0.5171,
-                                -1.06
+                                -0.865,
+                                0.519,
+                                -1.0437
                             ]
                         }
                     },
@@ -31433,22 +31433,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar11",
                         "type": "capsule",
                         "center": [
-                            -0.2364,
+                            -0.2505,
                             0.358,
                             -0.1954
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                -0.2364,
+                                -0.2505,
                                 0.358,
                                 -0.1954
                             ],
                             "rotation": [
-                                -0.2583,
-                                0.2425,
-                                -1.5074
+                                -0.2647,
+                                0.2478,
+                                -1.5044
                             ]
                         }
                     },
@@ -31456,22 +31456,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar12",
                         "type": "capsule",
                         "center": [
-                            -0.1636,
+                            -0.1795,
                             0.358,
                             -0.1954
                         ],
-                        "radius": 0.03,
-                        "height": 0.0751,
+                        "radius": 0.027,
+                        "height": 0.0735,
                         "transform": {
                             "position": [
-                                -0.1636,
+                                -0.1795,
                                 0.358,
                                 -0.1954
                             ],
                             "rotation": [
-                                0.2583,
-                                -0.2425,
-                                -1.5074
+                                0.2647,
+                                -0.2478,
+                                -1.5044
                             ]
                         }
                     },
@@ -31479,22 +31479,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar13",
                         "type": "capsule",
                         "center": [
-                            -0.0964,
+                            -0.1138,
                             0.358,
                             -0.1596
                         ],
-                        "radius": 0.03,
-                        "height": 0.0814,
+                        "radius": 0.027,
+                        "height": 0.0803,
                         "transform": {
                             "position": [
-                                -0.0964,
+                                -0.1138,
                                 0.358,
                                 -0.1596
                             ],
                             "rotation": [
-                                0.8479,
-                                -0.5171,
-                                -1.06
+                                0.865,
+                                -0.519,
+                                -1.0437
                             ]
                         }
                     },
@@ -31502,22 +31502,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar14",
                         "type": "capsule",
                         "center": [
-                            -0.0449,
+                            -0.0636,
                             0.358,
                             -0.0933
                         ],
-                        "radius": 0.03,
-                        "height": 0.0895,
+                        "radius": 0.027,
+                        "height": 0.089,
                         "transform": {
                             "position": [
-                                -0.0449,
+                                -0.0636,
                                 0.358,
                                 -0.0933
                             ],
                             "rotation": [
-                                1.3358,
-                                -0.4214,
-                                -0.5295
+                                1.3455,
+                                -0.4151,
+                                -0.5169
                             ]
                         }
                     },
@@ -31525,22 +31525,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar15",
                         "type": "capsule",
                         "center": [
-                            -0.017,
+                            -0.0364,
                             0.358,
                             -0.0068
                         ],
-                        "radius": 0.03,
-                        "height": 0.0948,
+                        "radius": 0.027,
+                        "height": 0.0947,
                         "transform": {
                             "position": [
-                                -0.017,
+                                -0.0364,
                                 0.358,
                                 -0.0068
                             ],
                             "rotation": [
-                                1.5472,
-                                -0.1516,
-                                -0.1552
+                                1.5483,
+                                -0.1481,
+                                -0.1515
                             ]
                         }
                     }
@@ -31693,12 +31693,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 ],
                 "bounds": {
                     "min": [
-                        -0.45,
+                        -0.46499999999999997,
                         -0.01,
                         -0.25
                     ],
                     "max": [
-                        0.04999999999999999,
+                        0.035,
                         0.4,
                         0.48
                     ]
@@ -31854,7 +31854,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_r0a_43.position.copy(endpoint_boot_eyelet_r0a_43.start);
         node_boot_eyelet_r0a_43.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r0a_43.position.set(-0.265, 0.17, 0.3787);
+        node_boot_eyelet_r0a_43.position.set(-0.28, 0.17, 0.3793);
         node_boot_eyelet_r0a_43.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_r0a_43.userData.sculptComponent = {
@@ -31892,9 +31892,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.265,
+                -0.28,
                 0.17,
-                0.3787
+                0.3793
             ],
             "rotation": [
                 0,
@@ -32103,9 +32103,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.265,
+                -0.28,
                 0.17,
-                0.3787
+                0.3793
             ],
             "rotation": [
                 0,
@@ -32237,7 +32237,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_r0b_44.position.copy(endpoint_boot_eyelet_r0b_44.start);
         node_boot_eyelet_r0b_44.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r0b_44.position.set(-0.135, 0.17, 0.3787);
+        node_boot_eyelet_r0b_44.position.set(-0.15, 0.17, 0.3793);
         node_boot_eyelet_r0b_44.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_r0b_44.userData.sculptComponent = {
@@ -32275,9 +32275,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.135,
+                -0.15,
                 0.17,
-                0.3787
+                0.3793
             ],
             "rotation": [
                 0,
@@ -32486,9 +32486,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.135,
+                -0.15,
                 0.17,
-                0.3787
+                0.3793
             ],
             "rotation": [
                 0,
@@ -32620,7 +32620,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_r1a_45.position.copy(endpoint_boot_eyelet_r1a_45.start);
         node_boot_eyelet_r1a_45.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r1a_45.position.set(-0.265, 0.215, 0.3273);
+        node_boot_eyelet_r1a_45.position.set(-0.28, 0.215, 0.3275);
         node_boot_eyelet_r1a_45.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_r1a_45.userData.sculptComponent = {
@@ -32658,9 +32658,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.265,
+                -0.28,
                 0.215,
-                0.3273
+                0.3275
             ],
             "rotation": [
                 0,
@@ -32869,9 +32869,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.265,
+                -0.28,
                 0.215,
-                0.3273
+                0.3275
             ],
             "rotation": [
                 0,
@@ -33003,7 +33003,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_r1b_46.position.copy(endpoint_boot_eyelet_r1b_46.start);
         node_boot_eyelet_r1b_46.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r1b_46.position.set(-0.135, 0.215, 0.3273);
+        node_boot_eyelet_r1b_46.position.set(-0.15, 0.215, 0.3275);
         node_boot_eyelet_r1b_46.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_r1b_46.userData.sculptComponent = {
@@ -33041,9 +33041,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.135,
+                -0.15,
                 0.215,
-                0.3273
+                0.3275
             ],
             "rotation": [
                 0,
@@ -33252,9 +33252,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.135,
+                -0.15,
                 0.215,
-                0.3273
+                0.3275
             ],
             "rotation": [
                 0,
@@ -33386,7 +33386,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_r2a_47.position.copy(endpoint_boot_eyelet_r2a_47.start);
         node_boot_eyelet_r2a_47.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r2a_47.position.set(-0.265, 0.26, 0.2955);
+        node_boot_eyelet_r2a_47.position.set(-0.28, 0.26, 0.295);
         node_boot_eyelet_r2a_47.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_r2a_47.userData.sculptComponent = {
@@ -33424,9 +33424,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.265,
+                -0.28,
                 0.26,
-                0.2955
+                0.295
             ],
             "rotation": [
                 0,
@@ -33635,9 +33635,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.265,
+                -0.28,
                 0.26,
-                0.2955
+                0.295
             ],
             "rotation": [
                 0,
@@ -33769,7 +33769,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_r2b_48.position.copy(endpoint_boot_eyelet_r2b_48.start);
         node_boot_eyelet_r2b_48.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r2b_48.position.set(-0.135, 0.26, 0.2955);
+        node_boot_eyelet_r2b_48.position.set(-0.15, 0.26, 0.295);
         node_boot_eyelet_r2b_48.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_r2b_48.userData.sculptComponent = {
@@ -33807,9 +33807,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.135,
+                -0.15,
                 0.26,
-                0.2955
+                0.295
             ],
             "rotation": [
                 0,
@@ -34018,9 +34018,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.135,
+                -0.15,
                 0.26,
-                0.2955
+                0.295
             ],
             "rotation": [
                 0,
@@ -34152,7 +34152,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_r3a_49.position.copy(endpoint_boot_eyelet_r3a_49.start);
         node_boot_eyelet_r3a_49.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r3a_49.position.set(-0.265, 0.305, 0.2802);
+        node_boot_eyelet_r3a_49.position.set(-0.28, 0.305, 0.2792);
         node_boot_eyelet_r3a_49.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_r3a_49.userData.sculptComponent = {
@@ -34190,9 +34190,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.265,
+                -0.28,
                 0.305,
-                0.2802
+                0.2792
             ],
             "rotation": [
                 0,
@@ -34401,9 +34401,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.265,
+                -0.28,
                 0.305,
-                0.2802
+                0.2792
             ],
             "rotation": [
                 0,
@@ -34535,7 +34535,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_r3b_50.position.copy(endpoint_boot_eyelet_r3b_50.start);
         node_boot_eyelet_r3b_50.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r3b_50.position.set(-0.135, 0.305, 0.2802);
+        node_boot_eyelet_r3b_50.position.set(-0.15, 0.305, 0.2792);
         node_boot_eyelet_r3b_50.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_r3b_50.userData.sculptComponent = {
@@ -34573,9 +34573,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.135,
+                -0.15,
                 0.305,
-                0.2802
+                0.2792
             ],
             "rotation": [
                 0,
@@ -34784,9 +34784,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.135,
+                -0.15,
                 0.305,
-                0.2802
+                0.2792
             ],
             "rotation": [
                 0,
@@ -34918,7 +34918,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_r4a_51.position.copy(endpoint_boot_eyelet_r4a_51.start);
         node_boot_eyelet_r4a_51.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r4a_51.position.set(-0.265, 0.35, 0.2969);
+        node_boot_eyelet_r4a_51.position.set(-0.28, 0.35, 0.2938);
         node_boot_eyelet_r4a_51.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_r4a_51.userData.sculptComponent = {
@@ -34956,9 +34956,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.265,
+                -0.28,
                 0.35,
-                0.2969
+                0.2938
             ],
             "rotation": [
                 0,
@@ -35167,9 +35167,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.265,
+                -0.28,
                 0.35,
-                0.2969
+                0.2938
             ],
             "rotation": [
                 0,
@@ -35301,7 +35301,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_r4b_52.position.copy(endpoint_boot_eyelet_r4b_52.start);
         node_boot_eyelet_r4b_52.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r4b_52.position.set(-0.135, 0.35, 0.2969);
+        node_boot_eyelet_r4b_52.position.set(-0.15, 0.35, 0.2938);
         node_boot_eyelet_r4b_52.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_r4b_52.userData.sculptComponent = {
@@ -35339,9 +35339,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.135,
+                -0.15,
                 0.35,
-                0.2969
+                0.2938
             ],
             "rotation": [
                 0,
@@ -35550,9 +35550,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         },
         "transform": {
             "position": [
-                -0.135,
+                -0.15,
                 0.35,
-                0.2969
+                0.2938
             ],
             "rotation": [
                 0,
@@ -35679,14 +35679,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_ra0_53 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.135,
+            -0.15,
             0.17,
-            0.3887
+            0.3893
         ],
         "localEnd": [
-            -0.265,
+            -0.28,
             0.215,
-            0.3373
+            0.3375
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -35733,14 +35733,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.135,
+                -0.15,
                 0.17,
-                0.3887
+                0.3893
             ],
             "localEnd": [
-                -0.265,
+                -0.28,
                 0.215,
-                0.3373
+                0.3375
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -35960,14 +35960,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.135,
+                -0.15,
                 0.17,
-                0.3887
+                0.3893
             ],
             "localEnd": [
-                -0.265,
+                -0.28,
                 0.215,
-                0.3373
+                0.3375
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -36116,14 +36116,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_ra1_54 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.265,
+            -0.28,
             0.215,
-            0.3373
+            0.3375
         ],
         "localEnd": [
-            -0.135,
+            -0.15,
             0.26,
-            0.3055
+            0.305
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -36170,14 +36170,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.265,
+                -0.28,
                 0.215,
-                0.3373
+                0.3375
             ],
             "localEnd": [
-                -0.135,
+                -0.15,
                 0.26,
-                0.3055
+                0.305
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -36397,14 +36397,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.265,
+                -0.28,
                 0.215,
-                0.3373
+                0.3375
             ],
             "localEnd": [
-                -0.135,
+                -0.15,
                 0.26,
-                0.3055
+                0.305
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -36553,14 +36553,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_ra2_55 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.135,
+            -0.15,
             0.26,
-            0.3055
+            0.305
         ],
         "localEnd": [
-            -0.265,
+            -0.28,
             0.305,
-            0.2903
+            0.2892
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -36607,14 +36607,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.135,
+                -0.15,
                 0.26,
-                0.3055
+                0.305
             ],
             "localEnd": [
-                -0.265,
+                -0.28,
                 0.305,
-                0.2903
+                0.2892
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -36834,14 +36834,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.135,
+                -0.15,
                 0.26,
-                0.3055
+                0.305
             ],
             "localEnd": [
-                -0.265,
+                -0.28,
                 0.305,
-                0.2903
+                0.2892
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -36990,14 +36990,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_ra3_56 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.265,
+            -0.28,
             0.305,
-            0.2903
+            0.2892
         ],
         "localEnd": [
-            -0.135,
+            -0.15,
             0.35,
-            0.3069
+            0.3038
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -37044,14 +37044,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.265,
+                -0.28,
                 0.305,
-                0.2903
+                0.2892
             ],
             "localEnd": [
-                -0.135,
+                -0.15,
                 0.35,
-                0.3069
+                0.3038
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -37271,14 +37271,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.265,
+                -0.28,
                 0.305,
-                0.2903
+                0.2892
             ],
             "localEnd": [
-                -0.135,
+                -0.15,
                 0.35,
-                0.3069
+                0.3038
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -37427,14 +37427,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_rb0_57 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.265,
+            -0.28,
             0.17,
-            0.3887
+            0.3893
         ],
         "localEnd": [
-            -0.135,
+            -0.15,
             0.215,
-            0.3373
+            0.3375
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -37481,14 +37481,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.265,
+                -0.28,
                 0.17,
-                0.3887
+                0.3893
             ],
             "localEnd": [
-                -0.135,
+                -0.15,
                 0.215,
-                0.3373
+                0.3375
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -37708,14 +37708,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.265,
+                -0.28,
                 0.17,
-                0.3887
+                0.3893
             ],
             "localEnd": [
-                -0.135,
+                -0.15,
                 0.215,
-                0.3373
+                0.3375
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -37864,14 +37864,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_rb1_58 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.135,
+            -0.15,
             0.215,
-            0.3373
+            0.3375
         ],
         "localEnd": [
-            -0.265,
+            -0.28,
             0.26,
-            0.3055
+            0.305
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -37918,14 +37918,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.135,
+                -0.15,
                 0.215,
-                0.3373
+                0.3375
             ],
             "localEnd": [
-                -0.265,
+                -0.28,
                 0.26,
-                0.3055
+                0.305
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -38145,14 +38145,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.135,
+                -0.15,
                 0.215,
-                0.3373
+                0.3375
             ],
             "localEnd": [
-                -0.265,
+                -0.28,
                 0.26,
-                0.3055
+                0.305
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -38301,14 +38301,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_rb2_59 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.265,
+            -0.28,
             0.26,
-            0.3055
+            0.305
         ],
         "localEnd": [
-            -0.135,
+            -0.15,
             0.305,
-            0.2903
+            0.2892
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -38355,14 +38355,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.265,
+                -0.28,
                 0.26,
-                0.3055
+                0.305
             ],
             "localEnd": [
-                -0.135,
+                -0.15,
                 0.305,
-                0.2903
+                0.2892
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -38582,14 +38582,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.265,
+                -0.28,
                 0.26,
-                0.3055
+                0.305
             ],
             "localEnd": [
-                -0.135,
+                -0.15,
                 0.305,
-                0.2903
+                0.2892
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -38738,14 +38738,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const attachment_boot_lace_rb3_60 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.135,
+            -0.15,
             0.305,
-            0.2903
+            0.2892
         ],
         "localEnd": [
-            -0.265,
+            -0.28,
             0.35,
-            0.3069
+            0.3038
         ],
         "contactType": "threaded-through",
         "baseRadius": 0.011,
@@ -38792,14 +38792,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.135,
+                -0.15,
                 0.305,
-                0.2903
+                0.2892
             ],
             "localEnd": [
-                -0.265,
+                -0.28,
                 0.35,
-                0.3069
+                0.3038
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,
@@ -39019,14 +39019,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.135,
+                -0.15,
                 0.305,
-                0.2903
+                0.2892
             ],
             "localEnd": [
-                -0.265,
+                -0.28,
                 0.35,
-                0.3069
+                0.3038
             ],
             "contactType": "threaded-through",
             "baseRadius": 0.011,

@@ -10,34 +10,88 @@
 //   floats, bones 4 uint8, weights 4 uint8 adding up to 255); indices I x uint16.
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {zipSync, strToU8} from 'fflate';
+import {zipSync, unzipSync, strToU8, strFromU8} from 'fflate';
 import {makeRig} from './rig.js';
 
-export function createModelEditor({holder, $, setStatus, download, outfitsOf}) {
+// A model pack (.fgmodel bytes) as meshes in the character's space, as it stands (the Skins tab shows a skin's model)
+export async function modelPackGroup(bytes) {
+  const files = unzipSync(bytes), info = JSON.parse(strFromU8(files['model.json']));
+  const d = new DataView(files['mesh.bin'].buffer, files['mesh.bin'].byteOffset, files['mesh.bin'].byteLength);
+  const [S, P, V, I] = [8, 12, 16, 20].map(o => d.getInt32(o, true));
+  let o = 24 + S + S * 48;
+  const parts = [];
+  for (let k = 0; k < P; k++, o += 12) parts.push([0, 4, 8].map(x => d.getUint32(o + x, true)));
+  const pos = new Float32Array(V * 3), nrm = new Float32Array(V * 3), uv = new Float32Array(V * 2);
+  for (let i = 0; i < V; i++, o += 40) {
+    for (let j = 0; j < 3; j++) { pos[i * 3 + j] = d.getFloat32(o + j * 4, true); nrm[i * 3 + j] = d.getFloat32(o + 12 + j * 4, true); }
+    uv[i * 2] = d.getFloat32(o + 24, true); uv[i * 2 + 1] = d.getFloat32(o + 28, true);
+  }
+  const idx = new Uint16Array(I);
+  for (let i = 0; i < I; i++, o += 2) idx[i] = d.getUint16(o, true);
+  const texs = [];
+  for (const path of info.textures || []) {
+    const t = new THREE.CanvasTexture(await createImageBitmap(new Blob([files[path]], {type: 'image/png'})));
+    t.flipY = false; t.colorSpace = THREE.SRGBColorSpace;
+    texs.push(t);
+  }
+  const group = new THREE.Group();
+  for (const [first, count, tex] of parts) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setIndex(new THREE.BufferAttribute(idx.slice(first, first + count), 1));
+    group.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({map: texs[tex] || null, side: THREE.DoubleSide, alphaTest: 0.3})));
+  }
+  return {group, info};
+}
+
+export function createModelEditor({holder, $, setStatus, download, outfitsOf, textureFor}) {
   const ed = {outfit: null, pieces: null, skel: null, rig: null, src: null, view: null, posed: false};
 
-  // ---- the character: a ghost to fit to, its vertices' bones to copy ------------------------------------------------
-  function build(outfit, pieces, skel) {
+  // ---- the character: to fit to, its vertices' bones to copy - shown solid (its own textures), as an x-ray or not
+  //      at all, bent by the same bones as the model (a test pose moves both) ------------------------------------------
+  async function build(outfit, pieces, skel) {
     holder.clear();
     ed.outfit = outfit; ed.pieces = pieces; ed.skel = skel;
     ed.rig = makeRig(skel);
     holder.add(ed.rig.root);
-    const ghost = new THREE.Group();
-    const mat = new THREE.MeshBasicMaterial({color: 0x5cc8ff, wireframe: true, transparent: true, opacity: 0.18});
+    const solid = new THREE.Group(), xray = new THREE.Group();
+    const wire = new THREE.MeshBasicMaterial({color: 0x5cc8ff, wireframe: true, transparent: true, opacity: 0.18});
     for (const p of pieces) {
       if (/damage|dstr/i.test(p.texture?.name || '')) continue;
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(p.position, 3));
+      if (p.normal) g.setAttribute('normal', new THREE.BufferAttribute(p.normal, 3));
+      if (p.uv) g.setAttribute('uv', new THREE.BufferAttribute(p.uv, 2));
+      if (p.skin) {
+        g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(p.skin.index, 4));
+        g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(p.skin.weight, 4));
+      }
       g.setIndex(new THREE.BufferAttribute(p.index, 1));
-      ghost.add(new THREE.Mesh(g, mat));
+      const t = p.texture && textureFor ? await textureFor(p.texture) : null;
+      const make = mat => {
+        const m = p.skin ? new THREE.SkinnedMesh(g, mat) : new THREE.Mesh(g, mat);
+        if (p.skin) m.bind(ed.rig.skeleton, new THREE.Matrix4());
+        m.frustumCulled = false;
+        return m;
+      };
+      solid.add(make(new THREE.MeshLambertMaterial({map: t ? t.tex : null, side: THREE.DoubleSide, alphaTest: 0.3})));
+      xray.add(make(wire));
     }
-    ghost.visible = $('modelGhost').checked;
-    holder.add(ghost);
-    ed.ghost = ghost;
+    if (ed.outfit !== outfit) return;   // (another outfit picked meanwhile)
+    holder.add(solid, xray);
+    ed.solid = solid; ed.xray = xray;
+    showCharacter();
     if (ed.src) refit(true); else drawPreview();
     $('saveModel').disabled = !ed.src;
   }
-  $('modelGhost').onchange = () => { if (ed.ghost) ed.ghost.visible = $('modelGhost').checked; };
+  function showCharacter() {
+    if (!ed.solid) return;
+    ed.solid.visible = $('modelGhost').value === 'solid';
+    ed.xray.visible = $('modelGhost').value === 'xray';
+  }
+  $('modelGhost').onchange = showCharacter;
 
   // ---- the .glb ---------------------------------------------------------------------------------------------------
   $('importModel').onchange = async e => {
@@ -112,6 +166,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf}) {
   for (const id of ['fitScale', 'fitX', 'fitY', 'fitZ', 'fitTurn']) $(id).oninput = () => drawPreview();
   $('fitBody').onchange = () => drawPreview();
   $('fitKeep').onchange = () => drawPreview();
+  $('modelOver').onchange = () => drawPreview();   // (worn over: each piece rides its own bones)
   $('fitAuto').onclick = () => refit(true);
 
   // where its arms are, how wide its torso is... - of points (x, y, z: its feet at y 0, its middle at x 0, z 0)
@@ -213,14 +268,17 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf}) {
         grid.get(k).push({x, y, z, b: p.skin.index.subarray(i * 4, i * 4 + 4), w: p.skin.weight.subarray(i * 4, i * 4 + 4)});
       }
     }
-    return {grid, key, cell};
+    return {grid, key, cell, cx: charBox().getCenter(new THREE.Vector3()).x};
   }
-  function weightsAt(G, p) {
+  // (side: a part all on the character's left (1) or right (-1) takes only that side's vertices - a boot's inside next
+  //  to the other leg would otherwise follow that leg, and the feet stick together)
+  function weightsAt(G, p, side = 0) {
     const cx = Math.floor(p.x / G.cell), cy = Math.floor(p.y / G.cell), cz = Math.floor(p.z / G.cell);
     for (let r = 1; r <= 8; r++) {   // (rings out until some are found)
       const near = [];
       for (let x = cx - r; x <= cx + r; x++) for (let y = cy - r; y <= cy + r; y++) for (let z = cz - r; z <= cz + r; z++)
-        for (const v of G.grid.get(G.key(x, y, z)) || []) near.push([(v.x - p.x) ** 2 + (v.y - p.y) ** 2 + (v.z - p.z) ** 2, v]);
+        for (const v of G.grid.get(G.key(x, y, z)) || [])
+          if (!side || (v.x - G.cx) * side >= 0) near.push([(v.x - p.x) ** 2 + (v.y - p.y) ** 2 + (v.z - p.z) ** 2, v]);
       if (near.length < 4 && r < 8) continue;
       near.sort((a, b) => a[0] - b[0]);
       const acc = new Map();
@@ -243,9 +301,17 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf}) {
       const a = sp.geo.attributes;
       if (!seenGeo.has(sp.geo)) {
         const base = verts.length, colors = a.color;
+        const mapped = [];
+        for (let i = 0; i < a.position.count; i++)
+          mapped.push(P.map(new THREE.Vector3().fromBufferAttribute(a.position, i), new THREE.Vector3().fromBufferAttribute(a.normal, i)));
+        let side = 0;   // (all - bar 2% - on one side of the character's middle: that side's bones only)
+        if (G) {
+          const left = mapped.filter(m => m.pos.x > G.cx).length;
+          if (left >= mapped.length * 0.98) side = 1;
+          else if (left <= mapped.length * 0.02) side = -1;
+        }
         for (let i = 0; i < a.position.count; i++) {
-          const {pos, nrm} = P.map(new THREE.Vector3().fromBufferAttribute(a.position, i),
-                                   new THREE.Vector3().fromBufferAttribute(a.normal, i));
+          const {pos, nrm} = mapped[i];
           const uv = a.uv ? [a.uv.getX(i), a.uv.getY(i)] : null;
           let bw;
           if (rigged) {
@@ -255,10 +321,23 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf}) {
               if (w > 0) bw.push([sp.boneOf[a.skinIndex.getComponent(i, j)], w]);
             }
           } else {
-            bw = weightsAt(G, pos);
+            bw = weightsAt(G, pos, side);
           }
           const color = colors ? new THREE.Color(colors.getX(i), colors.getY(i), colors.getZ(i)) : null;
           verts.push({pos, nrm, uv, bw, color});
+        }
+        // (worn over the character, each piece rides the bones it mostly sits on - those with 15% of its weight or
+        //  more: a hat follows the head alone, not the eyes beside it; a boot its own leg)
+        if (G && $('modelOver').checked) {
+          const acc = new Map();
+          for (let i = base; i < verts.length; i++) for (const [b, w] of verts[i].bw) acc.set(b, (acc.get(b) || 0) + w);
+          const total = [...acc.values()].reduce((s, w) => s + w, 0), top = [...acc.entries()].sort((x, y) => y[1] - x[1]);
+          const keep = new Set(top.filter(([, w]) => w >= total * 0.15).map(([b]) => b));
+          if (!keep.size && top.length) keep.add(top[0][0]);
+          for (let i = base; i < verts.length; i++) {
+            const bw = verts[i].bw.filter(([b]) => keep.has(b));
+            verts[i].bw = bw.length ? bw : [[top[0][0], 1]];
+          }
         }
         seenGeo.set(sp.geo, base);
       }

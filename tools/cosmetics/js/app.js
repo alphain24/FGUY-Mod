@@ -8,7 +8,7 @@ import {Ho} from './ho.js';
 import {decodeDds} from './dds.js';
 import {loadModel, loadSkeleton, outfitsOf, CHARACTERS} from './model.js';
 import {createEmoteEditor} from './emotes.js';
-import {createModelEditor} from './models.js';
+import {createModelEditor, modelPackGroup} from './models.js';
 
 const $ = id => document.getElementById(id);
 const NICE = {AdamWest: 'Adam West'};
@@ -59,7 +59,7 @@ async function openPackage(file) {
   state.outfits = outfitsOf(state.ho);
   state.textures.clear();
   $('welcome').style.display = 'none';
-  buildCharacterList();
+  buildCharacterList(await library);
   setStatus(state.outfits.length + ' outfits found.');
   const first = state.outfits.find(o => o.character === 'Stewie' && o.outfit === 'Default') || state.outfits[0];
   if (first) selectOutfit(first);
@@ -80,7 +80,18 @@ $('openFolder').onclick = async () => {
 };
 $('openFile').onchange = e => e.target.files[0] && openPackage(e.target.files[0]);
 
-function buildCharacterList() {
+// Our skins (the FGUY Cosmetics mod's - no game art in them): library.json lists them, the packs are the mod's own files
+// (dev_server.py hands out dist/FGUYMod/mods as /mods/). Each shows as a chip beside its character's outfits.
+const library = fetch('library.json').then(r => (r.ok ? r.json() : {skins: []})).catch(() => ({skins: []}));
+async function openLibrarySkin(entry) {
+  setStatus('Opening "' + entry.name + '"...');
+  const r = await fetch('mods/FGUYCosmetics/skins/' + encodeURIComponent(entry.file));
+  if (!r.ok) { setStatus("Couldn't find " + entry.file + '.'); return; }
+  await openPackBytes(new Uint8Array(await r.arrayBuffer()), entry.name);
+  for (const c of document.querySelectorAll('.chip')) c.classList.toggle('on', c === entry.chip);
+}
+
+function buildCharacterList(lib = {skins: []}) {
   const box = $('chars');
   box.innerHTML = '';
   for (const ch of CHARACTERS) {
@@ -98,6 +109,15 @@ function buildCharacterList() {
       c.textContent = o.outfit.replace(/([a-z])([A-Z])/g, '$1 $2');
       c.onclick = () => selectOutfit(o);
       o.chip = c;
+      row.append(c);
+    }
+    for (const e of lib.skins.filter(x => x.character === ch)) {   // (ours)
+      const c = document.createElement('span');
+      c.className = 'chip ours';
+      c.textContent = '\u2605 ' + e.name;
+      c.title = 'FGUY Cosmetics skin' + (e.outfit ? ' (on ' + e.outfit + ')' : '') + ' - open it to see or change it';
+      c.onclick = () => openLibrarySkin(e);
+      e.chip = c;
       row.append(c);
     }
     b.onclick = () => selectOutfit(outfits[0]);
@@ -125,17 +145,20 @@ async function textureFor(info) {
   return t;
 }
 
+let selecting = 0;   // (the latest pick wins: one still loading stops when another comes)
 async function selectOutfit(o) {
+  const mine = ++selecting;
   state.current = o;
   if (state.packModel && state.packModel.character !== o.character) { state.packModel = null; showPackModel(); }   // (another character's)
   for (const c of document.querySelectorAll('.chip')) c.classList.toggle('on', c === o.chip);
   for (const b of document.querySelectorAll('.item')) b.classList.toggle('on', b.dataset.char === o.character);
   setStatus('Loading ' + (NICE[o.character] || o.character) + '...');
   const pieces = await loadModel(state.ho, o.model);
+  if (mine !== selecting) return;
   if (state.mode === 'models') {   // (the character to fit a new model on)
     const skel = await loadSkeleton(state.ho, o.model);
     if (!skel) { setStatus('No skeleton found for this outfit.'); return; }
-    models.build(o, pieces, skel);
+    await models.build(o, pieces, skel);
     frame();
     setStatus('');
     return;
@@ -158,6 +181,7 @@ async function selectOutfit(o) {
     g.setAttribute('uv', new THREE.BufferAttribute(p.uv, 2));
     g.setIndex(new THREE.BufferAttribute(p.index, 1));
     const t = p.texture ? await textureFor(p.texture) : null;
+    if (mine !== selecting) return;
     if (t && !texs.includes(t)) texs.push(t);
     const m = new THREE.MeshLambertMaterial({map: t ? t.tex : null, side: THREE.DoubleSide, alphaTest: 0.3});
     const mesh = new THREE.Mesh(g, m);
@@ -166,6 +190,7 @@ async function selectOutfit(o) {
     mesh.visible = !mesh.userData.damage || $('showDamage').checked;
     holder.add(mesh);
   }
+  await showPackModel3D();
   frame();
   o.textures = texs;
   showTextures(texs);
@@ -270,7 +295,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   if (state.mode === 'emotes') { emotes.click(e); return; }
   const r = renderer.domElement.getBoundingClientRect();
   ray.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), camera);
-  const hit = ray.intersectObjects(holder.children)[0];
+  const hit = ray.intersectObjects(holder.children.filter(c => !c.userData.packModel))[0];
   const t = hit?.object.userData.texture;
   if (!t || !hit.uv) return;
   const u = ((hit.uv.x % 1) + 1) % 1, v = ((hit.uv.y % 1) + 1) % 1;
@@ -421,8 +446,21 @@ function overlayOf(t) {   // the pixels that aren't the recolors' doing - or nul
 
 // A model pack can come with the skin (outfit pieces made in the Models tab, worn over the character): stored in the
 // pack as model.fgmodel - the game puts it on with the skin, and online it goes along with it.
+// the skin's model on the character (Skins tab) - as it stands; clicking picks the character's colors through it
+async function showPackModel3D() {
+  for (const c of holder.children.filter(x => x.userData.packModel)) holder.remove(c);
+  const m = state.packModel;
+  if (state.mode !== 'skins' || !m || !$('packModelShow').checked || m.character !== state.current?.character) return;
+  if (!m.group) m.group = (await modelPackGroup(m.bytes)).group;
+  m.group.userData.packModel = true;
+  holder.add(m.group);
+}
+$('packModelShow').onchange = () => showPackModel3D();
+
 function showPackModel() {
   const m = state.packModel;
+  $('packModelShowRow').hidden = !m;
+  showPackModel3D();
   $('packModelInfo').textContent = m ? `With its model: "${m.name}" (${Math.round(m.bytes.length / 1024).toLocaleString()} KB).`
     : 'Outfit pieces made in the Models tab (a hat, a vest...) can come with the skin.';
   $('packModelOff').hidden = !m;
@@ -485,10 +523,12 @@ $('savePack').onclick = async () => {
 $('openPack').onchange = async e => {
   const f = e.target.files[0];
   e.target.value = '';
-  if (!f) return;
+  if (f) await openPackBytes(new Uint8Array(await f.arrayBuffer()), f.name);
+};
+async function openPackBytes(bytes, label) {
   if (!state.ho) { setStatus('Open your game folder first.'); return; }
   try {
-    const files = unzipSync(new Uint8Array(await f.arrayBuffer()));
+    const files = unzipSync(bytes);
     const m = JSON.parse(strFromU8(files['skin.json']));
     const o = state.outfits.find(x => x.model.name === m.model);
     if (!o) throw new Error('its outfit (' + m.model + ") isn't in this game");
@@ -513,16 +553,16 @@ $('openPack').onchange = async e => {
     state.packModel = files['model.fgmodel'] ? {name: m.withModel || modelPackInfo(files['model.fgmodel']).name,
       bytes: files['model.fgmodel'], character: o.character} : null;
     showPackModel();
-    setStatus('Opened "' + (m.name || f.name) + '"' + (state.packModel ? ', with its model' : '') + '.');
+    setStatus('Opened "' + (m.name || label) + '"' + (state.packModel ? ', with its model' : '') + '.');
   } catch (err) {
     setStatus("Couldn't open that pack: " + err.message);
   }
-};
+}
 
 function setStatus(s) { for (const id of ['status', 'status2', 'status3']) $(id).textContent = s; }
 
 // ---- Skins / Emotes --------------------------------------------------------------------------------------------
-models = createModelEditor({holder, $, setStatus, download, outfitsOf: ch => state.outfits.filter(o => o.character === ch)});
+models = createModelEditor({holder, $, setStatus, download, textureFor, outfitsOf: ch => state.outfits.filter(o => o.character === ch)});
 emotes = createEmoteEditor({scene, camera, controls, renderer, holder, $, setStatus, download, textureFor,
   outfitsOf: ch => state.outfits.filter(o => o.character === ch)});
 function setMode(mode) {

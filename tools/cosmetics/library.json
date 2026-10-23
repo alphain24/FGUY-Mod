@@ -1,0 +1,6 @@
+{
+  "about": "The FGUY Cosmetics mod's own skins (dist/FGUYMod/mods/FGUYCosmetics/skins) - shown as chips beside each character's outfits. A hosted Studio needs mods/FGUYCosmetics/skins next to it.",
+  "skins": [
+    {"name": "Adventurer", "file": "Peter_Adventurer.fgskin", "character": "Peter", "outfit": "Default"}
+  ]
+}
