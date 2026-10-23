@@ -6,7 +6,22 @@
 
 function OnFguySettingsSelect() {
     FGUYGfxPage = true;
+    FGUYGfxCams(false);
     OnOnlineSelect();
+}
+
+// The 3D room's camera moves (going to a page plays its enter script, going back its exit script - _GotoPage): this
+// page covers the screen, so it has none - else the Screen page's ("options prep"), played from the main menu, leave
+// the family off the couch. Off while it's up (and on the Screen page opened from it), back on once it's gone.
+function FGUYGfxCams(on) {
+    var i = PageIndexMapping['OptionsScreen'];
+    if (FGUYCamSaved != true) {
+        FGUYCamSaved = true;
+        FGUYCamEnter = CameraEnterScriptMapping[i];
+        FGUYCamExit = CameraExitScriptMapping[i];
+    }
+    CameraEnterScriptMapping[i] = on ? FGUYCamEnter : '';
+    CameraExitScriptMapping[i] = on ? FGUYCamExit : '';
 }
 
 // the game's Options page (OnOptionsEnter): GRAPHICS first - in the main menu only
@@ -23,6 +38,7 @@ function FGUYGfxEnter() {
     Selection.setFocus(null);   // (a menu button left with focus would swallow A / Enter)
     FGUYColors();
     FGUYScreen = 'gfx';
+    FGUYGfxCams(false);
     FGUYGfxTab = FGUYGfxBack ? FGUYGfxTabBack : 1;   // (back from a link row's page: where it was)
     FGUYGfxSel = FGUYGfxBack ? FGUYGfxSelBack : 0;
     FGUYGfxBack = false;
@@ -110,18 +126,21 @@ function FGUYGfxDo(i, delta) {
     if (go == 1 || go == 2) {   // the game's page on top of this one - its Back comes here again (FGUYGfxReturn)
         FGUYGfxTabBack = FGUYGfxTab;
         FGUYGfxSelBack = FGUYGfxSel;
-        if (go == 1) { FGUYGfxReturn = 2; OnDisplaySelect(); }   // (the Screen page is this one's frame: its own
-        else { FGUYGfxReturn = 1; OnOptionsSelect(); }           //  Enter first, then ours again)
+        FGUYGfxLink = go;
+        FGUYGfxDepth = NavStack.length;   // (back here = the menu's page history this long again)
+        if (go == 1) OnDisplaySelect();
+        else OnOptionsSelect();
         return;
     }
     FGUYGfxRead();
 }
 
-// FGUYEventName (session.as2js): the frame's page entered again - after a link row's page, this one again
+// FGUYEventName (session.as2js): this page's frame (Options > Screen) entered with the menu's page history as it was
+// when a link row left - that's Back to here, not the Screen page itself or one further on
 function FGUYGfxReturning(name, event) {
-    if (FGUYGfxReturn == undefined || FGUYGfxReturn <= 0 || name != 'OptionsScreen' || event != 'Enter') return;
-    FGUYGfxReturn = FGUYGfxReturn - 1;
-    if (FGUYGfxReturn > 0) return;
+    if (FGUYGfxLink != 1 && FGUYGfxLink != 2) return;
+    if (name != 'OptionsScreen' || event != 'Enter' || NavStack.length != FGUYGfxDepth) return;
+    FGUYGfxLink = 0;
     FGUYGfxPage = true;
     FGUYOnline = true;
     FGUYGfxBack = true;

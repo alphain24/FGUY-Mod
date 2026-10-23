@@ -865,6 +865,7 @@ function OnOnlineEnter() {
 function OnOnlineExit() {
     if (FGUYGfxPage) {
         FGUYGfxPage = false;
+        if (FGUYGfxLink != 1) FGUYGfxCams(true);   // (to the Screen page: none there either, it comes back here)
         _root.FGUYLobbyUI.removeMovieClip();
         FGUYIconClear();
         _root.subMenu._visible = true;
