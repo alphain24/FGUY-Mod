@@ -165,7 +165,8 @@ screens), `pause.as2js` (the online pause menu, the emote wheel, the HUD heads).
 
 Menu scripts call native code with `flash.external.ExternalInterface.call('CATEGORY_Name', args…)`. The game's own
 calls (`PLYR_GetCharacter`, `SYST_GetNumViewports`, …) work from your code too — find them in the game's scripts.
-Names starting with **`FGUYMOD_`** belong to the base mod; a plugin can't add new ones yet.
+Names starting with **`FGUYMOD_`** belong to the base mod. Your own plugin can add calls of its own, named
+**`FGUYPLUGIN_<name>`** — see [Plugins › Menu calls](plugins.md#menu-calls-api-2).
 
 ---
 

@@ -44,6 +44,8 @@ struct Mod {
 std::vector<Mod> g_mods;
 DWORD g_gameThread = 0;
 std::vector<std::pair<FGUYModCallback, void*>> g_onTick, g_onFrame;
+struct MenuCall { std::string name; FGUYModMenuFn fn; void* user; std::wstring mod; };
+std::vector<MenuCall> g_menuCalls;   // (the plugins' own menu calls: FGUYPLUGIN_<name>)
 unsigned g_offlineTick = 0;
 int g_offlineRate = 60;        // offline: game ticks per second, measured (the game runs as fast as it draws)
 bool g_changed = false;        // switched on the MODS page since start (a restart applies it)
@@ -187,6 +189,20 @@ int __cdecl ApiOnTick(FGUYModCallback fn, void* user) {
 int __cdecl ApiOnFrame(FGUYModCallback fn, void* user) {
     if (!fn) return 0;
     g_onFrame.push_back({fn, user});
+    return 1;
+}
+int __cdecl ApiOnMenuCall(const char* name, FGUYModMenuFn fn, void* user) {
+    Mod* m = ModOfCaller(_ReturnAddress());
+    if (!name || !fn || !*name || strlen(name) > 48) return 0;
+    for (const char* c = name; *c; ++c)
+        if (!isalnum((unsigned char)*c) && *c != '_') return 0;
+    for (const MenuCall& c : g_menuCalls)
+        if (c.name == name) {
+            Log(L"Mods: %s - the menu call FGUYPLUGIN_%S is %s's already", m ? m->name.c_str() : L"?", name, c.mod.c_str());
+            return 0;
+        }
+    g_menuCalls.push_back({name, fn, user, m ? m->name : L"?"});
+    Log(L"Mods: %s answers the menu call FGUYPLUGIN_%S", m ? m->name.c_str() : L"?", name);
     return 1;
 }
 int __cdecl ApiPatch(void* at, const void* bytes, int n) {
@@ -361,6 +377,7 @@ void FillApi(Mod& m) {
     a.OnFrame = ApiOnFrame;
     a.Hook = ApiHook;
     a.Patch = ApiPatch;
+    a.OnMenuCall = ApiOnMenuCall;
 }
 
 // A file mod (<name>.fgmod) into <to>, if it changed since it was last unpacked there (FGUYMod\mods\.unpacked\<name>,
@@ -612,6 +629,21 @@ bool ModsToggle(const char* folder) {
             Log(L"Mods: %s switched %s (from the next start)", m.name.c_str(), m.enabled ? L"on" : L"off");
             return m.enabled;
         }
+    return false;
+}
+
+// ui.cpp: a menu script's FGUYPLUGIN_<name>(args) - a plugin's (false: none has it; *answered: it gave an answer)
+bool ModsMenuCall(const char* name, const std::vector<std::string>& args, std::string& out, bool* answered) {
+    for (const MenuCall& c : g_menuCalls) {
+        if (c.name != name) continue;
+        std::vector<const char*> a;
+        for (const std::string& s : args) a.push_back(s.c_str());
+        char buf[4096] = "";
+        *answered = c.fn(c.user, a.data(), (int)a.size(), buf, sizeof(buf)) == 1;
+        buf[sizeof(buf) - 1] = 0;
+        out = buf;
+        return true;
+    }
     return false;
 }
 

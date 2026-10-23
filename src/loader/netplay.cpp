@@ -1766,7 +1766,8 @@ Pad SampleLocal(unsigned f) {
     }
     Pad p{};
     XINPUT_STATE st{};
-    if (MyPadState(&st) == ERROR_SUCCESS) {  // the player's own controller
+    bool realPad = MyPadState(&st) == ERROR_SUCCESS;
+    if (realPad) {  // the player's own controller (the emote wheel has seen it: vpad.cpp PadRead)
         p.buttons = st.Gamepad.wButtons;
         p.lt = st.Gamepad.bLeftTrigger;
         p.rt = st.Gamepad.bRightTrigger;
@@ -1781,6 +1782,14 @@ Pad SampleLocal(unsigned f) {
         p.buttons |= held.wButtons;
         p.lx = held.sThumbLX; p.ly = held.sThumbLY; p.rx = held.sThumbRX; p.ry = held.sThumbRY;
         p.lt = held.bLeftTrigger; p.rt = held.bRightTrigger;
+    }
+    if (!realPad) {   // (no controller here: the test tools' pad goes through the emote wheel as a real one does)
+        XINPUT_STATE vs{};
+        vs.Gamepad.wButtons = p.buttons;
+        vs.Gamepad.sThumbLX = p.lx; vs.Gamepad.sThumbLY = p.ly;
+        EmotesPad(0, &vs);
+        p.buttons = vs.Gamepad.wButtons;
+        p.lx = vs.Gamepad.sThumbLX; p.ly = vs.Gamepad.sThumbLY;
     }
     if (KbmIsKeyboardSlot(g_slot)) KbmCapture(&p.kbm);  // keyboard / mouse players: the raw state (kbm.cpp)
     if (HandoffHudUp()) p.kbm.flags |= 1;              // my level's HUD is up (kbm.cpp waits for everyone's)

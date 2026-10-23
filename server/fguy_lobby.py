@@ -18,6 +18,8 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
     HOST <maxplayers 2-4> [<private 0|1>]   create a lobby (you get slot 0); private = join by code only
     JOIN <code>                      join a lobby by its code
     READY <0|1>
+    SKIN <id | ->                    the custom skin you wear (its head picture's id: others who have it show it -
+                                     only sent to a server whose WELCOME says "skins")
     SET <character> <costume> <team> [<input>]   your picks (character name, costume index, team 0 good /
                                      1 evil; input k = keyboard and mouse, c = controller)
     CONF <mode> <map> <time> <score> <ff> [<rate>]   host: match settings (short codes / list indices;
@@ -39,11 +41,11 @@ Lobby protocol: UTF-8 text lines, fields separated by single spaces.
                                      closed): answered with its START again, plus "catchup" - my game catches up
     LEAVE
   server -> client
-    WELCOME <proto>
+    WELCOME <proto> [skins]          (skins: it takes SKIN)
     LIST [<code>,<host>,<players>,<max>,<mode>,<map>,<mods> ...]     (public lobbies; mods: the host's
                                      gameplay mods' names joined by +, or -)
     LOBBY <code> <private>
-    MEMBERS <your slot> [<slot>,<name>,<ready>,<rtt>,<character>,<costume>,<team>,<input>,<rate> ...]
+    MEMBERS <your slot> [<slot>,<name>,<ready>,<rtt>,<character>,<costume>,<team>,<input>,<rate>,<skin> ...]
                                      ready: 0 / 1, or 2 = still in the match
     CONF <mode> <map> <time> <score> <ff>
     OWN <list>                       the host's characters and costumes (also sent on joining)
@@ -140,6 +142,7 @@ class Client:
         self.ready = False
         self.rtt = 0
         self.char, self.costume, self.team, self.input = 'Peter', '0', '0', 'c'
+        self.skin = '-'       # the custom skin they wear (its head picture's id), - none
         self.rate = 60        # the most frames per second their monitor shows
         self.away = False     # in a match (the lobby keeps the place for REJOIN)
         self.gone_at = None   # when an away player's lobby connection closed
@@ -178,7 +181,7 @@ class Lobby:
 
     def broadcast_members(self):
         entries = ' '.join(f'{i},{c.name},{2 if c.away else int(c.ready)},{c.rtt},{c.char},{c.costume},{c.team},{c.input},'
-                           f'{c.rate}' for i, c in enumerate(self.members))
+                           f'{c.rate},{c.skin}' for i, c in enumerate(self.members))
         for c in self.members:
             if not c.away:
                 c.send(f'MEMBERS {c.slot} {entries}'.rstrip())
@@ -255,7 +258,7 @@ class Server:
                 c.send('ERROR Names can use letters, digits, _ and -, up to 16')
                 return
             c.gamekey, c.name = args[1][:32], args[2]
-            c.send(f'WELCOME {PROTO}')
+            c.send(f'WELCOME {PROTO} skins')
             log.info('%s connected from %s', c.name, c.ip)
             return
         if not c.name:
@@ -328,6 +331,10 @@ class Server:
                 c.lobby.broadcast_conf()
         elif cmd == 'RATE':
             c.rate = snap_rate(int(args[0])) if args and args[0].isdigit() else 60
+            if c.lobby:
+                c.lobby.broadcast_members()
+        elif cmd == 'SKIN':
+            c.skin = args[0] if args and (args[0] == '-' or TOKEN_RE.match(args[0])) else '-'
             if c.lobby:
                 c.lobby.broadcast_members()
         elif cmd == 'RTT':

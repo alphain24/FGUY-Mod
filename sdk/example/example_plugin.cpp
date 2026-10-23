@@ -27,10 +27,18 @@ static void OnTick(void*) {
     }
 }
 
+// A menu call of its own (API 2): a menu script's ExternalInterface.call('FGUYPLUGIN_ExampleTick', 'hi') gets back
+// "hi - tick <n>"
+static int ExampleTick(void*, const char* const* args, int argc, char* out, int outSize) {
+    sprintf_s(out, outSize, "%s - tick %u", argc > 0 ? args[0] : "", g_api->Tick());
+    return 1;
+}
+
 extern "C" __declspec(dllexport) int FGUYModInit(const FGUYModAPI* api) {
     if (!api || api->version < 1) return 0;
     g_api = api;
     api->Log(L"hello from the example plugin");
     api->OnTick(OnTick, nullptr);
+    if (api->version >= 2) api->OnMenuCall("ExampleTick", ExampleTick, nullptr);
     return 1;
 }

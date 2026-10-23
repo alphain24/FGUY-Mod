@@ -707,6 +707,15 @@ ematch_<lobby pid>.txt`), whose lobby then
   or "GFX", nothing loads. It draws no bitmaps of a movie's own (DefineBitsLossless2 shows nothing: the game's
   pictures are DefineExternalImage2 names its texture system resolves, never files), so a picture is one
   DefineShape2: flat colours, each border between two colours one edge carrying both fills (no seams).
+- The model's outline is drawn with a depth bias away from the camera (0.0006, slope 1.5): without it the inside-out copy
+  showed through its own surface in creases and round small parts (black dashes on the boots, smudged laces).
+- Our HUD layers each need their own depth on _root (createEmptyMovieClip at a depth replaces what's there): the
+  online ping display at 29990 wiped the emote wheel drawn at the same depth. And online the HUD's root is zoomed to
+  one viewport: a layer of ours in screen units undoes it (FGUYMouseUnzoom).
+- Online, the test pipe's pad (hold / press) is added after the emote wheel has seen the real controller
+  (netplay.cpp SampleLocal): with no controller there, it now goes through the wheel too.
+- The lobby server passes a player's custom skin (SKIN <its head picture's id>, a member's 10th field, only to a server
+  whose WELCOME says "skins"); a PC that has that skin shows its head in the player's round portrait.
 - The HUD's head: Icon_Lifebar<GetObjectPath(viewport, player)>.PlayerHead, a frame per character
   (SetHeadIcon(playerIndex, character)). Our head is a clip laid over it, PlayerHead hidden.
 - The lobby's character screen (lobby.as2js): a skin's tile follows its outfit's; its picture loaded the same way.

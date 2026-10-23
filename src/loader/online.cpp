@@ -25,6 +25,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <mutex>
 #include <string>
@@ -42,8 +43,11 @@ struct Member {
     bool ready = false;
     bool away = false;   // still in the last match (the lobby keeps their place)
     std::string rate = "60"; // the most frames per second their monitor shows
+    std::string skin;        // the custom skin they wear: its head picture's id (cosmetics.cpp), "" none
     int rtt = 0;
 };
+bool g_serverSkins = false;   // (the server takes SKIN: its WELCOME says "skins")
+std::string g_skinSent = "?"; // (the skin id I last told it)
 struct LobbyInfo {
     std::string code, host, mode, map;
     int players = 0, max = 0;
@@ -241,6 +245,8 @@ void HandleLine(const std::string& line) {
     std::lock_guard<std::mutex> lock(g_lock);
     if (cmd == "WELCOME") {
         g_state = State::Connected;
+        g_serverSkins = std::find(f.begin(), f.end(), "skins") != f.end();
+        g_skinSent = "?";
         g_status.clear();
         DEVMODEW mode = {};   // the most frames per second this PC's monitor shows (the lobby's "auto" rate)
         mode.dmSize = sizeof(mode);
@@ -289,6 +295,7 @@ void HandleLine(const std::string& line) {
             m.team = e[6];
             if (e.size() > 7) m.input = e[7] == "k" ? "k" : "c";
             if (e.size() > 8) m.rate = CleanToken(e[8]);
+            if (e.size() > 9 && e[9] != "-") m.skin = CleanToken(e[9]);
             g_members.push_back(m);
         }
     } else if (cmd == "SAID" && f.size() > 3) {   // SAID <slot> <name> <text...>
@@ -787,7 +794,9 @@ void OnlineExit() {
 //        state: off, connecting, online, lobby, starting, failed, returning (back from a match)
 //   C|<mode>|<map>|<time>|<score>|<ff>|<rate>|<net>         the lobby's match settings (net 1: the new netcode)
 //   O|<char>:<costume>.<costume>;...                         what the host's save has (in a lobby)
-//   M|<slot>|<name>|<ready>|<ping>|<character>|<costume>|<team>|<input k/c>   one per player in my lobby
+//   M|<slot>|<name>|<ready>|<ping>|<character>|<costume>|<team>|<input k/c>|<rate>|<skin>   one per player in my lobby
+//        skin: the head picture of the custom skin they wear, if this PC has that skin too - "<movie>|l|r|b" with ~ for
+//        | (cosmetics.cpp CosmeticsSkinHead), "" none
 //   L|<code>|<host>|<players>|<max>|<mode>|<map>|<mods>     one per open lobby (when not in one; mods: names + -)
 //   T|<number>|<name>|<text>                                  my lobby's chat, oldest first (the last 8 lines)
 const char* LobbyState() {
@@ -800,11 +809,18 @@ const char* LobbyState() {
     g_text += "C|" + g_conf + "|" + g_confRate + "|" + g_confNet + "\n";
     if (inLobby && !g_own.empty()) g_text += "O|" + g_own + "\n";
     if (inLobby) {
+        std::string mine = CosmeticsMySkinKey();   // (my skin: told to the server when it changes - and shown for me
+        if (g_serverSkins && g_state == State::InLobby && mine != g_skinSent) {   //  whatever the server knows)
+            SendLine("SKIN " + (mine.empty() ? std::string("-") : mine));
+            g_skinSent = mine;
+        }
         for (size_t i = 0; i < g_members.size(); ++i) {
             const Member& m = g_members[i];
+            std::string head = CosmeticsSkinHead((int)i == g_mySlot ? mine : m.skin);
+            std::replace(head.begin(), head.end(), '|', '~');
             g_text += "M|" + std::to_string(i) + "|" + Field(m.name) + "|" + (m.away ? "2" : m.ready ? "1" : "0") + "|" +
                       std::to_string(m.rtt) + "|" + Field(m.character) + "|" + Field(m.costume) + "|" + Field(m.team) +
-                      "|" + m.input + "|" + m.rate + "\n";
+                      "|" + m.input + "|" + m.rate + "|" + Field(head) + "\n";
         }
         for (const ChatLine& t : g_chat) g_text += "T|" + std::to_string(t.seq) + "|" + Field(t.name) + "|" + Field(t.text) + "\n";
     } else {

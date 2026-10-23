@@ -79,7 +79,7 @@ cl /nologo /O2 /MT /W4 /EHsc /LD myplugin.cpp /Fe:myplugin.dll /link user32.lib
 
 | Member | Meaning |
 |---|---|
-| `int version` | `FGUYMOD_API_VERSION` (1). Newer base mods only add members at the end. |
+| `int version` | `FGUYMOD_API_VERSION` (2 since 0.9.1). Newer base mods only add members at the end — check it before using a newer member. |
 | `const wchar_t* modFolder` | Your mod's folder, no trailing backslash. For a `.fgmod`, its unpacked copy. |
 | `void Log(const wchar_t* text)` | A line in the log (`FGUYMod\FGUYMod_<process id>.log`), with your mod's name. |
 | `int Setting(const wchar_t* key, int defaultValue)` | `mod.ini` › `[Settings]` › `key`, as a number. |
@@ -139,6 +139,36 @@ if (api->GetInput(0, &in)) {
 |---|---|
 | `int Hook(void* target, int length, void* detour, void** original)` | Detours a function — see [below](#hooking-the-games-code). |
 | `int Patch(void* address, const void* bytes, int length)` | Writes bytes into the game's code (the page made writable, the instruction cache flushed). |
+
+### Menu calls *(API 2)*
+
+| Member | Meaning |
+|---|---|
+| `int OnMenuCall(const char* name, FGUYModMenuFn fn, void* user)` | Your own call for menu and HUD scripts: `ExternalInterface.call('FGUYPLUGIN_<name>', …)` reaches `fn`. `name`: letters, digits, `_` (up to 48); the first mod to take a name keeps it. |
+
+`FGUYModMenuFn` is `int (*)(void* user, const char* const* args, int argc, char* out, int outSize)`:
+
+- `args` — the script's arguments as text (numbers as decimals, booleans as `true` / `false`), up to 16.
+- Write the answer into `out` (nul-terminated, up to `outSize` bytes) and return `1`: the script gets it as a string.
+  Return `0`: the script gets `undefined`.
+- It runs on the thread the menu runs on — keep gameplay changes in `OnTick`.
+
+```cpp
+static int Hello(void*, const char* const* args, int argc, char* out, int outSize) {
+    sprintf_s(out, outSize, "%s - tick %u", argc > 0 ? args[0] : "", g_api->Tick());
+    return 1;
+}
+// in FGUYModInit:
+if (api->version >= 2) api->OnMenuCall("MyHello", Hello, nullptr);
+```
+
+…and in your menu patch's code (see [Menu & HUD patches](ui-patches.md)):
+
+```js
+var text = String(flash.external.ExternalInterface.call('FGUYPLUGIN_MyHello', 'hi'));   // "hi - tick 2214"
+```
+
+A call no plugin answers gives `undefined` (and one line in the log).
 
 ---
 

@@ -456,12 +456,12 @@ function FGUYEmotePoll() {
     var s = flash.external.ExternalInterface.call('FGUYMOD_EmoteWheel');
     if (s == undefined) return;   // (not the loader we know)
     s = String(s);
-    if (s == FGUYEmoteLast) return;
+    if (s == FGUYEmoteLast) { if (_root.FGUYEmoteUI != undefined) FGUYMouseUnzoom(_root.FGUYEmoteUI); return; }
     FGUYEmoteLast = s;
     _root.FGUYEmoteUI.removeMovieClip();
     var f = s.split('|');
     if (f[0] != '1') return;
-    var ui = _root.createEmptyMovieClip('FGUYEmoteUI', 29990);
+    var ui = _root.createEmptyMovieClip('FGUYEmoteUI', 29994);
     FGUYPauseN = 0;   // (FGUYPauseText's field names count from it - offline nothing else set it yet)
     var r = FGUYPauseRect(), size = r.h / 720;
     var names = f[5].split('~'), n = names.length, sel = Number(f[1]), page = Number(f[2]), pages = Number(f[3]);
@@ -483,6 +483,7 @@ function FGUYEmotePoll() {
     var hint = f[4] == '1' ? 'Left stick: pick  -  let go of BACK to play' + (pages > 1 ? '  -  LB / RB: more' : '')
                            : 'Mouse: pick  -  let go of B to play' + (pages > 1 ? '  -  mouse wheel: more' : '');
     FGUYPauseText(tx, r.x, cy + R + 14 * size, r.w, 30 * size, hint, false, 16 * size, 0xFFFFFF, 'center');
+    FGUYMouseUnzoom(ui);   // (whole-screen units: online the HUD's root is zoomed to one viewport)
 }
 
 // a ring's slice from angle a0 to a1 (0 = up, clockwise), radius r0 to r1 (r0 0: to the middle)
@@ -600,7 +601,7 @@ function FGUYDeathPanel(p, show, keyboard) {
     var sig = hover + ',' + keyboard + ',' + r.x + ',' + r.y + ',' + r.w + ',' + r.h;
     if (ui == undefined || sig != FGUYDeathSig) {
         ui.removeMovieClip();
-        ui = _root.createEmptyMovieClip('FGUYDeathUI', 29990);
+        ui = _root.createEmptyMovieClip('FGUYDeathUI', 29995);
         var bg = ui.createEmptyMovieClip('bg', 1);
         FGUYPauseBox(bg, r.x, r.y, r.w, r.h, 0, 0x000000, 30, 0, 0, 0);
         FGUYPauseBox(bg, px, py, pw, ph, 18, 0x13213C, 95, 0x2E5C9A, 100, 3);

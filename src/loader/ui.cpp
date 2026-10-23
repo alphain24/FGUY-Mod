@@ -305,6 +305,30 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             }
         }
     }
+    if (name && strncmp(name, "FGUYPLUGIN_", 11) == 0) {   // (a mod's plugin's own menu call - modloader.cpp)
+        std::vector<std::string> a;
+        for (unsigned i = 0; i < argc && i < 16; ++i) {
+            unsigned t = args[i].type & 0x0F;
+            char num[32];
+            if (t == kString) a.push_back(ArgString(args, argc, i));
+            else if (t == kBool) a.push_back(args[i].boolean ? "true" : "false");
+            else if (t == kNumber) { sprintf_s(num, "%.10g", args[i].number); a.push_back(num); }
+            else a.push_back("");
+        }
+        std::string out;
+        bool answered = false;
+        if (ModsMenuCall(name + 11, a, out, &answered)) {
+            if (answered) {
+                static std::string keep;   // (the menu reads the answer after this returns)
+                keep = out;
+                ReturnString(movie, keep.c_str());
+            }
+            return;
+        }
+        static std::set<std::string> told;
+        if (told.insert(name).second) Log(L"UI: no plugin answers %S", name);
+        return;
+    }
     if (name && strncmp(name, "FGUYMOD_", 8) == 0) {
         const char* fn = name + 8;
         static int logged = 0;

@@ -637,8 +637,26 @@ std::string JsonField(const std::vector<unsigned char>& pack, const char* key) {
     return q2 == std::string::npos ? "" : s.substr(q1 + 1, q2 - q1 - 1);
 }
 struct PackEntry { std::wstring file; std::string name; unsigned lo, hi; FILETIME written; std::string who; std::wstring path, from;
-                   std::string icon; };   // (its picture's movie - icons.cpp; "" none)
+                   std::string icon, head; };   // (its pictures' movies - icons.cpp: "" none; head "<movie>|l|r|b")
 std::vector<PackEntry> g_packs;
+
+// skin.json's "headFace": [left, right, bottom] as "|l|r|b" ("" none)
+std::string HeadFace(const std::vector<unsigned char>& pack) {
+    std::vector<unsigned char> js;
+    if (!ZipEntry(pack, "skin.json", js)) return "";
+    std::string j(js.begin(), js.end());
+    size_t at = j.find("\"headFace\"");
+    std::vector<double> f = at == std::string::npos ? std::vector<double>() : Numbers(j, j.find('[', at));
+    if (f.size() != 3) return "";
+    char t[96];
+    sprintf_s(t, "|%.4f|%.4f|%.4f", f[0], f[1], f[2]);
+    return t;
+}
+// a head picture's id: its movie's key ("fguyicon_<key>.gfx|...")
+std::string HeadKey(const std::string& head) {
+    size_t a = head.find("fguyicon_"), b = head.find(".gfx");
+    return a == std::string::npos || b == std::string::npos ? "" : head.substr(a + 9, b - a - 9);
+}
 ULONGLONG g_packsAt = 0;
 std::wstring g_myPick;              // (the file picked for the outfit shown - empty: none)
 unsigned g_myPickLo = 0, g_myPickHi = 0;
@@ -683,6 +701,8 @@ void ScanPacks() {
             if (CosmeticsPackInfo(d, &e.name, &e.lo, &e.hi)) {
                 std::vector<unsigned char> png;
                 if (ZipEntry(d, "icon.png", png)) e.icon = IconsAdd(png);
+                png.clear();
+                if (ZipEntry(d, "head.png", png)) e.head = IconsAdd(png) + HeadFace(d);
                 e.who = JsonField(d, "character");   // ("Stewie - Default": the MODS page)
                 std::string outfit = JsonField(d, "outfit");
                 if (!outfit.empty()) e.who += " - " + outfit;
@@ -837,6 +857,26 @@ std::wstring CosmeticsMySkinPath() {
     return PackPath(g_myPick);
 }
 
+// online.cpp, the lobby: the head picture's id of my skin for the outfit the preview shows ("" none), and a head
+// picture by its id - if a pack here has it ("" not)
+std::string CosmeticsMySkinKey() {
+    static std::wstring lastPick;   // (the preview's model can be unknown for a moment - a character loading: the
+    static std::string lastKey;     //  same pick, the same answer)
+    unsigned lo = 0, hi = 0;
+    if (g_myPick.empty()) return lastPick.clear(), lastKey.clear(), "";
+    if (!CosmeticsPlayerModel(2, 0, &lo, &hi)) return g_myPick == lastPick ? lastKey : "";
+    if (lo != g_myPickLo || hi != g_myPickHi) return "";
+    lastPick = g_myPick;
+    lastKey.clear();
+    for (const PackEntry& e : g_packs) if (e.file == g_myPick) lastKey = HeadKey(e.head);
+    return lastKey;
+}
+std::string CosmeticsSkinHead(const std::string& key) {
+    if (key.empty()) return "";
+    for (const PackEntry& e : g_packs) if (!e.head.empty() && HeadKey(e.head) == key) return e.head;
+    return "";
+}
+
 // FGUYMOD_HeadIcon (the HUD's SetHeadIcon - pause.as2js FGUYHeadIcon): the head picture of the skin a player wears
 // ("<movie>|<face left>|<face right>|<face bottom>", fractions of the picture - or the movie alone, or "")
 const char* CosmeticsHeadIcon(int player) {
@@ -903,18 +943,7 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
         //  taken off with the skin; online it comes along in the same pack)
         {   // (its head for the HUD - icons.cpp)
             std::vector<unsigned char> head;
-            std::string icon = !p.pack.empty() && ZipEntry(p.pack, "head.png", head) ? IconsAdd(head) : "";
-            std::vector<unsigned char> js;   // (and where its face is: "headFace": [left, right, bottom] - "url|l|r|b")
-            if (!icon.empty() && ZipEntry(p.pack, "skin.json", js)) {
-                std::string j(js.begin(), js.end());
-                size_t at = j.find("\"headFace\"");
-                std::vector<double> f = at == std::string::npos ? std::vector<double>() : Numbers(j, j.find('[', at));
-                if (f.size() == 3) {
-                    char t[96];
-                    sprintf_s(t, "|%.4f|%.4f|%.4f", f[0], f[1], f[2]);
-                    icon += t;
-                }
-            }
+            std::string icon = !p.pack.empty() && ZipEntry(p.pack, "head.png", head) ? IconsAdd(head) + HeadFace(p.pack) : "";
             std::lock_guard<std::mutex> l(g_headLock);
             g_head[p.slot] = icon;
         }

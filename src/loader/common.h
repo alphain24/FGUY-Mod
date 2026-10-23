@@ -155,6 +155,8 @@ bool SkinDecodePng(const std::vector<unsigned char>& png, std::vector<unsigned c
 // icons.cpp: skin icons in the menus
 std::string IconsAdd(const std::vector<unsigned char>& png);   // the movie a menu loads to show it ("fguyicon_<key>.gfx"; "": not a PNG)
 const std::vector<unsigned char>* IconsMovie(const char* url);  //   ui.cpp: the movie for a file the game opens (nullptr: not one)
+std::string CosmeticsMySkinKey();               // cosmetics.cpp: the id of my lobby skin's head picture ("" none)
+std::string CosmeticsSkinHead(const std::string& key);   //   that head picture here: "<movie>|l|r|b" ("": no pack of it here)
 const char* CosmeticsHeadIcon(int player);   // cosmetics.cpp, FGUYMOD_HeadIcon: the HUD head of the skin a player wears ("" none)
 IDirect3DTexture9* CosmeticsTextureFromDds(IDirect3DDevice9* dev, const std::vector<unsigned char>& dds);   // cosmetics.cpp
 int CosmeticsDrawPlayer();             //   which player this draw is of (-1 none)
@@ -204,6 +206,7 @@ std::string ModsOnlineKey();           //   the gameplay mods that are on (the l
 const char* ModsList();                //   FGUYMOD_ModsList (the MODS page)
 bool ModsToggle(const char* folder);   //   FGUYMOD_ModsToggle
 void ModsOpenFolder();                 //   FGUYMOD_ModsOpenFolder
+bool ModsMenuCall(const char* name, const std::vector<std::string>& args, std::string& out, bool* answered);   //   FGUYPLUGIN_<name>: a plugin's
 struct KbmRaw;
 bool NetplayInputOf(int slot, WORD* buttons, BYTE* lt, BYTE* rt, SHORT* sticks, KbmRaw* kbm, bool* keyboard);
 const char* ModVersion();              // online.cpp: the mod's version

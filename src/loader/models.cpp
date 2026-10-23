@@ -61,7 +61,8 @@ std::vector<Pending> g_pending;
 CRITICAL_SECTION& Cs() { static struct L { L() { InitializeCriticalSection(&c); } CRITICAL_SECTION c; } l; return l.c; }
 IDirect3DVertexDeclaration9* g_decl = nullptr;
 IDirect3DTexture9* g_black = nullptr;   // (the outline's colour)
-const float kOutline = 0.009f, kOutlineMin = 0.07f;   // (its width, the smallest part with one: Peter is 1.9 tall)
+const float kOutline = 0.009f, kOutlineMin = 0.07f;
+const float kHullBias = 0.0006f, kHullSlope = 1.5f;   // (the outline's depth bias: behind its own surface)   // (its width, the smallest part with one: Peter is 1.9 tall)
 unsigned g_frame = 1;
 // A player's character's pieces, by their index buffers: their model entity ([[player +0x38] +0x1d4], a
 // World::ModelPrototypeEntity) points to its World::SkinGeometryEntity pieces (vtable 0x9fb30c; [model +0xa4..] +0x12c),
@@ -499,7 +500,22 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
         dev->SetTexture(1, g_black);
         if (oldTex2) dev->SetTexture(2, g_black);
         dev->SetRenderState(D3DRS_CULLMODE, cull == D3DCULL_CW ? D3DCULL_CCW : D3DCULL_CW);
+        // (pushed back in depth: only round its outline - in a crease, or round a lace on it, the inside-out copy is
+        //  just behind its own surface and showed through as black smudges)
+        static float bias[2] = {-1, -1};   // (test knob FGUYMOD_TEST_HULLBIAS=<bias>,<slope>)
+        if (bias[0] < 0) {
+            char v[64] = "";
+            bias[0] = kHullBias; bias[1] = kHullSlope;
+            if (GetEnvironmentVariableA("FGUYMOD_TEST_HULLBIAS", v, 64)) sscanf_s(v, "%f,%f", &bias[0], &bias[1]);
+        }
+        DWORD oldBias = 0, oldSlope = 0;
+        dev->GetRenderState(D3DRS_DEPTHBIAS, &oldBias);
+        dev->GetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, &oldSlope);
+        dev->SetRenderState(D3DRS_DEPTHBIAS, *reinterpret_cast<const DWORD*>(&bias[0]));
+        dev->SetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, *reinterpret_cast<const DWORD*>(&bias[1]));
         for (const Run& r : m->outlined) real(dev, (int)D3DPT_TRIANGLELIST, 0, 0, V, r.first, r.count / 3);
+        dev->SetRenderState(D3DRS_DEPTHBIAS, oldBias);
+        dev->SetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, oldSlope);
         dev->SetRenderState(D3DRS_CULLMODE, cull);
     }
     dev->SetVertexDeclaration(oldDecl);

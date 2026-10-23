@@ -41,7 +41,7 @@
 extern "C" {
 #endif
 
-#define FGUYMOD_API_VERSION 1
+#define FGUYMOD_API_VERSION 2
 
 /* One player's input for the current tick (online: the match's synced input - the same on every PC). */
 typedef struct FGUYModInput {
@@ -56,6 +56,10 @@ typedef struct FGUYModInput {
 } FGUYModInput;
 
 typedef void (*FGUYModCallback)(void* user);
+/* A menu call (API 2): args as text (numbers as decimals, true / false), argc of them; write the answer - text the
+   menu script gets back - into out (outSize bytes, nul-terminated). Return 1 if answered (0: the script gets
+   undefined). Runs on the thread the menu runs on. */
+typedef int (*FGUYModMenuFn)(void* user, const char* const* args, int argc, char* out, int outSize);
 
 typedef struct FGUYModAPI {
     int version;                              /* FGUYMOD_API_VERSION (newer loaders only add fields at the end) */
@@ -91,6 +95,12 @@ typedef struct FGUYModAPI {
     int (*Hook)(void* target, int length, void* detour, void** original);
     /* Write bytes into the game's code (with the page made writable). Returns 1 on success. */
     int (*Patch)(void* address, const void* bytes, int length);
+
+    /* ---- API version 2 (check api->version >= 2) ---- */
+    /* Your own menu calls: a menu or HUD script (your ui\*.fgpatch) calling
+       flash.external.ExternalInterface.call('FGUYPLUGIN_<name>', ...) reaches fn. `name`: letters, digits, _ (up to
+       48); the first mod to take a name keeps it. Returns 1 on success. */
+    int (*OnMenuCall)(const char* name, FGUYModMenuFn fn, void* user);
 } FGUYModAPI;
 
 typedef int (*FGUYModInitFn)(const FGUYModAPI* api);
