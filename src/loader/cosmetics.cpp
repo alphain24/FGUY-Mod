@@ -111,6 +111,9 @@ int g_tracePlayerCount = 0;
 struct SkinTex {
     unsigned lo = 0, hi = 0;
     std::vector<unsigned char> dds;
+    bool recipe = false;                   // (format 2: made here from the game's own texture - skinbuild.cpp)
+    std::vector<double> ops;               //   its recolors, 7 numbers each
+    std::vector<unsigned char> overlay;    //   its own pixels (a PNG), or none
     IDirect3DTexture9* mine = nullptr;     // (ours: made on the render thread)
     IDirect3DBaseTexture9* game = nullptr; // (the game's, found through the asset tree - looked up again now and then)
 };
@@ -159,12 +162,52 @@ bool ZipEntry(const std::vector<unsigned char>& z, const std::string& want, std:
     return false;
 }
 
-// skin.json, as the Skin Studio writes it: each texture's "dds": "<path>" then "id": [lo, hi]
+// the numbers of the array at `at` ('[' there), nested ones too
+std::vector<double> Numbers(const std::string& s, size_t at) {
+    std::vector<double> out;
+    int depth = 0;
+    for (size_t i = at; i < s.size(); ++i) {
+        char c = s[i];
+        if (c == '[') ++depth;
+        else if (c == ']') { if (--depth == 0) break; }
+        else if (c == '-' || (c >= '0' && c <= '9')) {
+            char* end = nullptr;
+            out.push_back(strtod(s.c_str() + i, &end));
+            i = end - s.c_str() - 1;
+        }
+    }
+    return out;
+}
+
+// skin.json, as the Skin Studio writes it. Format 2: under "textures", each texture's "id": [lo, hi], its "ops"
+// (recolors) and its "overlay" (a PNG's path, or none) - no game art in it; format 1: each texture's "dds": "<path>"
+// then "id" (the whole texture, game-ready)
 Skin* ParsePack(const std::vector<unsigned char>& pack, const std::wstring& name) {
     std::vector<unsigned char> js;
     if (!ZipEntry(pack, "skin.json", js)) return nullptr;
     std::string s(js.begin(), js.end());
     auto skin = new Skin{name, {}};
+    size_t format = s.find("\"format\"");
+    if (format != std::string::npos && atoi(s.c_str() + s.find(':', format) + 1) >= 2) {
+        size_t at = s.find("\"textures\"");
+        while (at != std::string::npos && (at = s.find("\"id\"", at + 1)) != std::string::npos) {
+            size_t next = s.find("\"id\"", at + 1), ops = s.find("\"ops\"", at), ov = s.find("\"overlay\"", at);
+            SkinTex t;
+            t.recipe = true;
+            std::vector<double> id = Numbers(s, s.find('[', at));
+            if (id.size() != 2) break;
+            t.lo = (unsigned)id[0];
+            t.hi = (unsigned)id[1];
+            if (ops != std::string::npos && ops < next) t.ops = Numbers(s, s.find('[', ops));
+            if (ov != std::string::npos && ov < next) {
+                size_t q1 = s.find('"', s.find(':', ov) + 1), q2 = s.find('"', q1 + 1);
+                if (q1 != std::string::npos && q2 != std::string::npos) ZipEntry(pack, s.substr(q1 + 1, q2 - q1 - 1), t.overlay);
+            }
+            skin->textures.push_back(std::move(t));
+        }
+        if (skin->textures.empty()) { delete skin; return nullptr; }
+        return skin;
+    }
     size_t at = 0;
     while ((at = s.find("\"dds\"", at)) != std::string::npos) {
         size_t q1 = s.find('"', s.find(':', at) + 1), q2 = s.find('"', q1 + 1);
@@ -182,6 +225,7 @@ Skin* ParsePack(const std::vector<unsigned char>& pack, const std::wstring& name
 
 // ours: the game texture's format, filled from the DDS's levels
 IDirect3DTexture9* MakeTexture(IDirect3DDevice9* dev, const SkinTex& t) {
+    if (t.dds.size() < 128) return nullptr;   // (a recipe's: not made yet - the game's texture isn't here yet)
     const unsigned char* d = t.dds.data();
     if (*reinterpret_cast<const unsigned*>(d) != 0x20534444) return nullptr;
     unsigned h = *reinterpret_cast<const unsigned*>(d + 12), w = *reinterpret_cast<const unsigned*>(d + 16);
@@ -666,8 +710,16 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
         bool any = false;
         for (Skin* s : g_skins)
             if (s) for (SkinTex& t : s->textures) {
-                IDirect3DBaseTexture9* g = TextureOf(t.lo, t.hi);
+                IDirect3DTexture9* g = TextureOf(t.lo, t.hi);
                 if (g != t.game) { t.game = g; changed = true; }
+                if (t.recipe && g && !t.mine) {   // (made from this player's own game texture, once it's here)
+                    if (SkinBuildTexture(g, t.ops, t.overlay, t.dds)) t.mine = MakeTexture(dev, t);
+                    Log(L"Cosmetics: skin texture %x:%x made here (%zu recolors%s)%s", t.lo, t.hi, t.ops.size() / 7,
+                        t.overlay.empty() ? L"" : L", own pixels", t.mine ? L"" : L" - FAILED");
+                    t.dds.clear();
+                    t.dds.shrink_to_fit();
+                    changed = true;
+                }
                 any = true;
             }
         if (changed) RebuildSwaps();

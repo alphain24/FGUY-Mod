@@ -1,11 +1,11 @@
 // FGUY Skin Studio: pick the game folder, a character and outfit, see it in 3D, recolor / repaint its textures, save a
-// skin pack (.fgskin: a zip with skin.json and the changed textures as PNGs) for the game's cosmetics mod - or, on the
+// skin pack (.fgskin: a zip with skin.json - what was done to each texture, no game art) for the game's cosmetics mod - or, on the
 // Emotes tab, pose the character on a timeline and save an emote pack (.fgemote, emotes.js) for the emote mod.
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {zipSync, unzipSync, strToU8, strFromU8} from 'fflate';
 import {Ho} from './ho.js';
-import {decodeDds, encodeDds} from './dds.js';
+import {decodeDds} from './dds.js';
 import {loadModel, loadSkeleton, outfitsOf, CHARACTERS} from './model.js';
 import {createEmoteEditor} from './emotes.js';
 
@@ -117,7 +117,8 @@ async function textureFor(info) {
   const tex = new THREE.CanvasTexture(canvas);
   tex.flipY = false;
   tex.colorSpace = THREE.SRGBColorSpace;
-  const t = {name: key, canvas, ctx, original, tex, history: [], modified: false, format: dds.format, mips: dds.mips,
+  // (ops: the recolors done to it, in order - the pack carries them, not the texture; history: {img, ops} to go back to)
+  const t = {name: key, canvas, ctx, original, tex, history: [], ops: [], modified: false, format: dds.format, mips: dds.mips,
     id: [info.texture.lo, info.texture.hi]};
   state.textures.set(key, t);
   return t;
@@ -283,9 +284,9 @@ function hsl2rgb([h, s, l]) {
   return [f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255];
 }
 
-// one texture: the pixels near color P (rgb) moved to Q, shading kept; returns how many
-function recolor(t, P, Q, tol) {
-  const img = t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height), d = img.data;
+// pixels (rgba) near color P moved to Q, shading kept; returns how many. The game does the same to its own texture
+// (src/loader/skinbuild.cpp Recolor) - keep the two alike.
+function recolorData(d, P, Q, tol) {
   const hp = rgb2hsl(P), hq = rgb2hsl(Q);
   let count = 0;
   for (let i = 0; i < d.length; i += 4) {
@@ -297,9 +298,16 @@ function recolor(t, P, Q, tol) {
     for (let k = 0; k < 3; k++) d[i + k] = d[i + k] * (1 - w) + out[k] * w;
     count++;
   }
+  return count;
+}
+
+// one texture: recolorData, remembered (its ops) - and undoable
+function recolor(t, P, Q, tol) {
+  const img = t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height);
+  const count = recolorData(img.data, P, Q, tol);
   if (!count) return 0;
-  t.history.push(t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height));
-  if (t.history.length > 20) t.history.shift();
+  remember(t);
+  t.ops.push([...P, ...Q, tol]);
   t.ctx.putImageData(img, 0, 0);
   t.modified = true;
   changed(t);
@@ -323,17 +331,26 @@ $('apply').onclick = () => {
     : 'Nothing that close - pick again or allow more with "How close".');
 };
 
+// (what to go back to: the pixels and how many recolors there were)
+function remember(t) {
+  t.history.push({img: t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height), ops: t.ops.length});
+  if (t.history.length > 20) t.history.shift();
+}
+
 $('undo').onclick = () => {
   const t = state.selected;
   if (!t?.history.length) return;
-  t.ctx.putImageData(t.history.pop(), 0, 0);
+  const h = t.history.pop();
+  t.ctx.putImageData(h.img, 0, 0);
+  t.ops.length = Math.min(t.ops.length, h.ops);
   t.modified = t.history.length > 0 || t.modified;
   changed(t);
 };
 $('reset').onclick = () => {
   const t = state.selected;
   if (!t) return;
-  t.history.push(t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height));
+  remember(t);
+  t.ops = [];
   t.ctx.putImageData(t.original, 0, 0);
   t.modified = false;
   changed(t);
@@ -352,7 +369,7 @@ $('exportPng').onclick = async () => state.selected && download(await pngOf(stat
 
 async function imageInto(t, blob) {
   const img = await createImageBitmap(blob);
-  t.history.push(t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height));
+  remember(t);
   t.ctx.clearRect(0, 0, t.canvas.width, t.canvas.height);
   t.ctx.drawImage(img, 0, 0, t.canvas.width, t.canvas.height);
   t.modified = true;
@@ -369,25 +386,45 @@ $('importPng').onchange = async e => {
 };
 
 // ---- skin packs ------------------------------------------------------------------------------------------------
-// the pack: skin.json (what it is, for which outfit, its textures) and the changed textures as PNGs, zipped
+// The pack (format 2): skin.json - for each changed texture its recolors ("ops": [from r, g, b, to r, g, b, how close],
+// in order) and, if anything else was changed (painted, imported), an overlay PNG holding only those pixels (the rest
+// transparent). No game art: the game makes the texture from the player's own copy (src/loader/skinbuild.cpp).
+const pngOfCanvas = c => new Promise(r => c.toBlob(r, 'image/png'));
+function overlayOf(t) {   // the pixels that aren't the recolors' doing - or null
+  const w = t.canvas.width, h = t.canvas.height;
+  const base = new Uint8ClampedArray(t.original.data);
+  for (const [r0, g0, b0, r1, g1, b1, tol] of t.ops) recolorData(base, [r0, g0, b0], [r1, g1, b1], tol);
+  const now = t.ctx.getImageData(0, 0, w, h).data, out = new ImageData(w, h);
+  let n = 0;
+  for (let i = 0; i < now.length; i += 4) {
+    if (now[i + 3] === 0) continue;
+    if (Math.abs(now[i] - base[i]) + Math.abs(now[i + 1] - base[i + 1]) + Math.abs(now[i + 2] - base[i + 2]) <= 6) continue;
+    out.data.set([now[i], now[i + 1], now[i + 2], 255], i);
+    n++;
+  }
+  if (!n) return null;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').putImageData(out, 0, 0);
+  return {canvas: c, pixels: n};
+}
+
 async function buildPack() {
   const o = state.current;
   const edited = (o?.textures || []).filter(t => t.modified);
   if (!edited.length) return null;
   const name = ($('packName').value || $('packName').placeholder).trim();
   const files = {};
-  const manifest = {format: 1, name, character: o.character, outfit: o.outfit, model: o.model.name,
-    modelId: [o.model.lo, o.model.hi], textures: {},
-    tool: 'FGUY Skin Studio'};
+  const manifest = {format: 2, name, character: o.character, outfit: o.outfit, model: o.model.name,
+    modelId: [o.model.lo, o.model.hi], textures: {}, tool: 'FGUY Skin Studio'};
   for (const t of edited) {
-    const path = 'textures/' + t.name + '.png';
-    // (and a game-ready copy: the game's texture's own format and mip levels - the mod copies it in as it is)
-    const dds = 'textures/' + t.name + '.dds';
-    manifest.textures[t.name] = {file: path, dds, id: t.id, width: t.canvas.width, height: t.canvas.height,
-      format: t.format, mips: t.mips};
-    files[path] = new Uint8Array(await (await pngOf(t)).arrayBuffer());
-    const px = t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height).data;
-    files[dds] = [encodeDds(px, t.canvas.width, t.canvas.height, t.format, t.mips), {level: 0}];   // (stored: the mod reads it as is)
+    const entry = {id: t.id, width: t.canvas.width, height: t.canvas.height, format: t.format, mips: t.mips, ops: t.ops};
+    const ov = overlayOf(t);
+    if (ov) {
+      entry.overlay = 'textures/' + t.name + '.png';
+      files[entry.overlay] = [new Uint8Array(await (await pngOfCanvas(ov.canvas)).arrayBuffer()), {level: 0}];   // (stored)
+    }
+    manifest.textures[t.name] = entry;
   }
   files['skin.json'] = [strToU8(JSON.stringify(manifest, null, 2)), {level: 0}];   // (stored: the mod reads it as is)
   return {name, count: edited.length, blob: new Blob([zipSync(files)])};
@@ -413,7 +450,19 @@ $('openPack').onchange = async e => {
     await selectOutfit(o);
     for (const [name, info] of Object.entries(m.textures)) {
       const t = o.textures.find(x => x.name === name);
-      if (t && files[info.file]) await imageInto(t, new Blob([files[info.file]], {type: 'image/png'}));
+      if (!t) continue;
+      if (m.format >= 2) {   // (its recolors done again on the game's texture, then its own pixels on top)
+        remember(t);
+        const img = new ImageData(new Uint8ClampedArray(t.original.data), t.canvas.width, t.canvas.height);
+        for (const [r0, g0, b0, r1, g1, b1, tol] of info.ops || []) recolorData(img.data, [r0, g0, b0], [r1, g1, b1], tol);
+        t.ctx.putImageData(img, 0, 0);
+        t.ops = (info.ops || []).map(x => x.slice());
+        if (info.overlay && files[info.overlay]) t.ctx.drawImage(await createImageBitmap(new Blob([files[info.overlay]], {type: 'image/png'})), 0, 0);
+        t.modified = true;
+        changed(t);
+      } else if (files[info.file]) {
+        await imageInto(t, new Blob([files[info.file]], {type: 'image/png'}));
+      }
     }
     $('packName').value = m.name || '';
     setStatus('Opened "' + (m.name || f.name) + '".');
