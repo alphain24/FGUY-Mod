@@ -494,7 +494,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
       }
       return {t, box};
     });
-    const MARGIN = 0.006, THICK = 0.12;
+    const MARGIN = 0.004, THICK = 0.12;
     const crossings = (t, o, d) => {   // (Moller-Trumbore, both faces: how many, and the nearest)
       let n = 0, near = Infinity;
       for (let i = 0; i < t.length; i += 9) {

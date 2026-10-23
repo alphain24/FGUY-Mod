@@ -464,7 +464,9 @@ node('hat-band', 'Hat band', 'torus', 'hat-crown', 'hat-band', importance=0.9, p
 BOOT_TOP = 0.29   # (below his knee - at 0.32: a boot over the knee lets the trousers bulge out of it as it bends)
 for side, sx in (('l', 1), ('r', -1)):
     # shaft a touch wider than his trouser leg (half x .17, half z .21 at y .35) so the leg never shows through
-    cx, SHAFT_R = sx * 0.217, (0.2, 0.33, 0.265)   # (each covers its leg - inner side x .02, the collar the rest - never meeting)
+    # (each wide enough to hold the whole leg and foot - their inner side reaches x .012 - and cut flat at the middle
+    #  line, x .002: the two boots touch there, as his feet do, but never cross)
+    cx, SHAFT_R = sx * 0.205, (0.21, 0.33, 0.265)
     kk = math.sqrt(1 - ((BOOT_TOP - 0.012 - 0.22) / SHAFT_R[1]) ** 2)
     collar = capsule_chain('collar', [(cx + SHAFT_R[0] * kk * math.cos(2 * math.pi * k / 16), BOOT_TOP - 0.012,
                                        0.04 + (SHAFT_R[2] * kk + 0.004) * math.sin(2 * math.pi * k / 16))
@@ -473,21 +475,25 @@ for side, sx in (('l', 1), ('r', -1)):
         'primitives': [
             {'id': 'shaft', 'type': 'ellipsoid', 'center': [cx, 0.22, 0.04], 'radii': list(SHAFT_R)},
             {'id': 'toe', 'type': 'ellipsoid', 'center': [cx, 0.1, 0.19], 'radii': [0.195, 0.115, 0.255]},
-            # (the sole 5 mm below the ground line: the character's own soles, at -0.0015, never show under it)
+            {'id': 'heel', 'type': 'ellipsoid', 'center': [cx, 0.08, -0.06], 'radii': [0.2, 0.1, 0.13]},   # (round his heel)
+            # (the sole 1 cm below the ground line: the character's own soles, at -0.0015, are well inside it)
             # sole: the boot's own footprint (an oval a touch wider than the foot) cut to a 0.06 slab
             {'id': 'sole-print', 'type': 'ellipsoid', 'center': [cx, 0.03, 0.12], 'radii': [0.185, 0.6, 0.31]},
-            {'id': 'sole-slab', 'type': 'box', 'center': [cx, 0.025, 0.12], 'size': [1.0, 0.06, 1.0]},
+            {'id': 'sole-slab', 'type': 'box', 'center': [cx, 0.02, 0.12], 'size': [1.0, 0.06, 1.0]},
             {'id': 'top', 'type': 'box', 'center': [cx, BOOT_TOP + 0.3, 0.1], 'size': [0.8, 0.6, 1.2]},
-            {'id': 'under', 'type': 'box', 'center': [cx, -0.305, 0.1], 'size': [0.8, 0.6, 1.2]},
+            {'id': 'under', 'type': 'box', 'center': [cx, -0.31, 0.1], 'size': [0.8, 0.6, 1.2]},
+            {'id': 'midline', 'type': 'box', 'center': [sx * (0.002 - 0.5), 0.15, 0.1], 'size': [1.0, 1.0, 1.4]},
         ] + collar,
         'operations': [
-            {'id': 'foot', 'type': 'smooth-union', 'left': 'shaft', 'right': 'toe', 'radius': 0.1},
+            {'id': 'foot0', 'type': 'smooth-union', 'left': 'shaft', 'right': 'toe', 'radius': 0.1},
+            {'id': 'foot', 'type': 'smooth-union', 'left': 'foot0', 'right': 'heel', 'radius': 0.06},
             {'id': 'sole', 'type': 'intersect', 'left': 'sole-print', 'right': 'sole-slab'},
             {'id': 'soled', 'type': 'smooth-union', 'left': 'foot', 'right': 'sole', 'radius': 0.03},
             {'id': 'cut', 'type': 'subtract', 'left': 'soled', 'right': 'top'},
             {'id': 'boot-cut', 'type': 'subtract', 'left': 'cut', 'right': 'under'},
-        ] + chain_ops('boot-cut', collar, 0.03, 'boot'),
-        'bounds': {'min': [cx - 0.25, -0.015, -0.25], 'max': [cx + 0.25, BOOT_TOP + 0.03, 0.48]},
+        ] + chain_ops('boot-cut', collar, 0.03, 'boot-c') + [
+            {'id': 'boot', 'type': 'subtract', 'left': 'boot-c', 'right': 'midline'}],
+        'bounds': {'min': [cx - 0.26, -0.02, -0.25], 'max': [cx + 0.26, BOOT_TOP + 0.03, 0.48]},
         'resolution': 64,
     }
     node(f'boot-shell-{side}', f'Lace-up boot ({"left" if sx > 0 else "right"})', 'ellipsoid', 'vest-shell',

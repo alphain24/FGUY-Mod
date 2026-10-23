@@ -40,8 +40,49 @@ function resize() {
 }
 new ResizeObserver(resize).observe(view);
 const clock = new THREE.Clock();
+// ---- the in-game look (the view's toggle): the game draws characters cel-shaded, with black ink outlines - but none
+// round a model's pieces (ours get no lines there). So: toon shading in three flat tones on everything, an outline (the
+// back faces, pushed out along the normals) on the character's own pieces only; their triangles a worn model hides
+// stay hidden. Kept in step every frame - views are rebuilt as you work.
+const look = {on: false};
+look.ramp = new THREE.DataTexture(new Uint8Array([95, 95, 95, 255, 175, 175, 175, 255, 255, 255, 255, 255]), 3, 1);
+look.ramp.minFilter = look.ramp.magFilter = THREE.NearestFilter;
+look.ramp.needsUpdate = true;
+look.line = new THREE.MeshBasicMaterial({color: 0x111111, side: THREE.BackSide});
+look.line.onBeforeCompile = sh => {
+  sh.vertexShader = sh.vertexShader.replace('#include <skinning_vertex>', `#include <skinning_vertex>
+  #ifdef USE_SKINNING
+    transformed += normalize(objectNormal) * 0.007;
+  #else
+    transformed += normalize(normal) * 0.007;
+  #endif`);
+};
+function syncLook() {
+  const on = $('gameLook').checked;
+  holder.traverse(o => {
+    if (!o.isMesh || o.userData.lookLine) return;
+    const m = o.material;
+    if (on && m.isMeshLambertMaterial) {
+      o.userData.lookPlain = m;
+      o.material = new THREE.MeshToonMaterial({map: m.map, gradientMap: look.ramp, side: m.side, alphaTest: m.alphaTest});
+      if (o.userData.piece || o.userData.texture) {   // (the character's own: outlined)
+        const line = o.isSkinnedMesh ? new THREE.SkinnedMesh(o.geometry, look.line) : new THREE.Mesh(o.geometry, look.line);
+        if (o.isSkinnedMesh) line.bind(o.skeleton, o.bindMatrix);
+        line.userData.lookLine = true;
+        line.frustumCulled = false;
+        o.add(line);
+      }
+    } else if (!on && m.isMeshToonMaterial && o.userData.lookPlain) {
+      m.dispose();
+      o.material = o.userData.lookPlain;
+      for (const c of o.children.filter(c => c.userData.lookLine)) o.remove(c);
+    }
+  });
+}
+
 renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
+  syncLook();
   if (state.mode === 'emotes') emotes?.tick(dt);
   controls.update();
   renderer.render(scene, camera);
@@ -314,7 +355,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   if (state.mode === 'emotes') { emotes.click(e); return; }
   const r = renderer.domElement.getBoundingClientRect();
   ray.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), camera);
-  const hit = ray.intersectObjects(holder.children.filter(c => !c.userData.packModel))[0];
+  const hit = ray.intersectObjects(holder.children.filter(c => !c.userData.packModel)).find(h => !h.object.userData.lookLine);
   const t = hit?.object.userData.texture;
   if (!t || !hit.uv) return;
   const u = ((hit.uv.x % 1) + 1) % 1, v = ((hit.uv.y % 1) + 1) % 1;
