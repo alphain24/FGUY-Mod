@@ -1,0 +1,4231 @@
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
+export type ProceduralModelOptions = {
+  wireframe?: boolean;
+  castShadow?: boolean;
+  receiveShadow?: boolean;
+  textureSize?: number;
+  textureAnisotropy?: number;
+  qualityPriority?: 'reference-fidelity' | 'balanced';
+};
+
+export type ProceduralModelRuntime = {
+  nodes: Record<string, THREE.Object3D>;
+  meshes: Record<string, THREE.Mesh>;
+  sockets: Record<string, THREE.Object3D>;
+  colliders: Record<string, unknown>;
+  destructionGroups: Record<string, THREE.Object3D[]>;
+};
+
+type SculptMaterialSpec = Record<string, any>;
+
+type SdfVector = readonly [number, number, number];
+type SdfTransform = { position?: SdfVector; translation?: SdfVector; rotation?: SdfVector; scale?: SdfVector };
+type SdfPrimitive = {
+  readonly id: string;
+  readonly type: 'sphere' | 'capsule' | 'box' | 'cone' | 'ellipsoid';
+  readonly center?: SdfVector;
+  readonly radius?: number | SdfVector;
+  readonly height?: number;
+  readonly size?: SdfVector;
+  readonly dimensions?: SdfVector;
+  readonly radii?: SdfVector;
+  readonly transform?: SdfTransform;
+};
+type SdfOperation = {
+  readonly id?: string;
+  readonly output?: string;
+  readonly type: 'smooth-union' | 'subtract' | 'intersect';
+  readonly left: string;
+  readonly right: string;
+  readonly radius?: number;
+};
+type SdfDescriptor = {
+  readonly primitives: readonly SdfPrimitive[];
+  readonly operations?: readonly SdfOperation[];
+  readonly resolution: number;
+  readonly bounds?: { readonly min: SdfVector; readonly max: SdfVector };
+};
+type SdfFunction = (point: THREE.Vector3) => number;
+
+function sdfSphere(point: THREE.Vector3, radius: number): number {
+  return point.length() - radius;
+}
+
+function sdfCapsule(point: THREE.Vector3, radius: number, height: number): number {
+  const halfHeight = height * 0.5;
+  const y = Math.max(-halfHeight, Math.min(halfHeight, point.y));
+  return point.distanceTo(new THREE.Vector3(0, y, 0)) - radius;
+}
+
+function sdfBox(point: THREE.Vector3, size: SdfVector): number {
+  const q = new THREE.Vector3(Math.abs(point.x), Math.abs(point.y), Math.abs(point.z))
+    .sub(new THREE.Vector3(size[0] * 0.5, size[1] * 0.5, size[2] * 0.5));
+  return q.clone().max(new THREE.Vector3()).length() + Math.min(Math.max(q.x, q.y, q.z), 0);
+}
+
+function sdfCone(point: THREE.Vector3, radius: number, height: number): number {
+  const halfHeight = height * 0.5;
+  const taper = radius * (1 - (point.y + halfHeight) / height);
+  return Math.max(Math.hypot(point.x, point.z) - Math.max(0, taper), Math.abs(point.y) - halfHeight);
+}
+
+function sdfEllipsoid(point: THREE.Vector3, radii: SdfVector): number {
+  const scaled = new THREE.Vector3(point.x / radii[0], point.y / radii[1], point.z / radii[2]);
+  return (scaled.length() - 1) * Math.min(radii[0], radii[1], radii[2]);
+}
+
+function sdfRadii(primitive: SdfPrimitive): SdfVector {
+  const radius = primitive.radius;
+  if (primitive.radii) return primitive.radii;
+  if (typeof radius === 'number') return [radius, radius, radius];
+  return radius ?? [0.5, 0.5, 0.5];
+}
+
+function smin(left: number, right: number, radius: number): number {
+  const blend = Math.max(radius - Math.abs(left - right), 0) / radius;
+  return Math.min(left, right) - blend * blend * radius * 0.25;
+}
+
+function sdfLocalPoint(point: THREE.Vector3, primitive: SdfPrimitive): { point: THREE.Vector3; scale: number } {
+  const transform = primitive.transform;
+  const translation = transform?.position ?? transform?.translation ?? primitive.center ?? [0, 0, 0];
+  const rotation = transform?.rotation ?? [0, 0, 0];
+  const scale = transform?.scale ?? [1, 1, 1];
+  const local = point.clone().sub(new THREE.Vector3(translation[0], translation[1], translation[2]));
+  const inverseRotation = new THREE.Quaternion()
+    .setFromEuler(new THREE.Euler(rotation[0], rotation[1], rotation[2]))
+    .invert();
+  local.applyQuaternion(inverseRotation);
+  local.set(local.x / scale[0], local.y / scale[1], local.z / scale[2]);
+  return { point: local, scale: Math.min(scale[0], scale[1], scale[2]) };
+}
+
+function sdfPrimitive(point: THREE.Vector3, primitive: SdfPrimitive): number {
+  const local = sdfLocalPoint(point, primitive);
+  let distance: number;
+  switch (primitive.type) {
+    case 'sphere':
+      distance = sdfSphere(local.point, typeof primitive.radius === 'number' ? primitive.radius : 0.5);
+      break;
+    case 'capsule':
+      distance = sdfCapsule(local.point, typeof primitive.radius === 'number' ? primitive.radius : 0.25, primitive.height ?? 1);
+      break;
+    case 'box':
+      distance = sdfBox(local.point, primitive.size ?? primitive.dimensions ?? [1, 1, 1]);
+      break;
+    case 'cone':
+      distance = sdfCone(local.point, typeof primitive.radius === 'number' ? primitive.radius : 0.5, primitive.height ?? 1);
+      break;
+    case 'ellipsoid':
+      distance = sdfEllipsoid(local.point, sdfRadii(primitive));
+      break;
+  }
+  return distance * local.scale;
+}
+
+function sdfSample(descriptor: SdfDescriptor): SdfFunction {
+  const nodes = new Map<string, SdfFunction>();
+  for (const primitive of descriptor.primitives) nodes.set(primitive.id, (point) => sdfPrimitive(point, primitive));
+  let result = descriptor.primitives.length > 0 ? nodes.get(descriptor.primitives[0].id) : undefined;
+  for (let index = 0; index < (descriptor.operations?.length ?? 0); index += 1) {
+    const operation = descriptor.operations?.[index];
+    if (!operation) continue;
+    const left = nodes.get(operation.left);
+    const right = nodes.get(operation.right);
+    if (!left || !right) continue;
+    let combined: SdfFunction;
+    switch (operation.type) {
+      case 'smooth-union':
+        combined = (point) => smin(left(point), right(point), operation.radius ?? 0.1);
+        break;
+      case 'subtract':
+        combined = (point) => Math.max(left(point), -right(point));
+        break;
+      case 'intersect':
+        combined = (point) => Math.max(left(point), right(point));
+        break;
+    }
+    nodes.set(operation.id ?? operation.output ?? `operation-${index}`, combined);
+    result = combined;
+  }
+  return result ?? (() => Infinity);
+}
+
+function polygonizeSdf(descriptor: SdfDescriptor): THREE.BufferGeometry {
+  // SURFACE NETS, not a voxel shell.
+  //
+  // This used to emit one axis-aligned quad per exposed voxel face, which is a Minecraft surface:
+  // every face is axis-aligned, every edge is a 90-degree step, and the result is stair-stepped at
+  // exactly the scale of the sampling grid. For a subject whose whole identity is smooth blended
+  // organic form -- which is the only kind of subject anyone reaches for an implicit surface to
+  // build -- that is worse than the assembled primitives it was meant to replace.
+  //
+  // Naive surface nets places ONE vertex per sign-changing cell, at the average of the linearly
+  // interpolated crossings on that cell's edges, and joins the four cells around each crossing
+  // edge into a quad. It is compact, manifold, and smooth, and it is a natural fit for a field
+  // that can be sampled anywhere rather than only at corners.
+  //
+  // Normals come from the field GRADIENT, not from face averaging: the gradient is the exact
+  // surface normal of the implicit surface, so shading no longer carries the grid's imprint.
+  const resolution = Math.max(4, Math.min(64, Math.floor(descriptor.resolution)));
+  const defaultBounds: { readonly min: SdfVector; readonly max: SdfVector } = { min: [-2, -2, -2], max: [2, 2, 2] };
+  const bounds = descriptor.bounds ?? defaultBounds;
+  const min = new THREE.Vector3(bounds.min[0], bounds.min[1], bounds.min[2]);
+  const step = new THREE.Vector3(
+    (bounds.max[0] - bounds.min[0]) / resolution,
+    (bounds.max[1] - bounds.min[1]) / resolution,
+    (bounds.max[2] - bounds.min[2]) / resolution,
+  );
+  const sample = sdfSample(descriptor);
+  const scratch = new THREE.Vector3();
+
+  // Corner grid: one more corner than cells on each axis.
+  const side = resolution + 1;
+  const field = new Float32Array(side * side * side);
+  const cornerAt = (x: number, y: number, z: number): number => (z * side + y) * side + x;
+  for (let z = 0; z < side; z += 1) {
+    for (let y = 0; y < side; y += 1) {
+      for (let x = 0; x < side; x += 1) {
+        scratch.set(min.x + x * step.x, min.y + y * step.y, min.z + z * step.z);
+        field[cornerAt(x, y, z)] = sample(scratch);
+      }
+    }
+  }
+
+  // The 12 cell edges as corner-offset pairs.
+  const CUBE_EDGES: readonly (readonly [number, number, number, number, number, number])[] = [
+    [0, 0, 0, 1, 0, 0], [1, 0, 0, 1, 1, 0], [0, 1, 0, 1, 1, 0], [0, 0, 0, 0, 1, 0],
+    [0, 0, 1, 1, 0, 1], [1, 0, 1, 1, 1, 1], [0, 1, 1, 1, 1, 1], [0, 0, 1, 0, 1, 1],
+    [0, 0, 0, 0, 0, 1], [1, 0, 0, 1, 0, 1], [1, 1, 0, 1, 1, 1], [0, 1, 0, 0, 1, 1],
+  ];
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+  const cellVertex = new Int32Array(resolution * resolution * resolution).fill(-1);
+  const cellAt = (x: number, y: number, z: number): number => (z * resolution + y) * resolution + x;
+
+  // Central-difference gradient, stepped at a fraction of a cell so it follows the field rather
+  // than the grid.
+  const epsilon = Math.min(step.x, step.y, step.z) * 0.25;
+  const gradient = (point: THREE.Vector3): THREE.Vector3 => {
+    const gx = sample(scratch.set(point.x + epsilon, point.y, point.z))
+      - sample(scratch.set(point.x - epsilon, point.y, point.z));
+    const gy = sample(scratch.set(point.x, point.y + epsilon, point.z))
+      - sample(scratch.set(point.x, point.y - epsilon, point.z));
+    const gz = sample(scratch.set(point.x, point.y, point.z + epsilon))
+      - sample(scratch.set(point.x, point.y, point.z - epsilon));
+    const normal = new THREE.Vector3(gx, gy, gz);
+    // A point where the field is flat has no defined normal; +Y is arbitrary but finite, and
+    // leaving a zero vector would poison every lighting calculation downstream.
+    return normal.lengthSq() < 1e-20 ? new THREE.Vector3(0, 1, 0) : normal.normalize();
+  };
+
+  for (let z = 0; z < resolution; z += 1) {
+    for (let y = 0; y < resolution; y += 1) {
+      for (let x = 0; x < resolution; x += 1) {
+        let crossings = 0;
+        let sumX = 0;
+        let sumY = 0;
+        let sumZ = 0;
+        for (const [ax, ay, az, bx, by, bz] of CUBE_EDGES) {
+          const a = field[cornerAt(x + ax, y + ay, z + az)];
+          const b = field[cornerAt(x + bx, y + by, z + bz)];
+          if ((a <= 0) === (b <= 0)) continue;
+          const t = a / (a - b);
+          sumX += (ax + (bx - ax) * t);
+          sumY += (ay + (by - ay) * t);
+          sumZ += (az + (bz - az) * t);
+          crossings += 1;
+        }
+        if (crossings === 0) continue;
+        const px = min.x + (x + sumX / crossings) * step.x;
+        const py = min.y + (y + sumY / crossings) * step.y;
+        const pz = min.z + (z + sumZ / crossings) * step.z;
+        cellVertex[cellAt(x, y, z)] = positions.length / 3;
+        positions.push(px, py, pz);
+        const normal = gradient(new THREE.Vector3(px, py, pz));
+        normals.push(normal.x, normal.y, normal.z);
+      }
+    }
+  }
+
+  // One quad per sign-changing grid edge, joining the four cells that share it.
+  //
+  // Winding, worked out rather than guessed. For the +x edge from corner (x,y,z), the four cells
+  // around it are (x, y-1, z-1), (x, y, z-1), (x, y, z), (x, y-1, z); in the (y,z) plane that
+  // traversal is +y, +z, -y, whose cross product is +x. So when the corner is INSIDE and its
+  // neighbour is outside, the unflipped order already faces out, and the flip belongs on the
+  // opposite case. Getting this backwards is invisible in the normals -- those come from the
+  // gradient and stay correct -- and shows only as back-face culling removing the front surface,
+  // i.e. the model rendering as a hollow shell with its interior visible.
+  const quad = (a: number, b: number, c: number, d: number, flip: boolean): void => {
+    if (a < 0 || b < 0 || c < 0 || d < 0) return;
+    if (flip) indices.push(a, c, b, a, d, c);
+    else indices.push(a, b, c, a, c, d);
+  };
+  // Each quad joins the FOUR cells sharing one grid edge, so every one of those cells must exist.
+  // Bounding only the edge axis and the lower end of the other two let y/z reach `resolution`, which
+  // is a corner index, not a cell index: `cellAt` then strides into an unrelated slot (with
+  // resolution 8, `cellAt(3, 8, 1)` is 131 -- the slot for cell (3, 0, 2)) or past the end of the
+  // array, where a typed-array read yields `undefined`. `undefined < 0` is false, so the guard in
+  // `quad` passed it through to `setIndex`, which coerces it to 0. Measured on a sphere reaching its
+  // own bounds at resolution 8: 60 out-of-range reads and 108 aliased reads. A surface that touches
+  // the sampling box is therefore left OPEN at that face rather than closed with wrong triangles --
+  // pad `bounds` past the surface to get a closed mesh.
+  for (let z = 0; z < side; z += 1) {
+    for (let y = 0; y < side; y += 1) {
+      for (let x = 0; x < side; x += 1) {
+        const here = field[cornerAt(x, y, z)] <= 0;
+        if (x + 1 < side && y > 0 && z > 0 && y < side - 1 && z < side - 1
+          && here !== (field[cornerAt(x + 1, y, z)] <= 0)) {
+          quad(
+            cellVertex[cellAt(x, y - 1, z - 1)], cellVertex[cellAt(x, y, z - 1)],
+            cellVertex[cellAt(x, y, z)], cellVertex[cellAt(x, y - 1, z)], !here,
+          );
+        }
+        if (y + 1 < side && x > 0 && z > 0 && x < side - 1 && z < side - 1
+          && here !== (field[cornerAt(x, y + 1, z)] <= 0)) {
+          quad(
+            cellVertex[cellAt(x - 1, y, z - 1)], cellVertex[cellAt(x - 1, y, z)],
+            cellVertex[cellAt(x, y, z)], cellVertex[cellAt(x, y, z - 1)], !here,
+          );
+        }
+        if (z + 1 < side && x > 0 && y > 0 && x < side - 1 && y < side - 1
+          && here !== (field[cornerAt(x, y, z + 1)] <= 0)) {
+          quad(
+            cellVertex[cellAt(x - 1, y - 1, z)], cellVertex[cellAt(x, y - 1, z)],
+            cellVertex[cellAt(x, y, z)], cellVertex[cellAt(x - 1, y, z)], !here,
+          );
+        }
+      }
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+// Quadric-error decimation (Garland & Heckbert 1997), ported from
+// forge/stage3_build/decimate.py so it can run on geometry that only exists at runtime.
+//
+// WHY IT RUNS HERE RATHER THAN OFFLINE: the Python version reads a mesh file, and this
+// factory does not produce one -- an implicit surface is polygonised in the browser from
+// its descriptor, so there is no mesh to decimate until the page is running. Baking a
+// vertex array into this file instead would contradict the whole point of a code-only
+// procedural model.
+//
+// WHY IT RUNS BEFORE BINDING: a quadric collapse merges two vertices into one, and
+// skinIndex/skinWeight would have to be interpolated across that merge to stay correct.
+// The generated bind pass recomputes weights from `position` afterwards, so decimating
+// first means the weights are simply computed on the surviving vertices and no
+// interpolation of skinning data ever has to happen.
+//
+// LIMITATION, stated rather than discovered later: only `position` survives. UVs are
+// dropped and normals are recomputed, so this must not be applied to geometry carrying
+// authored UVs. Its intended input is polygonizeSdf output, which is position + index
+// + computed normals and therefore loses nothing.
+//
+// Two collapses are refused, exactly as in the Python original, because both produce a
+// mesh that passes a triangle count while no longer being a surface:
+//   * one that would FLIP a face -- the neighbouring normal reversing means the surface
+//     folded through itself, which is the defect self_intersection.py exists to catch;
+//   * one on a BOUNDARY edge -- an open border erodes inward and the silhouette visibly
+//     retreats, the classic "the LOD is smaller than the original" artefact.
+function decimateGeometry(source: THREE.BufferGeometry, targetRatio: number): THREE.BufferGeometry {
+  const MIN_TRIANGLES = 4;
+  const position = source.getAttribute('position');
+  if (!position || !(targetRatio > 0) || targetRatio >= 1) return source;
+
+  const vertices: number[][] = [];
+  for (let i = 0; i < position.count; i++) {
+    vertices.push([position.getX(i), position.getY(i), position.getZ(i)]);
+  }
+  const index = source.getIndex();
+  const faces: number[][] = [];
+  if (index) {
+    for (let i = 0; i + 2 < index.count; i += 3) {
+      faces.push([index.getX(i), index.getX(i + 1), index.getX(i + 2)]);
+    }
+  } else {
+    for (let i = 0; i + 2 < position.count; i += 3) faces.push([i, i + 1, i + 2]);
+  }
+  if (!faces.length) return source;
+
+  const originalCount = faces.length;
+  const targetCount = Math.max(MIN_TRIANGLES, Math.floor(originalCount * targetRatio));
+  if (originalCount <= targetCount) return source;
+
+  const planeOf = (a: number[], b: number[], c: number[]): number[] | null => {
+    const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const n = [
+      e1[1] * e2[2] - e1[2] * e2[1],
+      e1[2] * e2[0] - e1[0] * e2[2],
+      e1[0] * e2[1] - e1[1] * e2[0],
+    ];
+    const len = Math.sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+    if (len <= 1e-12) return null;
+    const u = [n[0] / len, n[1] / len, n[2] / len];
+    return [u[0], u[1], u[2], -(u[0] * a[0] + u[1] * a[1] + u[2] * a[2])];
+  };
+  // Upper triangle of the symmetric 4x4, row-major -- same 10-element layout as the Python side.
+  const quadricOf = (p: number[]): number[] => {
+    const [a, b, c, d] = p;
+    return [a * a, a * b, a * c, a * d, b * b, b * c, b * d, c * c, c * d, d * d];
+  };
+  const addQuadric = (q1: number[], q2: number[]): number[] => q1.map((x, i) => x + q2[i]);
+  const quadricError = (q: number[], v: number[]): number => {
+    const [x, y, z] = v;
+    return (
+      q[0] * x * x + 2 * q[1] * x * y + 2 * q[2] * x * z + 2 * q[3] * x +
+      q[4] * y * y + 2 * q[5] * y * z + 2 * q[6] * y +
+      q[7] * z * z + 2 * q[8] * z + q[9]
+    );
+  };
+
+  const alive = faces.map(() => true);
+  const vertexFaces: Set<number>[] = vertices.map(() => new Set<number>());
+  faces.forEach((face, i) => face.forEach((v) => vertexFaces[v].add(i)));
+
+  const quadrics: number[][] = vertices.map(() => new Array(10).fill(0));
+  faces.forEach((face, i) => {
+    const p = planeOf(vertices[face[0]], vertices[face[1]], vertices[face[2]]);
+    if (!p) { alive[i] = false; return; }
+    const q = quadricOf(p);
+    face.forEach((v) => { quadrics[v] = addQuadric(quadrics[v], q); });
+  });
+
+  const edgeFaces = new Map<string, number>();
+  const edgeKey = (u: number, v: number) => (u < v ? u + ':' + v : v + ':' + u);
+  faces.forEach((face) => {
+    const [a, b, c] = face;
+    for (const [u, v] of [[a, b], [b, c], [c, a]]) {
+      const k = edgeKey(u, v);
+      edgeFaces.set(k, (edgeFaces.get(k) ?? 0) + 1);
+    }
+  });
+  const boundary = new Set<string>();
+  edgeFaces.forEach((count, k) => { if (count === 1) boundary.add(k); });
+
+  const midpointOf = (u: number, v: number): number[] =>
+    [0, 1, 2].map((i) => (vertices[u][i] + vertices[v][i]) / 2);
+  // Midpoint rather than the quadric-optimal position: solving the 3x3 needs an inverse that
+  // is singular on flat regions, and the midpoint keeps the collapse on the original surface.
+  const costOf = (u: number, v: number): number =>
+    quadricError(addQuadric(quadrics[u], quadrics[v]), midpointOf(u, v));
+
+  // Binary heap keyed on collapse cost; entries are stale-checked on pop rather than updated
+  // in place, the same lazy-deletion approach heapq gets in the Python original.
+  const heap: { cost: number; u: number; v: number }[] = [];
+  const heapPush = (entry: { cost: number; u: number; v: number }) => {
+    heap.push(entry);
+    let i = heap.length - 1;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (heap[parent].cost <= heap[i].cost) break;
+      [heap[parent], heap[i]] = [heap[i], heap[parent]];
+      i = parent;
+    }
+  };
+  const heapPop = () => {
+    const top = heap[0];
+    const last = heap.pop()!;
+    if (heap.length) {
+      heap[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1, r = 2 * i + 2;
+        let small = i;
+        if (l < heap.length && heap[l].cost < heap[small].cost) small = l;
+        if (r < heap.length && heap[r].cost < heap[small].cost) small = r;
+        if (small === i) break;
+        [heap[small], heap[i]] = [heap[i], heap[small]];
+        i = small;
+      }
+    }
+    return top;
+  };
+
+  edgeFaces.forEach((_count, k) => {
+    if (boundary.has(k)) return;
+    const [u, v] = k.split(':').map(Number);
+    heapPush({ cost: costOf(u, v), u, v });
+  });
+
+  let liveFaces = alive.reduce((n, flag) => n + (flag ? 1 : 0), 0);
+  while (heap.length && liveFaces > targetCount) {
+    const { u, v } = heapPop();
+    if (u === v || !vertexFaces[u].size || !vertexFaces[v].size) continue;
+    const shared = new Set<number>();
+    vertexFaces[u].forEach((i) => { if (vertexFaces[v].has(i)) shared.add(i); });
+    let anyAlive = false;
+    shared.forEach((i) => { if (alive[i]) anyAlive = true; });
+    if (!anyAlive) continue;
+    const merged = midpointOf(u, v);
+
+    let flips = false;
+    const affected = new Set<number>();
+    vertexFaces[u].forEach((i) => { if (!shared.has(i)) affected.add(i); });
+    vertexFaces[v].forEach((i) => { if (!shared.has(i)) affected.add(i); });
+    for (const i of affected) {
+      if (!alive[i] || flips) continue;
+      const face = faces[i];
+      const before = planeOf(vertices[face[0]], vertices[face[1]], vertices[face[2]]);
+      const pts = face.map((w) => (w === u || w === v ? merged : vertices[w]));
+      const after = planeOf(pts[0], pts[1], pts[2]);
+      if (!before || !after) { flips = true; break; }
+      if (before[0] * after[0] + before[1] * after[1] + before[2] * after[2] < 0) { flips = true; break; }
+    }
+    if (flips) continue;
+
+    vertices[u] = merged;
+    quadrics[u] = addQuadric(quadrics[u], quadrics[v]);
+    shared.forEach((i) => { if (alive[i]) { alive[i] = false; liveFaces -= 1; } });
+    Array.from(vertexFaces[v]).forEach((i) => {
+      if (!alive[i]) return;
+      faces[i] = faces[i].map((w) => (w === v ? u : w));
+      vertexFaces[u].add(i);
+    });
+    vertexFaces[v] = new Set<number>();
+    Array.from(vertexFaces[u]).forEach((i) => {
+      if (!alive[i]) return;
+      faces[i].forEach((w) => { if (w !== u) heapPush({ cost: costOf(u, w), u, v: w }); });
+    });
+  }
+
+  const kept = faces.filter((_face, i) => alive[i]);
+  const used = Array.from(new Set(kept.flat())).sort((a, b) => a - b);
+  const remap = new Map<number, number>();
+  used.forEach((old, next) => remap.set(old, next));
+  const outPositions: number[] = [];
+  used.forEach((old) => outPositions.push(vertices[old][0], vertices[old][1], vertices[old][2]));
+  const outIndices: number[] = [];
+  kept.forEach((face) => face.forEach((w) => outIndices.push(remap.get(w)!)));
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(outPositions, 3));
+  geometry.setIndex(outIndices);
+  geometry.computeVertexNormals();
+  geometry.userData.decimation = {
+    originalTriangleCount: originalCount,
+    triangleCount: kept.length,
+    targetTriangleCount: targetCount,
+    // Reported because stopping short is not a failure but IS something the caller must know:
+    // on a mesh whose remaining collapses would all flip a face, the honest outcome is fewer
+    // triangles removed, not a folded mesh that hits the number.
+    reachedTarget: kept.length <= targetCount,
+  };
+  return geometry;
+}
+
+// bevelEnabled defaults to true on THREE.ExtrudeGeometry and rounds every
+// corner — sharp/pointed profiles (blades, fork tines, spikes) need
+// bevelEnabled: false plus lineTo()-only path segments near the tip, since a
+// curve command cannot produce a true converging point.
+function buildExtrudeShape(points: [number, number][], holes?: [number, number][][]): THREE.Shape {
+  const shape = new THREE.Shape();
+  if (points.length > 0) {
+    shape.moveTo(points[0][0], points[0][1]);
+    for (let i = 1; i < points.length; i += 1) {
+      shape.lineTo(points[i][0], points[i][1]);
+    }
+  }
+  // Cutouts (e.g. an oval wire-cutter hole) as THREE.Path added to shape.holes —
+  // dep-free boolean subtraction via the tessellator, no CSG library needed.
+  for (const loop of holes ?? []) {
+    if (loop.length < 3) continue;
+    const path = new THREE.Path();
+    path.moveTo(loop[0][0], loop[0][1]);
+    for (let i = 1; i < loop.length; i += 1) path.lineTo(loop[i][0], loop[i][1]);
+    path.closePath();
+    shape.holes.push(path);
+  }
+  return shape;
+}
+
+// Build an N-gon oval loop (for hole authoring from a compact {cx,cy,rx,ry} descriptor).
+function ovalLoop(cx: number, cy: number, rx: number, ry: number, seg = 24): [number, number][] {
+  const loop: [number, number][] = [];
+  for (let i = 0; i < seg; i += 1) {
+    const a = (i / seg) * Math.PI * 2;
+    loop.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]);
+  }
+  return loop;
+}
+
+function buildExtrudeGeometry(profile: { points: [number, number][]; depth: number; holes?: [number, number][][]; ovalHoles?: { cx: number; cy: number; rx: number; ry: number }[] }): THREE.ExtrudeGeometry {
+  const holes = [...(profile.holes ?? []), ...((profile.ovalHoles ?? []).map((o) => ovalLoop(o.cx, o.cy, o.rx, o.ry)))];
+  const shape = buildExtrudeShape(profile.points, holes);
+  return new THREE.ExtrudeGeometry(shape, {
+    depth: profile.depth,
+    bevelEnabled: false,
+    steps: 1,
+  });
+}
+
+type TaperedStation = { position: [number, number, number]; rx: number; rz: number; twist?: number };
+
+// Frames come from PARALLEL TRANSPORT, not from a Frenet frame. A Frenet frame is defined by
+// the curve's normal, which flips sign wherever the path has an inflection or straightens out,
+// and every flip twists the surface 180 degrees within one segment. Carrying the previous frame
+// forward and removing only its along-path component keeps the twist continuous. THREE's own
+// extrudePath and TubeGeometry do not expose this, which is why this is hand-built.
+function buildTaperedSweepGeometry(
+  sweep: { stations: TaperedStation[]; radialSegments?: number; capEnds?: boolean },
+): THREE.BufferGeometry {
+  const stations = sweep.stations;
+  if (stations.length < 2) throw new Error('tapered-sweep needs at least two stations');
+  const radial = Math.max(3, sweep.radialSegments ?? 10);
+  const centres = stations.map((s) => new THREE.Vector3(...s.position));
+
+  const tangents = centres.map((_, i) => {
+    const prev = centres[Math.max(0, i - 1)];
+    const next = centres[Math.min(centres.length - 1, i + 1)];
+    const t = next.clone().sub(prev);
+    // Coincident neighbours would normalise to NaN and poison every downstream vertex.
+    return t.lengthSq() < 1e-12 ? new THREE.Vector3(0, 1, 0) : t.normalize();
+  });
+
+  // Seed a reference axis that is not parallel to the first tangent, or the first cross
+  // product is degenerate and the whole sweep collapses to a line.
+  let ref = new THREE.Vector3(0, 0, 1);
+  if (Math.abs(tangents[0].dot(ref)) > 0.9) ref = new THREE.Vector3(1, 0, 0);
+
+  const normals: THREE.Vector3[] = [];
+  const binormals: THREE.Vector3[] = [];
+  let carried = ref.clone().sub(tangents[0].clone().multiplyScalar(ref.dot(tangents[0]))).normalize();
+  for (let i = 0; i < tangents.length; i += 1) {
+    const t = tangents[i];
+    // Project the carried frame back onto the plane perpendicular to this tangent.
+    const n = carried.clone().sub(t.clone().multiplyScalar(carried.dot(t)));
+    if (n.lengthSq() < 1e-12) {
+      const fallback = Math.abs(t.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+      n.copy(fallback.sub(t.clone().multiplyScalar(fallback.dot(t))));
+    }
+    n.normalize();
+    normals.push(n);
+    binormals.push(new THREE.Vector3().crossVectors(t, n).normalize());
+    carried = n;
+  }
+
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  const ringStart: number[] = [];
+  const isPoint: boolean[] = [];
+
+  for (let i = 0; i < stations.length; i += 1) {
+    const st = stations[i];
+    const v = i / (stations.length - 1);
+    ringStart.push(positions.length / 3);
+    // A station whose section has collapsed emits ONE vertex, not a ring of radius zero.
+    // A degenerate ring still carries `radial` coincident vertices and `radial` zero-area
+    // triangles, so the lock ends in a blunt cap the width of the floating-point noise
+    // rather than at a point -- and a hair lock, a horn or a blade tip has to reach a point.
+    if (st.rx <= 1e-6 && st.rz <= 1e-6) {
+      isPoint.push(true);
+      positions.push(centres[i].x, centres[i].y, centres[i].z);
+      uvs.push(0.5, v);
+      continue;
+    }
+    isPoint.push(false);
+    const twist = ((st.twist ?? 0) * Math.PI) / 180;
+    for (let j = 0; j <= radial; j += 1) {
+      const theta = (j / radial) * Math.PI * 2 + twist;
+      const offset = normals[i].clone().multiplyScalar(Math.cos(theta) * st.rx)
+        .add(binormals[i].clone().multiplyScalar(Math.sin(theta) * st.rz));
+      const p = centres[i].clone().add(offset);
+      positions.push(p.x, p.y, p.z);
+      uvs.push(j / radial, v);
+    }
+  }
+
+  for (let i = 0; i < stations.length - 1; i += 1) {
+    const a0 = ringStart[i];
+    const b0 = ringStart[i + 1];
+    if (isPoint[i] && isPoint[i + 1]) continue;   // two collapsed stations bound nothing
+    for (let j = 0; j < radial; j += 1) {
+      // Wound so the face normal points radially OUTWARD.
+      //
+      // Ring vertices advance from `normal` toward `binormal`, and binormal is
+      // tangent x normal, so increasing theta runs counter-clockwise seen from the
+      // far end of the segment. Taking the ring-to-ring edge first therefore puts
+      // the cross product on the inside. Measured as signed volume on the built
+      // mesh: every tapered-sweep came out negative -- a torso at -0.0674 and a
+      // tail at -0.0044 against a positive ellipsoid head -- so every sweep this
+      // generator has ever emitted rendered its back faces, with normals pointing
+      // into the solid and every lighting judgement made on the wrong surface.
+      if (isPoint[i]) indices.push(a0, b0 + j + 1, b0 + j);
+      else if (isPoint[i + 1]) indices.push(a0 + j, a0 + j + 1, b0);
+      else indices.push(a0 + j, a0 + j + 1, b0 + j, a0 + j + 1, b0 + j + 1, b0 + j);
+    }
+  }
+
+  if (sweep.capEnds ?? true) {
+    for (const end of [0, stations.length - 1]) {
+      if (isPoint[end]) continue;   // a point end is already closed
+      const centreIndex = positions.length / 3;
+      positions.push(centres[end].x, centres[end].y, centres[end].z);
+      uvs.push(0.5, end === 0 ? 0 : 1);
+      const base = ringStart[end];
+      for (let j = 0; j < radial; j += 1) {
+        if (end === 0) indices.push(centreIndex, base + j + 1, base + j);
+        else indices.push(centreIndex, base + j, base + j + 1);
+      }
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function readLayerNumber(value: unknown, keys: string[], fallback: number): number {
+  if (typeof value === 'number') return value;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of keys) {
+      if (typeof record[key] === 'number') return record[key] as number;
+    }
+  }
+  return fallback;
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const normalized = /^#[0-9a-f]{3}$/i.test(hex)
+    ? '#' + hex.slice(1).split('').map((part) => part + part).join('')
+    : hex;
+  const value = /^#[0-9a-f]{6}$/i.test(normalized) ? Number.parseInt(normalized.slice(1), 16) : 0x8a7a5f;
+  return [clampAlbedoChannel((value >> 16) & 255), clampAlbedoChannel((value >> 8) & 255), clampAlbedoChannel(value & 255)];
+}
+
+function materialPalette(spec: SculptMaterialSpec): string[] {
+  const palette = spec.colorVariation?.palette;
+  if (Array.isArray(palette) && palette.length > 0) return palette.filter((value) => typeof value === 'string');
+  const secondary = spec.albedo?.secondary;
+  const colors = [spec.baseColor ?? spec.color ?? spec.albedo?.dominant, ...(Array.isArray(secondary) ? secondary : [])];
+  return colors.filter((value): value is string => typeof value === 'string' && value.startsWith('#'));
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function clampAlbedoChannel(value: number): number {
+  return Math.max(30, Math.min(240, Math.round(value)));
+}
+
+function clampPbrF0(value: number): number {
+  return Math.max(0.02, Math.min(1, value));
+}
+
+function clampPbrIor(value: number): number {
+  return Math.max(1, Math.min(2.5, value));
+}
+
+function clampPbrMetalness(value: number): number {
+  return value >= 0.5 ? 1 : 0;
+}
+
+function clampedAlbedoColor(spec: SculptMaterialSpec): THREE.Color {
+  const source = typeof spec.baseColor === 'string' ? spec.baseColor : '#8A7A5F';
+  // setStyle with an explicit SRGBColorSpace, NOT the numeric constructor.
+  //
+  // `new THREE.Color(r, g, b)` treats its arguments as LINEAR working-space components,
+  // while an authored `baseColor` hex is sRGB. Feeding one to the other skipped the
+  // transfer function and lifted every dark albedo: #2e2a28, authored as a near-black
+  // vinyl, rendered at roughly sRGB 0.46 — a mid grey. The error is largest exactly where
+  // it matters most, because the transfer curve is steepest near black.
+  return new THREE.Color().setStyle(source, THREE.SRGBColorSpace);
+}
+
+function smoothCurve(value: number): number {
+  return value * value * (3 - 2 * value);
+}
+
+function periodicHash(x: number, y: number, seed: number, periodX: number, periodY: number): number {
+  const wrappedX = ((x % periodX) + periodX) % periodX;
+  const wrappedY = ((y % periodY) + periodY) % periodY;
+  let value = Math.imul(wrappedX + seed * 17, 374761393) ^ Math.imul(wrappedY + seed * 31, 668265263);
+  value = Math.imul(value ^ (value >>> 13), 1274126177);
+  return ((value ^ (value >>> 16)) >>> 0) / 4294967295;
+}
+
+function periodicValueNoise(u: number, v: number, seed: number, periodX: number, periodY: number): number {
+  const x = u * periodX;
+  const y = v * periodY;
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const tx = smoothCurve(x - x0);
+  const ty = smoothCurve(y - y0);
+  const a = periodicHash(x0, y0, seed, periodX, periodY);
+  const b = periodicHash(x0 + 1, y0, seed, periodX, periodY);
+  const c = periodicHash(x0, y0 + 1, seed, periodX, periodY);
+  const d = periodicHash(x0 + 1, y0 + 1, seed, periodX, periodY);
+  return THREE.MathUtils.lerp(THREE.MathUtils.lerp(a, b, tx), THREE.MathUtils.lerp(c, d, tx), ty);
+}
+
+type SurfaceBand = {
+  frequency: number;
+  amplitude: number;
+  stretchX: number;
+  stretchY: number;
+  ridge: boolean;
+};
+
+function surfaceBands(spec: SculptMaterialSpec): SurfaceBand[] {
+  const source = Array.isArray(spec.surfaceFrequencyBands) ? spec.surfaceFrequencyBands : [];
+  const parsed = source.flatMap((item: unknown) => {
+    if (!item || typeof item !== 'object') return [];
+    const band = item as Record<string, unknown>;
+    const frequency = typeof band.frequency === 'number' ? band.frequency : 0;
+    const amplitude = typeof band.amplitude === 'number' ? band.amplitude : 0;
+    if (frequency <= 0 || amplitude <= 0) return [];
+    const stretch = Array.isArray(band.stretch) ? band.stretch : [1, 1];
+    const description = `${String(band.pattern ?? '')} ${String(band.role ?? '')}`.toLowerCase();
+    return [{
+      frequency,
+      amplitude,
+      stretchX: typeof stretch[0] === 'number' ? Math.max(0.1, stretch[0]) : 1,
+      stretchY: typeof stretch[1] === 'number' ? Math.max(0.1, stretch[1]) : 1,
+      ridge: /(ridge|groove|grain|fiber|striated|crack)/.test(description),
+    }];
+  });
+  return parsed.length > 0 ? parsed : [
+    { frequency: 2, amplitude: 0.42, stretchX: 1, stretchY: 1, ridge: false },
+    { frequency: 12, amplitude: 0.22, stretchX: 1, stretchY: 1, ridge: false },
+    { frequency: 56, amplitude: 0.08, stretchX: 1, stretchY: 1, ridge: false },
+  ];
+}
+
+function sampleSurface(u: number, v: number, bands: SurfaceBand[], seed: number): number {
+  let value = 0;
+  let weight = 0;
+  for (let index = 0; index < bands.length; index += 1) {
+    const band = bands[index];
+    const periodX = Math.max(1, Math.round(band.frequency * band.stretchX));
+    const periodY = Math.max(1, Math.round(band.frequency * band.stretchY));
+    let sample = periodicValueNoise(u, v, seed + index * 1013, periodX, periodY);
+    if (band.ridge) sample = 1 - Math.abs(sample * 2 - 1);
+    value += sample * band.amplitude;
+    weight += band.amplitude;
+  }
+  return weight > 0 ? clamp01(value / weight) : 0.5;
+}
+
+function mixPalette(colors: [number, number, number][], value: number): [number, number, number] {
+  if (colors.length === 1) return colors[0];
+  const scaled = clamp01(value) * (colors.length - 1);
+  const index = Math.min(colors.length - 2, Math.floor(scaled));
+  const mix = scaled - index;
+  const a = colors[index];
+  const b = colors[index + 1];
+  return [
+    Math.round(THREE.MathUtils.lerp(a[0], b[0], mix)),
+    Math.round(THREE.MathUtils.lerp(a[1], b[1], mix)),
+    Math.round(THREE.MathUtils.lerp(a[2], b[2], mix)),
+  ];
+}
+
+type ColorGradientStop = { offset: number; color: string };
+type ColorGradientSpec = {
+  type: 'linear' | 'radial';
+  axis: [number, number];
+  stops: ColorGradientStop[];
+};
+
+function parseRgba(value: string): [number, number, number] {
+  const match = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(value);
+  if (!match) return [138, 122, 95];
+  return [clampAlbedoChannel(Number(match[1])), clampAlbedoChannel(Number(match[2])), clampAlbedoChannel(Number(match[3]))];
+}
+
+// Analytical per-pixel gradient sample. The extraction schema's colorGradient carries
+// exact rgba(...) stop colors (see extract_part_color_recipe.py), so this samples the
+// same trend directly in JS math rather than round-tripping through a Canvas 2D
+// createLinearGradient/createRadialGradient object — same visual result, and it composes
+// directly with the existing noise/height-correlated colorVariation blend below.
+function sampleColorGradient(gradient: ColorGradientSpec, u: number, v: number): [number, number, number] {
+  const stops = gradient.stops.length >= 2 ? gradient.stops : [{ offset: 0, color: 'rgba(138,122,95,1)' }, { offset: 1, color: 'rgba(138,122,95,1)' }];
+  let t: number;
+  if (gradient.type === 'radial') {
+    const [cx, cy] = gradient.axis;
+    const dx = u - cx;
+    const dy = v - cy;
+    const maxRadius = Math.max(0.001, Math.hypot(Math.max(cx, 1 - cx), Math.max(cy, 1 - cy)));
+    t = clamp01(Math.hypot(dx, dy) / maxRadius);
+  } else {
+    const [ax, ay] = gradient.axis;
+    const projection = (u - 0.5) * ax + (v - 0.5) * ay;
+    const maxProjection = 0.5 * (Math.abs(ax) + Math.abs(ay)) || 0.5;
+    t = clamp01(projection / maxProjection + 0.5);
+  }
+  const scaled = t * (stops.length - 1);
+  const index = Math.min(stops.length - 2, Math.max(0, Math.floor(scaled)));
+  const mix = scaled - index;
+  const a = parseRgba(stops[index].color);
+  const b = parseRgba(stops[index + 1].color);
+  return [
+    THREE.MathUtils.lerp(a[0], b[0], mix),
+    THREE.MathUtils.lerp(a[1], b[1], mix),
+    THREE.MathUtils.lerp(a[2], b[2], mix),
+  ];
+}
+
+function writePixel(data: Uint8ClampedArray, offset: number, red: number, green: number, blue: number): void {
+  data[offset] = Math.max(0, Math.min(255, Math.round(red)));
+  data[offset + 1] = Math.max(0, Math.min(255, Math.round(green)));
+  data[offset + 2] = Math.max(0, Math.min(255, Math.round(blue)));
+  data[offset + 3] = 255;
+}
+
+function makeCanvas(size: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  return canvas;
+}
+
+function createMapTexture(
+  canvas: HTMLCanvasElement,
+  colorSpace: THREE.ColorSpace,
+  spec: SculptMaterialSpec,
+  options: ProceduralModelOptions,
+): THREE.CanvasTexture {
+  const texture = new THREE.CanvasTexture(canvas);
+  const projection = spec.textureProjection && typeof spec.textureProjection === 'object' ? spec.textureProjection : {};
+  const repeat = Array.isArray(projection.repeat) ? projection.repeat : [2, 2];
+  texture.colorSpace = colorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(
+    typeof repeat[0] === 'number' ? repeat[0] : 2,
+    typeof repeat[1] === 'number' ? repeat[1] : 2,
+  );
+  texture.anisotropy = Math.max(1, Math.round(options.textureAnisotropy ?? projection.anisotropy ?? 8));
+  texture.needsUpdate = true;
+  return texture;
+}
+
+type ProceduralTextureSet = {
+  albedo: THREE.Texture;
+  roughness: THREE.Texture;
+  height: THREE.Texture;
+  normal: THREE.Texture;
+  ao: THREE.Texture;
+  source: 'reference-pixel-extraction' | 'procedural';
+};
+
+function referenceMapUrl(spec: SculptMaterialSpec, channel: string): string | null {
+  const reference = spec.referencePbr;
+  if (!reference || typeof reference !== 'object') return null;
+  if (reference.usable === false) return null;
+  const confidence = typeof reference.confidence === 'number'
+    ? reference.confidence
+    : (typeof reference.estimatedFidelity === 'number' ? reference.estimatedFidelity : 0);
+  const threshold = typeof reference.targetThreshold === 'number' ? reference.targetThreshold : 0.7;
+  if (confidence < threshold) return null;
+  const maps = reference.maps;
+  if (!maps || typeof maps !== 'object') return null;
+  const map = (maps as Record<string, unknown>)[channel];
+  if (!map || typeof map !== 'object') return null;
+  const record = map as Record<string, unknown>;
+  const url = typeof record.url === 'string' && record.url.trim() ? record.url : record.path;
+  return typeof url === 'string' && url.trim() ? url : null;
+}
+
+function createLoadedMapTexture(
+  url: string,
+  colorSpace: THREE.ColorSpace,
+  spec: SculptMaterialSpec,
+  options: ProceduralModelOptions,
+): THREE.Texture {
+  const texture = new THREE.TextureLoader().load(url);
+  const projection = spec.textureProjection && typeof spec.textureProjection === 'object' ? spec.textureProjection : {};
+  const repeat = Array.isArray(projection.repeat) ? projection.repeat : [1, 1];
+  texture.colorSpace = colorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(
+    typeof repeat[0] === 'number' ? repeat[0] : 1,
+    typeof repeat[1] === 'number' ? repeat[1] : 1,
+  );
+  texture.anisotropy = Math.max(1, Math.round(options.textureAnisotropy ?? projection.anisotropy ?? 8));
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function makeReferenceTextureSet(spec: SculptMaterialSpec, options: ProceduralModelOptions): ProceduralTextureSet | null {
+  const albedo = referenceMapUrl(spec, 'albedo');
+  const roughness = referenceMapUrl(spec, 'roughness');
+  const height = referenceMapUrl(spec, 'height');
+  const normal = referenceMapUrl(spec, 'normal');
+  const ao = referenceMapUrl(spec, 'ao');
+  if (!albedo || !roughness || !height || !normal || !ao) return null;
+  return {
+    albedo: createLoadedMapTexture(albedo, THREE.SRGBColorSpace, spec, options),
+    roughness: createLoadedMapTexture(roughness, THREE.NoColorSpace, spec, options),
+    height: createLoadedMapTexture(height, THREE.NoColorSpace, spec, options),
+    normal: createLoadedMapTexture(normal, THREE.NoColorSpace, spec, options),
+    ao: createLoadedMapTexture(ao, THREE.NoColorSpace, spec, options),
+    source: 'reference-pixel-extraction',
+  };
+}
+
+function makeProceduralTextureSet(
+  id: string,
+  spec: SculptMaterialSpec,
+  options: ProceduralModelOptions,
+): ProceduralTextureSet | null {
+  if (typeof document === 'undefined') return null;
+  const qualityFirst = (options.qualityPriority ?? 'reference-fidelity') === 'reference-fidelity';
+  const requested = options.textureSize ?? spec.textureResolution;
+  const requestedSize = typeof requested === 'number' && Number.isFinite(requested)
+    ? requested
+    : (qualityFirst ? 1024 : 512);
+  const size = Math.max(256, Math.min(2048, 2 ** Math.round(Math.log2(requestedSize))));
+  const canvases = {
+    albedo: makeCanvas(size),
+    roughness: makeCanvas(size),
+    height: makeCanvas(size),
+    normal: makeCanvas(size),
+    ao: makeCanvas(size),
+  };
+  const contexts = {
+    albedo: canvases.albedo.getContext('2d'),
+    roughness: canvases.roughness.getContext('2d'),
+    height: canvases.height.getContext('2d'),
+    normal: canvases.normal.getContext('2d'),
+    ao: canvases.ao.getContext('2d'),
+  };
+  if (!contexts.albedo || !contexts.roughness || !contexts.height || !contexts.normal || !contexts.ao) return null;
+  const images = {
+    albedo: contexts.albedo.createImageData(size, size),
+    roughness: contexts.roughness.createImageData(size, size),
+    height: contexts.height.createImageData(size, size),
+    normal: contexts.normal.createImageData(size, size),
+    ao: contexts.ao.createImageData(size, size),
+  };
+  const seed = hashString(id);
+  const bands = surfaceBands(spec);
+  const heightField = new Float32Array(size * size);
+  const roughnessField = new Float32Array(size * size);
+  const palette = materialPalette(spec);
+  const fallback = typeof spec.baseColor === 'string' ? spec.baseColor : '#8A7A5F';
+  const colors = (palette.length >= 2 ? palette : [fallback, '#6E614B', '#A08F70']).map(hexToRgb);
+  const baseRoughness = clamp01(readLayerNumber(spec.roughness, ['base'], 0.76));
+  const roughnessVariation = clamp01(readLayerNumber(spec.roughness, ['variation'], 0.18));
+  const colorAmplitude = clamp01(readLayerNumber(spec.colorVariation, ['amplitude', 'variation'], 0.18));
+  const heightCorrelation = clamp01(readLayerNumber(spec.colorVariation, ['heightCorrelation'], 0.3));
+  const colorGradient: ColorGradientSpec | undefined = spec.colorGradient;
+  for (let y = 0; y < size; y += 1) {
+    const v = y / size;
+    for (let x = 0; x < size; x += 1) {
+      const u = x / size;
+      const index = y * size + x;
+      const height = sampleSurface(u, v, bands, seed + 101);
+      const roughNoise = sampleSurface(u, v, bands, seed + 7001);
+      const colorNoise = sampleSurface(u, v, bands, seed + 15013);
+      heightField[index] = height;
+      roughnessField[index] = clamp01(baseRoughness + (roughNoise - 0.5) * roughnessVariation * 2);
+      let color: [number, number, number];
+      if (colorGradient) {
+        // Evidence-derived spatial gradient (Plan 1.3 Workstream C) takes priority
+        // over the noise-based palette blend below — it is a measured trend, not a guess.
+        color = sampleColorGradient(colorGradient, u, v);
+      } else {
+        const paletteValue = clamp01(
+          0.5 + (colorNoise - 0.5) * colorAmplitude * 2 + (height - 0.5) * heightCorrelation
+        );
+        color = mixPalette(colors, paletteValue);
+      }
+      writePixel(images.albedo.data, index * 4, color[0], color[1], color[2]);
+    }
+  }
+  const normalStrength = Math.max(0.05, readLayerNumber(spec.normal, ['strength', 'amplitude'], 0.35));
+  const aoStrength = clamp01(readLayerNumber(spec.ambientOcclusion, ['cavityStrength', 'strength'], 0.35));
+  for (let y = 0; y < size; y += 1) {
+    const up = ((y - 1 + size) % size) * size;
+    const down = ((y + 1) % size) * size;
+    for (let x = 0; x < size; x += 1) {
+      const left = (x - 1 + size) % size;
+      const right = (x + 1) % size;
+      const index = y * size + x;
+      const center = heightField[index];
+      const dx = (heightField[y * size + right] - heightField[y * size + left]) * normalStrength * 6;
+      const dy = (heightField[down + x] - heightField[up + x]) * normalStrength * 6;
+      const inverseLength = 1 / Math.sqrt(dx * dx + dy * dy + 1);
+      const normalX = -dx * inverseLength;
+      const normalY = -dy * inverseLength;
+      const normalZ = inverseLength;
+      const neighborAverage = (
+        heightField[y * size + left] + heightField[y * size + right]
+        + heightField[up + x] + heightField[down + x]
+      ) * 0.25;
+      const cavity = Math.max(0, neighborAverage - center);
+      const ao = clamp01(1 - aoStrength * (cavity * 12 + (1 - center) * 0.16));
+      const offset = index * 4;
+      const heightByte = center * 255;
+      const roughnessByte = roughnessField[index] * 255;
+      writePixel(images.height.data, offset, heightByte, heightByte, heightByte);
+      writePixel(images.roughness.data, offset, roughnessByte, roughnessByte, roughnessByte);
+      writePixel(
+        images.normal.data, offset,
+        (normalX * 0.5 + 0.5) * 255,
+        (normalY * 0.5 + 0.5) * 255,
+        (normalZ * 0.5 + 0.5) * 255,
+      );
+      writePixel(images.ao.data, offset, ao * 255, ao * 255, ao * 255);
+    }
+  }
+  contexts.albedo.putImageData(images.albedo, 0, 0);
+  contexts.roughness.putImageData(images.roughness, 0, 0);
+  contexts.height.putImageData(images.height, 0, 0);
+  contexts.normal.putImageData(images.normal, 0, 0);
+  contexts.ao.putImageData(images.ao, 0, 0);
+  return {
+    albedo: createMapTexture(canvases.albedo, THREE.SRGBColorSpace, spec, options),
+    roughness: createMapTexture(canvases.roughness, THREE.NoColorSpace, spec, options),
+    height: createMapTexture(canvases.height, THREE.NoColorSpace, spec, options),
+    normal: createMapTexture(canvases.normal, THREE.NoColorSpace, spec, options),
+    ao: createMapTexture(canvases.ao, THREE.NoColorSpace, spec, options),
+    source: 'procedural',
+  };
+}
+
+function createSculptMaterial(id: string, spec: SculptMaterialSpec, options: ProceduralModelOptions, denseComponent = false): THREE.MeshPhysicalMaterial {
+  // A material that declares -- with evidence -- that its subject carries no texture
+  // detail gets NO texture set. Synthesising one anyway is not a harmless default: the
+  // branch below then forces color to white and roughness to 1 and reads both from the
+  // generated maps, so the authored albedo and the reference-derived roughness are both
+  // discarded, and the model gains mottling the reference does not have. Measured on the
+  // tuxedo cat, whose black fur rendered as speckled grey-and-white from a palette that
+  // only ever described two flat regions.
+  const textureless = (spec.textureless as { declared?: boolean } | undefined)?.declared === true;
+  const textures = textureless
+    ? null
+    : makeReferenceTextureSet(spec, options) ?? makeProceduralTextureSet(id, spec, options);
+  const material = new THREE.MeshPhysicalMaterial({
+    color: textures ? 0xffffff : clampedAlbedoColor(spec),
+    roughness: textures ? 1 : clamp01(readLayerNumber(spec.roughness, ['base'], 0.76)),
+    metalness: clampPbrMetalness(readLayerNumber(spec.metalness, ['base'], 0.0)),
+    clearcoat: clamp01(readLayerNumber(spec.clearcoat, ['base', 'amount'], 0)),
+    clearcoatRoughness: clamp01(readLayerNumber(spec.clearcoatRoughness, ['base'], 0.25)),
+    transmission: clamp01(readLayerNumber(spec.transmission, ['base', 'amount'], 0)),
+    ior: clampPbrIor(readLayerNumber(spec.ior, ['base', 'value'], 1.5)),
+    thickness: Math.max(0, readLayerNumber(spec.thickness, ['base', 'amount'], 0)),
+    attenuationDistance: Math.max(0.001, readLayerNumber(spec.attenuationDistance, ['base', 'value'], Infinity)),
+    attenuationColor: new THREE.Color(typeof spec.attenuationColor === 'string' ? spec.attenuationColor : '#ffffff'),
+    sheen: clamp01(readLayerNumber(spec.sheen, ['base', 'amount'], 0)),
+    sheenColor: new THREE.Color(typeof spec.sheenColor === 'string' ? spec.sheenColor : '#ffffff'),
+    sheenRoughness: clamp01(readLayerNumber(spec.sheenRoughness, ['base'], 1.0)),
+    iridescence: clamp01(readLayerNumber(spec.iridescence, ['base', 'amount'], 0)),
+    iridescenceIOR: clampPbrIor(readLayerNumber(spec.iridescenceIOR, ['base', 'value'], 1.3)),
+    anisotropy: clamp01(readLayerNumber(spec.anisotropy, ['base', 'amount'], 0)),
+    anisotropyRotation: readLayerNumber(spec.anisotropy, ['rotation'], 0),
+    specularIntensity: clampPbrF0(readLayerNumber(spec.specularF0 ?? spec.f0 ?? spec.specularIntensity, ['base', 'value'], 1.0)),
+    specularColor: new THREE.Color(typeof spec.specularColor === 'string' ? spec.specularColor : '#ffffff'),
+    emissive: new THREE.Color(typeof spec.emissive === 'string' ? spec.emissive : '#000000'),
+    emissiveIntensity: Math.max(0, readLayerNumber(spec.emissiveIntensity, ['base'], 1.0)),
+    opacity: clamp01(readLayerNumber(spec.opacity, ['base'], 1)),
+    transparent: readLayerNumber(spec.transmission, ['base', 'amount'], 0) > 0 || readLayerNumber(spec.opacity, ['base'], 1) < 1,
+    alphaTest: Math.max(0, readLayerNumber(spec.alpha, ['cutoff', 'alphaTest'], 0)),
+    wireframe: options.wireframe ?? false,
+    side: spec.doubleSided === true ? THREE.DoubleSide : THREE.FrontSide,
+    flatShading: spec.flatShading === true,
+  });
+  if (textures) {
+    material.map = textures.albedo;
+    material.roughnessMap = textures.roughness;
+    material.normalMap = textures.normal;
+    material.normalScale.setScalar(Math.max(0.05, readLayerNumber(spec.normal, ['strength', 'amplitude'], 0.35)));
+    material.aoMap = textures.ao;
+    material.aoMap.channel = 0;
+    material.aoMapIntensity = readLayerNumber(spec.ambientOcclusion, ['cavityStrength', 'strength'], 0.35);
+    const denseMesh = denseComponent || spec.denseMesh === true || spec.geometryDensity === 'dense' || spec.topologyClass === 'dense';
+    const bumpScale = Math.max(0, readLayerNumber(spec.bump, ['amplitude', 'strength'], 0));
+    const effectiveBumpScale = denseMesh ? Math.max(0.05, bumpScale) : bumpScale;
+    if (effectiveBumpScale > 0) {
+      material.bumpMap = textures.height;
+      material.bumpScale = effectiveBumpScale;
+    }
+    const displacementScale = Math.max(0, readLayerNumber(spec.displacement, ['amplitude', 'strength'], 0));
+    const effectiveDisplacementScale = denseMesh ? Math.max(0.005, displacementScale) : displacementScale;
+    if (effectiveDisplacementScale > 0) {
+      material.displacementMap = textures.height;
+      material.displacementScale = effectiveDisplacementScale;
+      material.displacementBias = -effectiveDisplacementScale * 0.5;
+    }
+  }
+  material.envMapIntensity = readLayerNumber(spec, ['envMapIntensity'], 0.8);
+  material.userData.sculptMaterial = spec;
+  material.userData.proceduralMapsIndependent = true;
+  material.userData.pbrConstraints = { albedoRange: [30, 240], binaryMetalness: true, f0Range: [0.02, 1], iorRange: [1, 2.5] };
+  material.userData.pbrTextureSource = textures?.source ?? 'flat-fallback';
+  material.userData.referencePbr = spec.referencePbr ?? null;
+  material.userData.referenceMaterialId = spec.referenceMaterialId ?? spec.materialReference?.profileId ?? null;
+  material.userData.materialEvidence = spec.materialEvidence ?? null;
+  material.userData.validationViews = spec.materialReference?.validationViews ?? [];
+  material.needsUpdate = true;
+  return material;
+}
+
+type AttachmentEndpoint = {
+  start: THREE.Vector3;
+  midpoint: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  length: number;
+  baseRadius: number;
+  endRadius: number;
+};
+
+function readVector3(value: unknown, fallback: [number, number, number]): THREE.Vector3 {
+  if (Array.isArray(value) && value.length === 3 && value.every((item) => typeof item === 'number')) {
+    return new THREE.Vector3(value[0], value[1], value[2]);
+  }
+  return new THREE.Vector3(fallback[0], fallback[1], fallback[2]);
+}
+
+function readNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function makeAttachmentEndpoint(attachment: unknown): AttachmentEndpoint | null {
+  if (!attachment || typeof attachment !== 'object') return null;
+  const record = attachment as Record<string, unknown>;
+  const start = readVector3(record.localStart, [0, 0, 0]);
+  const end = readVector3(record.localEnd, [0, 1, 0]);
+  const delta = end.clone().sub(start);
+  const length = delta.length();
+  if (length <= 0.0001) return null;
+  const direction = delta.clone().normalize();
+  const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+  const baseRadius = Math.max(0.005, readNumber(record.baseRadius, 0.06));
+  const endRadius = Math.max(0.003, readNumber(record.endRadius, baseRadius * 0.55));
+  return {
+    start,
+    midpoint: delta.multiplyScalar(0.5),
+    quaternion,
+    length,
+    baseRadius,
+    endRadius,
+  };
+}
+
+// Generated from ObjectSculptSpec target: Peter adventurer outfit
+// Sculpt build pass: material-pass
+// This factory is intentionally pass-gated. Finish browser screenshot review before unlocking deeper passes.
+export function createPeterAdventurerOutfitModel(options: ProceduralModelOptions = {}): THREE.Group {
+  const root = new THREE.Group();
+  root.name = "Peter adventurer outfit";
+  root.userData.reconstructionEvidence = {"itemFamily": null, "subtype": null, "componentAdapter": null, "route": null, "exactnessTier": null, "referenceCamera": {"solved": false, "fovDegrees": 40.0, "aspect": 1.0, "orientation": {"yaw": 0.0, "pitch": 0.0, "roll": 0.0}, "positionHint": [0.0, 0.0, 3.0], "note": "For likeness work, solve the reference camera (forge/stage1_intake/solve_camera_pose.py) so the review render aligns with the photo and the reference can be projected. Confirm by overlay review."}, "approximationNotes": []};
+  root.userData.materialPipeline = {};
+  root.userData.materialReferenceRegistry = null;
+
+  const materialMap: Record<string, THREE.Material> = {};
+  materialMap["hat-felt"] = createSculptMaterial(
+    "hat-felt",
+    {"id": "hat-felt", "name": "Hat felt", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#623E3A", "color": "#623E3A", "albedo": {"dominant": "#623E3A", "secondary": ["#412E2D"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/hat-felt.png."}, "colorVariation": {"palette": ["#623E3A", "#412E2D"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.9, "variation": 0.0, "map": "none", "localResponse": "uniform: the game draws cel shading, no roughness maps reach it"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/hat-felt.texture.json: mottle 0.011, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}},
+    options
+  );
+  materialMap["hat-band"] = createSculptMaterial(
+    "hat-band",
+    {"id": "hat-band", "name": "Hat band cloth", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#4F5E73", "color": "#4F5E73", "albedo": {"dominant": "#4F5E73", "secondary": ["#404651"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/hat-band.png."}, "colorVariation": {"palette": ["#4F5E73", "#404651"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.85, "variation": 0.0, "map": "none", "localResponse": "uniform: the game draws cel shading, no roughness maps reach it"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/hat-band.texture.json: mottle 0.008, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}},
+    options
+  );
+  materialMap["vest-leather"] = createSculptMaterial(
+    "vest-leather",
+    {"id": "vest-leather", "name": "Vest leather", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#623F3B", "color": "#623F3B", "albedo": {"dominant": "#623F3B", "secondary": ["#3A2A27"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/vest-leather.png."}, "colorVariation": {"palette": ["#623F3B", "#3A2A27"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.7, "variation": 0.1, "map": "none", "localResponse": "satin highlight band on the rounded faces, as painted in the reference"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/vest-leather.texture.json: mottle 0.01, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}},
+    options
+  );
+  materialMap["vest-flap"] = createSculptMaterial(
+    "vest-flap",
+    {"id": "vest-flap", "name": "Vest pocket flap leather", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#724A44", "color": "#724A44", "albedo": {"dominant": "#724A44", "secondary": ["#5E3D39"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/vest-flap.png."}, "colorVariation": {"palette": ["#724A44", "#5E3D39"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.7, "variation": 0.1, "map": "none", "localResponse": "satin highlight band on the rounded faces, as painted in the reference"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [{"id": "flap-edge-seam", "region": "pocket flap lower edge", "property": "color", "value": "#5C342C", "notes": "darker seam line along each flap edge"}], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/vest-flap.texture.json: mottle 0.013, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}},
+    options
+  );
+  materialMap["brass"] = createSculptMaterial(
+    "brass",
+    {"id": "brass", "name": "Brass hardware", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#916D2C", "color": "#916D2C", "albedo": {"dominant": "#916D2C", "secondary": ["#855F17"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/brass.png."}, "colorVariation": {"palette": ["#916D2C", "#855F17"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.4, "variation": 0.1, "map": "none", "localResponse": "satin highlight band on the rounded faces, as painted in the reference"}, "metalness": {"base": 0.3, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/brass.texture.json: mottle 0.002, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}},
+    options
+  );
+  materialMap["boot-leather"] = createSculptMaterial(
+    "boot-leather",
+    {"id": "boot-leather", "name": "Boot leather", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#482D2B", "color": "#482D2B", "albedo": {"dominant": "#482D2B", "secondary": ["#332523"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/boot-leather.png."}, "colorVariation": {"palette": ["#482D2B", "#332523"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.7, "variation": 0.1, "map": "none", "localResponse": "satin highlight band on the rounded faces, as painted in the reference"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/boot-leather.texture.json: mottle 0.008, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}},
+    options
+  );
+  materialMap["lace"] = createSculptMaterial(
+    "lace",
+    {"id": "lace", "name": "Boot laces", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#181212", "color": "#181212", "albedo": {"dominant": "#181212", "secondary": ["#020201"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/lace.png."}, "colorVariation": {"palette": ["#181212", "#020201"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.9, "variation": 0.0, "map": "none", "localResponse": "uniform: the game draws cel shading, no roughness maps reach it"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/lace.texture.json: mottle 0.001, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}},
+    options
+  );
+  materialMap["sheath-leather"] = createSculptMaterial(
+    "sheath-leather",
+    {"id": "sheath-leather", "name": "Sheath leather", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#805816", "color": "#805816", "albedo": {"dominant": "#805816", "secondary": ["#5E3F10"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/sheath-leather.png."}, "colorVariation": {"palette": ["#805816", "#5E3F10"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.75, "variation": 0.0, "map": "none", "localResponse": "uniform: the game draws cel shading, no roughness maps reach it"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/sheath-leather.texture.json: mottle 0.007, specularFraction 0.011, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}},
+    options
+  );
+  materialMap["pendant"] = createSculptMaterial(
+    "pendant",
+    {"id": "pendant", "name": "Claw pendant", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#1C1614", "color": "#1C1614", "albedo": {"dominant": "#1C1614", "secondary": ["#16100E"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/pendant.png."}, "colorVariation": {"palette": ["#1C1614", "#16100E"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.35, "variation": 0.0, "map": "none", "localResponse": "uniform: the game draws cel shading, no roughness maps reach it"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/pendant.texture.json: mottle 0.011, specularFraction 0.0, finishClass worn-composite - flat cartoon paint, no grain, print or pores"]}},
+    options
+  );
+  materialMap["cuff"] = createSculptMaterial(
+    "cuff",
+    {"id": "cuff", "name": "Rolled shirt cuff", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#7FA06D", "color": "#7FA06D", "albedo": {"dominant": "#7FA06D", "secondary": ["#607C52"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/cuff.png."}, "colorVariation": {"palette": ["#7FA06D", "#607C52"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.9, "variation": 0.0, "map": "none", "localResponse": "uniform: the game draws cel shading, no roughness maps reach it"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/cuff.texture.json: mottle 0.031, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}},
+    options
+  );
+
+  const nodes: Record<string, THREE.Object3D> = { root };
+  const meshes: Record<string, THREE.Mesh> = {};
+  const sockets: Record<string, THREE.Object3D> = {};
+  const colliders: Record<string, unknown> = {};
+  const destructionGroups: Record<string, THREE.Object3D[]> = {};
+
+  const endpoint_vest_shell_0 = makeAttachmentEndpoint(null);
+  const node_vest_shell_0 = new THREE.Group();
+  node_vest_shell_0.name = "Leather vest shell__pivot";
+  node_vest_shell_0.scale.set(1, 1, 1);
+  if (endpoint_vest_shell_0) {
+    node_vest_shell_0.position.copy(endpoint_vest_shell_0.start);
+    node_vest_shell_0.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_vest_shell_0.position.set(0.0, 0.0, 0.0);
+    node_vest_shell_0.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_vest_shell_0.userData.sculptComponent = {"id": "vest-shell", "name": "Leather vest shell", "level": "macro", "role": "body", "importance": 1.0, "confidence": 0.8, "primitive": "ellipsoid", "topologyClass": "implicit", "topologyRationale": "Continuous garment shell offset 0.05 outward from the wearer's measured torso surface (belly and chest ellipsoids), hollowed, with the open front, neck, armholes and hem cut away.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "sdf": {"primitives": [{"id": "belly-out", "type": "ellipsoid", "center": [0.0, 0.84, 0.04], "radii": [0.575, 0.47, 0.565]}, {"id": "chest-out", "type": "ellipsoid", "center": [0.0, 1.14, 0.035], "radii": [0.51, 0.27, 0.45]}, {"id": "belly-in", "type": "ellipsoid", "center": [0.0, 0.84, 0.04], "radii": [0.525, 0.42, 0.515]}, {"id": "chest-in", "type": "ellipsoid", "center": [0.0, 1.14, 0.035], "radii": [0.46, 0.22, 0.4]}, {"id": "front-gap", "type": "box", "center": [0.0, 0.98, 0.5], "size": [0.36, 0.78, 0.5]}, {"id": "gap-l", "type": "box", "center": [0.1414, 0.9764, 0.5], "size": [0.2, 0.9299, 0.5], "transform": {"position": [0.1414, 0.9764, 0.5], "rotation": [0.0, 0.0, -0.1651]}}, {"id": "gap-r", "type": "box", "center": [-0.1414, 0.9764, 0.5], "size": [0.2, 0.9299, 0.5], "transform": {"position": [-0.1414, 0.9764, 0.5], "rotation": [0.0, 0.0, 0.1651]}}, {"id": "neck", "type": "ellipsoid", "center": [0.0, 1.37, 0.1], "radii": [0.27, 0.17, 0.34]}, {"id": "arm-l", "type": "capsule", "center": [0.62, 1.17, -0.01], "radius": 0.175, "height": 0.5, "transform": {"position": [0.62, 1.17, -0.01], "rotation": [0.0, 0.0, 1.5708]}}, {"id": "arm-r", "type": "capsule", "center": [-0.62, 1.17, -0.01], "radius": 0.175, "height": 0.5, "transform": {"position": [-0.62, 1.17, -0.01], "rotation": [0.0, 0.0, 1.5708]}}, {"id": "below-belt", "type": "box", "center": [0.0, 0.3, 0.0], "size": [2.0, 0.66, 2.0]}, {"id": "vedgel0", "type": "capsule", "center": [0.2004, 0.6925, 0.5051], "radius": 0.034, "height": 0.1144, "transform": {"position": [0.2004, 0.6925, 0.5051], "rotation": [0.3741, -0.0291, -0.1537]}}, {"id": "vedgel1", "type": "capsule", "center": [0.2179, 0.7975, 0.5289], "radius": 0.034, "height": 0.1066, "transform": {"position": [0.2179, 0.7975, 0.5289], "rotation": [0.0556, -0.0046, -0.1649]}}, {"id": "vedgel2", "type": "capsule", "center": [0.2354, 0.9025, 0.5176], "radius": 0.034, "height": 0.1102, "transform": {"position": [0.2354, 0.9025, 0.5176], "rotation": [-0.2621, 0.0211, -0.1595]}}, {"id": "vedgel3", "type": "capsule", "center": [0.2529, 1.0075, 0.4681], "radius": 0.034, "height": 0.1277, "transform": {"position": [0.2529, 1.0075, 0.4681], "rotation": [-0.5853, 0.0415, -0.1376]}}, {"id": "vedgel4", "type": "capsule", "center": [0.2704, 1.1125, 0.4063], "radius": 0.034, "height": 0.1189, "transform": {"position": [0.2704, 1.1125, 0.4063], "rotation": [-0.4625, 0.0349, -0.1478]}}, {"id": "vedgel5", "type": "capsule", "center": [0.2879, 1.2175, 0.3321], "radius": 0.034, "height": 0.143, "transform": {"position": [0.2879, 1.2175, 0.3321], "rotation": [-0.7319, 0.0471, -0.1228]}}, {"id": "vedger0", "type": "capsule", "center": [-0.2004, 0.6925, 0.5051], "radius": 0.034, "height": 0.1144, "transform": {"position": [-0.2004, 0.6925, 0.5051], "rotation": [0.3741, 0.0291, 0.1537]}}, {"id": "vedger1", "type": "capsule", "center": [-0.2179, 0.7975, 0.5289], "radius": 0.034, "height": 0.1066, "transform": {"position": [-0.2179, 0.7975, 0.5289], "rotation": [0.0556, 0.0046, 0.1649]}}, {"id": "vedger2", "type": "capsule", "center": [-0.2354, 0.9025, 0.5176], "radius": 0.034, "height": 0.1102, "transform": {"position": [-0.2354, 0.9025, 0.5176], "rotation": [-0.2621, -0.0211, 0.1595]}}, {"id": "vedger3", "type": "capsule", "center": [-0.2529, 1.0075, 0.4681], "radius": 0.034, "height": 0.1277, "transform": {"position": [-0.2529, 1.0075, 0.4681], "rotation": [-0.5853, -0.0415, 0.1376]}}, {"id": "vedger4", "type": "capsule", "center": [-0.2704, 1.1125, 0.4063], "radius": 0.034, "height": 0.1189, "transform": {"position": [-0.2704, 1.1125, 0.4063], "rotation": [-0.4625, -0.0349, 0.1478]}}, {"id": "vedger5", "type": "capsule", "center": [-0.2879, 1.2175, 0.3321], "radius": 0.034, "height": 0.143, "transform": {"position": [-0.2879, 1.2175, 0.3321], "rotation": [-0.7319, -0.0471, 0.1228]}}, {"id": "hem0", "type": "capsule", "center": [0.2932, 0.645, 0.4225], "radius": 0.034, "height": 0.1627, "transform": {"position": [0.2932, 0.645, 0.4225], "rotation": [-0.743, 0.4983, -1.1571]}}, {"id": "hem1", "type": "capsule", "center": [0.4044, 0.645, 0.3074], "radius": 0.034, "height": 0.1618, "transform": {"position": [0.4044, 0.645, 0.3074], "rotation": [-1.2005, 0.4853, -0.694]}}, {"id": "hem2", "type": "capsule", "center": [0.4712, 0.645, 0.163], "radius": 0.034, "height": 0.161, "transform": {"position": [0.4712, 0.645, 0.163], "rotation": [-1.5001, 0.2551, -0.2736]}}, {"id": "hem3", "type": "capsule", "center": [0.4863, 0.645, 0.0051], "radius": 0.034, "height": 0.1608, "transform": {"position": [0.4863, 0.645, 0.0051], "rotation": [-1.5653, -0.074, 0.0745]}}, {"id": "hem4", "type": "capsule", "center": [0.448, 0.645, -0.149], "radius": 0.034, "height": 0.1613, "transform": {"position": [0.448, 0.645, -0.149], "rotation": [-1.3972, -0.3761, 0.4456]}}, {"id": "hem5", "type": "capsule", "center": [0.3605, 0.645, -0.2823], "radius": 0.034, "height": 0.1622, "transform": {"position": [0.3605, 0.645, -0.2823], "rotation": [-1.0081, -0.522, 0.9018]}}, {"id": "hem6", "type": "capsule", "center": [0.2334, 0.645, -0.3802], "radius": 0.034, "height": 0.1631, "transform": {"position": [0.2334, 0.645, -0.3802], "rotation": [-0.5459, -0.4292, 1.3232]}}, {"id": "hem7", "type": "capsule", "center": [0.0808, 0.645, -0.4321], "radius": 0.034, "height": 0.1637, "transform": {"position": [0.0808, 0.645, -0.4321], "rotation": [-0.1656, -0.1613, 1.544]}}, {"id": "hem8", "type": "capsule", "center": [-0.0808, 0.645, -0.4321], "radius": 0.034, "height": 0.1637, "transform": {"position": [-0.0808, 0.645, -0.4321], "rotation": [0.1656, 0.1613, 1.544]}}, {"id": "hem9", "type": "capsule", "center": [-0.2334, 0.645, -0.3802], "radius": 0.034, "height": 0.1631, "transform": {"position": [-0.2334, 0.645, -0.3802], "rotation": [0.5459, 0.4292, 1.3232]}}, {"id": "hem10", "type": "capsule", "center": [-0.3605, 0.645, -0.2823], "radius": 0.034, "height": 0.1622, "transform": {"position": [-0.3605, 0.645, -0.2823], "rotation": [1.0081, 0.522, 0.9018]}}, {"id": "hem11", "type": "capsule", "center": [-0.448, 0.645, -0.149], "radius": 0.034, "height": 0.1613, "transform": {"position": [-0.448, 0.645, -0.149], "rotation": [1.3972, 0.3761, 0.4456]}}, {"id": "hem12", "type": "capsule", "center": [-0.4863, 0.645, 0.0051], "radius": 0.034, "height": 0.1608, "transform": {"position": [-0.4863, 0.645, 0.0051], "rotation": [1.5653, 0.074, 0.0745]}}, {"id": "hem13", "type": "capsule", "center": [-0.4712, 0.645, 0.163], "radius": 0.034, "height": 0.161, "transform": {"position": [-0.4712, 0.645, 0.163], "rotation": [1.5001, -0.2551, -0.2736]}}, {"id": "hem14", "type": "capsule", "center": [-0.4044, 0.645, 0.3074], "radius": 0.034, "height": 0.1618, "transform": {"position": [-0.4044, 0.645, 0.3074], "rotation": [1.2005, -0.4853, -0.694]}}, {"id": "hem15", "type": "capsule", "center": [-0.2932, 0.645, 0.4225], "radius": 0.034, "height": 0.1627, "transform": {"position": [-0.2932, 0.645, 0.4225], "rotation": [0.743, -0.4983, -1.1571]}}, {"id": "arml0", "type": "capsule", "center": [0.3399, 1.3108, 0.0483], "radius": 0.030600000000000002, "height": 0.1494, "transform": {"position": [0.3399, 1.3108, 0.0483], "rotation": [1.4458, -0.6645, -0.7456]}}, {"id": "arml1", "type": "capsule", "center": [0.4206, 1.2283, 0.1308], "radius": 0.030600000000000002, "height": 0.1504, "transform": {"position": [0.4206, 1.2283, 0.1308], "rotation": [0.5371, -0.8918, -2.0968]}}, {"id": "arml2", "type": "capsule", "center": [0.4697, 1.1117, 0.1308], "radius": 0.030600000000000002, "height": 0.1273, "transform": {"position": [0.4697, 1.1117, 0.1308], "rotation": [-2.6553, 0.6233, -0.1595]}}, {"id": "arml3", "type": "capsule", "center": [0.4931, 1.0292, 0.0483], "radius": 0.030600000000000002, "height": 0.1299, "transform": {"position": [0.4931, 1.0292, 0.0483], "rotation": [-1.878, 0.3411, -0.2507]}}, {"id": "arml4", "type": "capsule", "center": [0.48, 1.0292, -0.0683], "radius": 0.030600000000000002, "height": 0.1383, "transform": {"position": [0.48, 1.0292, -0.0683], "rotation": [-1.0601, -0.2578, 0.4354]}}, {"id": "arml5", "type": "capsule", "center": [0.4346, 1.1117, -0.1508], "radius": 0.030600000000000002, "height": 0.1309, "transform": {"position": [0.4346, 1.1117, -0.1508], "rotation": [-0.3787, -0.0513, 0.2662]}}, {"id": "arml6", "type": "capsule", "center": [0.3797, 1.2283, -0.1508], "radius": 0.030600000000000002, "height": 0.1472, "transform": {"position": [0.3797, 1.2283, -0.1508], "rotation": [0.3361, 0.0942, 0.5419]}}, {"id": "arml7", "type": "capsule", "center": [0.3209, 1.3108, -0.0683], "radius": 0.030600000000000002, "height": 0.133, "transform": {"position": [0.3209, 1.3108, -0.0683], "rotation": [1.1095, 0.2039, 0.3272]}}, {"id": "armr0", "type": "capsule", "center": [-0.3399, 1.3108, 0.0483], "radius": 0.030600000000000002, "height": 0.1494, "transform": {"position": [-0.3399, 1.3108, 0.0483], "rotation": [1.4458, 0.6645, 0.7456]}}, {"id": "armr1", "type": "capsule", "center": [-0.4206, 1.2283, 0.1308], "radius": 0.030600000000000002, "height": 0.1504, "transform": {"position": [-0.4206, 1.2283, 0.1308], "rotation": [0.5371, 0.8918, 2.0968]}}, {"id": "armr2", "type": "capsule", "center": [-0.4697, 1.1117, 0.1308], "radius": 0.030600000000000002, "height": 0.1273, "transform": {"position": [-0.4697, 1.1117, 0.1308], "rotation": [-2.6553, -0.6233, 0.1595]}}, {"id": "armr3", "type": "capsule", "center": [-0.4931, 1.0292, 0.0483], "radius": 0.030600000000000002, "height": 0.1299, "transform": {"position": [-0.4931, 1.0292, 0.0483], "rotation": [-1.878, -0.3411, 0.2507]}}, {"id": "armr4", "type": "capsule", "center": [-0.48, 1.0292, -0.0683], "radius": 0.030600000000000002, "height": 0.1383, "transform": {"position": [-0.48, 1.0292, -0.0683], "rotation": [-1.0601, 0.2578, -0.4354]}}, {"id": "armr5", "type": "capsule", "center": [-0.4346, 1.1117, -0.1508], "radius": 0.030600000000000002, "height": 0.1309, "transform": {"position": [-0.4346, 1.1117, -0.1508], "rotation": [-0.3787, 0.0513, -0.2662]}}, {"id": "armr6", "type": "capsule", "center": [-0.3797, 1.2283, -0.1508], "radius": 0.030600000000000002, "height": 0.1472, "transform": {"position": [-0.3797, 1.2283, -0.1508], "rotation": [0.3361, -0.0942, -0.5419]}}, {"id": "armr7", "type": "capsule", "center": [-0.3209, 1.3108, -0.0683], "radius": 0.030600000000000002, "height": 0.133, "transform": {"position": [-0.3209, 1.3108, -0.0683], "rotation": [1.1095, -0.2039, -0.3272]}}], "operations": [{"id": "outer", "type": "smooth-union", "left": "belly-out", "right": "chest-out", "radius": 0.12}, {"id": "inner", "type": "smooth-union", "left": "belly-in", "right": "chest-in", "radius": 0.12}, {"id": "shell", "type": "subtract", "left": "outer", "right": "inner"}, {"id": "gap1", "type": "smooth-union", "left": "front-gap", "right": "gap-l", "radius": 0.02}, {"id": "gap2", "type": "smooth-union", "left": "gap1", "right": "gap-r", "radius": 0.02}, {"id": "open", "type": "subtract", "left": "shell", "right": "gap2"}, {"id": "necked", "type": "subtract", "left": "open", "right": "neck"}, {"id": "arm1", "type": "subtract", "left": "necked", "right": "arm-l"}, {"id": "arm2", "type": "subtract", "left": "arm1", "right": "arm-r"}, {"id": "vest-cut", "type": "subtract", "left": "arm2", "right": "below-belt"}, {"id": "vest-t0", "type": "smooth-union", "left": "vedgel0", "right": "vedgel1", "radius": 0.001}, {"id": "vest-t1", "type": "smooth-union", "left": "vest-t0", "right": "vedgel2", "radius": 0.001}, {"id": "vest-t2", "type": "smooth-union", "left": "vest-t1", "right": "vedgel3", "radius": 0.001}, {"id": "vest-t3", "type": "smooth-union", "left": "vest-t2", "right": "vedgel4", "radius": 0.001}, {"id": "vest-t4", "type": "smooth-union", "left": "vest-t3", "right": "vedgel5", "radius": 0.001}, {"id": "vest-t5", "type": "smooth-union", "left": "vest-t4", "right": "vedger0", "radius": 0.001}, {"id": "vest-t6", "type": "smooth-union", "left": "vest-t5", "right": "vedger1", "radius": 0.001}, {"id": "vest-t7", "type": "smooth-union", "left": "vest-t6", "right": "vedger2", "radius": 0.001}, {"id": "vest-t8", "type": "smooth-union", "left": "vest-t7", "right": "vedger3", "radius": 0.001}, {"id": "vest-t9", "type": "smooth-union", "left": "vest-t8", "right": "vedger4", "radius": 0.001}, {"id": "vest-t10", "type": "smooth-union", "left": "vest-t9", "right": "vedger5", "radius": 0.001}, {"id": "vest-t11", "type": "smooth-union", "left": "vest-t10", "right": "hem0", "radius": 0.001}, {"id": "vest-t12", "type": "smooth-union", "left": "vest-t11", "right": "hem1", "radius": 0.001}, {"id": "vest-t13", "type": "smooth-union", "left": "vest-t12", "right": "hem2", "radius": 0.001}, {"id": "vest-t14", "type": "smooth-union", "left": "vest-t13", "right": "hem3", "radius": 0.001}, {"id": "vest-t15", "type": "smooth-union", "left": "vest-t14", "right": "hem4", "radius": 0.001}, {"id": "vest-t16", "type": "smooth-union", "left": "vest-t15", "right": "hem5", "radius": 0.001}, {"id": "vest-t17", "type": "smooth-union", "left": "vest-t16", "right": "hem6", "radius": 0.001}, {"id": "vest-t18", "type": "smooth-union", "left": "vest-t17", "right": "hem7", "radius": 0.001}, {"id": "vest-t19", "type": "smooth-union", "left": "vest-t18", "right": "hem8", "radius": 0.001}, {"id": "vest-t20", "type": "smooth-union", "left": "vest-t19", "right": "hem9", "radius": 0.001}, {"id": "vest-t21", "type": "smooth-union", "left": "vest-t20", "right": "hem10", "radius": 0.001}, {"id": "vest-t22", "type": "smooth-union", "left": "vest-t21", "right": "hem11", "radius": 0.001}, {"id": "vest-t23", "type": "smooth-union", "left": "vest-t22", "right": "hem12", "radius": 0.001}, {"id": "vest-t24", "type": "smooth-union", "left": "vest-t23", "right": "hem13", "radius": 0.001}, {"id": "vest-t25", "type": "smooth-union", "left": "vest-t24", "right": "hem14", "radius": 0.001}, {"id": "vest-t26", "type": "smooth-union", "left": "vest-t25", "right": "hem15", "radius": 0.001}, {"id": "vest-t27", "type": "smooth-union", "left": "vest-t26", "right": "arml0", "radius": 0.001}, {"id": "vest-t28", "type": "smooth-union", "left": "vest-t27", "right": "arml1", "radius": 0.001}, {"id": "vest-t29", "type": "smooth-union", "left": "vest-t28", "right": "arml2", "radius": 0.001}, {"id": "vest-t30", "type": "smooth-union", "left": "vest-t29", "right": "arml3", "radius": 0.001}, {"id": "vest-t31", "type": "smooth-union", "left": "vest-t30", "right": "arml4", "radius": 0.001}, {"id": "vest-t32", "type": "smooth-union", "left": "vest-t31", "right": "arml5", "radius": 0.001}, {"id": "vest-t33", "type": "smooth-union", "left": "vest-t32", "right": "arml6", "radius": 0.001}, {"id": "vest-t34", "type": "smooth-union", "left": "vest-t33", "right": "arml7", "radius": 0.001}, {"id": "vest-t35", "type": "smooth-union", "left": "vest-t34", "right": "armr0", "radius": 0.001}, {"id": "vest-t36", "type": "smooth-union", "left": "vest-t35", "right": "armr1", "radius": 0.001}, {"id": "vest-t37", "type": "smooth-union", "left": "vest-t36", "right": "armr2", "radius": 0.001}, {"id": "vest-t38", "type": "smooth-union", "left": "vest-t37", "right": "armr3", "radius": 0.001}, {"id": "vest-t39", "type": "smooth-union", "left": "vest-t38", "right": "armr4", "radius": 0.001}, {"id": "vest-t40", "type": "smooth-union", "left": "vest-t39", "right": "armr5", "radius": 0.001}, {"id": "vest-t41", "type": "smooth-union", "left": "vest-t40", "right": "armr6", "radius": 0.001}, {"id": "vest-t42", "type": "smooth-union", "left": "vest-t41", "right": "armr7", "radius": 0.001}, {"id": "vest", "type": "smooth-union", "left": "vest-cut", "right": "vest-t42", "radius": 0.03}], "bounds": {"min": [-0.62, 0.6, -0.54], "max": [0.62, 1.42, 0.64]}, "resolution": 64}, "decimate": {"targetRatio": 0.12}}, "parent": null, "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1.0, 1.0, 1.0]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-shell", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}}, "material": "vest-leather", "materialLayers": ["vest-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-open-front", "kind": "seam", "description": "open front gap 0.26 wide, the shirt shows"}, {"id": "vest-armholes", "kind": "hole", "description": "armholes around the upper arms"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(98, 63, 59, 1.0)", "secondaryAlbedo": "rgba(58, 42, 39, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-leather.png"]}};
+  node_vest_shell_0.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-shell", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}};
+  (nodes["root"] ?? root).add(node_vest_shell_0);
+  nodes["vest-shell"] = node_vest_shell_0;
+  const mesh_vest_shell_0GeometryDense = polygonizeSdf({"primitives": [{"id": "belly-out", "type": "ellipsoid", "center": [0.0, 0.84, 0.04], "radii": [0.575, 0.47, 0.565]}, {"id": "chest-out", "type": "ellipsoid", "center": [0.0, 1.14, 0.035], "radii": [0.51, 0.27, 0.45]}, {"id": "belly-in", "type": "ellipsoid", "center": [0.0, 0.84, 0.04], "radii": [0.525, 0.42, 0.515]}, {"id": "chest-in", "type": "ellipsoid", "center": [0.0, 1.14, 0.035], "radii": [0.46, 0.22, 0.4]}, {"id": "front-gap", "type": "box", "center": [0.0, 0.98, 0.5], "size": [0.36, 0.78, 0.5]}, {"id": "gap-l", "type": "box", "center": [0.1414, 0.9764, 0.5], "size": [0.2, 0.9299, 0.5], "transform": {"position": [0.1414, 0.9764, 0.5], "rotation": [0.0, 0.0, -0.1651]}}, {"id": "gap-r", "type": "box", "center": [-0.1414, 0.9764, 0.5], "size": [0.2, 0.9299, 0.5], "transform": {"position": [-0.1414, 0.9764, 0.5], "rotation": [0.0, 0.0, 0.1651]}}, {"id": "neck", "type": "ellipsoid", "center": [0.0, 1.37, 0.1], "radii": [0.27, 0.17, 0.34]}, {"id": "arm-l", "type": "capsule", "center": [0.62, 1.17, -0.01], "radius": 0.175, "height": 0.5, "transform": {"position": [0.62, 1.17, -0.01], "rotation": [0.0, 0.0, 1.5708]}}, {"id": "arm-r", "type": "capsule", "center": [-0.62, 1.17, -0.01], "radius": 0.175, "height": 0.5, "transform": {"position": [-0.62, 1.17, -0.01], "rotation": [0.0, 0.0, 1.5708]}}, {"id": "below-belt", "type": "box", "center": [0.0, 0.3, 0.0], "size": [2.0, 0.66, 2.0]}, {"id": "vedgel0", "type": "capsule", "center": [0.2004, 0.6925, 0.5051], "radius": 0.034, "height": 0.1144, "transform": {"position": [0.2004, 0.6925, 0.5051], "rotation": [0.3741, -0.0291, -0.1537]}}, {"id": "vedgel1", "type": "capsule", "center": [0.2179, 0.7975, 0.5289], "radius": 0.034, "height": 0.1066, "transform": {"position": [0.2179, 0.7975, 0.5289], "rotation": [0.0556, -0.0046, -0.1649]}}, {"id": "vedgel2", "type": "capsule", "center": [0.2354, 0.9025, 0.5176], "radius": 0.034, "height": 0.1102, "transform": {"position": [0.2354, 0.9025, 0.5176], "rotation": [-0.2621, 0.0211, -0.1595]}}, {"id": "vedgel3", "type": "capsule", "center": [0.2529, 1.0075, 0.4681], "radius": 0.034, "height": 0.1277, "transform": {"position": [0.2529, 1.0075, 0.4681], "rotation": [-0.5853, 0.0415, -0.1376]}}, {"id": "vedgel4", "type": "capsule", "center": [0.2704, 1.1125, 0.4063], "radius": 0.034, "height": 0.1189, "transform": {"position": [0.2704, 1.1125, 0.4063], "rotation": [-0.4625, 0.0349, -0.1478]}}, {"id": "vedgel5", "type": "capsule", "center": [0.2879, 1.2175, 0.3321], "radius": 0.034, "height": 0.143, "transform": {"position": [0.2879, 1.2175, 0.3321], "rotation": [-0.7319, 0.0471, -0.1228]}}, {"id": "vedger0", "type": "capsule", "center": [-0.2004, 0.6925, 0.5051], "radius": 0.034, "height": 0.1144, "transform": {"position": [-0.2004, 0.6925, 0.5051], "rotation": [0.3741, 0.0291, 0.1537]}}, {"id": "vedger1", "type": "capsule", "center": [-0.2179, 0.7975, 0.5289], "radius": 0.034, "height": 0.1066, "transform": {"position": [-0.2179, 0.7975, 0.5289], "rotation": [0.0556, 0.0046, 0.1649]}}, {"id": "vedger2", "type": "capsule", "center": [-0.2354, 0.9025, 0.5176], "radius": 0.034, "height": 0.1102, "transform": {"position": [-0.2354, 0.9025, 0.5176], "rotation": [-0.2621, -0.0211, 0.1595]}}, {"id": "vedger3", "type": "capsule", "center": [-0.2529, 1.0075, 0.4681], "radius": 0.034, "height": 0.1277, "transform": {"position": [-0.2529, 1.0075, 0.4681], "rotation": [-0.5853, -0.0415, 0.1376]}}, {"id": "vedger4", "type": "capsule", "center": [-0.2704, 1.1125, 0.4063], "radius": 0.034, "height": 0.1189, "transform": {"position": [-0.2704, 1.1125, 0.4063], "rotation": [-0.4625, -0.0349, 0.1478]}}, {"id": "vedger5", "type": "capsule", "center": [-0.2879, 1.2175, 0.3321], "radius": 0.034, "height": 0.143, "transform": {"position": [-0.2879, 1.2175, 0.3321], "rotation": [-0.7319, -0.0471, 0.1228]}}, {"id": "hem0", "type": "capsule", "center": [0.2932, 0.645, 0.4225], "radius": 0.034, "height": 0.1627, "transform": {"position": [0.2932, 0.645, 0.4225], "rotation": [-0.743, 0.4983, -1.1571]}}, {"id": "hem1", "type": "capsule", "center": [0.4044, 0.645, 0.3074], "radius": 0.034, "height": 0.1618, "transform": {"position": [0.4044, 0.645, 0.3074], "rotation": [-1.2005, 0.4853, -0.694]}}, {"id": "hem2", "type": "capsule", "center": [0.4712, 0.645, 0.163], "radius": 0.034, "height": 0.161, "transform": {"position": [0.4712, 0.645, 0.163], "rotation": [-1.5001, 0.2551, -0.2736]}}, {"id": "hem3", "type": "capsule", "center": [0.4863, 0.645, 0.0051], "radius": 0.034, "height": 0.1608, "transform": {"position": [0.4863, 0.645, 0.0051], "rotation": [-1.5653, -0.074, 0.0745]}}, {"id": "hem4", "type": "capsule", "center": [0.448, 0.645, -0.149], "radius": 0.034, "height": 0.1613, "transform": {"position": [0.448, 0.645, -0.149], "rotation": [-1.3972, -0.3761, 0.4456]}}, {"id": "hem5", "type": "capsule", "center": [0.3605, 0.645, -0.2823], "radius": 0.034, "height": 0.1622, "transform": {"position": [0.3605, 0.645, -0.2823], "rotation": [-1.0081, -0.522, 0.9018]}}, {"id": "hem6", "type": "capsule", "center": [0.2334, 0.645, -0.3802], "radius": 0.034, "height": 0.1631, "transform": {"position": [0.2334, 0.645, -0.3802], "rotation": [-0.5459, -0.4292, 1.3232]}}, {"id": "hem7", "type": "capsule", "center": [0.0808, 0.645, -0.4321], "radius": 0.034, "height": 0.1637, "transform": {"position": [0.0808, 0.645, -0.4321], "rotation": [-0.1656, -0.1613, 1.544]}}, {"id": "hem8", "type": "capsule", "center": [-0.0808, 0.645, -0.4321], "radius": 0.034, "height": 0.1637, "transform": {"position": [-0.0808, 0.645, -0.4321], "rotation": [0.1656, 0.1613, 1.544]}}, {"id": "hem9", "type": "capsule", "center": [-0.2334, 0.645, -0.3802], "radius": 0.034, "height": 0.1631, "transform": {"position": [-0.2334, 0.645, -0.3802], "rotation": [0.5459, 0.4292, 1.3232]}}, {"id": "hem10", "type": "capsule", "center": [-0.3605, 0.645, -0.2823], "radius": 0.034, "height": 0.1622, "transform": {"position": [-0.3605, 0.645, -0.2823], "rotation": [1.0081, 0.522, 0.9018]}}, {"id": "hem11", "type": "capsule", "center": [-0.448, 0.645, -0.149], "radius": 0.034, "height": 0.1613, "transform": {"position": [-0.448, 0.645, -0.149], "rotation": [1.3972, 0.3761, 0.4456]}}, {"id": "hem12", "type": "capsule", "center": [-0.4863, 0.645, 0.0051], "radius": 0.034, "height": 0.1608, "transform": {"position": [-0.4863, 0.645, 0.0051], "rotation": [1.5653, 0.074, 0.0745]}}, {"id": "hem13", "type": "capsule", "center": [-0.4712, 0.645, 0.163], "radius": 0.034, "height": 0.161, "transform": {"position": [-0.4712, 0.645, 0.163], "rotation": [1.5001, -0.2551, -0.2736]}}, {"id": "hem14", "type": "capsule", "center": [-0.4044, 0.645, 0.3074], "radius": 0.034, "height": 0.1618, "transform": {"position": [-0.4044, 0.645, 0.3074], "rotation": [1.2005, -0.4853, -0.694]}}, {"id": "hem15", "type": "capsule", "center": [-0.2932, 0.645, 0.4225], "radius": 0.034, "height": 0.1627, "transform": {"position": [-0.2932, 0.645, 0.4225], "rotation": [0.743, -0.4983, -1.1571]}}, {"id": "arml0", "type": "capsule", "center": [0.3399, 1.3108, 0.0483], "radius": 0.030600000000000002, "height": 0.1494, "transform": {"position": [0.3399, 1.3108, 0.0483], "rotation": [1.4458, -0.6645, -0.7456]}}, {"id": "arml1", "type": "capsule", "center": [0.4206, 1.2283, 0.1308], "radius": 0.030600000000000002, "height": 0.1504, "transform": {"position": [0.4206, 1.2283, 0.1308], "rotation": [0.5371, -0.8918, -2.0968]}}, {"id": "arml2", "type": "capsule", "center": [0.4697, 1.1117, 0.1308], "radius": 0.030600000000000002, "height": 0.1273, "transform": {"position": [0.4697, 1.1117, 0.1308], "rotation": [-2.6553, 0.6233, -0.1595]}}, {"id": "arml3", "type": "capsule", "center": [0.4931, 1.0292, 0.0483], "radius": 0.030600000000000002, "height": 0.1299, "transform": {"position": [0.4931, 1.0292, 0.0483], "rotation": [-1.878, 0.3411, -0.2507]}}, {"id": "arml4", "type": "capsule", "center": [0.48, 1.0292, -0.0683], "radius": 0.030600000000000002, "height": 0.1383, "transform": {"position": [0.48, 1.0292, -0.0683], "rotation": [-1.0601, -0.2578, 0.4354]}}, {"id": "arml5", "type": "capsule", "center": [0.4346, 1.1117, -0.1508], "radius": 0.030600000000000002, "height": 0.1309, "transform": {"position": [0.4346, 1.1117, -0.1508], "rotation": [-0.3787, -0.0513, 0.2662]}}, {"id": "arml6", "type": "capsule", "center": [0.3797, 1.2283, -0.1508], "radius": 0.030600000000000002, "height": 0.1472, "transform": {"position": [0.3797, 1.2283, -0.1508], "rotation": [0.3361, 0.0942, 0.5419]}}, {"id": "arml7", "type": "capsule", "center": [0.3209, 1.3108, -0.0683], "radius": 0.030600000000000002, "height": 0.133, "transform": {"position": [0.3209, 1.3108, -0.0683], "rotation": [1.1095, 0.2039, 0.3272]}}, {"id": "armr0", "type": "capsule", "center": [-0.3399, 1.3108, 0.0483], "radius": 0.030600000000000002, "height": 0.1494, "transform": {"position": [-0.3399, 1.3108, 0.0483], "rotation": [1.4458, 0.6645, 0.7456]}}, {"id": "armr1", "type": "capsule", "center": [-0.4206, 1.2283, 0.1308], "radius": 0.030600000000000002, "height": 0.1504, "transform": {"position": [-0.4206, 1.2283, 0.1308], "rotation": [0.5371, 0.8918, 2.0968]}}, {"id": "armr2", "type": "capsule", "center": [-0.4697, 1.1117, 0.1308], "radius": 0.030600000000000002, "height": 0.1273, "transform": {"position": [-0.4697, 1.1117, 0.1308], "rotation": [-2.6553, -0.6233, 0.1595]}}, {"id": "armr3", "type": "capsule", "center": [-0.4931, 1.0292, 0.0483], "radius": 0.030600000000000002, "height": 0.1299, "transform": {"position": [-0.4931, 1.0292, 0.0483], "rotation": [-1.878, -0.3411, 0.2507]}}, {"id": "armr4", "type": "capsule", "center": [-0.48, 1.0292, -0.0683], "radius": 0.030600000000000002, "height": 0.1383, "transform": {"position": [-0.48, 1.0292, -0.0683], "rotation": [-1.0601, 0.2578, -0.4354]}}, {"id": "armr5", "type": "capsule", "center": [-0.4346, 1.1117, -0.1508], "radius": 0.030600000000000002, "height": 0.1309, "transform": {"position": [-0.4346, 1.1117, -0.1508], "rotation": [-0.3787, 0.0513, -0.2662]}}, {"id": "armr6", "type": "capsule", "center": [-0.3797, 1.2283, -0.1508], "radius": 0.030600000000000002, "height": 0.1472, "transform": {"position": [-0.3797, 1.2283, -0.1508], "rotation": [0.3361, -0.0942, -0.5419]}}, {"id": "armr7", "type": "capsule", "center": [-0.3209, 1.3108, -0.0683], "radius": 0.030600000000000002, "height": 0.133, "transform": {"position": [-0.3209, 1.3108, -0.0683], "rotation": [1.1095, -0.2039, -0.3272]}}], "operations": [{"id": "outer", "type": "smooth-union", "left": "belly-out", "right": "chest-out", "radius": 0.12}, {"id": "inner", "type": "smooth-union", "left": "belly-in", "right": "chest-in", "radius": 0.12}, {"id": "shell", "type": "subtract", "left": "outer", "right": "inner"}, {"id": "gap1", "type": "smooth-union", "left": "front-gap", "right": "gap-l", "radius": 0.02}, {"id": "gap2", "type": "smooth-union", "left": "gap1", "right": "gap-r", "radius": 0.02}, {"id": "open", "type": "subtract", "left": "shell", "right": "gap2"}, {"id": "necked", "type": "subtract", "left": "open", "right": "neck"}, {"id": "arm1", "type": "subtract", "left": "necked", "right": "arm-l"}, {"id": "arm2", "type": "subtract", "left": "arm1", "right": "arm-r"}, {"id": "vest-cut", "type": "subtract", "left": "arm2", "right": "below-belt"}, {"id": "vest-t0", "type": "smooth-union", "left": "vedgel0", "right": "vedgel1", "radius": 0.001}, {"id": "vest-t1", "type": "smooth-union", "left": "vest-t0", "right": "vedgel2", "radius": 0.001}, {"id": "vest-t2", "type": "smooth-union", "left": "vest-t1", "right": "vedgel3", "radius": 0.001}, {"id": "vest-t3", "type": "smooth-union", "left": "vest-t2", "right": "vedgel4", "radius": 0.001}, {"id": "vest-t4", "type": "smooth-union", "left": "vest-t3", "right": "vedgel5", "radius": 0.001}, {"id": "vest-t5", "type": "smooth-union", "left": "vest-t4", "right": "vedger0", "radius": 0.001}, {"id": "vest-t6", "type": "smooth-union", "left": "vest-t5", "right": "vedger1", "radius": 0.001}, {"id": "vest-t7", "type": "smooth-union", "left": "vest-t6", "right": "vedger2", "radius": 0.001}, {"id": "vest-t8", "type": "smooth-union", "left": "vest-t7", "right": "vedger3", "radius": 0.001}, {"id": "vest-t9", "type": "smooth-union", "left": "vest-t8", "right": "vedger4", "radius": 0.001}, {"id": "vest-t10", "type": "smooth-union", "left": "vest-t9", "right": "vedger5", "radius": 0.001}, {"id": "vest-t11", "type": "smooth-union", "left": "vest-t10", "right": "hem0", "radius": 0.001}, {"id": "vest-t12", "type": "smooth-union", "left": "vest-t11", "right": "hem1", "radius": 0.001}, {"id": "vest-t13", "type": "smooth-union", "left": "vest-t12", "right": "hem2", "radius": 0.001}, {"id": "vest-t14", "type": "smooth-union", "left": "vest-t13", "right": "hem3", "radius": 0.001}, {"id": "vest-t15", "type": "smooth-union", "left": "vest-t14", "right": "hem4", "radius": 0.001}, {"id": "vest-t16", "type": "smooth-union", "left": "vest-t15", "right": "hem5", "radius": 0.001}, {"id": "vest-t17", "type": "smooth-union", "left": "vest-t16", "right": "hem6", "radius": 0.001}, {"id": "vest-t18", "type": "smooth-union", "left": "vest-t17", "right": "hem7", "radius": 0.001}, {"id": "vest-t19", "type": "smooth-union", "left": "vest-t18", "right": "hem8", "radius": 0.001}, {"id": "vest-t20", "type": "smooth-union", "left": "vest-t19", "right": "hem9", "radius": 0.001}, {"id": "vest-t21", "type": "smooth-union", "left": "vest-t20", "right": "hem10", "radius": 0.001}, {"id": "vest-t22", "type": "smooth-union", "left": "vest-t21", "right": "hem11", "radius": 0.001}, {"id": "vest-t23", "type": "smooth-union", "left": "vest-t22", "right": "hem12", "radius": 0.001}, {"id": "vest-t24", "type": "smooth-union", "left": "vest-t23", "right": "hem13", "radius": 0.001}, {"id": "vest-t25", "type": "smooth-union", "left": "vest-t24", "right": "hem14", "radius": 0.001}, {"id": "vest-t26", "type": "smooth-union", "left": "vest-t25", "right": "hem15", "radius": 0.001}, {"id": "vest-t27", "type": "smooth-union", "left": "vest-t26", "right": "arml0", "radius": 0.001}, {"id": "vest-t28", "type": "smooth-union", "left": "vest-t27", "right": "arml1", "radius": 0.001}, {"id": "vest-t29", "type": "smooth-union", "left": "vest-t28", "right": "arml2", "radius": 0.001}, {"id": "vest-t30", "type": "smooth-union", "left": "vest-t29", "right": "arml3", "radius": 0.001}, {"id": "vest-t31", "type": "smooth-union", "left": "vest-t30", "right": "arml4", "radius": 0.001}, {"id": "vest-t32", "type": "smooth-union", "left": "vest-t31", "right": "arml5", "radius": 0.001}, {"id": "vest-t33", "type": "smooth-union", "left": "vest-t32", "right": "arml6", "radius": 0.001}, {"id": "vest-t34", "type": "smooth-union", "left": "vest-t33", "right": "arml7", "radius": 0.001}, {"id": "vest-t35", "type": "smooth-union", "left": "vest-t34", "right": "armr0", "radius": 0.001}, {"id": "vest-t36", "type": "smooth-union", "left": "vest-t35", "right": "armr1", "radius": 0.001}, {"id": "vest-t37", "type": "smooth-union", "left": "vest-t36", "right": "armr2", "radius": 0.001}, {"id": "vest-t38", "type": "smooth-union", "left": "vest-t37", "right": "armr3", "radius": 0.001}, {"id": "vest-t39", "type": "smooth-union", "left": "vest-t38", "right": "armr4", "radius": 0.001}, {"id": "vest-t40", "type": "smooth-union", "left": "vest-t39", "right": "armr5", "radius": 0.001}, {"id": "vest-t41", "type": "smooth-union", "left": "vest-t40", "right": "armr6", "radius": 0.001}, {"id": "vest-t42", "type": "smooth-union", "left": "vest-t41", "right": "armr7", "radius": 0.001}, {"id": "vest", "type": "smooth-union", "left": "vest-cut", "right": "vest-t42", "radius": 0.03}], "bounds": {"min": [-0.62, 0.6, -0.54], "max": [0.62, 1.42, 0.64]}, "resolution": 40});
+  const mesh_vest_shell_0Geometry = decimateGeometry(mesh_vest_shell_0GeometryDense, 0.12);
+  if (!endpoint_vest_shell_0) {
+    mesh_vest_shell_0Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_vest_shell_0 = new THREE.Mesh(
+    mesh_vest_shell_0Geometry,
+    createSculptMaterial("vest-leather", {"id": "vest-leather", "name": "Vest leather", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#623F3B", "color": "#623F3B", "albedo": {"dominant": "#623F3B", "secondary": ["#3A2A27"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/vest-leather.png."}, "colorVariation": {"palette": ["#623F3B", "#3A2A27"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.7, "variation": 0.1, "map": "none", "localResponse": "satin highlight band on the rounded faces, as painted in the reference"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/vest-leather.texture.json: mottle 0.01, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}}, options, true)
+  );
+  mesh_vest_shell_0.name = "Leather vest shell";
+  if (endpoint_vest_shell_0) {
+    mesh_vest_shell_0.position.copy(endpoint_vest_shell_0.midpoint);
+    mesh_vest_shell_0.quaternion.copy(endpoint_vest_shell_0.quaternion);
+  }
+  mesh_vest_shell_0.castShadow = options.castShadow ?? true;
+  mesh_vest_shell_0.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_shell_0.userData.sculptComponent = {"id": "vest-shell", "name": "Leather vest shell", "level": "macro", "role": "body", "importance": 1.0, "confidence": 0.8, "primitive": "ellipsoid", "topologyClass": "implicit", "topologyRationale": "Continuous garment shell offset 0.05 outward from the wearer's measured torso surface (belly and chest ellipsoids), hollowed, with the open front, neck, armholes and hem cut away.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "sdf": {"primitives": [{"id": "belly-out", "type": "ellipsoid", "center": [0.0, 0.84, 0.04], "radii": [0.575, 0.47, 0.565]}, {"id": "chest-out", "type": "ellipsoid", "center": [0.0, 1.14, 0.035], "radii": [0.51, 0.27, 0.45]}, {"id": "belly-in", "type": "ellipsoid", "center": [0.0, 0.84, 0.04], "radii": [0.525, 0.42, 0.515]}, {"id": "chest-in", "type": "ellipsoid", "center": [0.0, 1.14, 0.035], "radii": [0.46, 0.22, 0.4]}, {"id": "front-gap", "type": "box", "center": [0.0, 0.98, 0.5], "size": [0.36, 0.78, 0.5]}, {"id": "gap-l", "type": "box", "center": [0.1414, 0.9764, 0.5], "size": [0.2, 0.9299, 0.5], "transform": {"position": [0.1414, 0.9764, 0.5], "rotation": [0.0, 0.0, -0.1651]}}, {"id": "gap-r", "type": "box", "center": [-0.1414, 0.9764, 0.5], "size": [0.2, 0.9299, 0.5], "transform": {"position": [-0.1414, 0.9764, 0.5], "rotation": [0.0, 0.0, 0.1651]}}, {"id": "neck", "type": "ellipsoid", "center": [0.0, 1.37, 0.1], "radii": [0.27, 0.17, 0.34]}, {"id": "arm-l", "type": "capsule", "center": [0.62, 1.17, -0.01], "radius": 0.175, "height": 0.5, "transform": {"position": [0.62, 1.17, -0.01], "rotation": [0.0, 0.0, 1.5708]}}, {"id": "arm-r", "type": "capsule", "center": [-0.62, 1.17, -0.01], "radius": 0.175, "height": 0.5, "transform": {"position": [-0.62, 1.17, -0.01], "rotation": [0.0, 0.0, 1.5708]}}, {"id": "below-belt", "type": "box", "center": [0.0, 0.3, 0.0], "size": [2.0, 0.66, 2.0]}, {"id": "vedgel0", "type": "capsule", "center": [0.2004, 0.6925, 0.5051], "radius": 0.034, "height": 0.1144, "transform": {"position": [0.2004, 0.6925, 0.5051], "rotation": [0.3741, -0.0291, -0.1537]}}, {"id": "vedgel1", "type": "capsule", "center": [0.2179, 0.7975, 0.5289], "radius": 0.034, "height": 0.1066, "transform": {"position": [0.2179, 0.7975, 0.5289], "rotation": [0.0556, -0.0046, -0.1649]}}, {"id": "vedgel2", "type": "capsule", "center": [0.2354, 0.9025, 0.5176], "radius": 0.034, "height": 0.1102, "transform": {"position": [0.2354, 0.9025, 0.5176], "rotation": [-0.2621, 0.0211, -0.1595]}}, {"id": "vedgel3", "type": "capsule", "center": [0.2529, 1.0075, 0.4681], "radius": 0.034, "height": 0.1277, "transform": {"position": [0.2529, 1.0075, 0.4681], "rotation": [-0.5853, 0.0415, -0.1376]}}, {"id": "vedgel4", "type": "capsule", "center": [0.2704, 1.1125, 0.4063], "radius": 0.034, "height": 0.1189, "transform": {"position": [0.2704, 1.1125, 0.4063], "rotation": [-0.4625, 0.0349, -0.1478]}}, {"id": "vedgel5", "type": "capsule", "center": [0.2879, 1.2175, 0.3321], "radius": 0.034, "height": 0.143, "transform": {"position": [0.2879, 1.2175, 0.3321], "rotation": [-0.7319, 0.0471, -0.1228]}}, {"id": "vedger0", "type": "capsule", "center": [-0.2004, 0.6925, 0.5051], "radius": 0.034, "height": 0.1144, "transform": {"position": [-0.2004, 0.6925, 0.5051], "rotation": [0.3741, 0.0291, 0.1537]}}, {"id": "vedger1", "type": "capsule", "center": [-0.2179, 0.7975, 0.5289], "radius": 0.034, "height": 0.1066, "transform": {"position": [-0.2179, 0.7975, 0.5289], "rotation": [0.0556, 0.0046, 0.1649]}}, {"id": "vedger2", "type": "capsule", "center": [-0.2354, 0.9025, 0.5176], "radius": 0.034, "height": 0.1102, "transform": {"position": [-0.2354, 0.9025, 0.5176], "rotation": [-0.2621, -0.0211, 0.1595]}}, {"id": "vedger3", "type": "capsule", "center": [-0.2529, 1.0075, 0.4681], "radius": 0.034, "height": 0.1277, "transform": {"position": [-0.2529, 1.0075, 0.4681], "rotation": [-0.5853, -0.0415, 0.1376]}}, {"id": "vedger4", "type": "capsule", "center": [-0.2704, 1.1125, 0.4063], "radius": 0.034, "height": 0.1189, "transform": {"position": [-0.2704, 1.1125, 0.4063], "rotation": [-0.4625, -0.0349, 0.1478]}}, {"id": "vedger5", "type": "capsule", "center": [-0.2879, 1.2175, 0.3321], "radius": 0.034, "height": 0.143, "transform": {"position": [-0.2879, 1.2175, 0.3321], "rotation": [-0.7319, -0.0471, 0.1228]}}, {"id": "hem0", "type": "capsule", "center": [0.2932, 0.645, 0.4225], "radius": 0.034, "height": 0.1627, "transform": {"position": [0.2932, 0.645, 0.4225], "rotation": [-0.743, 0.4983, -1.1571]}}, {"id": "hem1", "type": "capsule", "center": [0.4044, 0.645, 0.3074], "radius": 0.034, "height": 0.1618, "transform": {"position": [0.4044, 0.645, 0.3074], "rotation": [-1.2005, 0.4853, -0.694]}}, {"id": "hem2", "type": "capsule", "center": [0.4712, 0.645, 0.163], "radius": 0.034, "height": 0.161, "transform": {"position": [0.4712, 0.645, 0.163], "rotation": [-1.5001, 0.2551, -0.2736]}}, {"id": "hem3", "type": "capsule", "center": [0.4863, 0.645, 0.0051], "radius": 0.034, "height": 0.1608, "transform": {"position": [0.4863, 0.645, 0.0051], "rotation": [-1.5653, -0.074, 0.0745]}}, {"id": "hem4", "type": "capsule", "center": [0.448, 0.645, -0.149], "radius": 0.034, "height": 0.1613, "transform": {"position": [0.448, 0.645, -0.149], "rotation": [-1.3972, -0.3761, 0.4456]}}, {"id": "hem5", "type": "capsule", "center": [0.3605, 0.645, -0.2823], "radius": 0.034, "height": 0.1622, "transform": {"position": [0.3605, 0.645, -0.2823], "rotation": [-1.0081, -0.522, 0.9018]}}, {"id": "hem6", "type": "capsule", "center": [0.2334, 0.645, -0.3802], "radius": 0.034, "height": 0.1631, "transform": {"position": [0.2334, 0.645, -0.3802], "rotation": [-0.5459, -0.4292, 1.3232]}}, {"id": "hem7", "type": "capsule", "center": [0.0808, 0.645, -0.4321], "radius": 0.034, "height": 0.1637, "transform": {"position": [0.0808, 0.645, -0.4321], "rotation": [-0.1656, -0.1613, 1.544]}}, {"id": "hem8", "type": "capsule", "center": [-0.0808, 0.645, -0.4321], "radius": 0.034, "height": 0.1637, "transform": {"position": [-0.0808, 0.645, -0.4321], "rotation": [0.1656, 0.1613, 1.544]}}, {"id": "hem9", "type": "capsule", "center": [-0.2334, 0.645, -0.3802], "radius": 0.034, "height": 0.1631, "transform": {"position": [-0.2334, 0.645, -0.3802], "rotation": [0.5459, 0.4292, 1.3232]}}, {"id": "hem10", "type": "capsule", "center": [-0.3605, 0.645, -0.2823], "radius": 0.034, "height": 0.1622, "transform": {"position": [-0.3605, 0.645, -0.2823], "rotation": [1.0081, 0.522, 0.9018]}}, {"id": "hem11", "type": "capsule", "center": [-0.448, 0.645, -0.149], "radius": 0.034, "height": 0.1613, "transform": {"position": [-0.448, 0.645, -0.149], "rotation": [1.3972, 0.3761, 0.4456]}}, {"id": "hem12", "type": "capsule", "center": [-0.4863, 0.645, 0.0051], "radius": 0.034, "height": 0.1608, "transform": {"position": [-0.4863, 0.645, 0.0051], "rotation": [1.5653, 0.074, 0.0745]}}, {"id": "hem13", "type": "capsule", "center": [-0.4712, 0.645, 0.163], "radius": 0.034, "height": 0.161, "transform": {"position": [-0.4712, 0.645, 0.163], "rotation": [1.5001, -0.2551, -0.2736]}}, {"id": "hem14", "type": "capsule", "center": [-0.4044, 0.645, 0.3074], "radius": 0.034, "height": 0.1618, "transform": {"position": [-0.4044, 0.645, 0.3074], "rotation": [1.2005, -0.4853, -0.694]}}, {"id": "hem15", "type": "capsule", "center": [-0.2932, 0.645, 0.4225], "radius": 0.034, "height": 0.1627, "transform": {"position": [-0.2932, 0.645, 0.4225], "rotation": [0.743, -0.4983, -1.1571]}}, {"id": "arml0", "type": "capsule", "center": [0.3399, 1.3108, 0.0483], "radius": 0.030600000000000002, "height": 0.1494, "transform": {"position": [0.3399, 1.3108, 0.0483], "rotation": [1.4458, -0.6645, -0.7456]}}, {"id": "arml1", "type": "capsule", "center": [0.4206, 1.2283, 0.1308], "radius": 0.030600000000000002, "height": 0.1504, "transform": {"position": [0.4206, 1.2283, 0.1308], "rotation": [0.5371, -0.8918, -2.0968]}}, {"id": "arml2", "type": "capsule", "center": [0.4697, 1.1117, 0.1308], "radius": 0.030600000000000002, "height": 0.1273, "transform": {"position": [0.4697, 1.1117, 0.1308], "rotation": [-2.6553, 0.6233, -0.1595]}}, {"id": "arml3", "type": "capsule", "center": [0.4931, 1.0292, 0.0483], "radius": 0.030600000000000002, "height": 0.1299, "transform": {"position": [0.4931, 1.0292, 0.0483], "rotation": [-1.878, 0.3411, -0.2507]}}, {"id": "arml4", "type": "capsule", "center": [0.48, 1.0292, -0.0683], "radius": 0.030600000000000002, "height": 0.1383, "transform": {"position": [0.48, 1.0292, -0.0683], "rotation": [-1.0601, -0.2578, 0.4354]}}, {"id": "arml5", "type": "capsule", "center": [0.4346, 1.1117, -0.1508], "radius": 0.030600000000000002, "height": 0.1309, "transform": {"position": [0.4346, 1.1117, -0.1508], "rotation": [-0.3787, -0.0513, 0.2662]}}, {"id": "arml6", "type": "capsule", "center": [0.3797, 1.2283, -0.1508], "radius": 0.030600000000000002, "height": 0.1472, "transform": {"position": [0.3797, 1.2283, -0.1508], "rotation": [0.3361, 0.0942, 0.5419]}}, {"id": "arml7", "type": "capsule", "center": [0.3209, 1.3108, -0.0683], "radius": 0.030600000000000002, "height": 0.133, "transform": {"position": [0.3209, 1.3108, -0.0683], "rotation": [1.1095, 0.2039, 0.3272]}}, {"id": "armr0", "type": "capsule", "center": [-0.3399, 1.3108, 0.0483], "radius": 0.030600000000000002, "height": 0.1494, "transform": {"position": [-0.3399, 1.3108, 0.0483], "rotation": [1.4458, 0.6645, 0.7456]}}, {"id": "armr1", "type": "capsule", "center": [-0.4206, 1.2283, 0.1308], "radius": 0.030600000000000002, "height": 0.1504, "transform": {"position": [-0.4206, 1.2283, 0.1308], "rotation": [0.5371, 0.8918, 2.0968]}}, {"id": "armr2", "type": "capsule", "center": [-0.4697, 1.1117, 0.1308], "radius": 0.030600000000000002, "height": 0.1273, "transform": {"position": [-0.4697, 1.1117, 0.1308], "rotation": [-2.6553, -0.6233, 0.1595]}}, {"id": "armr3", "type": "capsule", "center": [-0.4931, 1.0292, 0.0483], "radius": 0.030600000000000002, "height": 0.1299, "transform": {"position": [-0.4931, 1.0292, 0.0483], "rotation": [-1.878, -0.3411, 0.2507]}}, {"id": "armr4", "type": "capsule", "center": [-0.48, 1.0292, -0.0683], "radius": 0.030600000000000002, "height": 0.1383, "transform": {"position": [-0.48, 1.0292, -0.0683], "rotation": [-1.0601, 0.2578, -0.4354]}}, {"id": "armr5", "type": "capsule", "center": [-0.4346, 1.1117, -0.1508], "radius": 0.030600000000000002, "height": 0.1309, "transform": {"position": [-0.4346, 1.1117, -0.1508], "rotation": [-0.3787, 0.0513, -0.2662]}}, {"id": "armr6", "type": "capsule", "center": [-0.3797, 1.2283, -0.1508], "radius": 0.030600000000000002, "height": 0.1472, "transform": {"position": [-0.3797, 1.2283, -0.1508], "rotation": [0.3361, -0.0942, -0.5419]}}, {"id": "armr7", "type": "capsule", "center": [-0.3209, 1.3108, -0.0683], "radius": 0.030600000000000002, "height": 0.133, "transform": {"position": [-0.3209, 1.3108, -0.0683], "rotation": [1.1095, -0.2039, -0.3272]}}], "operations": [{"id": "outer", "type": "smooth-union", "left": "belly-out", "right": "chest-out", "radius": 0.12}, {"id": "inner", "type": "smooth-union", "left": "belly-in", "right": "chest-in", "radius": 0.12}, {"id": "shell", "type": "subtract", "left": "outer", "right": "inner"}, {"id": "gap1", "type": "smooth-union", "left": "front-gap", "right": "gap-l", "radius": 0.02}, {"id": "gap2", "type": "smooth-union", "left": "gap1", "right": "gap-r", "radius": 0.02}, {"id": "open", "type": "subtract", "left": "shell", "right": "gap2"}, {"id": "necked", "type": "subtract", "left": "open", "right": "neck"}, {"id": "arm1", "type": "subtract", "left": "necked", "right": "arm-l"}, {"id": "arm2", "type": "subtract", "left": "arm1", "right": "arm-r"}, {"id": "vest-cut", "type": "subtract", "left": "arm2", "right": "below-belt"}, {"id": "vest-t0", "type": "smooth-union", "left": "vedgel0", "right": "vedgel1", "radius": 0.001}, {"id": "vest-t1", "type": "smooth-union", "left": "vest-t0", "right": "vedgel2", "radius": 0.001}, {"id": "vest-t2", "type": "smooth-union", "left": "vest-t1", "right": "vedgel3", "radius": 0.001}, {"id": "vest-t3", "type": "smooth-union", "left": "vest-t2", "right": "vedgel4", "radius": 0.001}, {"id": "vest-t4", "type": "smooth-union", "left": "vest-t3", "right": "vedgel5", "radius": 0.001}, {"id": "vest-t5", "type": "smooth-union", "left": "vest-t4", "right": "vedger0", "radius": 0.001}, {"id": "vest-t6", "type": "smooth-union", "left": "vest-t5", "right": "vedger1", "radius": 0.001}, {"id": "vest-t7", "type": "smooth-union", "left": "vest-t6", "right": "vedger2", "radius": 0.001}, {"id": "vest-t8", "type": "smooth-union", "left": "vest-t7", "right": "vedger3", "radius": 0.001}, {"id": "vest-t9", "type": "smooth-union", "left": "vest-t8", "right": "vedger4", "radius": 0.001}, {"id": "vest-t10", "type": "smooth-union", "left": "vest-t9", "right": "vedger5", "radius": 0.001}, {"id": "vest-t11", "type": "smooth-union", "left": "vest-t10", "right": "hem0", "radius": 0.001}, {"id": "vest-t12", "type": "smooth-union", "left": "vest-t11", "right": "hem1", "radius": 0.001}, {"id": "vest-t13", "type": "smooth-union", "left": "vest-t12", "right": "hem2", "radius": 0.001}, {"id": "vest-t14", "type": "smooth-union", "left": "vest-t13", "right": "hem3", "radius": 0.001}, {"id": "vest-t15", "type": "smooth-union", "left": "vest-t14", "right": "hem4", "radius": 0.001}, {"id": "vest-t16", "type": "smooth-union", "left": "vest-t15", "right": "hem5", "radius": 0.001}, {"id": "vest-t17", "type": "smooth-union", "left": "vest-t16", "right": "hem6", "radius": 0.001}, {"id": "vest-t18", "type": "smooth-union", "left": "vest-t17", "right": "hem7", "radius": 0.001}, {"id": "vest-t19", "type": "smooth-union", "left": "vest-t18", "right": "hem8", "radius": 0.001}, {"id": "vest-t20", "type": "smooth-union", "left": "vest-t19", "right": "hem9", "radius": 0.001}, {"id": "vest-t21", "type": "smooth-union", "left": "vest-t20", "right": "hem10", "radius": 0.001}, {"id": "vest-t22", "type": "smooth-union", "left": "vest-t21", "right": "hem11", "radius": 0.001}, {"id": "vest-t23", "type": "smooth-union", "left": "vest-t22", "right": "hem12", "radius": 0.001}, {"id": "vest-t24", "type": "smooth-union", "left": "vest-t23", "right": "hem13", "radius": 0.001}, {"id": "vest-t25", "type": "smooth-union", "left": "vest-t24", "right": "hem14", "radius": 0.001}, {"id": "vest-t26", "type": "smooth-union", "left": "vest-t25", "right": "hem15", "radius": 0.001}, {"id": "vest-t27", "type": "smooth-union", "left": "vest-t26", "right": "arml0", "radius": 0.001}, {"id": "vest-t28", "type": "smooth-union", "left": "vest-t27", "right": "arml1", "radius": 0.001}, {"id": "vest-t29", "type": "smooth-union", "left": "vest-t28", "right": "arml2", "radius": 0.001}, {"id": "vest-t30", "type": "smooth-union", "left": "vest-t29", "right": "arml3", "radius": 0.001}, {"id": "vest-t31", "type": "smooth-union", "left": "vest-t30", "right": "arml4", "radius": 0.001}, {"id": "vest-t32", "type": "smooth-union", "left": "vest-t31", "right": "arml5", "radius": 0.001}, {"id": "vest-t33", "type": "smooth-union", "left": "vest-t32", "right": "arml6", "radius": 0.001}, {"id": "vest-t34", "type": "smooth-union", "left": "vest-t33", "right": "arml7", "radius": 0.001}, {"id": "vest-t35", "type": "smooth-union", "left": "vest-t34", "right": "armr0", "radius": 0.001}, {"id": "vest-t36", "type": "smooth-union", "left": "vest-t35", "right": "armr1", "radius": 0.001}, {"id": "vest-t37", "type": "smooth-union", "left": "vest-t36", "right": "armr2", "radius": 0.001}, {"id": "vest-t38", "type": "smooth-union", "left": "vest-t37", "right": "armr3", "radius": 0.001}, {"id": "vest-t39", "type": "smooth-union", "left": "vest-t38", "right": "armr4", "radius": 0.001}, {"id": "vest-t40", "type": "smooth-union", "left": "vest-t39", "right": "armr5", "radius": 0.001}, {"id": "vest-t41", "type": "smooth-union", "left": "vest-t40", "right": "armr6", "radius": 0.001}, {"id": "vest-t42", "type": "smooth-union", "left": "vest-t41", "right": "armr7", "radius": 0.001}, {"id": "vest", "type": "smooth-union", "left": "vest-cut", "right": "vest-t42", "radius": 0.03}], "bounds": {"min": [-0.62, 0.6, -0.54], "max": [0.62, 1.42, 0.64]}, "resolution": 64}, "decimate": {"targetRatio": 0.12}}, "parent": null, "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1.0, 1.0, 1.0]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-shell", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}}, "material": "vest-leather", "materialLayers": ["vest-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-open-front", "kind": "seam", "description": "open front gap 0.26 wide, the shirt shows"}, {"id": "vest-armholes", "kind": "hole", "description": "armholes around the upper arms"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(98, 63, 59, 1.0)", "secondaryAlbedo": "rgba(58, 42, 39, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-leather.png"]}};
+  node_vest_shell_0.add(mesh_vest_shell_0);
+  meshes["vest-shell"] = mesh_vest_shell_0;
+  colliders["vest-shell"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-shell"] ??= [];
+  destructionGroups["vest-shell"].push(node_vest_shell_0);
+
+  const endpoint_vest_chest_pocket_l_1 = makeAttachmentEndpoint(null);
+  const node_vest_chest_pocket_l_1 = new THREE.Group();
+  node_vest_chest_pocket_l_1.name = "Vest chest pocket (left)__pivot";
+  node_vest_chest_pocket_l_1.scale.set(1, 1, 1);
+  if (endpoint_vest_chest_pocket_l_1) {
+    node_vest_chest_pocket_l_1.position.copy(endpoint_vest_chest_pocket_l_1.start);
+    node_vest_chest_pocket_l_1.rotation.set(-0.295, 0.6909, 0.0);
+  } else {
+    node_vest_chest_pocket_l_1.position.set(0.3649, 0.9982, 0.4324);
+    node_vest_chest_pocket_l_1.rotation.set(-0.295, 0.6909, 0.0);
+  }
+  node_vest_chest_pocket_l_1.userData.sculptComponent = {"id": "vest-chest-pocket-l", "name": "Vest chest pocket (left)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "A patch pocket sewn onto the vest panel: its rounded outline extruded to the leather's thickness along the panel normal.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.08, 0.045], [0.0773, 0.055], [0.07, 0.0623], [0.06, 0.065], [-0.06, 0.065], [-0.07, 0.0623], [-0.0773, 0.055], [-0.08, 0.045], [-0.08, -0.045], [-0.0773, -0.055], [-0.07, -0.0623], [-0.06, -0.065], [0.06, -0.065], [0.07, -0.0623], [0.0773, -0.055], [0.08, -0.045]], "depth": 0.03}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3649, 0.9982, 0.4324], "rotation": [-0.295, 0.6909, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-pocket-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}}, "material": "vest-leather", "materialLayers": ["vest-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-chest-pocket-flap-l", "kind": "seam", "description": "chest pocket body under its flap"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(98, 63, 59, 1.0)", "secondaryAlbedo": "rgba(58, 42, 39, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-leather.png"]}};
+  node_vest_chest_pocket_l_1.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-pocket-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_chest_pocket_l_1);
+  nodes["vest-chest-pocket-l"] = node_vest_chest_pocket_l_1;
+  const mesh_vest_chest_pocket_l_1Geometry = endpoint_vest_chest_pocket_l_1
+    ? new THREE.CylinderGeometry(endpoint_vest_chest_pocket_l_1.endRadius, endpoint_vest_chest_pocket_l_1.baseRadius, endpoint_vest_chest_pocket_l_1.length, 16, 6)
+    : buildExtrudeGeometry({"points": [[0.08, 0.045], [0.0773, 0.055], [0.07, 0.0623], [0.06, 0.065], [-0.06, 0.065], [-0.07, 0.0623], [-0.0773, 0.055], [-0.08, 0.045], [-0.08, -0.045], [-0.0773, -0.055], [-0.07, -0.0623], [-0.06, -0.065], [0.06, -0.065], [0.07, -0.0623], [0.0773, -0.055], [0.08, -0.045]], "depth": 0.03});
+  if (!endpoint_vest_chest_pocket_l_1) {
+    mesh_vest_chest_pocket_l_1Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_vest_chest_pocket_l_1 = new THREE.Mesh(
+    mesh_vest_chest_pocket_l_1Geometry,
+    materialMap["vest-leather"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_chest_pocket_l_1.name = "Vest chest pocket (left)";
+  if (endpoint_vest_chest_pocket_l_1) {
+    mesh_vest_chest_pocket_l_1.position.copy(endpoint_vest_chest_pocket_l_1.midpoint);
+    mesh_vest_chest_pocket_l_1.quaternion.copy(endpoint_vest_chest_pocket_l_1.quaternion);
+  }
+  mesh_vest_chest_pocket_l_1.castShadow = options.castShadow ?? true;
+  mesh_vest_chest_pocket_l_1.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_chest_pocket_l_1.userData.sculptComponent = {"id": "vest-chest-pocket-l", "name": "Vest chest pocket (left)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "A patch pocket sewn onto the vest panel: its rounded outline extruded to the leather's thickness along the panel normal.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.08, 0.045], [0.0773, 0.055], [0.07, 0.0623], [0.06, 0.065], [-0.06, 0.065], [-0.07, 0.0623], [-0.0773, 0.055], [-0.08, 0.045], [-0.08, -0.045], [-0.0773, -0.055], [-0.07, -0.0623], [-0.06, -0.065], [0.06, -0.065], [0.07, -0.0623], [0.0773, -0.055], [0.08, -0.045]], "depth": 0.03}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3649, 0.9982, 0.4324], "rotation": [-0.295, 0.6909, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-pocket-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}}, "material": "vest-leather", "materialLayers": ["vest-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-chest-pocket-flap-l", "kind": "seam", "description": "chest pocket body under its flap"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(98, 63, 59, 1.0)", "secondaryAlbedo": "rgba(58, 42, 39, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-leather.png"]}};
+  node_vest_chest_pocket_l_1.add(mesh_vest_chest_pocket_l_1);
+  meshes["vest-chest-pocket-l"] = mesh_vest_chest_pocket_l_1;
+  colliders["vest-chest-pocket-l"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-chest-pocket-l"] ??= [];
+  destructionGroups["vest-chest-pocket-l"].push(node_vest_chest_pocket_l_1);
+
+  const endpoint_vest_chest_flap_l_2 = makeAttachmentEndpoint(null);
+  const node_vest_chest_flap_l_2 = new THREE.Group();
+  node_vest_chest_flap_l_2.name = "Vest chest pocket flap (l)__pivot";
+  node_vest_chest_flap_l_2.scale.set(1, 1, 1);
+  if (endpoint_vest_chest_flap_l_2) {
+    node_vest_chest_flap_l_2.position.copy(endpoint_vest_chest_flap_l_2.start);
+    node_vest_chest_flap_l_2.rotation.set(-0.3063, 0.6921, 0.0);
+  } else {
+    node_vest_chest_flap_l_2.position.set(0.3777, 1.0378, 0.4363);
+    node_vest_chest_flap_l_2.rotation.set(-0.3063, 0.6921, 0.0);
+  }
+  node_vest_chest_flap_l_2.userData.sculptComponent = {"id": "vest-chest-flap-l", "name": "Vest chest pocket flap (l)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "The flap over the pocket mouth: a slightly tapered outline extruded proud of the pocket.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.09, 0.005], [0.088, 0.0125], [0.0825, 0.018], [0.075, 0.02], [-0.075, 0.02], [-0.0825, 0.018], [-0.088, 0.0125], [-0.09, 0.005], [-0.08, -0.035], [-0.078, -0.0425], [-0.0725, -0.048], [-0.065, -0.05], [0.065, -0.05], [0.0725, -0.048], [0.078, -0.0425], [0.08, -0.035]], "depth": 0.025}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3777, 1.0378, 0.4363], "rotation": [-0.3063, 0.6921, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-flap-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-flap"}}, "material": "vest-flap", "materialLayers": ["vest-flap"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "flap-seam-chest-l", "kind": "seam", "description": "flap lower edge seam"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(114, 74, 68, 1.0)", "secondaryAlbedo": "rgba(94, 61, 57, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-flap.png"]}};
+  node_vest_chest_flap_l_2.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-flap-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-flap"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_chest_flap_l_2);
+  nodes["vest-chest-flap-l"] = node_vest_chest_flap_l_2;
+  const mesh_vest_chest_flap_l_2Geometry = endpoint_vest_chest_flap_l_2
+    ? new THREE.CylinderGeometry(endpoint_vest_chest_flap_l_2.endRadius, endpoint_vest_chest_flap_l_2.baseRadius, endpoint_vest_chest_flap_l_2.length, 16, 6)
+    : buildExtrudeGeometry({"points": [[0.09, 0.005], [0.088, 0.0125], [0.0825, 0.018], [0.075, 0.02], [-0.075, 0.02], [-0.0825, 0.018], [-0.088, 0.0125], [-0.09, 0.005], [-0.08, -0.035], [-0.078, -0.0425], [-0.0725, -0.048], [-0.065, -0.05], [0.065, -0.05], [0.0725, -0.048], [0.078, -0.0425], [0.08, -0.035]], "depth": 0.025});
+  if (!endpoint_vest_chest_flap_l_2) {
+    mesh_vest_chest_flap_l_2Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_vest_chest_flap_l_2 = new THREE.Mesh(
+    mesh_vest_chest_flap_l_2Geometry,
+    materialMap["vest-flap"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_chest_flap_l_2.name = "Vest chest pocket flap (l)";
+  if (endpoint_vest_chest_flap_l_2) {
+    mesh_vest_chest_flap_l_2.position.copy(endpoint_vest_chest_flap_l_2.midpoint);
+    mesh_vest_chest_flap_l_2.quaternion.copy(endpoint_vest_chest_flap_l_2.quaternion);
+  }
+  mesh_vest_chest_flap_l_2.castShadow = options.castShadow ?? true;
+  mesh_vest_chest_flap_l_2.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_chest_flap_l_2.userData.sculptComponent = {"id": "vest-chest-flap-l", "name": "Vest chest pocket flap (l)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "The flap over the pocket mouth: a slightly tapered outline extruded proud of the pocket.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.09, 0.005], [0.088, 0.0125], [0.0825, 0.018], [0.075, 0.02], [-0.075, 0.02], [-0.0825, 0.018], [-0.088, 0.0125], [-0.09, 0.005], [-0.08, -0.035], [-0.078, -0.0425], [-0.0725, -0.048], [-0.065, -0.05], [0.065, -0.05], [0.0725, -0.048], [0.078, -0.0425], [0.08, -0.035]], "depth": 0.025}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3777, 1.0378, 0.4363], "rotation": [-0.3063, 0.6921, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-flap-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-flap"}}, "material": "vest-flap", "materialLayers": ["vest-flap"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "flap-seam-chest-l", "kind": "seam", "description": "flap lower edge seam"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(114, 74, 68, 1.0)", "secondaryAlbedo": "rgba(94, 61, 57, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-flap.png"]}};
+  node_vest_chest_flap_l_2.add(mesh_vest_chest_flap_l_2);
+  meshes["vest-chest-flap-l"] = mesh_vest_chest_flap_l_2;
+  colliders["vest-chest-flap-l"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-chest-flap-l"] ??= [];
+  destructionGroups["vest-chest-flap-l"].push(node_vest_chest_flap_l_2);
+
+  const endpoint_vest_chest_pocket_r_3 = makeAttachmentEndpoint(null);
+  const node_vest_chest_pocket_r_3 = new THREE.Group();
+  node_vest_chest_pocket_r_3.name = "Vest chest pocket (right)__pivot";
+  node_vest_chest_pocket_r_3.scale.set(1, 1, 1);
+  if (endpoint_vest_chest_pocket_r_3) {
+    node_vest_chest_pocket_r_3.position.copy(endpoint_vest_chest_pocket_r_3.start);
+    node_vest_chest_pocket_r_3.rotation.set(-0.295, -0.6909, 0.0);
+  } else {
+    node_vest_chest_pocket_r_3.position.set(-0.3649, 0.9982, 0.4324);
+    node_vest_chest_pocket_r_3.rotation.set(-0.295, -0.6909, 0.0);
+  }
+  node_vest_chest_pocket_r_3.userData.sculptComponent = {"id": "vest-chest-pocket-r", "name": "Vest chest pocket (right)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "A patch pocket sewn onto the vest panel: its rounded outline extruded to the leather's thickness along the panel normal.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.08, 0.045], [0.0773, 0.055], [0.07, 0.0623], [0.06, 0.065], [-0.06, 0.065], [-0.07, 0.0623], [-0.0773, 0.055], [-0.08, 0.045], [-0.08, -0.045], [-0.0773, -0.055], [-0.07, -0.0623], [-0.06, -0.065], [0.06, -0.065], [0.07, -0.0623], [0.0773, -0.055], [0.08, -0.045]], "depth": 0.03}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3649, 0.9982, 0.4324], "rotation": [-0.295, -0.6909, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-pocket-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}}, "material": "vest-leather", "materialLayers": ["vest-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-chest-pocket-flap-r", "kind": "seam", "description": "chest pocket body under its flap"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(98, 63, 59, 1.0)", "secondaryAlbedo": "rgba(58, 42, 39, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-leather.png"]}};
+  node_vest_chest_pocket_r_3.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-pocket-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_chest_pocket_r_3);
+  nodes["vest-chest-pocket-r"] = node_vest_chest_pocket_r_3;
+  const mesh_vest_chest_pocket_r_3Geometry = endpoint_vest_chest_pocket_r_3
+    ? new THREE.CylinderGeometry(endpoint_vest_chest_pocket_r_3.endRadius, endpoint_vest_chest_pocket_r_3.baseRadius, endpoint_vest_chest_pocket_r_3.length, 16, 6)
+    : buildExtrudeGeometry({"points": [[0.08, 0.045], [0.0773, 0.055], [0.07, 0.0623], [0.06, 0.065], [-0.06, 0.065], [-0.07, 0.0623], [-0.0773, 0.055], [-0.08, 0.045], [-0.08, -0.045], [-0.0773, -0.055], [-0.07, -0.0623], [-0.06, -0.065], [0.06, -0.065], [0.07, -0.0623], [0.0773, -0.055], [0.08, -0.045]], "depth": 0.03});
+  if (!endpoint_vest_chest_pocket_r_3) {
+    mesh_vest_chest_pocket_r_3Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_vest_chest_pocket_r_3 = new THREE.Mesh(
+    mesh_vest_chest_pocket_r_3Geometry,
+    materialMap["vest-leather"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_chest_pocket_r_3.name = "Vest chest pocket (right)";
+  if (endpoint_vest_chest_pocket_r_3) {
+    mesh_vest_chest_pocket_r_3.position.copy(endpoint_vest_chest_pocket_r_3.midpoint);
+    mesh_vest_chest_pocket_r_3.quaternion.copy(endpoint_vest_chest_pocket_r_3.quaternion);
+  }
+  mesh_vest_chest_pocket_r_3.castShadow = options.castShadow ?? true;
+  mesh_vest_chest_pocket_r_3.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_chest_pocket_r_3.userData.sculptComponent = {"id": "vest-chest-pocket-r", "name": "Vest chest pocket (right)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "A patch pocket sewn onto the vest panel: its rounded outline extruded to the leather's thickness along the panel normal.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.08, 0.045], [0.0773, 0.055], [0.07, 0.0623], [0.06, 0.065], [-0.06, 0.065], [-0.07, 0.0623], [-0.0773, 0.055], [-0.08, 0.045], [-0.08, -0.045], [-0.0773, -0.055], [-0.07, -0.0623], [-0.06, -0.065], [0.06, -0.065], [0.07, -0.0623], [0.0773, -0.055], [0.08, -0.045]], "depth": 0.03}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3649, 0.9982, 0.4324], "rotation": [-0.295, -0.6909, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-pocket-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}}, "material": "vest-leather", "materialLayers": ["vest-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-chest-pocket-flap-r", "kind": "seam", "description": "chest pocket body under its flap"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(98, 63, 59, 1.0)", "secondaryAlbedo": "rgba(58, 42, 39, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-leather.png"]}};
+  node_vest_chest_pocket_r_3.add(mesh_vest_chest_pocket_r_3);
+  meshes["vest-chest-pocket-r"] = mesh_vest_chest_pocket_r_3;
+  colliders["vest-chest-pocket-r"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-chest-pocket-r"] ??= [];
+  destructionGroups["vest-chest-pocket-r"].push(node_vest_chest_pocket_r_3);
+
+  const endpoint_vest_chest_flap_r_4 = makeAttachmentEndpoint(null);
+  const node_vest_chest_flap_r_4 = new THREE.Group();
+  node_vest_chest_flap_r_4.name = "Vest chest pocket flap (r)__pivot";
+  node_vest_chest_flap_r_4.scale.set(1, 1, 1);
+  if (endpoint_vest_chest_flap_r_4) {
+    node_vest_chest_flap_r_4.position.copy(endpoint_vest_chest_flap_r_4.start);
+    node_vest_chest_flap_r_4.rotation.set(-0.3063, -0.6921, 0.0);
+  } else {
+    node_vest_chest_flap_r_4.position.set(-0.3777, 1.0378, 0.4363);
+    node_vest_chest_flap_r_4.rotation.set(-0.3063, -0.6921, 0.0);
+  }
+  node_vest_chest_flap_r_4.userData.sculptComponent = {"id": "vest-chest-flap-r", "name": "Vest chest pocket flap (r)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "The flap over the pocket mouth: a slightly tapered outline extruded proud of the pocket.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.09, 0.005], [0.088, 0.0125], [0.0825, 0.018], [0.075, 0.02], [-0.075, 0.02], [-0.0825, 0.018], [-0.088, 0.0125], [-0.09, 0.005], [-0.08, -0.035], [-0.078, -0.0425], [-0.0725, -0.048], [-0.065, -0.05], [0.065, -0.05], [0.0725, -0.048], [0.078, -0.0425], [0.08, -0.035]], "depth": 0.025}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3777, 1.0378, 0.4363], "rotation": [-0.3063, -0.6921, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-flap-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-flap"}}, "material": "vest-flap", "materialLayers": ["vest-flap"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "flap-seam-chest-r", "kind": "seam", "description": "flap lower edge seam"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(114, 74, 68, 1.0)", "secondaryAlbedo": "rgba(94, 61, 57, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-flap.png"]}};
+  node_vest_chest_flap_r_4.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-flap-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-flap"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_chest_flap_r_4);
+  nodes["vest-chest-flap-r"] = node_vest_chest_flap_r_4;
+  const mesh_vest_chest_flap_r_4Geometry = endpoint_vest_chest_flap_r_4
+    ? new THREE.CylinderGeometry(endpoint_vest_chest_flap_r_4.endRadius, endpoint_vest_chest_flap_r_4.baseRadius, endpoint_vest_chest_flap_r_4.length, 16, 6)
+    : buildExtrudeGeometry({"points": [[0.09, 0.005], [0.088, 0.0125], [0.0825, 0.018], [0.075, 0.02], [-0.075, 0.02], [-0.0825, 0.018], [-0.088, 0.0125], [-0.09, 0.005], [-0.08, -0.035], [-0.078, -0.0425], [-0.0725, -0.048], [-0.065, -0.05], [0.065, -0.05], [0.0725, -0.048], [0.078, -0.0425], [0.08, -0.035]], "depth": 0.025});
+  if (!endpoint_vest_chest_flap_r_4) {
+    mesh_vest_chest_flap_r_4Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_vest_chest_flap_r_4 = new THREE.Mesh(
+    mesh_vest_chest_flap_r_4Geometry,
+    materialMap["vest-flap"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_chest_flap_r_4.name = "Vest chest pocket flap (r)";
+  if (endpoint_vest_chest_flap_r_4) {
+    mesh_vest_chest_flap_r_4.position.copy(endpoint_vest_chest_flap_r_4.midpoint);
+    mesh_vest_chest_flap_r_4.quaternion.copy(endpoint_vest_chest_flap_r_4.quaternion);
+  }
+  mesh_vest_chest_flap_r_4.castShadow = options.castShadow ?? true;
+  mesh_vest_chest_flap_r_4.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_chest_flap_r_4.userData.sculptComponent = {"id": "vest-chest-flap-r", "name": "Vest chest pocket flap (r)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "The flap over the pocket mouth: a slightly tapered outline extruded proud of the pocket.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.09, 0.005], [0.088, 0.0125], [0.0825, 0.018], [0.075, 0.02], [-0.075, 0.02], [-0.0825, 0.018], [-0.088, 0.0125], [-0.09, 0.005], [-0.08, -0.035], [-0.078, -0.0425], [-0.0725, -0.048], [-0.065, -0.05], [0.065, -0.05], [0.0725, -0.048], [0.078, -0.0425], [0.08, -0.035]], "depth": 0.025}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3777, 1.0378, 0.4363], "rotation": [-0.3063, -0.6921, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-flap-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-flap"}}, "material": "vest-flap", "materialLayers": ["vest-flap"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "flap-seam-chest-r", "kind": "seam", "description": "flap lower edge seam"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(114, 74, 68, 1.0)", "secondaryAlbedo": "rgba(94, 61, 57, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-flap.png"]}};
+  node_vest_chest_flap_r_4.add(mesh_vest_chest_flap_r_4);
+  meshes["vest-chest-flap-r"] = mesh_vest_chest_flap_r_4;
+  colliders["vest-chest-flap-r"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-chest-flap-r"] ??= [];
+  destructionGroups["vest-chest-flap-r"].push(node_vest_chest_flap_r_4);
+
+  const endpoint_vest_lower_pocket_l_5 = makeAttachmentEndpoint(null);
+  const node_vest_lower_pocket_l_5 = new THREE.Group();
+  node_vest_lower_pocket_l_5.name = "Vest lower pocket (left)__pivot";
+  node_vest_lower_pocket_l_5.scale.set(1, 1, 1);
+  if (endpoint_vest_lower_pocket_l_5) {
+    node_vest_lower_pocket_l_5.position.copy(endpoint_vest_lower_pocket_l_5.start);
+    node_vest_lower_pocket_l_5.rotation.set(0.2298, 0.6641, 0.0);
+  } else {
+    node_vest_lower_pocket_l_5.position.set(0.3551, 0.7714, 0.4663);
+    node_vest_lower_pocket_l_5.rotation.set(0.2298, 0.6641, 0.0);
+  }
+  node_vest_lower_pocket_l_5.userData.sculptComponent = {"id": "vest-lower-pocket-l", "name": "Vest lower pocket (left)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "A patch pocket sewn onto the vest panel: its rounded outline extruded to the leather's thickness along the panel normal.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.125, 0.08], [0.1223, 0.09], [0.115, 0.0973], [0.105, 0.1], [-0.105, 0.1], [-0.115, 0.0973], [-0.1223, 0.09], [-0.125, 0.08], [-0.125, -0.08], [-0.1223, -0.09], [-0.115, -0.0973], [-0.105, -0.1], [0.105, -0.1], [0.115, -0.0973], [0.1223, -0.09], [0.125, -0.08]], "depth": 0.03}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3551, 0.7714, 0.4663], "rotation": [0.2298, 0.6641, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-pocket-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}}, "material": "vest-leather", "materialLayers": ["vest-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-lower-pocket-flap-l", "kind": "seam", "description": "lower pocket body under its flap"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(98, 63, 59, 1.0)", "secondaryAlbedo": "rgba(58, 42, 39, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-leather.png"]}};
+  node_vest_lower_pocket_l_5.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-pocket-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_lower_pocket_l_5);
+  nodes["vest-lower-pocket-l"] = node_vest_lower_pocket_l_5;
+  const mesh_vest_lower_pocket_l_5Geometry = endpoint_vest_lower_pocket_l_5
+    ? new THREE.CylinderGeometry(endpoint_vest_lower_pocket_l_5.endRadius, endpoint_vest_lower_pocket_l_5.baseRadius, endpoint_vest_lower_pocket_l_5.length, 16, 6)
+    : buildExtrudeGeometry({"points": [[0.125, 0.08], [0.1223, 0.09], [0.115, 0.0973], [0.105, 0.1], [-0.105, 0.1], [-0.115, 0.0973], [-0.1223, 0.09], [-0.125, 0.08], [-0.125, -0.08], [-0.1223, -0.09], [-0.115, -0.0973], [-0.105, -0.1], [0.105, -0.1], [0.115, -0.0973], [0.1223, -0.09], [0.125, -0.08]], "depth": 0.03});
+  if (!endpoint_vest_lower_pocket_l_5) {
+    mesh_vest_lower_pocket_l_5Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_vest_lower_pocket_l_5 = new THREE.Mesh(
+    mesh_vest_lower_pocket_l_5Geometry,
+    materialMap["vest-leather"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_lower_pocket_l_5.name = "Vest lower pocket (left)";
+  if (endpoint_vest_lower_pocket_l_5) {
+    mesh_vest_lower_pocket_l_5.position.copy(endpoint_vest_lower_pocket_l_5.midpoint);
+    mesh_vest_lower_pocket_l_5.quaternion.copy(endpoint_vest_lower_pocket_l_5.quaternion);
+  }
+  mesh_vest_lower_pocket_l_5.castShadow = options.castShadow ?? true;
+  mesh_vest_lower_pocket_l_5.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_lower_pocket_l_5.userData.sculptComponent = {"id": "vest-lower-pocket-l", "name": "Vest lower pocket (left)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "A patch pocket sewn onto the vest panel: its rounded outline extruded to the leather's thickness along the panel normal.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.125, 0.08], [0.1223, 0.09], [0.115, 0.0973], [0.105, 0.1], [-0.105, 0.1], [-0.115, 0.0973], [-0.1223, 0.09], [-0.125, 0.08], [-0.125, -0.08], [-0.1223, -0.09], [-0.115, -0.0973], [-0.105, -0.1], [0.105, -0.1], [0.115, -0.0973], [0.1223, -0.09], [0.125, -0.08]], "depth": 0.03}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3551, 0.7714, 0.4663], "rotation": [0.2298, 0.6641, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-pocket-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}}, "material": "vest-leather", "materialLayers": ["vest-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-lower-pocket-flap-l", "kind": "seam", "description": "lower pocket body under its flap"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(98, 63, 59, 1.0)", "secondaryAlbedo": "rgba(58, 42, 39, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-leather.png"]}};
+  node_vest_lower_pocket_l_5.add(mesh_vest_lower_pocket_l_5);
+  meshes["vest-lower-pocket-l"] = mesh_vest_lower_pocket_l_5;
+  colliders["vest-lower-pocket-l"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-lower-pocket-l"] ??= [];
+  destructionGroups["vest-lower-pocket-l"].push(node_vest_lower_pocket_l_5);
+
+  const endpoint_vest_lower_flap_l_6 = makeAttachmentEndpoint(null);
+  const node_vest_lower_flap_l_6 = new THREE.Group();
+  node_vest_lower_flap_l_6.name = "Vest lower pocket flap (l)__pivot";
+  node_vest_lower_flap_l_6.scale.set(1, 1, 1);
+  if (endpoint_vest_lower_flap_l_6) {
+    node_vest_lower_flap_l_6.position.copy(endpoint_vest_lower_flap_l_6.start);
+    node_vest_lower_flap_l_6.rotation.set(-0.0, 0.668, 0.0);
+  } else {
+    node_vest_lower_flap_l_6.position.set(0.3674, 0.84, 0.49);
+    node_vest_lower_flap_l_6.rotation.set(-0.0, 0.668, 0.0);
+  }
+  node_vest_lower_flap_l_6.userData.sculptComponent = {"id": "vest-lower-flap-l", "name": "Vest lower pocket flap (l)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "The flap over the pocket mouth: a slightly tapered outline extruded proud of the pocket.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.135, 0.005], [0.133, 0.0125], [0.1275, 0.018], [0.12, 0.02], [-0.12, 0.02], [-0.1275, 0.018], [-0.133, 0.0125], [-0.135, 0.005], [-0.125, -0.045], [-0.123, -0.0525], [-0.1175, -0.058], [-0.11, -0.06], [0.11, -0.06], [0.1175, -0.058], [0.123, -0.0525], [0.125, -0.045]], "depth": 0.025}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3674, 0.84, 0.49], "rotation": [-0.0, 0.668, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-flap-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-flap"}}, "material": "vest-flap", "materialLayers": ["vest-flap"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "flap-seam-lower-l", "kind": "seam", "description": "flap lower edge seam"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(114, 74, 68, 1.0)", "secondaryAlbedo": "rgba(94, 61, 57, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-flap.png"]}};
+  node_vest_lower_flap_l_6.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-flap-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-flap"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_lower_flap_l_6);
+  nodes["vest-lower-flap-l"] = node_vest_lower_flap_l_6;
+  const mesh_vest_lower_flap_l_6Geometry = endpoint_vest_lower_flap_l_6
+    ? new THREE.CylinderGeometry(endpoint_vest_lower_flap_l_6.endRadius, endpoint_vest_lower_flap_l_6.baseRadius, endpoint_vest_lower_flap_l_6.length, 16, 6)
+    : buildExtrudeGeometry({"points": [[0.135, 0.005], [0.133, 0.0125], [0.1275, 0.018], [0.12, 0.02], [-0.12, 0.02], [-0.1275, 0.018], [-0.133, 0.0125], [-0.135, 0.005], [-0.125, -0.045], [-0.123, -0.0525], [-0.1175, -0.058], [-0.11, -0.06], [0.11, -0.06], [0.1175, -0.058], [0.123, -0.0525], [0.125, -0.045]], "depth": 0.025});
+  if (!endpoint_vest_lower_flap_l_6) {
+    mesh_vest_lower_flap_l_6Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_vest_lower_flap_l_6 = new THREE.Mesh(
+    mesh_vest_lower_flap_l_6Geometry,
+    materialMap["vest-flap"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_lower_flap_l_6.name = "Vest lower pocket flap (l)";
+  if (endpoint_vest_lower_flap_l_6) {
+    mesh_vest_lower_flap_l_6.position.copy(endpoint_vest_lower_flap_l_6.midpoint);
+    mesh_vest_lower_flap_l_6.quaternion.copy(endpoint_vest_lower_flap_l_6.quaternion);
+  }
+  mesh_vest_lower_flap_l_6.castShadow = options.castShadow ?? true;
+  mesh_vest_lower_flap_l_6.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_lower_flap_l_6.userData.sculptComponent = {"id": "vest-lower-flap-l", "name": "Vest lower pocket flap (l)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "The flap over the pocket mouth: a slightly tapered outline extruded proud of the pocket.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.135, 0.005], [0.133, 0.0125], [0.1275, 0.018], [0.12, 0.02], [-0.12, 0.02], [-0.1275, 0.018], [-0.133, 0.0125], [-0.135, 0.005], [-0.125, -0.045], [-0.123, -0.0525], [-0.1175, -0.058], [-0.11, -0.06], [0.11, -0.06], [0.1175, -0.058], [0.123, -0.0525], [0.125, -0.045]], "depth": 0.025}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3674, 0.84, 0.49], "rotation": [-0.0, 0.668, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-flap-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-flap"}}, "material": "vest-flap", "materialLayers": ["vest-flap"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "flap-seam-lower-l", "kind": "seam", "description": "flap lower edge seam"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(114, 74, 68, 1.0)", "secondaryAlbedo": "rgba(94, 61, 57, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-flap.png"]}};
+  node_vest_lower_flap_l_6.add(mesh_vest_lower_flap_l_6);
+  meshes["vest-lower-flap-l"] = mesh_vest_lower_flap_l_6;
+  colliders["vest-lower-flap-l"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-lower-flap-l"] ??= [];
+  destructionGroups["vest-lower-flap-l"].push(node_vest_lower_flap_l_6);
+
+  const endpoint_vest_lower_pocket_r_7 = makeAttachmentEndpoint(null);
+  const node_vest_lower_pocket_r_7 = new THREE.Group();
+  node_vest_lower_pocket_r_7.name = "Vest lower pocket (right)__pivot";
+  node_vest_lower_pocket_r_7.scale.set(1, 1, 1);
+  if (endpoint_vest_lower_pocket_r_7) {
+    node_vest_lower_pocket_r_7.position.copy(endpoint_vest_lower_pocket_r_7.start);
+    node_vest_lower_pocket_r_7.rotation.set(0.2298, -0.6641, 0.0);
+  } else {
+    node_vest_lower_pocket_r_7.position.set(-0.3551, 0.7714, 0.4663);
+    node_vest_lower_pocket_r_7.rotation.set(0.2298, -0.6641, 0.0);
+  }
+  node_vest_lower_pocket_r_7.userData.sculptComponent = {"id": "vest-lower-pocket-r", "name": "Vest lower pocket (right)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "A patch pocket sewn onto the vest panel: its rounded outline extruded to the leather's thickness along the panel normal.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.125, 0.08], [0.1223, 0.09], [0.115, 0.0973], [0.105, 0.1], [-0.105, 0.1], [-0.115, 0.0973], [-0.1223, 0.09], [-0.125, 0.08], [-0.125, -0.08], [-0.1223, -0.09], [-0.115, -0.0973], [-0.105, -0.1], [0.105, -0.1], [0.115, -0.0973], [0.1223, -0.09], [0.125, -0.08]], "depth": 0.03}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3551, 0.7714, 0.4663], "rotation": [0.2298, -0.6641, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-pocket-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}}, "material": "vest-leather", "materialLayers": ["vest-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-lower-pocket-flap-r", "kind": "seam", "description": "lower pocket body under its flap"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(98, 63, 59, 1.0)", "secondaryAlbedo": "rgba(58, 42, 39, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-leather.png"]}};
+  node_vest_lower_pocket_r_7.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-pocket-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_lower_pocket_r_7);
+  nodes["vest-lower-pocket-r"] = node_vest_lower_pocket_r_7;
+  const mesh_vest_lower_pocket_r_7Geometry = endpoint_vest_lower_pocket_r_7
+    ? new THREE.CylinderGeometry(endpoint_vest_lower_pocket_r_7.endRadius, endpoint_vest_lower_pocket_r_7.baseRadius, endpoint_vest_lower_pocket_r_7.length, 16, 6)
+    : buildExtrudeGeometry({"points": [[0.125, 0.08], [0.1223, 0.09], [0.115, 0.0973], [0.105, 0.1], [-0.105, 0.1], [-0.115, 0.0973], [-0.1223, 0.09], [-0.125, 0.08], [-0.125, -0.08], [-0.1223, -0.09], [-0.115, -0.0973], [-0.105, -0.1], [0.105, -0.1], [0.115, -0.0973], [0.1223, -0.09], [0.125, -0.08]], "depth": 0.03});
+  if (!endpoint_vest_lower_pocket_r_7) {
+    mesh_vest_lower_pocket_r_7Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_vest_lower_pocket_r_7 = new THREE.Mesh(
+    mesh_vest_lower_pocket_r_7Geometry,
+    materialMap["vest-leather"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_lower_pocket_r_7.name = "Vest lower pocket (right)";
+  if (endpoint_vest_lower_pocket_r_7) {
+    mesh_vest_lower_pocket_r_7.position.copy(endpoint_vest_lower_pocket_r_7.midpoint);
+    mesh_vest_lower_pocket_r_7.quaternion.copy(endpoint_vest_lower_pocket_r_7.quaternion);
+  }
+  mesh_vest_lower_pocket_r_7.castShadow = options.castShadow ?? true;
+  mesh_vest_lower_pocket_r_7.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_lower_pocket_r_7.userData.sculptComponent = {"id": "vest-lower-pocket-r", "name": "Vest lower pocket (right)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "A patch pocket sewn onto the vest panel: its rounded outline extruded to the leather's thickness along the panel normal.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.125, 0.08], [0.1223, 0.09], [0.115, 0.0973], [0.105, 0.1], [-0.105, 0.1], [-0.115, 0.0973], [-0.1223, 0.09], [-0.125, 0.08], [-0.125, -0.08], [-0.1223, -0.09], [-0.115, -0.0973], [-0.105, -0.1], [0.105, -0.1], [0.115, -0.0973], [0.1223, -0.09], [0.125, -0.08]], "depth": 0.03}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3551, 0.7714, 0.4663], "rotation": [0.2298, -0.6641, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-pocket-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-leather"}}, "material": "vest-leather", "materialLayers": ["vest-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-lower-pocket-flap-r", "kind": "seam", "description": "lower pocket body under its flap"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(98, 63, 59, 1.0)", "secondaryAlbedo": "rgba(58, 42, 39, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-leather.png"]}};
+  node_vest_lower_pocket_r_7.add(mesh_vest_lower_pocket_r_7);
+  meshes["vest-lower-pocket-r"] = mesh_vest_lower_pocket_r_7;
+  colliders["vest-lower-pocket-r"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-lower-pocket-r"] ??= [];
+  destructionGroups["vest-lower-pocket-r"].push(node_vest_lower_pocket_r_7);
+
+  const endpoint_vest_lower_flap_r_8 = makeAttachmentEndpoint(null);
+  const node_vest_lower_flap_r_8 = new THREE.Group();
+  node_vest_lower_flap_r_8.name = "Vest lower pocket flap (r)__pivot";
+  node_vest_lower_flap_r_8.scale.set(1, 1, 1);
+  if (endpoint_vest_lower_flap_r_8) {
+    node_vest_lower_flap_r_8.position.copy(endpoint_vest_lower_flap_r_8.start);
+    node_vest_lower_flap_r_8.rotation.set(-0.0, -0.668, 0.0);
+  } else {
+    node_vest_lower_flap_r_8.position.set(-0.3674, 0.84, 0.49);
+    node_vest_lower_flap_r_8.rotation.set(-0.0, -0.668, 0.0);
+  }
+  node_vest_lower_flap_r_8.userData.sculptComponent = {"id": "vest-lower-flap-r", "name": "Vest lower pocket flap (r)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "The flap over the pocket mouth: a slightly tapered outline extruded proud of the pocket.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.135, 0.005], [0.133, 0.0125], [0.1275, 0.018], [0.12, 0.02], [-0.12, 0.02], [-0.1275, 0.018], [-0.133, 0.0125], [-0.135, 0.005], [-0.125, -0.045], [-0.123, -0.0525], [-0.1175, -0.058], [-0.11, -0.06], [0.11, -0.06], [0.1175, -0.058], [0.123, -0.0525], [0.125, -0.045]], "depth": 0.025}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3674, 0.84, 0.49], "rotation": [-0.0, -0.668, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-flap-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-flap"}}, "material": "vest-flap", "materialLayers": ["vest-flap"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "flap-seam-lower-r", "kind": "seam", "description": "flap lower edge seam"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(114, 74, 68, 1.0)", "secondaryAlbedo": "rgba(94, 61, 57, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-flap.png"]}};
+  node_vest_lower_flap_r_8.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-flap-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-flap"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_lower_flap_r_8);
+  nodes["vest-lower-flap-r"] = node_vest_lower_flap_r_8;
+  const mesh_vest_lower_flap_r_8Geometry = endpoint_vest_lower_flap_r_8
+    ? new THREE.CylinderGeometry(endpoint_vest_lower_flap_r_8.endRadius, endpoint_vest_lower_flap_r_8.baseRadius, endpoint_vest_lower_flap_r_8.length, 16, 6)
+    : buildExtrudeGeometry({"points": [[0.135, 0.005], [0.133, 0.0125], [0.1275, 0.018], [0.12, 0.02], [-0.12, 0.02], [-0.1275, 0.018], [-0.133, 0.0125], [-0.135, 0.005], [-0.125, -0.045], [-0.123, -0.0525], [-0.1175, -0.058], [-0.11, -0.06], [0.11, -0.06], [0.1175, -0.058], [0.123, -0.0525], [0.125, -0.045]], "depth": 0.025});
+  if (!endpoint_vest_lower_flap_r_8) {
+    mesh_vest_lower_flap_r_8Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_vest_lower_flap_r_8 = new THREE.Mesh(
+    mesh_vest_lower_flap_r_8Geometry,
+    materialMap["vest-flap"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_lower_flap_r_8.name = "Vest lower pocket flap (r)";
+  if (endpoint_vest_lower_flap_r_8) {
+    mesh_vest_lower_flap_r_8.position.copy(endpoint_vest_lower_flap_r_8.midpoint);
+    mesh_vest_lower_flap_r_8.quaternion.copy(endpoint_vest_lower_flap_r_8.quaternion);
+  }
+  mesh_vest_lower_flap_r_8.castShadow = options.castShadow ?? true;
+  mesh_vest_lower_flap_r_8.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_lower_flap_r_8.userData.sculptComponent = {"id": "vest-lower-flap-r", "name": "Vest lower pocket flap (r)", "level": "meso", "role": "body", "importance": 0.8, "confidence": 0.8, "primitive": "extrude", "topologyClass": "assembled-solid", "topologyRationale": "The flap over the pocket mouth: a slightly tapered outline extruded proud of the pocket.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "profile2D": {"points": [[0.135, 0.005], [0.133, 0.0125], [0.1275, 0.018], [0.12, 0.02], [-0.12, 0.02], [-0.1275, 0.018], [-0.133, 0.0125], [-0.135, 0.005], [-0.125, -0.045], [-0.123, -0.0525], [-0.1175, -0.058], [-0.11, -0.06], [0.11, -0.06], [0.1175, -0.058], [0.123, -0.0525], [0.125, -0.045]], "depth": 0.025}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3674, 0.84, 0.49], "rotation": [-0.0, -0.668, 0.0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-flap-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "vest-flap"}}, "material": "vest-flap", "materialLayers": ["vest-flap"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "flap-seam-lower-r", "kind": "seam", "description": "flap lower edge seam"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(114, 74, 68, 1.0)", "secondaryAlbedo": "rgba(94, 61, 57, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/vest-flap.png"]}};
+  node_vest_lower_flap_r_8.add(mesh_vest_lower_flap_r_8);
+  meshes["vest-lower-flap-r"] = mesh_vest_lower_flap_r_8;
+  colliders["vest-lower-flap-r"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-lower-flap-r"] ??= [];
+  destructionGroups["vest-lower-flap-r"].push(node_vest_lower_flap_r_8);
+
+  const endpoint_vest_chest_button_l_9 = makeAttachmentEndpoint(null);
+  const node_vest_chest_button_l_9 = new THREE.Group();
+  node_vest_chest_button_l_9.name = "Brass button / stud__pivot";
+  node_vest_chest_button_l_9.scale.set(1, 1, 1);
+  if (endpoint_vest_chest_button_l_9) {
+    node_vest_chest_button_l_9.position.copy(endpoint_vest_chest_button_l_9.start);
+    node_vest_chest_button_l_9.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_vest_chest_button_l_9.position.set(0.3955, 1.009, 0.4678);
+    node_vest_chest_button_l_9.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_vest_chest_button_l_9.userData.sculptComponent = {"id": "vest-chest-button-l", "name": "Brass button / stud", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3955, 1.009, 0.4678], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-button-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-chest-button-l-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_chest_button_l_9.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-button-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_chest_button_l_9);
+  nodes["vest-chest-button-l"] = node_vest_chest_button_l_9;
+  const mesh_vest_chest_button_l_9GeometryDense = endpoint_vest_chest_button_l_9
+    ? new THREE.CylinderGeometry(endpoint_vest_chest_button_l_9.endRadius, endpoint_vest_chest_button_l_9.baseRadius, endpoint_vest_chest_button_l_9.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_vest_chest_button_l_9Geometry = decimateGeometry(mesh_vest_chest_button_l_9GeometryDense, 0.06);
+  if (!endpoint_vest_chest_button_l_9) {
+    mesh_vest_chest_button_l_9Geometry.scale(0.035, 0.035, 0.022);
+  }
+  const mesh_vest_chest_button_l_9 = new THREE.Mesh(
+    mesh_vest_chest_button_l_9Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_chest_button_l_9.name = "Brass button / stud";
+  if (endpoint_vest_chest_button_l_9) {
+    mesh_vest_chest_button_l_9.position.copy(endpoint_vest_chest_button_l_9.midpoint);
+    mesh_vest_chest_button_l_9.quaternion.copy(endpoint_vest_chest_button_l_9.quaternion);
+  }
+  mesh_vest_chest_button_l_9.castShadow = options.castShadow ?? true;
+  mesh_vest_chest_button_l_9.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_chest_button_l_9.userData.sculptComponent = {"id": "vest-chest-button-l", "name": "Brass button / stud", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3955, 1.009, 0.4678], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-button-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-chest-button-l-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_chest_button_l_9.add(mesh_vest_chest_button_l_9);
+  meshes["vest-chest-button-l"] = mesh_vest_chest_button_l_9;
+  colliders["vest-chest-button-l"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-chest-button-l"] ??= [];
+  destructionGroups["vest-chest-button-l"].push(node_vest_chest_button_l_9);
+
+  const endpoint_vest_chest_button_r_10 = makeAttachmentEndpoint(null);
+  const node_vest_chest_button_r_10 = new THREE.Group();
+  node_vest_chest_button_r_10.name = "Brass button / stud vest-chest-button-r__pivot";
+  node_vest_chest_button_r_10.scale.set(1, 1, 1);
+  if (endpoint_vest_chest_button_r_10) {
+    node_vest_chest_button_r_10.position.copy(endpoint_vest_chest_button_r_10.start);
+    node_vest_chest_button_r_10.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_vest_chest_button_r_10.position.set(-0.3955, 1.009, 0.4678);
+    node_vest_chest_button_r_10.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_vest_chest_button_r_10.userData.sculptComponent = {"id": "vest-chest-button-r", "name": "Brass button / stud vest-chest-button-r", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3955, 1.009, 0.4678], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-button-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-chest-button-r-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_chest_button_r_10.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-button-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_chest_button_r_10);
+  nodes["vest-chest-button-r"] = node_vest_chest_button_r_10;
+  const mesh_vest_chest_button_r_10GeometryDense = endpoint_vest_chest_button_r_10
+    ? new THREE.CylinderGeometry(endpoint_vest_chest_button_r_10.endRadius, endpoint_vest_chest_button_r_10.baseRadius, endpoint_vest_chest_button_r_10.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_vest_chest_button_r_10Geometry = decimateGeometry(mesh_vest_chest_button_r_10GeometryDense, 0.06);
+  if (!endpoint_vest_chest_button_r_10) {
+    mesh_vest_chest_button_r_10Geometry.scale(0.035, 0.035, 0.022);
+  }
+  const mesh_vest_chest_button_r_10 = new THREE.Mesh(
+    mesh_vest_chest_button_r_10Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_chest_button_r_10.name = "Brass button / stud vest-chest-button-r";
+  if (endpoint_vest_chest_button_r_10) {
+    mesh_vest_chest_button_r_10.position.copy(endpoint_vest_chest_button_r_10.midpoint);
+    mesh_vest_chest_button_r_10.quaternion.copy(endpoint_vest_chest_button_r_10.quaternion);
+  }
+  mesh_vest_chest_button_r_10.castShadow = options.castShadow ?? true;
+  mesh_vest_chest_button_r_10.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_chest_button_r_10.userData.sculptComponent = {"id": "vest-chest-button-r", "name": "Brass button / stud vest-chest-button-r", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3955, 1.009, 0.4678], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-chest-button-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-chest-button-r-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_chest_button_r_10.add(mesh_vest_chest_button_r_10);
+  meshes["vest-chest-button-r"] = mesh_vest_chest_button_r_10;
+  colliders["vest-chest-button-r"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-chest-button-r"] ??= [];
+  destructionGroups["vest-chest-button-r"].push(node_vest_chest_button_r_10);
+
+  const endpoint_vest_lower_button_l_11 = makeAttachmentEndpoint(null);
+  const node_vest_lower_button_l_11 = new THREE.Group();
+  node_vest_lower_button_l_11.name = "Brass button / stud vest-lower-button-l__pivot";
+  node_vest_lower_button_l_11.scale.set(1, 1, 1);
+  if (endpoint_vest_lower_button_l_11) {
+    node_vest_lower_button_l_11.position.copy(endpoint_vest_lower_button_l_11.start);
+    node_vest_lower_button_l_11.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_vest_lower_button_l_11.position.set(0.3847, 0.7904, 0.5083);
+    node_vest_lower_button_l_11.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_vest_lower_button_l_11.userData.sculptComponent = {"id": "vest-lower-button-l", "name": "Brass button / stud vest-lower-button-l", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3847, 0.7904, 0.5083], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-button-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-lower-button-l-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_lower_button_l_11.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-button-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_lower_button_l_11);
+  nodes["vest-lower-button-l"] = node_vest_lower_button_l_11;
+  const mesh_vest_lower_button_l_11GeometryDense = endpoint_vest_lower_button_l_11
+    ? new THREE.CylinderGeometry(endpoint_vest_lower_button_l_11.endRadius, endpoint_vest_lower_button_l_11.baseRadius, endpoint_vest_lower_button_l_11.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_vest_lower_button_l_11Geometry = decimateGeometry(mesh_vest_lower_button_l_11GeometryDense, 0.06);
+  if (!endpoint_vest_lower_button_l_11) {
+    mesh_vest_lower_button_l_11Geometry.scale(0.035, 0.035, 0.022);
+  }
+  const mesh_vest_lower_button_l_11 = new THREE.Mesh(
+    mesh_vest_lower_button_l_11Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_lower_button_l_11.name = "Brass button / stud vest-lower-button-l";
+  if (endpoint_vest_lower_button_l_11) {
+    mesh_vest_lower_button_l_11.position.copy(endpoint_vest_lower_button_l_11.midpoint);
+    mesh_vest_lower_button_l_11.quaternion.copy(endpoint_vest_lower_button_l_11.quaternion);
+  }
+  mesh_vest_lower_button_l_11.castShadow = options.castShadow ?? true;
+  mesh_vest_lower_button_l_11.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_lower_button_l_11.userData.sculptComponent = {"id": "vest-lower-button-l", "name": "Brass button / stud vest-lower-button-l", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3847, 0.7904, 0.5083], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-button-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-lower-button-l-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_lower_button_l_11.add(mesh_vest_lower_button_l_11);
+  meshes["vest-lower-button-l"] = mesh_vest_lower_button_l_11;
+  colliders["vest-lower-button-l"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-lower-button-l"] ??= [];
+  destructionGroups["vest-lower-button-l"].push(node_vest_lower_button_l_11);
+
+  const endpoint_vest_lower_button_r_12 = makeAttachmentEndpoint(null);
+  const node_vest_lower_button_r_12 = new THREE.Group();
+  node_vest_lower_button_r_12.name = "Brass button / stud vest-lower-button-r__pivot";
+  node_vest_lower_button_r_12.scale.set(1, 1, 1);
+  if (endpoint_vest_lower_button_r_12) {
+    node_vest_lower_button_r_12.position.copy(endpoint_vest_lower_button_r_12.start);
+    node_vest_lower_button_r_12.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_vest_lower_button_r_12.position.set(-0.3847, 0.7904, 0.5083);
+    node_vest_lower_button_r_12.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_vest_lower_button_r_12.userData.sculptComponent = {"id": "vest-lower-button-r", "name": "Brass button / stud vest-lower-button-r", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3847, 0.7904, 0.5083], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-button-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-lower-button-r-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_lower_button_r_12.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-button-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_lower_button_r_12);
+  nodes["vest-lower-button-r"] = node_vest_lower_button_r_12;
+  const mesh_vest_lower_button_r_12GeometryDense = endpoint_vest_lower_button_r_12
+    ? new THREE.CylinderGeometry(endpoint_vest_lower_button_r_12.endRadius, endpoint_vest_lower_button_r_12.baseRadius, endpoint_vest_lower_button_r_12.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_vest_lower_button_r_12Geometry = decimateGeometry(mesh_vest_lower_button_r_12GeometryDense, 0.06);
+  if (!endpoint_vest_lower_button_r_12) {
+    mesh_vest_lower_button_r_12Geometry.scale(0.035, 0.035, 0.022);
+  }
+  const mesh_vest_lower_button_r_12 = new THREE.Mesh(
+    mesh_vest_lower_button_r_12Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_lower_button_r_12.name = "Brass button / stud vest-lower-button-r";
+  if (endpoint_vest_lower_button_r_12) {
+    mesh_vest_lower_button_r_12.position.copy(endpoint_vest_lower_button_r_12.midpoint);
+    mesh_vest_lower_button_r_12.quaternion.copy(endpoint_vest_lower_button_r_12.quaternion);
+  }
+  mesh_vest_lower_button_r_12.castShadow = options.castShadow ?? true;
+  mesh_vest_lower_button_r_12.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_lower_button_r_12.userData.sculptComponent = {"id": "vest-lower-button-r", "name": "Brass button / stud vest-lower-button-r", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3847, 0.7904, 0.5083], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-lower-button-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-lower-button-r-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_lower_button_r_12.add(mesh_vest_lower_button_r_12);
+  meshes["vest-lower-button-r"] = mesh_vest_lower_button_r_12;
+  colliders["vest-lower-button-r"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-lower-button-r"] ??= [];
+  destructionGroups["vest-lower-button-r"].push(node_vest_lower_button_r_12);
+
+  const endpoint_vest_stud_l0_13 = makeAttachmentEndpoint(null);
+  const node_vest_stud_l0_13 = new THREE.Group();
+  node_vest_stud_l0_13.name = "Brass button / stud vest-stud-l0__pivot";
+  node_vest_stud_l0_13.scale.set(1, 1, 1);
+  if (endpoint_vest_stud_l0_13) {
+    node_vest_stud_l0_13.position.copy(endpoint_vest_stud_l0_13.start);
+    node_vest_stud_l0_13.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_vest_stud_l0_13.position.set(0.2622, 0.7185, 0.5271);
+    node_vest_stud_l0_13.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_vest_stud_l0_13.userData.sculptComponent = {"id": "vest-stud-l0", "name": "Brass button / stud vest-stud-l0", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.2622, 0.7185, 0.5271], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-l0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-stud-l0-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_stud_l0_13.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-l0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_stud_l0_13);
+  nodes["vest-stud-l0"] = node_vest_stud_l0_13;
+  const mesh_vest_stud_l0_13GeometryDense = endpoint_vest_stud_l0_13
+    ? new THREE.CylinderGeometry(endpoint_vest_stud_l0_13.endRadius, endpoint_vest_stud_l0_13.baseRadius, endpoint_vest_stud_l0_13.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_vest_stud_l0_13Geometry = decimateGeometry(mesh_vest_stud_l0_13GeometryDense, 0.06);
+  if (!endpoint_vest_stud_l0_13) {
+    mesh_vest_stud_l0_13Geometry.scale(0.035, 0.035, 0.022);
+  }
+  const mesh_vest_stud_l0_13 = new THREE.Mesh(
+    mesh_vest_stud_l0_13Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_stud_l0_13.name = "Brass button / stud vest-stud-l0";
+  if (endpoint_vest_stud_l0_13) {
+    mesh_vest_stud_l0_13.position.copy(endpoint_vest_stud_l0_13.midpoint);
+    mesh_vest_stud_l0_13.quaternion.copy(endpoint_vest_stud_l0_13.quaternion);
+  }
+  mesh_vest_stud_l0_13.castShadow = options.castShadow ?? true;
+  mesh_vest_stud_l0_13.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_stud_l0_13.userData.sculptComponent = {"id": "vest-stud-l0", "name": "Brass button / stud vest-stud-l0", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.2622, 0.7185, 0.5271], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-l0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-stud-l0-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_stud_l0_13.add(mesh_vest_stud_l0_13);
+  meshes["vest-stud-l0"] = mesh_vest_stud_l0_13;
+  colliders["vest-stud-l0"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-stud-l0"] ??= [];
+  destructionGroups["vest-stud-l0"].push(node_vest_stud_l0_13);
+
+  const endpoint_vest_stud_l1_14 = makeAttachmentEndpoint(null);
+  const node_vest_stud_l1_14 = new THREE.Group();
+  node_vest_stud_l1_14.name = "Brass button / stud vest-stud-l1__pivot";
+  node_vest_stud_l1_14.scale.set(1, 1, 1);
+  if (endpoint_vest_stud_l1_14) {
+    node_vest_stud_l1_14.position.copy(endpoint_vest_stud_l1_14.start);
+    node_vest_stud_l1_14.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_vest_stud_l1_14.position.set(0.2858, 0.8603, 0.5354);
+    node_vest_stud_l1_14.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_vest_stud_l1_14.userData.sculptComponent = {"id": "vest-stud-l1", "name": "Brass button / stud vest-stud-l1", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.2858, 0.8603, 0.5354], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-l1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-stud-l1-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_stud_l1_14.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-l1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_stud_l1_14);
+  nodes["vest-stud-l1"] = node_vest_stud_l1_14;
+  const mesh_vest_stud_l1_14GeometryDense = endpoint_vest_stud_l1_14
+    ? new THREE.CylinderGeometry(endpoint_vest_stud_l1_14.endRadius, endpoint_vest_stud_l1_14.baseRadius, endpoint_vest_stud_l1_14.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_vest_stud_l1_14Geometry = decimateGeometry(mesh_vest_stud_l1_14GeometryDense, 0.06);
+  if (!endpoint_vest_stud_l1_14) {
+    mesh_vest_stud_l1_14Geometry.scale(0.035, 0.035, 0.022);
+  }
+  const mesh_vest_stud_l1_14 = new THREE.Mesh(
+    mesh_vest_stud_l1_14Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_stud_l1_14.name = "Brass button / stud vest-stud-l1";
+  if (endpoint_vest_stud_l1_14) {
+    mesh_vest_stud_l1_14.position.copy(endpoint_vest_stud_l1_14.midpoint);
+    mesh_vest_stud_l1_14.quaternion.copy(endpoint_vest_stud_l1_14.quaternion);
+  }
+  mesh_vest_stud_l1_14.castShadow = options.castShadow ?? true;
+  mesh_vest_stud_l1_14.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_stud_l1_14.userData.sculptComponent = {"id": "vest-stud-l1", "name": "Brass button / stud vest-stud-l1", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.2858, 0.8603, 0.5354], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-l1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-stud-l1-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_stud_l1_14.add(mesh_vest_stud_l1_14);
+  meshes["vest-stud-l1"] = mesh_vest_stud_l1_14;
+  colliders["vest-stud-l1"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-stud-l1"] ??= [];
+  destructionGroups["vest-stud-l1"].push(node_vest_stud_l1_14);
+
+  const endpoint_vest_stud_l2_15 = makeAttachmentEndpoint(null);
+  const node_vest_stud_l2_15 = new THREE.Group();
+  node_vest_stud_l2_15.name = "Brass button / stud vest-stud-l2__pivot";
+  node_vest_stud_l2_15.scale.set(1, 1, 1);
+  if (endpoint_vest_stud_l2_15) {
+    node_vest_stud_l2_15.position.copy(endpoint_vest_stud_l2_15.start);
+    node_vest_stud_l2_15.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_vest_stud_l2_15.position.set(0.3093, 1.0012, 0.4897);
+    node_vest_stud_l2_15.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_vest_stud_l2_15.userData.sculptComponent = {"id": "vest-stud-l2", "name": "Brass button / stud vest-stud-l2", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3093, 1.0012, 0.4897], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-l2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-stud-l2-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_stud_l2_15.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-l2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_stud_l2_15);
+  nodes["vest-stud-l2"] = node_vest_stud_l2_15;
+  const mesh_vest_stud_l2_15GeometryDense = endpoint_vest_stud_l2_15
+    ? new THREE.CylinderGeometry(endpoint_vest_stud_l2_15.endRadius, endpoint_vest_stud_l2_15.baseRadius, endpoint_vest_stud_l2_15.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_vest_stud_l2_15Geometry = decimateGeometry(mesh_vest_stud_l2_15GeometryDense, 0.06);
+  if (!endpoint_vest_stud_l2_15) {
+    mesh_vest_stud_l2_15Geometry.scale(0.035, 0.035, 0.022);
+  }
+  const mesh_vest_stud_l2_15 = new THREE.Mesh(
+    mesh_vest_stud_l2_15Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_stud_l2_15.name = "Brass button / stud vest-stud-l2";
+  if (endpoint_vest_stud_l2_15) {
+    mesh_vest_stud_l2_15.position.copy(endpoint_vest_stud_l2_15.midpoint);
+    mesh_vest_stud_l2_15.quaternion.copy(endpoint_vest_stud_l2_15.quaternion);
+  }
+  mesh_vest_stud_l2_15.castShadow = options.castShadow ?? true;
+  mesh_vest_stud_l2_15.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_stud_l2_15.userData.sculptComponent = {"id": "vest-stud-l2", "name": "Brass button / stud vest-stud-l2", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.3093, 1.0012, 0.4897], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-l2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-stud-l2-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_stud_l2_15.add(mesh_vest_stud_l2_15);
+  meshes["vest-stud-l2"] = mesh_vest_stud_l2_15;
+  colliders["vest-stud-l2"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-stud-l2"] ??= [];
+  destructionGroups["vest-stud-l2"].push(node_vest_stud_l2_15);
+
+  const endpoint_vest_stud_r0_16 = makeAttachmentEndpoint(null);
+  const node_vest_stud_r0_16 = new THREE.Group();
+  node_vest_stud_r0_16.name = "Brass button / stud vest-stud-r0__pivot";
+  node_vest_stud_r0_16.scale.set(1, 1, 1);
+  if (endpoint_vest_stud_r0_16) {
+    node_vest_stud_r0_16.position.copy(endpoint_vest_stud_r0_16.start);
+    node_vest_stud_r0_16.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_vest_stud_r0_16.position.set(-0.2622, 0.7185, 0.5271);
+    node_vest_stud_r0_16.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_vest_stud_r0_16.userData.sculptComponent = {"id": "vest-stud-r0", "name": "Brass button / stud vest-stud-r0", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.2622, 0.7185, 0.5271], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-r0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-stud-r0-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_stud_r0_16.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-r0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_stud_r0_16);
+  nodes["vest-stud-r0"] = node_vest_stud_r0_16;
+  const mesh_vest_stud_r0_16GeometryDense = endpoint_vest_stud_r0_16
+    ? new THREE.CylinderGeometry(endpoint_vest_stud_r0_16.endRadius, endpoint_vest_stud_r0_16.baseRadius, endpoint_vest_stud_r0_16.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_vest_stud_r0_16Geometry = decimateGeometry(mesh_vest_stud_r0_16GeometryDense, 0.06);
+  if (!endpoint_vest_stud_r0_16) {
+    mesh_vest_stud_r0_16Geometry.scale(0.035, 0.035, 0.022);
+  }
+  const mesh_vest_stud_r0_16 = new THREE.Mesh(
+    mesh_vest_stud_r0_16Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_stud_r0_16.name = "Brass button / stud vest-stud-r0";
+  if (endpoint_vest_stud_r0_16) {
+    mesh_vest_stud_r0_16.position.copy(endpoint_vest_stud_r0_16.midpoint);
+    mesh_vest_stud_r0_16.quaternion.copy(endpoint_vest_stud_r0_16.quaternion);
+  }
+  mesh_vest_stud_r0_16.castShadow = options.castShadow ?? true;
+  mesh_vest_stud_r0_16.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_stud_r0_16.userData.sculptComponent = {"id": "vest-stud-r0", "name": "Brass button / stud vest-stud-r0", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.2622, 0.7185, 0.5271], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-r0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-stud-r0-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_stud_r0_16.add(mesh_vest_stud_r0_16);
+  meshes["vest-stud-r0"] = mesh_vest_stud_r0_16;
+  colliders["vest-stud-r0"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-stud-r0"] ??= [];
+  destructionGroups["vest-stud-r0"].push(node_vest_stud_r0_16);
+
+  const endpoint_vest_stud_r1_17 = makeAttachmentEndpoint(null);
+  const node_vest_stud_r1_17 = new THREE.Group();
+  node_vest_stud_r1_17.name = "Brass button / stud vest-stud-r1__pivot";
+  node_vest_stud_r1_17.scale.set(1, 1, 1);
+  if (endpoint_vest_stud_r1_17) {
+    node_vest_stud_r1_17.position.copy(endpoint_vest_stud_r1_17.start);
+    node_vest_stud_r1_17.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_vest_stud_r1_17.position.set(-0.2858, 0.8603, 0.5354);
+    node_vest_stud_r1_17.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_vest_stud_r1_17.userData.sculptComponent = {"id": "vest-stud-r1", "name": "Brass button / stud vest-stud-r1", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.2858, 0.8603, 0.5354], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-r1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-stud-r1-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_stud_r1_17.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-r1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_stud_r1_17);
+  nodes["vest-stud-r1"] = node_vest_stud_r1_17;
+  const mesh_vest_stud_r1_17GeometryDense = endpoint_vest_stud_r1_17
+    ? new THREE.CylinderGeometry(endpoint_vest_stud_r1_17.endRadius, endpoint_vest_stud_r1_17.baseRadius, endpoint_vest_stud_r1_17.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_vest_stud_r1_17Geometry = decimateGeometry(mesh_vest_stud_r1_17GeometryDense, 0.06);
+  if (!endpoint_vest_stud_r1_17) {
+    mesh_vest_stud_r1_17Geometry.scale(0.035, 0.035, 0.022);
+  }
+  const mesh_vest_stud_r1_17 = new THREE.Mesh(
+    mesh_vest_stud_r1_17Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_stud_r1_17.name = "Brass button / stud vest-stud-r1";
+  if (endpoint_vest_stud_r1_17) {
+    mesh_vest_stud_r1_17.position.copy(endpoint_vest_stud_r1_17.midpoint);
+    mesh_vest_stud_r1_17.quaternion.copy(endpoint_vest_stud_r1_17.quaternion);
+  }
+  mesh_vest_stud_r1_17.castShadow = options.castShadow ?? true;
+  mesh_vest_stud_r1_17.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_stud_r1_17.userData.sculptComponent = {"id": "vest-stud-r1", "name": "Brass button / stud vest-stud-r1", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.2858, 0.8603, 0.5354], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-r1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-stud-r1-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_stud_r1_17.add(mesh_vest_stud_r1_17);
+  meshes["vest-stud-r1"] = mesh_vest_stud_r1_17;
+  colliders["vest-stud-r1"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-stud-r1"] ??= [];
+  destructionGroups["vest-stud-r1"].push(node_vest_stud_r1_17);
+
+  const endpoint_vest_stud_r2_18 = makeAttachmentEndpoint(null);
+  const node_vest_stud_r2_18 = new THREE.Group();
+  node_vest_stud_r2_18.name = "Brass button / stud vest-stud-r2__pivot";
+  node_vest_stud_r2_18.scale.set(1, 1, 1);
+  if (endpoint_vest_stud_r2_18) {
+    node_vest_stud_r2_18.position.copy(endpoint_vest_stud_r2_18.start);
+    node_vest_stud_r2_18.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_vest_stud_r2_18.position.set(-0.3093, 1.0012, 0.4897);
+    node_vest_stud_r2_18.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_vest_stud_r2_18.userData.sculptComponent = {"id": "vest-stud-r2", "name": "Brass button / stud vest-stud-r2", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3093, 1.0012, 0.4897], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-r2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-stud-r2-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_stud_r2_18.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-r2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["vest-shell"] ?? root).add(node_vest_stud_r2_18);
+  nodes["vest-stud-r2"] = node_vest_stud_r2_18;
+  const mesh_vest_stud_r2_18GeometryDense = endpoint_vest_stud_r2_18
+    ? new THREE.CylinderGeometry(endpoint_vest_stud_r2_18.endRadius, endpoint_vest_stud_r2_18.baseRadius, endpoint_vest_stud_r2_18.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_vest_stud_r2_18Geometry = decimateGeometry(mesh_vest_stud_r2_18GeometryDense, 0.06);
+  if (!endpoint_vest_stud_r2_18) {
+    mesh_vest_stud_r2_18Geometry.scale(0.035, 0.035, 0.022);
+  }
+  const mesh_vest_stud_r2_18 = new THREE.Mesh(
+    mesh_vest_stud_r2_18Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_vest_stud_r2_18.name = "Brass button / stud vest-stud-r2";
+  if (endpoint_vest_stud_r2_18) {
+    mesh_vest_stud_r2_18.position.copy(endpoint_vest_stud_r2_18.midpoint);
+    mesh_vest_stud_r2_18.quaternion.copy(endpoint_vest_stud_r2_18.quaternion);
+  }
+  mesh_vest_stud_r2_18.castShadow = options.castShadow ?? true;
+  mesh_vest_stud_r2_18.receiveShadow = options.receiveShadow ?? true;
+  mesh_vest_stud_r2_18.userData.sculptComponent = {"id": "vest-stud-r2", "name": "Brass button / stud vest-stud-r2", "level": "micro", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small domed brass fastener: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.035, "height": 0.035, "depth": 0.022, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.3093, 1.0012, 0.4897], "rotation": [0, 0, 0], "scale": [0.035, 0.035, 0.022]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "vest-stud-r2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "vest-stud-r2-dome", "kind": "fastener", "description": "domed brass head"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_vest_stud_r2_18.add(mesh_vest_stud_r2_18);
+  meshes["vest-stud-r2"] = mesh_vest_stud_r2_18;
+  colliders["vest-stud-r2"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["vest-stud-r2"] ??= [];
+  destructionGroups["vest-stud-r2"].push(node_vest_stud_r2_18);
+
+  const endpoint_pendant_claw_19 = makeAttachmentEndpoint(null);
+  const node_pendant_claw_19 = new THREE.Group();
+  node_pendant_claw_19.name = "Black claw pendant__pivot";
+  node_pendant_claw_19.scale.set(1, 1, 1);
+  if (endpoint_pendant_claw_19) {
+    node_pendant_claw_19.position.copy(endpoint_pendant_claw_19.start);
+    node_pendant_claw_19.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_pendant_claw_19.position.set(0.0, 0.0, 0.0);
+    node_pendant_claw_19.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_pendant_claw_19.userData.sculptComponent = {"id": "pendant-claw", "name": "Black claw pendant", "level": "meso", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "tapered-sweep", "topologyClass": "fiber-strand", "topologyRationale": "A single tapering curved horn/claw: a swept tube whose radius falls to a point.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "taperedSweep": {"stations": [{"position": [-0.0283, 1.19, 0.43], "rx": 0.028, "rz": 0.019}, {"position": [-0.0331, 1.1728, 0.4331], "rx": 0.0258, "rz": 0.0176}, {"position": [-0.0315, 1.1554, 0.436], "rx": 0.0237, "rz": 0.0162}, {"position": [-0.024, 1.1401, 0.4385], "rx": 0.0215, "rz": 0.0148}, {"position": [-0.0119, 1.1289, 0.4404], "rx": 0.0193, "rz": 0.0133}, {"position": [0.0031, 1.1229, 0.4416], "rx": 0.0172, "rz": 0.0119}, {"position": [0.0187, 1.1227, 0.442], "rx": 0.015, "rz": 0.0105}, {"position": [0.033, 1.1279, 0.4416], "rx": 0.0128, "rz": 0.0091}, {"position": [0.0441, 1.1376, 0.4404], "rx": 0.0107, "rz": 0.0077}, {"position": [0.0508, 1.1502, 0.4385], "rx": 0.0085, "rz": 0.0063}, {"position": [0.0525, 1.1639, 0.436], "rx": 0.0063, "rz": 0.0048}, {"position": [0.0492, 1.1769, 0.4331], "rx": 0.0042, "rz": 0.0034}, {"position": [0.0418, 1.1875, 0.43], "rx": 0.002, "rz": 0.002}], "radialSegments": 10, "capEnds": true}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "pendant-claw", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "pendant"}}, "material": "pendant", "materialLayers": ["pendant"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "pendant-claw-hook", "kind": "ridge", "description": "curled hook tip"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(28, 22, 20, 1.0)", "secondaryAlbedo": "rgba(22, 16, 14, 1.0)", "materialClass": "ceramic", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/pendant.png"]}};
+  node_pendant_claw_19.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "pendant-claw", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "pendant"}};
+  (nodes["vest-shell"] ?? root).add(node_pendant_claw_19);
+  nodes["pendant-claw"] = node_pendant_claw_19;
+  const mesh_pendant_claw_19Geometry = endpoint_pendant_claw_19
+    ? new THREE.CylinderGeometry(endpoint_pendant_claw_19.endRadius, endpoint_pendant_claw_19.baseRadius, endpoint_pendant_claw_19.length, 16, 6)
+    : buildTaperedSweepGeometry({"stations": [{"position": [-0.0283, 1.19, 0.43], "rx": 0.028, "rz": 0.019}, {"position": [-0.0331, 1.1728, 0.4331], "rx": 0.0258, "rz": 0.0176}, {"position": [-0.0315, 1.1554, 0.436], "rx": 0.0237, "rz": 0.0162}, {"position": [-0.024, 1.1401, 0.4385], "rx": 0.0215, "rz": 0.0148}, {"position": [-0.0119, 1.1289, 0.4404], "rx": 0.0193, "rz": 0.0133}, {"position": [0.0031, 1.1229, 0.4416], "rx": 0.0172, "rz": 0.0119}, {"position": [0.0187, 1.1227, 0.442], "rx": 0.015, "rz": 0.0105}, {"position": [0.033, 1.1279, 0.4416], "rx": 0.0128, "rz": 0.0091}, {"position": [0.0441, 1.1376, 0.4404], "rx": 0.0107, "rz": 0.0077}, {"position": [0.0508, 1.1502, 0.4385], "rx": 0.0085, "rz": 0.0063}, {"position": [0.0525, 1.1639, 0.436], "rx": 0.0063, "rz": 0.0048}, {"position": [0.0492, 1.1769, 0.4331], "rx": 0.0042, "rz": 0.0034}, {"position": [0.0418, 1.1875, 0.43], "rx": 0.002, "rz": 0.002}], "radialSegments": 10, "capEnds": true});
+  if (!endpoint_pendant_claw_19) {
+    mesh_pendant_claw_19Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_pendant_claw_19 = new THREE.Mesh(
+    mesh_pendant_claw_19Geometry,
+    materialMap["pendant"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_pendant_claw_19.name = "Black claw pendant";
+  if (endpoint_pendant_claw_19) {
+    mesh_pendant_claw_19.position.copy(endpoint_pendant_claw_19.midpoint);
+    mesh_pendant_claw_19.quaternion.copy(endpoint_pendant_claw_19.quaternion);
+  }
+  mesh_pendant_claw_19.castShadow = options.castShadow ?? true;
+  mesh_pendant_claw_19.receiveShadow = options.receiveShadow ?? true;
+  mesh_pendant_claw_19.userData.sculptComponent = {"id": "pendant-claw", "name": "Black claw pendant", "level": "meso", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "tapered-sweep", "topologyClass": "fiber-strand", "topologyRationale": "A single tapering curved horn/claw: a swept tube whose radius falls to a point.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "taperedSweep": {"stations": [{"position": [-0.0283, 1.19, 0.43], "rx": 0.028, "rz": 0.019}, {"position": [-0.0331, 1.1728, 0.4331], "rx": 0.0258, "rz": 0.0176}, {"position": [-0.0315, 1.1554, 0.436], "rx": 0.0237, "rz": 0.0162}, {"position": [-0.024, 1.1401, 0.4385], "rx": 0.0215, "rz": 0.0148}, {"position": [-0.0119, 1.1289, 0.4404], "rx": 0.0193, "rz": 0.0133}, {"position": [0.0031, 1.1229, 0.4416], "rx": 0.0172, "rz": 0.0119}, {"position": [0.0187, 1.1227, 0.442], "rx": 0.015, "rz": 0.0105}, {"position": [0.033, 1.1279, 0.4416], "rx": 0.0128, "rz": 0.0091}, {"position": [0.0441, 1.1376, 0.4404], "rx": 0.0107, "rz": 0.0077}, {"position": [0.0508, 1.1502, 0.4385], "rx": 0.0085, "rz": 0.0063}, {"position": [0.0525, 1.1639, 0.436], "rx": 0.0063, "rz": 0.0048}, {"position": [0.0492, 1.1769, 0.4331], "rx": 0.0042, "rz": 0.0034}, {"position": [0.0418, 1.1875, 0.43], "rx": 0.002, "rz": 0.002}], "radialSegments": 10, "capEnds": true}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "pendant-claw", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "pendant"}}, "material": "pendant", "materialLayers": ["pendant"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "pendant-claw-hook", "kind": "ridge", "description": "curled hook tip"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(28, 22, 20, 1.0)", "secondaryAlbedo": "rgba(22, 16, 14, 1.0)", "materialClass": "ceramic", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/pendant.png"]}};
+  node_pendant_claw_19.add(mesh_pendant_claw_19);
+  meshes["pendant-claw"] = mesh_pendant_claw_19;
+  colliders["pendant-claw"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["pendant-claw"] ??= [];
+  destructionGroups["pendant-claw"].push(node_pendant_claw_19);
+
+  const endpoint_pendant_bail_20 = makeAttachmentEndpoint(null);
+  const node_pendant_bail_20 = new THREE.Group();
+  node_pendant_bail_20.name = "Pendant bail__pivot";
+  node_pendant_bail_20.scale.set(1, 1, 1);
+  if (endpoint_pendant_bail_20) {
+    node_pendant_bail_20.position.copy(endpoint_pendant_bail_20.start);
+    node_pendant_bail_20.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_pendant_bail_20.position.set(-0.033299999999999996, 1.22, 0.426);
+    node_pendant_bail_20.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_pendant_bail_20.userData.sculptComponent = {"id": "pendant-bail", "name": "Pendant bail", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "torus", "topologyClass": "assembled-solid", "topologyRationale": "The small ring the claw hangs from: a torus.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "torusTubeRatio": 0.3, "decimate": {"targetRatio": 0.3}}, "parent": "pendant-claw", "attachment": null, "dimensions": {"width": 0.045, "height": 0.045, "depth": 0.045, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.033299999999999996, 1.22, 0.426], "rotation": [0, 0, 0], "scale": [0.045, 0.045, 0.045]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "pendant-bail", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "pendant"}}, "material": "pendant", "materialLayers": ["pendant"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "pendant-ring", "kind": "ridge", "description": "hanging ring"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(28, 22, 20, 1.0)", "secondaryAlbedo": "rgba(22, 16, 14, 1.0)", "materialClass": "ceramic", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/pendant.png"]}};
+  node_pendant_bail_20.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "pendant-bail", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "pendant"}};
+  (nodes["pendant-claw"] ?? root).add(node_pendant_bail_20);
+  nodes["pendant-bail"] = node_pendant_bail_20;
+  const mesh_pendant_bail_20GeometryDense = endpoint_pendant_bail_20
+    ? new THREE.CylinderGeometry(endpoint_pendant_bail_20.endRadius, endpoint_pendant_bail_20.baseRadius, endpoint_pendant_bail_20.length, 16, 6)
+    : new THREE.TorusGeometry(0.45, 0.135, 12, 48);
+  const mesh_pendant_bail_20Geometry = decimateGeometry(mesh_pendant_bail_20GeometryDense, 0.3);
+  if (!endpoint_pendant_bail_20) {
+    mesh_pendant_bail_20Geometry.scale(0.045, 0.045, 0.045);
+  }
+  const mesh_pendant_bail_20 = new THREE.Mesh(
+    mesh_pendant_bail_20Geometry,
+    materialMap["pendant"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_pendant_bail_20.name = "Pendant bail";
+  if (endpoint_pendant_bail_20) {
+    mesh_pendant_bail_20.position.copy(endpoint_pendant_bail_20.midpoint);
+    mesh_pendant_bail_20.quaternion.copy(endpoint_pendant_bail_20.quaternion);
+  }
+  mesh_pendant_bail_20.castShadow = options.castShadow ?? true;
+  mesh_pendant_bail_20.receiveShadow = options.receiveShadow ?? true;
+  mesh_pendant_bail_20.userData.sculptComponent = {"id": "pendant-bail", "name": "Pendant bail", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "torus", "topologyClass": "assembled-solid", "topologyRationale": "The small ring the claw hangs from: a torus.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "torusTubeRatio": 0.3, "decimate": {"targetRatio": 0.3}}, "parent": "pendant-claw", "attachment": null, "dimensions": {"width": 0.045, "height": 0.045, "depth": 0.045, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.033299999999999996, 1.22, 0.426], "rotation": [0, 0, 0], "scale": [0.045, 0.045, 0.045]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "pendant-bail", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "pendant"}}, "material": "pendant", "materialLayers": ["pendant"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "pendant-ring", "kind": "ridge", "description": "hanging ring"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(28, 22, 20, 1.0)", "secondaryAlbedo": "rgba(22, 16, 14, 1.0)", "materialClass": "ceramic", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/pendant.png"]}};
+  node_pendant_bail_20.add(mesh_pendant_bail_20);
+  meshes["pendant-bail"] = mesh_pendant_bail_20;
+  colliders["pendant-bail"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["pendant-bail"] ??= [];
+  destructionGroups["pendant-bail"].push(node_pendant_bail_20);
+
+  const endpoint_hat_crown_21 = makeAttachmentEndpoint(null);
+  const node_hat_crown_21 = new THREE.Group();
+  node_hat_crown_21.name = "Wide-brim hat (crown and brim)__pivot";
+  node_hat_crown_21.scale.set(1, 1, 1);
+  if (endpoint_hat_crown_21) {
+    node_hat_crown_21.position.copy(endpoint_hat_crown_21.start);
+    node_hat_crown_21.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_hat_crown_21.position.set(0.0, 0.0, 0.0);
+    node_hat_crown_21.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_hat_crown_21.userData.sculptComponent = {"id": "hat-crown", "name": "Wide-brim hat (crown and brim)", "level": "macro", "role": "body", "importance": 1.0, "confidence": 0.8, "primitive": "ellipsoid", "topologyClass": "implicit", "topologyRationale": "Felt hat: domed crown with a pinch crease blended into a brim whose lateral sides roll up; one continuous implicit form.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "sdf": {"primitives": [{"id": "crown", "type": "ellipsoid", "center": [0.0, 1.9200000000000002, 0.05], "radii": [0.25, 0.24, 0.28]}, {"id": "crown-top", "type": "ellipsoid", "center": [0.0, 2.04, 0.05], "radii": [0.22, 0.12, 0.26]}, {"id": "crease", "type": "capsule", "center": [0.0, 2.175, 0.05], "radius": 0.04, "height": 0.32, "transform": {"position": [0.0, 2.175, 0.05], "rotation": [1.5708, 0.0, 0.0]}}, {"id": "outline", "type": "ellipsoid", "center": [0.0, 1.82, 0.07], "radii": [0.43, 2.0, 0.47]}, {"id": "brim-mid", "type": "box", "center": [0.0, 1.82, 0.05], "size": [0.48, 0.038, 2.0]}, {"id": "brim-l", "type": "box", "center": [0.3638, 1.9047, 0.05], "size": [0.3, 0.038, 2.0], "transform": {"position": [0.3638, 1.9047, 0.05], "rotation": [0.0, 0.0, 0.6]}}, {"id": "brim-r", "type": "box", "center": [-0.3638, 1.9047, 0.05], "size": [0.3, 0.038, 2.0], "transform": {"position": [-0.3638, 1.9047, 0.05], "rotation": [0.0, 0.0, -0.6]}}, {"id": "below", "type": "box", "center": [0.0, 1.57, 0.05], "size": [1.2, 0.4, 1.2]}, {"id": "rim0", "type": "capsule", "center": [0.4007, 1.93, 0.1475], "radius": 0.028, "height": 0.1579, "transform": {"position": [0.4007, 1.93, 0.1475], "rotation": [1.6522, 0.1745, 0.1609]}}, {"id": "rim1", "type": "capsule", "center": [0.3524, 1.8969, 0.2932], "radius": 0.028, "height": 0.1617, "transform": {"position": [0.3524, 1.8969, 0.2932], "rotation": [1.5954, 0.5673, 0.5542]}}, {"id": "rim2", "type": "capsule", "center": [0.2616, 1.8462, 0.4119], "radius": 0.028, "height": 0.1583, "transform": {"position": [0.2616, 1.8462, 0.4119], "rotation": [1.0232, 0.7249, 1.1881]}}, {"id": "rim3", "type": "capsule", "center": [0.1392, 1.82, 0.4894], "radius": 0.028, "height": 0.1452, "transform": {"position": [0.1392, 1.82, 0.4894], "rotation": [0.406, 0.3515, 1.4239]}}, {"id": "rim4", "type": "capsule", "center": [0.0, 1.82, 0.5163], "radius": 0.028, "height": 0.1435, "transform": {"position": [0.0, 1.82, 0.5163], "rotation": [0.0, 0.0, 1.5708]}}, {"id": "rim5", "type": "capsule", "center": [-0.1392, 1.82, 0.4894], "radius": 0.028, "height": 0.1452, "transform": {"position": [-0.1392, 1.82, 0.4894], "rotation": [-0.406, -0.3515, 1.4239]}}, {"id": "rim6", "type": "capsule", "center": [-0.2616, 1.8462, 0.4119], "radius": 0.028, "height": 0.1583, "transform": {"position": [-0.2616, 1.8462, 0.4119], "rotation": [-0.7449, -0.34, 0.828]}}, {"id": "rim7", "type": "capsule", "center": [-0.3524, 1.8969, 0.2932], "radius": 0.028, "height": 0.1617, "transform": {"position": [-0.3524, 1.8969, 0.2932], "rotation": [-1.0762, -0.2911, 0.4817]}}, {"id": "rim8", "type": "capsule", "center": [-0.4007, 1.93, 0.1475], "radius": 0.028, "height": 0.1579, "transform": {"position": [-0.4007, 1.93, 0.1475], "rotation": [-1.4387, -0.1403, 0.16]}}, {"id": "rim9", "type": "capsule", "center": [-0.4007, 1.93, -0.0075], "radius": 0.028, "height": 0.1579, "transform": {"position": [-0.4007, 1.93, -0.0075], "rotation": [-1.6522, 0.1745, -0.1609]}}, {"id": "rim10", "type": "capsule", "center": [-0.3524, 1.8969, -0.1532], "radius": 0.028, "height": 0.1617, "transform": {"position": [-0.3524, 1.8969, -0.1532], "rotation": [-1.5954, 0.5673, -0.5542]}}, {"id": "rim11", "type": "capsule", "center": [-0.2616, 1.8462, -0.2719], "radius": 0.028, "height": 0.1583, "transform": {"position": [-0.2616, 1.8462, -0.2719], "rotation": [-1.0232, 0.7249, -1.1881]}}, {"id": "rim12", "type": "capsule", "center": [-0.1392, 1.82, -0.3494], "radius": 0.028, "height": 0.1452, "transform": {"position": [-0.1392, 1.82, -0.3494], "rotation": [-0.406, 0.3515, -1.4239]}}, {"id": "rim13", "type": "capsule", "center": [-0.0, 1.82, -0.3763], "radius": 0.028, "height": 0.1435, "transform": {"position": [-0.0, 1.82, -0.3763], "rotation": [-0.0, 0.0, -1.5708]}}, {"id": "rim14", "type": "capsule", "center": [0.1392, 1.82, -0.3494], "radius": 0.028, "height": 0.1452, "transform": {"position": [0.1392, 1.82, -0.3494], "rotation": [0.406, -0.3515, -1.4239]}}, {"id": "rim15", "type": "capsule", "center": [0.2616, 1.8462, -0.2719], "radius": 0.028, "height": 0.1583, "transform": {"position": [0.2616, 1.8462, -0.2719], "rotation": [0.7449, -0.34, -0.828]}}, {"id": "rim16", "type": "capsule", "center": [0.3524, 1.8969, -0.1532], "radius": 0.028, "height": 0.1617, "transform": {"position": [0.3524, 1.8969, -0.1532], "rotation": [1.0762, -0.2911, -0.4817]}}, {"id": "rim17", "type": "capsule", "center": [0.4007, 1.93, -0.0075], "radius": 0.028, "height": 0.1579, "transform": {"position": [0.4007, 1.93, -0.0075], "rotation": [1.4387, -0.1403, -0.16]}}], "operations": [{"id": "crown2", "type": "smooth-union", "left": "crown", "right": "crown-top", "radius": 0.06}, {"id": "creased", "type": "subtract", "left": "crown2", "right": "crease"}, {"id": "mid", "type": "intersect", "left": "brim-mid", "right": "outline"}, {"id": "side1", "type": "intersect", "left": "brim-l", "right": "outline"}, {"id": "side2", "type": "intersect", "left": "brim-r", "right": "outline"}, {"id": "brim1", "type": "smooth-union", "left": "mid", "right": "side1", "radius": 0.05}, {"id": "brim2", "type": "smooth-union", "left": "brim1", "right": "side2", "radius": 0.05}, {"id": "rimmed0", "type": "smooth-union", "left": "brim2", "right": "rim0", "radius": 0.02}, {"id": "rimmed1", "type": "smooth-union", "left": "rimmed0", "right": "rim1", "radius": 0.02}, {"id": "rimmed2", "type": "smooth-union", "left": "rimmed1", "right": "rim2", "radius": 0.02}, {"id": "rimmed3", "type": "smooth-union", "left": "rimmed2", "right": "rim3", "radius": 0.02}, {"id": "rimmed4", "type": "smooth-union", "left": "rimmed3", "right": "rim4", "radius": 0.02}, {"id": "rimmed5", "type": "smooth-union", "left": "rimmed4", "right": "rim5", "radius": 0.02}, {"id": "rimmed6", "type": "smooth-union", "left": "rimmed5", "right": "rim6", "radius": 0.02}, {"id": "rimmed7", "type": "smooth-union", "left": "rimmed6", "right": "rim7", "radius": 0.02}, {"id": "rimmed8", "type": "smooth-union", "left": "rimmed7", "right": "rim8", "radius": 0.02}, {"id": "rimmed9", "type": "smooth-union", "left": "rimmed8", "right": "rim9", "radius": 0.02}, {"id": "rimmed10", "type": "smooth-union", "left": "rimmed9", "right": "rim10", "radius": 0.02}, {"id": "rimmed11", "type": "smooth-union", "left": "rimmed10", "right": "rim11", "radius": 0.02}, {"id": "rimmed12", "type": "smooth-union", "left": "rimmed11", "right": "rim12", "radius": 0.02}, {"id": "rimmed13", "type": "smooth-union", "left": "rimmed12", "right": "rim13", "radius": 0.02}, {"id": "rimmed14", "type": "smooth-union", "left": "rimmed13", "right": "rim14", "radius": 0.02}, {"id": "rimmed15", "type": "smooth-union", "left": "rimmed14", "right": "rim15", "radius": 0.02}, {"id": "rimmed16", "type": "smooth-union", "left": "rimmed15", "right": "rim16", "radius": 0.02}, {"id": "rimmed17", "type": "smooth-union", "left": "rimmed16", "right": "rim17", "radius": 0.02}, {"id": "hat", "type": "smooth-union", "left": "creased", "right": "rimmed17", "radius": 0.03}, {"id": "hat-cut", "type": "subtract", "left": "hat", "right": "below"}], "bounds": {"min": [-0.5, 1.76, -0.45], "max": [0.5, 2.22, 0.5700000000000001]}, "resolution": 64}, "decimate": {"targetRatio": 0.15}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1.0, 1.0, 1.0]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "hat-crown", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "hat-felt"}}, "material": "hat-felt", "materialLayers": ["hat-felt"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "hat-brim-curl", "kind": "ridge", "description": "brim sides rolled up 0.55 rad"}, {"id": "hat-crown-crease", "kind": "groove", "description": "front-to-back crease on the crown top"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "hat-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(98, 62, 58, 1.0)", "secondaryAlbedo": "rgba(65, 46, 45, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/hat-felt.png"]}};
+  node_hat_crown_21.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "hat-crown", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "hat-felt"}};
+  (nodes["vest-shell"] ?? root).add(node_hat_crown_21);
+  nodes["hat-crown"] = node_hat_crown_21;
+  const mesh_hat_crown_21GeometryDense = polygonizeSdf({"primitives": [{"id": "crown", "type": "ellipsoid", "center": [0.0, 1.9200000000000002, 0.05], "radii": [0.25, 0.24, 0.28]}, {"id": "crown-top", "type": "ellipsoid", "center": [0.0, 2.04, 0.05], "radii": [0.22, 0.12, 0.26]}, {"id": "crease", "type": "capsule", "center": [0.0, 2.175, 0.05], "radius": 0.04, "height": 0.32, "transform": {"position": [0.0, 2.175, 0.05], "rotation": [1.5708, 0.0, 0.0]}}, {"id": "outline", "type": "ellipsoid", "center": [0.0, 1.82, 0.07], "radii": [0.43, 2.0, 0.47]}, {"id": "brim-mid", "type": "box", "center": [0.0, 1.82, 0.05], "size": [0.48, 0.038, 2.0]}, {"id": "brim-l", "type": "box", "center": [0.3638, 1.9047, 0.05], "size": [0.3, 0.038, 2.0], "transform": {"position": [0.3638, 1.9047, 0.05], "rotation": [0.0, 0.0, 0.6]}}, {"id": "brim-r", "type": "box", "center": [-0.3638, 1.9047, 0.05], "size": [0.3, 0.038, 2.0], "transform": {"position": [-0.3638, 1.9047, 0.05], "rotation": [0.0, 0.0, -0.6]}}, {"id": "below", "type": "box", "center": [0.0, 1.57, 0.05], "size": [1.2, 0.4, 1.2]}, {"id": "rim0", "type": "capsule", "center": [0.4007, 1.93, 0.1475], "radius": 0.028, "height": 0.1579, "transform": {"position": [0.4007, 1.93, 0.1475], "rotation": [1.6522, 0.1745, 0.1609]}}, {"id": "rim1", "type": "capsule", "center": [0.3524, 1.8969, 0.2932], "radius": 0.028, "height": 0.1617, "transform": {"position": [0.3524, 1.8969, 0.2932], "rotation": [1.5954, 0.5673, 0.5542]}}, {"id": "rim2", "type": "capsule", "center": [0.2616, 1.8462, 0.4119], "radius": 0.028, "height": 0.1583, "transform": {"position": [0.2616, 1.8462, 0.4119], "rotation": [1.0232, 0.7249, 1.1881]}}, {"id": "rim3", "type": "capsule", "center": [0.1392, 1.82, 0.4894], "radius": 0.028, "height": 0.1452, "transform": {"position": [0.1392, 1.82, 0.4894], "rotation": [0.406, 0.3515, 1.4239]}}, {"id": "rim4", "type": "capsule", "center": [0.0, 1.82, 0.5163], "radius": 0.028, "height": 0.1435, "transform": {"position": [0.0, 1.82, 0.5163], "rotation": [0.0, 0.0, 1.5708]}}, {"id": "rim5", "type": "capsule", "center": [-0.1392, 1.82, 0.4894], "radius": 0.028, "height": 0.1452, "transform": {"position": [-0.1392, 1.82, 0.4894], "rotation": [-0.406, -0.3515, 1.4239]}}, {"id": "rim6", "type": "capsule", "center": [-0.2616, 1.8462, 0.4119], "radius": 0.028, "height": 0.1583, "transform": {"position": [-0.2616, 1.8462, 0.4119], "rotation": [-0.7449, -0.34, 0.828]}}, {"id": "rim7", "type": "capsule", "center": [-0.3524, 1.8969, 0.2932], "radius": 0.028, "height": 0.1617, "transform": {"position": [-0.3524, 1.8969, 0.2932], "rotation": [-1.0762, -0.2911, 0.4817]}}, {"id": "rim8", "type": "capsule", "center": [-0.4007, 1.93, 0.1475], "radius": 0.028, "height": 0.1579, "transform": {"position": [-0.4007, 1.93, 0.1475], "rotation": [-1.4387, -0.1403, 0.16]}}, {"id": "rim9", "type": "capsule", "center": [-0.4007, 1.93, -0.0075], "radius": 0.028, "height": 0.1579, "transform": {"position": [-0.4007, 1.93, -0.0075], "rotation": [-1.6522, 0.1745, -0.1609]}}, {"id": "rim10", "type": "capsule", "center": [-0.3524, 1.8969, -0.1532], "radius": 0.028, "height": 0.1617, "transform": {"position": [-0.3524, 1.8969, -0.1532], "rotation": [-1.5954, 0.5673, -0.5542]}}, {"id": "rim11", "type": "capsule", "center": [-0.2616, 1.8462, -0.2719], "radius": 0.028, "height": 0.1583, "transform": {"position": [-0.2616, 1.8462, -0.2719], "rotation": [-1.0232, 0.7249, -1.1881]}}, {"id": "rim12", "type": "capsule", "center": [-0.1392, 1.82, -0.3494], "radius": 0.028, "height": 0.1452, "transform": {"position": [-0.1392, 1.82, -0.3494], "rotation": [-0.406, 0.3515, -1.4239]}}, {"id": "rim13", "type": "capsule", "center": [-0.0, 1.82, -0.3763], "radius": 0.028, "height": 0.1435, "transform": {"position": [-0.0, 1.82, -0.3763], "rotation": [-0.0, 0.0, -1.5708]}}, {"id": "rim14", "type": "capsule", "center": [0.1392, 1.82, -0.3494], "radius": 0.028, "height": 0.1452, "transform": {"position": [0.1392, 1.82, -0.3494], "rotation": [0.406, -0.3515, -1.4239]}}, {"id": "rim15", "type": "capsule", "center": [0.2616, 1.8462, -0.2719], "radius": 0.028, "height": 0.1583, "transform": {"position": [0.2616, 1.8462, -0.2719], "rotation": [0.7449, -0.34, -0.828]}}, {"id": "rim16", "type": "capsule", "center": [0.3524, 1.8969, -0.1532], "radius": 0.028, "height": 0.1617, "transform": {"position": [0.3524, 1.8969, -0.1532], "rotation": [1.0762, -0.2911, -0.4817]}}, {"id": "rim17", "type": "capsule", "center": [0.4007, 1.93, -0.0075], "radius": 0.028, "height": 0.1579, "transform": {"position": [0.4007, 1.93, -0.0075], "rotation": [1.4387, -0.1403, -0.16]}}], "operations": [{"id": "crown2", "type": "smooth-union", "left": "crown", "right": "crown-top", "radius": 0.06}, {"id": "creased", "type": "subtract", "left": "crown2", "right": "crease"}, {"id": "mid", "type": "intersect", "left": "brim-mid", "right": "outline"}, {"id": "side1", "type": "intersect", "left": "brim-l", "right": "outline"}, {"id": "side2", "type": "intersect", "left": "brim-r", "right": "outline"}, {"id": "brim1", "type": "smooth-union", "left": "mid", "right": "side1", "radius": 0.05}, {"id": "brim2", "type": "smooth-union", "left": "brim1", "right": "side2", "radius": 0.05}, {"id": "rimmed0", "type": "smooth-union", "left": "brim2", "right": "rim0", "radius": 0.02}, {"id": "rimmed1", "type": "smooth-union", "left": "rimmed0", "right": "rim1", "radius": 0.02}, {"id": "rimmed2", "type": "smooth-union", "left": "rimmed1", "right": "rim2", "radius": 0.02}, {"id": "rimmed3", "type": "smooth-union", "left": "rimmed2", "right": "rim3", "radius": 0.02}, {"id": "rimmed4", "type": "smooth-union", "left": "rimmed3", "right": "rim4", "radius": 0.02}, {"id": "rimmed5", "type": "smooth-union", "left": "rimmed4", "right": "rim5", "radius": 0.02}, {"id": "rimmed6", "type": "smooth-union", "left": "rimmed5", "right": "rim6", "radius": 0.02}, {"id": "rimmed7", "type": "smooth-union", "left": "rimmed6", "right": "rim7", "radius": 0.02}, {"id": "rimmed8", "type": "smooth-union", "left": "rimmed7", "right": "rim8", "radius": 0.02}, {"id": "rimmed9", "type": "smooth-union", "left": "rimmed8", "right": "rim9", "radius": 0.02}, {"id": "rimmed10", "type": "smooth-union", "left": "rimmed9", "right": "rim10", "radius": 0.02}, {"id": "rimmed11", "type": "smooth-union", "left": "rimmed10", "right": "rim11", "radius": 0.02}, {"id": "rimmed12", "type": "smooth-union", "left": "rimmed11", "right": "rim12", "radius": 0.02}, {"id": "rimmed13", "type": "smooth-union", "left": "rimmed12", "right": "rim13", "radius": 0.02}, {"id": "rimmed14", "type": "smooth-union", "left": "rimmed13", "right": "rim14", "radius": 0.02}, {"id": "rimmed15", "type": "smooth-union", "left": "rimmed14", "right": "rim15", "radius": 0.02}, {"id": "rimmed16", "type": "smooth-union", "left": "rimmed15", "right": "rim16", "radius": 0.02}, {"id": "rimmed17", "type": "smooth-union", "left": "rimmed16", "right": "rim17", "radius": 0.02}, {"id": "hat", "type": "smooth-union", "left": "creased", "right": "rimmed17", "radius": 0.03}, {"id": "hat-cut", "type": "subtract", "left": "hat", "right": "below"}], "bounds": {"min": [-0.5, 1.76, -0.45], "max": [0.5, 2.22, 0.5700000000000001]}, "resolution": 40});
+  const mesh_hat_crown_21Geometry = decimateGeometry(mesh_hat_crown_21GeometryDense, 0.15);
+  if (!endpoint_hat_crown_21) {
+    mesh_hat_crown_21Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_hat_crown_21 = new THREE.Mesh(
+    mesh_hat_crown_21Geometry,
+    createSculptMaterial("hat-felt", {"id": "hat-felt", "name": "Hat felt", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#623E3A", "color": "#623E3A", "albedo": {"dominant": "#623E3A", "secondary": ["#412E2D"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/hat-felt.png."}, "colorVariation": {"palette": ["#623E3A", "#412E2D"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.9, "variation": 0.0, "map": "none", "localResponse": "uniform: the game draws cel shading, no roughness maps reach it"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/hat-felt.texture.json: mottle 0.011, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}}, options, true)
+  );
+  mesh_hat_crown_21.name = "Wide-brim hat (crown and brim)";
+  if (endpoint_hat_crown_21) {
+    mesh_hat_crown_21.position.copy(endpoint_hat_crown_21.midpoint);
+    mesh_hat_crown_21.quaternion.copy(endpoint_hat_crown_21.quaternion);
+  }
+  mesh_hat_crown_21.castShadow = options.castShadow ?? true;
+  mesh_hat_crown_21.receiveShadow = options.receiveShadow ?? true;
+  mesh_hat_crown_21.userData.sculptComponent = {"id": "hat-crown", "name": "Wide-brim hat (crown and brim)", "level": "macro", "role": "body", "importance": 1.0, "confidence": 0.8, "primitive": "ellipsoid", "topologyClass": "implicit", "topologyRationale": "Felt hat: domed crown with a pinch crease blended into a brim whose lateral sides roll up; one continuous implicit form.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "sdf": {"primitives": [{"id": "crown", "type": "ellipsoid", "center": [0.0, 1.9200000000000002, 0.05], "radii": [0.25, 0.24, 0.28]}, {"id": "crown-top", "type": "ellipsoid", "center": [0.0, 2.04, 0.05], "radii": [0.22, 0.12, 0.26]}, {"id": "crease", "type": "capsule", "center": [0.0, 2.175, 0.05], "radius": 0.04, "height": 0.32, "transform": {"position": [0.0, 2.175, 0.05], "rotation": [1.5708, 0.0, 0.0]}}, {"id": "outline", "type": "ellipsoid", "center": [0.0, 1.82, 0.07], "radii": [0.43, 2.0, 0.47]}, {"id": "brim-mid", "type": "box", "center": [0.0, 1.82, 0.05], "size": [0.48, 0.038, 2.0]}, {"id": "brim-l", "type": "box", "center": [0.3638, 1.9047, 0.05], "size": [0.3, 0.038, 2.0], "transform": {"position": [0.3638, 1.9047, 0.05], "rotation": [0.0, 0.0, 0.6]}}, {"id": "brim-r", "type": "box", "center": [-0.3638, 1.9047, 0.05], "size": [0.3, 0.038, 2.0], "transform": {"position": [-0.3638, 1.9047, 0.05], "rotation": [0.0, 0.0, -0.6]}}, {"id": "below", "type": "box", "center": [0.0, 1.57, 0.05], "size": [1.2, 0.4, 1.2]}, {"id": "rim0", "type": "capsule", "center": [0.4007, 1.93, 0.1475], "radius": 0.028, "height": 0.1579, "transform": {"position": [0.4007, 1.93, 0.1475], "rotation": [1.6522, 0.1745, 0.1609]}}, {"id": "rim1", "type": "capsule", "center": [0.3524, 1.8969, 0.2932], "radius": 0.028, "height": 0.1617, "transform": {"position": [0.3524, 1.8969, 0.2932], "rotation": [1.5954, 0.5673, 0.5542]}}, {"id": "rim2", "type": "capsule", "center": [0.2616, 1.8462, 0.4119], "radius": 0.028, "height": 0.1583, "transform": {"position": [0.2616, 1.8462, 0.4119], "rotation": [1.0232, 0.7249, 1.1881]}}, {"id": "rim3", "type": "capsule", "center": [0.1392, 1.82, 0.4894], "radius": 0.028, "height": 0.1452, "transform": {"position": [0.1392, 1.82, 0.4894], "rotation": [0.406, 0.3515, 1.4239]}}, {"id": "rim4", "type": "capsule", "center": [0.0, 1.82, 0.5163], "radius": 0.028, "height": 0.1435, "transform": {"position": [0.0, 1.82, 0.5163], "rotation": [0.0, 0.0, 1.5708]}}, {"id": "rim5", "type": "capsule", "center": [-0.1392, 1.82, 0.4894], "radius": 0.028, "height": 0.1452, "transform": {"position": [-0.1392, 1.82, 0.4894], "rotation": [-0.406, -0.3515, 1.4239]}}, {"id": "rim6", "type": "capsule", "center": [-0.2616, 1.8462, 0.4119], "radius": 0.028, "height": 0.1583, "transform": {"position": [-0.2616, 1.8462, 0.4119], "rotation": [-0.7449, -0.34, 0.828]}}, {"id": "rim7", "type": "capsule", "center": [-0.3524, 1.8969, 0.2932], "radius": 0.028, "height": 0.1617, "transform": {"position": [-0.3524, 1.8969, 0.2932], "rotation": [-1.0762, -0.2911, 0.4817]}}, {"id": "rim8", "type": "capsule", "center": [-0.4007, 1.93, 0.1475], "radius": 0.028, "height": 0.1579, "transform": {"position": [-0.4007, 1.93, 0.1475], "rotation": [-1.4387, -0.1403, 0.16]}}, {"id": "rim9", "type": "capsule", "center": [-0.4007, 1.93, -0.0075], "radius": 0.028, "height": 0.1579, "transform": {"position": [-0.4007, 1.93, -0.0075], "rotation": [-1.6522, 0.1745, -0.1609]}}, {"id": "rim10", "type": "capsule", "center": [-0.3524, 1.8969, -0.1532], "radius": 0.028, "height": 0.1617, "transform": {"position": [-0.3524, 1.8969, -0.1532], "rotation": [-1.5954, 0.5673, -0.5542]}}, {"id": "rim11", "type": "capsule", "center": [-0.2616, 1.8462, -0.2719], "radius": 0.028, "height": 0.1583, "transform": {"position": [-0.2616, 1.8462, -0.2719], "rotation": [-1.0232, 0.7249, -1.1881]}}, {"id": "rim12", "type": "capsule", "center": [-0.1392, 1.82, -0.3494], "radius": 0.028, "height": 0.1452, "transform": {"position": [-0.1392, 1.82, -0.3494], "rotation": [-0.406, 0.3515, -1.4239]}}, {"id": "rim13", "type": "capsule", "center": [-0.0, 1.82, -0.3763], "radius": 0.028, "height": 0.1435, "transform": {"position": [-0.0, 1.82, -0.3763], "rotation": [-0.0, 0.0, -1.5708]}}, {"id": "rim14", "type": "capsule", "center": [0.1392, 1.82, -0.3494], "radius": 0.028, "height": 0.1452, "transform": {"position": [0.1392, 1.82, -0.3494], "rotation": [0.406, -0.3515, -1.4239]}}, {"id": "rim15", "type": "capsule", "center": [0.2616, 1.8462, -0.2719], "radius": 0.028, "height": 0.1583, "transform": {"position": [0.2616, 1.8462, -0.2719], "rotation": [0.7449, -0.34, -0.828]}}, {"id": "rim16", "type": "capsule", "center": [0.3524, 1.8969, -0.1532], "radius": 0.028, "height": 0.1617, "transform": {"position": [0.3524, 1.8969, -0.1532], "rotation": [1.0762, -0.2911, -0.4817]}}, {"id": "rim17", "type": "capsule", "center": [0.4007, 1.93, -0.0075], "radius": 0.028, "height": 0.1579, "transform": {"position": [0.4007, 1.93, -0.0075], "rotation": [1.4387, -0.1403, -0.16]}}], "operations": [{"id": "crown2", "type": "smooth-union", "left": "crown", "right": "crown-top", "radius": 0.06}, {"id": "creased", "type": "subtract", "left": "crown2", "right": "crease"}, {"id": "mid", "type": "intersect", "left": "brim-mid", "right": "outline"}, {"id": "side1", "type": "intersect", "left": "brim-l", "right": "outline"}, {"id": "side2", "type": "intersect", "left": "brim-r", "right": "outline"}, {"id": "brim1", "type": "smooth-union", "left": "mid", "right": "side1", "radius": 0.05}, {"id": "brim2", "type": "smooth-union", "left": "brim1", "right": "side2", "radius": 0.05}, {"id": "rimmed0", "type": "smooth-union", "left": "brim2", "right": "rim0", "radius": 0.02}, {"id": "rimmed1", "type": "smooth-union", "left": "rimmed0", "right": "rim1", "radius": 0.02}, {"id": "rimmed2", "type": "smooth-union", "left": "rimmed1", "right": "rim2", "radius": 0.02}, {"id": "rimmed3", "type": "smooth-union", "left": "rimmed2", "right": "rim3", "radius": 0.02}, {"id": "rimmed4", "type": "smooth-union", "left": "rimmed3", "right": "rim4", "radius": 0.02}, {"id": "rimmed5", "type": "smooth-union", "left": "rimmed4", "right": "rim5", "radius": 0.02}, {"id": "rimmed6", "type": "smooth-union", "left": "rimmed5", "right": "rim6", "radius": 0.02}, {"id": "rimmed7", "type": "smooth-union", "left": "rimmed6", "right": "rim7", "radius": 0.02}, {"id": "rimmed8", "type": "smooth-union", "left": "rimmed7", "right": "rim8", "radius": 0.02}, {"id": "rimmed9", "type": "smooth-union", "left": "rimmed8", "right": "rim9", "radius": 0.02}, {"id": "rimmed10", "type": "smooth-union", "left": "rimmed9", "right": "rim10", "radius": 0.02}, {"id": "rimmed11", "type": "smooth-union", "left": "rimmed10", "right": "rim11", "radius": 0.02}, {"id": "rimmed12", "type": "smooth-union", "left": "rimmed11", "right": "rim12", "radius": 0.02}, {"id": "rimmed13", "type": "smooth-union", "left": "rimmed12", "right": "rim13", "radius": 0.02}, {"id": "rimmed14", "type": "smooth-union", "left": "rimmed13", "right": "rim14", "radius": 0.02}, {"id": "rimmed15", "type": "smooth-union", "left": "rimmed14", "right": "rim15", "radius": 0.02}, {"id": "rimmed16", "type": "smooth-union", "left": "rimmed15", "right": "rim16", "radius": 0.02}, {"id": "rimmed17", "type": "smooth-union", "left": "rimmed16", "right": "rim17", "radius": 0.02}, {"id": "hat", "type": "smooth-union", "left": "creased", "right": "rimmed17", "radius": 0.03}, {"id": "hat-cut", "type": "subtract", "left": "hat", "right": "below"}], "bounds": {"min": [-0.5, 1.76, -0.45], "max": [0.5, 2.22, 0.5700000000000001]}, "resolution": 64}, "decimate": {"targetRatio": 0.15}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1.0, 1.0, 1.0]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "hat-crown", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "hat-felt"}}, "material": "hat-felt", "materialLayers": ["hat-felt"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "hat-brim-curl", "kind": "ridge", "description": "brim sides rolled up 0.55 rad"}, {"id": "hat-crown-crease", "kind": "groove", "description": "front-to-back crease on the crown top"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "hat-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(98, 62, 58, 1.0)", "secondaryAlbedo": "rgba(65, 46, 45, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/hat-felt.png"]}};
+  node_hat_crown_21.add(mesh_hat_crown_21);
+  meshes["hat-crown"] = mesh_hat_crown_21;
+  colliders["hat-crown"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["hat-crown"] ??= [];
+  destructionGroups["hat-crown"].push(node_hat_crown_21);
+
+  const endpoint_hat_band_22 = makeAttachmentEndpoint(null);
+  const node_hat_band_22 = new THREE.Group();
+  node_hat_band_22.name = "Hat band__pivot";
+  node_hat_band_22.scale.set(1, 1, 1);
+  if (endpoint_hat_band_22) {
+    node_hat_band_22.position.copy(endpoint_hat_band_22.start);
+    node_hat_band_22.rotation.set(1.5708, 0.0, 0.0);
+  } else {
+    node_hat_band_22.position.set(0.0, 1.8900000000000001, 0.05);
+    node_hat_band_22.rotation.set(1.5708, 0.0, 0.0);
+  }
+  node_hat_band_22.userData.sculptComponent = {"id": "hat-band", "name": "Hat band", "level": "meso", "role": "body", "importance": 0.9, "confidence": 0.8, "primitive": "torus", "topologyClass": "assembled-solid", "topologyRationale": "A cloth ring wrapping the crown base: an oval torus slightly proud of the felt.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "torusTubeRatio": 0.1, "decimate": {"targetRatio": 0.3}}, "parent": "hat-crown", "attachment": null, "dimensions": {"width": 0.5622, "height": 0.6289, "depth": 0.6, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.0, 1.8900000000000001, 0.05], "rotation": [1.5708, 0, 0], "scale": [0.5622, 0.6289, 0.6]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "hat-band", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "hat-band"}}, "material": "hat-band", "materialLayers": ["hat-band"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "hat-band-ring", "kind": "ridge", "description": "blue band ring"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "hat-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(79, 94, 115, 1.0)", "secondaryAlbedo": "rgba(64, 70, 81, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/hat-band.png"]}};
+  node_hat_band_22.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "hat-band", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "hat-band"}};
+  (nodes["hat-crown"] ?? root).add(node_hat_band_22);
+  nodes["hat-band"] = node_hat_band_22;
+  const mesh_hat_band_22GeometryDense = endpoint_hat_band_22
+    ? new THREE.CylinderGeometry(endpoint_hat_band_22.endRadius, endpoint_hat_band_22.baseRadius, endpoint_hat_band_22.length, 16, 6)
+    : new THREE.TorusGeometry(0.45, 0.045, 12, 48);
+  const mesh_hat_band_22Geometry = decimateGeometry(mesh_hat_band_22GeometryDense, 0.3);
+  if (!endpoint_hat_band_22) {
+    mesh_hat_band_22Geometry.scale(0.5622, 0.6289, 0.6);
+  }
+  const mesh_hat_band_22 = new THREE.Mesh(
+    mesh_hat_band_22Geometry,
+    materialMap["hat-band"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_hat_band_22.name = "Hat band";
+  if (endpoint_hat_band_22) {
+    mesh_hat_band_22.position.copy(endpoint_hat_band_22.midpoint);
+    mesh_hat_band_22.quaternion.copy(endpoint_hat_band_22.quaternion);
+  }
+  mesh_hat_band_22.castShadow = options.castShadow ?? true;
+  mesh_hat_band_22.receiveShadow = options.receiveShadow ?? true;
+  mesh_hat_band_22.userData.sculptComponent = {"id": "hat-band", "name": "Hat band", "level": "meso", "role": "body", "importance": 0.9, "confidence": 0.8, "primitive": "torus", "topologyClass": "assembled-solid", "topologyRationale": "A cloth ring wrapping the crown base: an oval torus slightly proud of the felt.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "torusTubeRatio": 0.1, "decimate": {"targetRatio": 0.3}}, "parent": "hat-crown", "attachment": null, "dimensions": {"width": 0.5622, "height": 0.6289, "depth": 0.6, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.0, 1.8900000000000001, 0.05], "rotation": [1.5708, 0, 0], "scale": [0.5622, 0.6289, 0.6]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "hat-band", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "hat-band"}}, "material": "hat-band", "materialLayers": ["hat-band"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "hat-band-ring", "kind": "ridge", "description": "blue band ring"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "hat-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(79, 94, 115, 1.0)", "secondaryAlbedo": "rgba(64, 70, 81, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/hat-band.png"]}};
+  node_hat_band_22.add(mesh_hat_band_22);
+  meshes["hat-band"] = mesh_hat_band_22;
+  colliders["hat-band"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["hat-band"] ??= [];
+  destructionGroups["hat-band"].push(node_hat_band_22);
+
+  const endpoint_boot_shell_l_23 = makeAttachmentEndpoint(null);
+  const node_boot_shell_l_23 = new THREE.Group();
+  node_boot_shell_l_23.name = "Lace-up boot (left)__pivot";
+  node_boot_shell_l_23.scale.set(1, 1, 1);
+  if (endpoint_boot_shell_l_23) {
+    node_boot_shell_l_23.position.copy(endpoint_boot_shell_l_23.start);
+    node_boot_shell_l_23.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_shell_l_23.position.set(0.0, 0.0, 0.0);
+    node_boot_shell_l_23.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_shell_l_23.userData.sculptComponent = {"id": "boot-shell-l", "name": "Lace-up boot (left)", "level": "macro", "role": "body", "importance": 0.95, "confidence": 0.8, "primitive": "ellipsoid", "topologyClass": "implicit", "topologyRationale": "Boot over the shoe and lower leg: shaft and bulbous toe box blended over a flat sole, top cut at mid-shin.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "sdf": {"primitives": [{"id": "shaft", "type": "ellipsoid", "center": [0.2, 0.22, 0.04], "radii": [0.205, 0.33, 0.265]}, {"id": "toe", "type": "ellipsoid", "center": [0.2, 0.1, 0.19], "radii": [0.185, 0.115, 0.255]}, {"id": "sole-print", "type": "ellipsoid", "center": [0.2, 0.03, 0.12], "radii": [0.19, 0.6, 0.31]}, {"id": "sole-slab", "type": "box", "center": [0.2, 0.03, 0.12], "size": [1.0, 0.06, 1.0]}, {"id": "top", "type": "box", "center": [0.2, 0.6699999999999999, 0.1], "size": [0.8, 0.6, 1.2]}, {"id": "under", "type": "box", "center": [0.2, -0.3, 0.1], "size": [0.8, 0.6, 1.2]}, {"id": "collar0", "type": "capsule", "center": [0.383, 0.358, 0.0868], "radius": 0.03, "height": 0.0948, "transform": {"position": [0.383, 0.358, 0.0868], "rotation": [1.5472, 0.1516, 0.1552]}}, {"id": "collar1", "type": "capsule", "center": [0.3551, 0.358, 0.1733], "radius": 0.03, "height": 0.0895, "transform": {"position": [0.3551, 0.358, 0.1733], "rotation": [1.3358, 0.4214, 0.5295]}}, {"id": "collar2", "type": "capsule", "center": [0.3036, 0.358, 0.2396], "radius": 0.03, "height": 0.0814, "transform": {"position": [0.3036, 0.358, 0.2396], "rotation": [0.8479, 0.5171, 1.06]}}, {"id": "collar3", "type": "capsule", "center": [0.2364, 0.358, 0.2754], "radius": 0.03, "height": 0.0751, "transform": {"position": [0.2364, 0.358, 0.2754], "rotation": [0.2583, 0.2425, 1.5074]}}, {"id": "collar4", "type": "capsule", "center": [0.1636, 0.358, 0.2754], "radius": 0.03, "height": 0.0751, "transform": {"position": [0.1636, 0.358, 0.2754], "rotation": [-0.2583, -0.2425, 1.5074]}}, {"id": "collar5", "type": "capsule", "center": [0.0964, 0.358, 0.2396], "radius": 0.03, "height": 0.0814, "transform": {"position": [0.0964, 0.358, 0.2396], "rotation": [-0.8479, -0.5171, 1.06]}}, {"id": "collar6", "type": "capsule", "center": [0.0449, 0.358, 0.1733], "radius": 0.03, "height": 0.0895, "transform": {"position": [0.0449, 0.358, 0.1733], "rotation": [-1.3358, -0.4214, 0.5295]}}, {"id": "collar7", "type": "capsule", "center": [0.017, 0.358, 0.0868], "radius": 0.03, "height": 0.0948, "transform": {"position": [0.017, 0.358, 0.0868], "rotation": [-1.5472, -0.1516, 0.1552]}}, {"id": "collar8", "type": "capsule", "center": [0.017, 0.358, -0.0068], "radius": 0.03, "height": 0.0948, "transform": {"position": [0.017, 0.358, -0.0068], "rotation": [-1.5472, 0.1516, -0.1552]}}, {"id": "collar9", "type": "capsule", "center": [0.0449, 0.358, -0.0933], "radius": 0.03, "height": 0.0895, "transform": {"position": [0.0449, 0.358, -0.0933], "rotation": [-1.3358, 0.4214, -0.5295]}}, {"id": "collar10", "type": "capsule", "center": [0.0964, 0.358, -0.1596], "radius": 0.03, "height": 0.0814, "transform": {"position": [0.0964, 0.358, -0.1596], "rotation": [-0.8479, 0.5171, -1.06]}}, {"id": "collar11", "type": "capsule", "center": [0.1636, 0.358, -0.1954], "radius": 0.03, "height": 0.0751, "transform": {"position": [0.1636, 0.358, -0.1954], "rotation": [-0.2583, 0.2425, -1.5074]}}, {"id": "collar12", "type": "capsule", "center": [0.2364, 0.358, -0.1954], "radius": 0.03, "height": 0.0751, "transform": {"position": [0.2364, 0.358, -0.1954], "rotation": [0.2583, -0.2425, -1.5074]}}, {"id": "collar13", "type": "capsule", "center": [0.3036, 0.358, -0.1596], "radius": 0.03, "height": 0.0814, "transform": {"position": [0.3036, 0.358, -0.1596], "rotation": [0.8479, -0.5171, -1.06]}}, {"id": "collar14", "type": "capsule", "center": [0.3551, 0.358, -0.0933], "radius": 0.03, "height": 0.0895, "transform": {"position": [0.3551, 0.358, -0.0933], "rotation": [1.3358, -0.4214, -0.5295]}}, {"id": "collar15", "type": "capsule", "center": [0.383, 0.358, -0.0068], "radius": 0.03, "height": 0.0948, "transform": {"position": [0.383, 0.358, -0.0068], "rotation": [1.5472, -0.1516, -0.1552]}}], "operations": [{"id": "foot", "type": "smooth-union", "left": "shaft", "right": "toe", "radius": 0.1}, {"id": "sole", "type": "intersect", "left": "sole-print", "right": "sole-slab"}, {"id": "soled", "type": "smooth-union", "left": "foot", "right": "sole", "radius": 0.03}, {"id": "cut", "type": "subtract", "left": "soled", "right": "top"}, {"id": "boot-cut", "type": "subtract", "left": "cut", "right": "under"}, {"id": "boot-t0", "type": "smooth-union", "left": "collar0", "right": "collar1", "radius": 0.001}, {"id": "boot-t1", "type": "smooth-union", "left": "boot-t0", "right": "collar2", "radius": 0.001}, {"id": "boot-t2", "type": "smooth-union", "left": "boot-t1", "right": "collar3", "radius": 0.001}, {"id": "boot-t3", "type": "smooth-union", "left": "boot-t2", "right": "collar4", "radius": 0.001}, {"id": "boot-t4", "type": "smooth-union", "left": "boot-t3", "right": "collar5", "radius": 0.001}, {"id": "boot-t5", "type": "smooth-union", "left": "boot-t4", "right": "collar6", "radius": 0.001}, {"id": "boot-t6", "type": "smooth-union", "left": "boot-t5", "right": "collar7", "radius": 0.001}, {"id": "boot-t7", "type": "smooth-union", "left": "boot-t6", "right": "collar8", "radius": 0.001}, {"id": "boot-t8", "type": "smooth-union", "left": "boot-t7", "right": "collar9", "radius": 0.001}, {"id": "boot-t9", "type": "smooth-union", "left": "boot-t8", "right": "collar10", "radius": 0.001}, {"id": "boot-t10", "type": "smooth-union", "left": "boot-t9", "right": "collar11", "radius": 0.001}, {"id": "boot-t11", "type": "smooth-union", "left": "boot-t10", "right": "collar12", "radius": 0.001}, {"id": "boot-t12", "type": "smooth-union", "left": "boot-t11", "right": "collar13", "radius": 0.001}, {"id": "boot-t13", "type": "smooth-union", "left": "boot-t12", "right": "collar14", "radius": 0.001}, {"id": "boot-t14", "type": "smooth-union", "left": "boot-t13", "right": "collar15", "radius": 0.001}, {"id": "boot", "type": "smooth-union", "left": "boot-cut", "right": "boot-t14", "radius": 0.03}], "bounds": {"min": [-0.04999999999999999, -0.01, -0.25], "max": [0.45, 0.4, 0.48]}, "resolution": 64}, "decimate": {"targetRatio": 0.1}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1.0, 1.0, 1.0]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-shell-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "boot-leather"}}, "material": "boot-leather", "materialLayers": ["boot-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-toe-sole-l", "kind": "ridge", "description": "bulbous toe and thick sole"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(72, 45, 43, 1.0)", "secondaryAlbedo": "rgba(51, 37, 35, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/boot-leather.png"]}};
+  node_boot_shell_l_23.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-shell-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "boot-leather"}};
+  (nodes["vest-shell"] ?? root).add(node_boot_shell_l_23);
+  nodes["boot-shell-l"] = node_boot_shell_l_23;
+  const mesh_boot_shell_l_23GeometryDense = polygonizeSdf({"primitives": [{"id": "shaft", "type": "ellipsoid", "center": [0.2, 0.22, 0.04], "radii": [0.205, 0.33, 0.265]}, {"id": "toe", "type": "ellipsoid", "center": [0.2, 0.1, 0.19], "radii": [0.185, 0.115, 0.255]}, {"id": "sole-print", "type": "ellipsoid", "center": [0.2, 0.03, 0.12], "radii": [0.19, 0.6, 0.31]}, {"id": "sole-slab", "type": "box", "center": [0.2, 0.03, 0.12], "size": [1.0, 0.06, 1.0]}, {"id": "top", "type": "box", "center": [0.2, 0.6699999999999999, 0.1], "size": [0.8, 0.6, 1.2]}, {"id": "under", "type": "box", "center": [0.2, -0.3, 0.1], "size": [0.8, 0.6, 1.2]}, {"id": "collar0", "type": "capsule", "center": [0.383, 0.358, 0.0868], "radius": 0.03, "height": 0.0948, "transform": {"position": [0.383, 0.358, 0.0868], "rotation": [1.5472, 0.1516, 0.1552]}}, {"id": "collar1", "type": "capsule", "center": [0.3551, 0.358, 0.1733], "radius": 0.03, "height": 0.0895, "transform": {"position": [0.3551, 0.358, 0.1733], "rotation": [1.3358, 0.4214, 0.5295]}}, {"id": "collar2", "type": "capsule", "center": [0.3036, 0.358, 0.2396], "radius": 0.03, "height": 0.0814, "transform": {"position": [0.3036, 0.358, 0.2396], "rotation": [0.8479, 0.5171, 1.06]}}, {"id": "collar3", "type": "capsule", "center": [0.2364, 0.358, 0.2754], "radius": 0.03, "height": 0.0751, "transform": {"position": [0.2364, 0.358, 0.2754], "rotation": [0.2583, 0.2425, 1.5074]}}, {"id": "collar4", "type": "capsule", "center": [0.1636, 0.358, 0.2754], "radius": 0.03, "height": 0.0751, "transform": {"position": [0.1636, 0.358, 0.2754], "rotation": [-0.2583, -0.2425, 1.5074]}}, {"id": "collar5", "type": "capsule", "center": [0.0964, 0.358, 0.2396], "radius": 0.03, "height": 0.0814, "transform": {"position": [0.0964, 0.358, 0.2396], "rotation": [-0.8479, -0.5171, 1.06]}}, {"id": "collar6", "type": "capsule", "center": [0.0449, 0.358, 0.1733], "radius": 0.03, "height": 0.0895, "transform": {"position": [0.0449, 0.358, 0.1733], "rotation": [-1.3358, -0.4214, 0.5295]}}, {"id": "collar7", "type": "capsule", "center": [0.017, 0.358, 0.0868], "radius": 0.03, "height": 0.0948, "transform": {"position": [0.017, 0.358, 0.0868], "rotation": [-1.5472, -0.1516, 0.1552]}}, {"id": "collar8", "type": "capsule", "center": [0.017, 0.358, -0.0068], "radius": 0.03, "height": 0.0948, "transform": {"position": [0.017, 0.358, -0.0068], "rotation": [-1.5472, 0.1516, -0.1552]}}, {"id": "collar9", "type": "capsule", "center": [0.0449, 0.358, -0.0933], "radius": 0.03, "height": 0.0895, "transform": {"position": [0.0449, 0.358, -0.0933], "rotation": [-1.3358, 0.4214, -0.5295]}}, {"id": "collar10", "type": "capsule", "center": [0.0964, 0.358, -0.1596], "radius": 0.03, "height": 0.0814, "transform": {"position": [0.0964, 0.358, -0.1596], "rotation": [-0.8479, 0.5171, -1.06]}}, {"id": "collar11", "type": "capsule", "center": [0.1636, 0.358, -0.1954], "radius": 0.03, "height": 0.0751, "transform": {"position": [0.1636, 0.358, -0.1954], "rotation": [-0.2583, 0.2425, -1.5074]}}, {"id": "collar12", "type": "capsule", "center": [0.2364, 0.358, -0.1954], "radius": 0.03, "height": 0.0751, "transform": {"position": [0.2364, 0.358, -0.1954], "rotation": [0.2583, -0.2425, -1.5074]}}, {"id": "collar13", "type": "capsule", "center": [0.3036, 0.358, -0.1596], "radius": 0.03, "height": 0.0814, "transform": {"position": [0.3036, 0.358, -0.1596], "rotation": [0.8479, -0.5171, -1.06]}}, {"id": "collar14", "type": "capsule", "center": [0.3551, 0.358, -0.0933], "radius": 0.03, "height": 0.0895, "transform": {"position": [0.3551, 0.358, -0.0933], "rotation": [1.3358, -0.4214, -0.5295]}}, {"id": "collar15", "type": "capsule", "center": [0.383, 0.358, -0.0068], "radius": 0.03, "height": 0.0948, "transform": {"position": [0.383, 0.358, -0.0068], "rotation": [1.5472, -0.1516, -0.1552]}}], "operations": [{"id": "foot", "type": "smooth-union", "left": "shaft", "right": "toe", "radius": 0.1}, {"id": "sole", "type": "intersect", "left": "sole-print", "right": "sole-slab"}, {"id": "soled", "type": "smooth-union", "left": "foot", "right": "sole", "radius": 0.03}, {"id": "cut", "type": "subtract", "left": "soled", "right": "top"}, {"id": "boot-cut", "type": "subtract", "left": "cut", "right": "under"}, {"id": "boot-t0", "type": "smooth-union", "left": "collar0", "right": "collar1", "radius": 0.001}, {"id": "boot-t1", "type": "smooth-union", "left": "boot-t0", "right": "collar2", "radius": 0.001}, {"id": "boot-t2", "type": "smooth-union", "left": "boot-t1", "right": "collar3", "radius": 0.001}, {"id": "boot-t3", "type": "smooth-union", "left": "boot-t2", "right": "collar4", "radius": 0.001}, {"id": "boot-t4", "type": "smooth-union", "left": "boot-t3", "right": "collar5", "radius": 0.001}, {"id": "boot-t5", "type": "smooth-union", "left": "boot-t4", "right": "collar6", "radius": 0.001}, {"id": "boot-t6", "type": "smooth-union", "left": "boot-t5", "right": "collar7", "radius": 0.001}, {"id": "boot-t7", "type": "smooth-union", "left": "boot-t6", "right": "collar8", "radius": 0.001}, {"id": "boot-t8", "type": "smooth-union", "left": "boot-t7", "right": "collar9", "radius": 0.001}, {"id": "boot-t9", "type": "smooth-union", "left": "boot-t8", "right": "collar10", "radius": 0.001}, {"id": "boot-t10", "type": "smooth-union", "left": "boot-t9", "right": "collar11", "radius": 0.001}, {"id": "boot-t11", "type": "smooth-union", "left": "boot-t10", "right": "collar12", "radius": 0.001}, {"id": "boot-t12", "type": "smooth-union", "left": "boot-t11", "right": "collar13", "radius": 0.001}, {"id": "boot-t13", "type": "smooth-union", "left": "boot-t12", "right": "collar14", "radius": 0.001}, {"id": "boot-t14", "type": "smooth-union", "left": "boot-t13", "right": "collar15", "radius": 0.001}, {"id": "boot", "type": "smooth-union", "left": "boot-cut", "right": "boot-t14", "radius": 0.03}], "bounds": {"min": [-0.04999999999999999, -0.01, -0.25], "max": [0.45, 0.4, 0.48]}, "resolution": 40});
+  const mesh_boot_shell_l_23Geometry = decimateGeometry(mesh_boot_shell_l_23GeometryDense, 0.1);
+  if (!endpoint_boot_shell_l_23) {
+    mesh_boot_shell_l_23Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_shell_l_23 = new THREE.Mesh(
+    mesh_boot_shell_l_23Geometry,
+    createSculptMaterial("boot-leather", {"id": "boot-leather", "name": "Boot leather", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#482D2B", "color": "#482D2B", "albedo": {"dominant": "#482D2B", "secondary": ["#332523"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/boot-leather.png."}, "colorVariation": {"palette": ["#482D2B", "#332523"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.7, "variation": 0.1, "map": "none", "localResponse": "satin highlight band on the rounded faces, as painted in the reference"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/boot-leather.texture.json: mottle 0.008, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}}, options, true)
+  );
+  mesh_boot_shell_l_23.name = "Lace-up boot (left)";
+  if (endpoint_boot_shell_l_23) {
+    mesh_boot_shell_l_23.position.copy(endpoint_boot_shell_l_23.midpoint);
+    mesh_boot_shell_l_23.quaternion.copy(endpoint_boot_shell_l_23.quaternion);
+  }
+  mesh_boot_shell_l_23.castShadow = options.castShadow ?? true;
+  mesh_boot_shell_l_23.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_shell_l_23.userData.sculptComponent = {"id": "boot-shell-l", "name": "Lace-up boot (left)", "level": "macro", "role": "body", "importance": 0.95, "confidence": 0.8, "primitive": "ellipsoid", "topologyClass": "implicit", "topologyRationale": "Boot over the shoe and lower leg: shaft and bulbous toe box blended over a flat sole, top cut at mid-shin.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "sdf": {"primitives": [{"id": "shaft", "type": "ellipsoid", "center": [0.2, 0.22, 0.04], "radii": [0.205, 0.33, 0.265]}, {"id": "toe", "type": "ellipsoid", "center": [0.2, 0.1, 0.19], "radii": [0.185, 0.115, 0.255]}, {"id": "sole-print", "type": "ellipsoid", "center": [0.2, 0.03, 0.12], "radii": [0.19, 0.6, 0.31]}, {"id": "sole-slab", "type": "box", "center": [0.2, 0.03, 0.12], "size": [1.0, 0.06, 1.0]}, {"id": "top", "type": "box", "center": [0.2, 0.6699999999999999, 0.1], "size": [0.8, 0.6, 1.2]}, {"id": "under", "type": "box", "center": [0.2, -0.3, 0.1], "size": [0.8, 0.6, 1.2]}, {"id": "collar0", "type": "capsule", "center": [0.383, 0.358, 0.0868], "radius": 0.03, "height": 0.0948, "transform": {"position": [0.383, 0.358, 0.0868], "rotation": [1.5472, 0.1516, 0.1552]}}, {"id": "collar1", "type": "capsule", "center": [0.3551, 0.358, 0.1733], "radius": 0.03, "height": 0.0895, "transform": {"position": [0.3551, 0.358, 0.1733], "rotation": [1.3358, 0.4214, 0.5295]}}, {"id": "collar2", "type": "capsule", "center": [0.3036, 0.358, 0.2396], "radius": 0.03, "height": 0.0814, "transform": {"position": [0.3036, 0.358, 0.2396], "rotation": [0.8479, 0.5171, 1.06]}}, {"id": "collar3", "type": "capsule", "center": [0.2364, 0.358, 0.2754], "radius": 0.03, "height": 0.0751, "transform": {"position": [0.2364, 0.358, 0.2754], "rotation": [0.2583, 0.2425, 1.5074]}}, {"id": "collar4", "type": "capsule", "center": [0.1636, 0.358, 0.2754], "radius": 0.03, "height": 0.0751, "transform": {"position": [0.1636, 0.358, 0.2754], "rotation": [-0.2583, -0.2425, 1.5074]}}, {"id": "collar5", "type": "capsule", "center": [0.0964, 0.358, 0.2396], "radius": 0.03, "height": 0.0814, "transform": {"position": [0.0964, 0.358, 0.2396], "rotation": [-0.8479, -0.5171, 1.06]}}, {"id": "collar6", "type": "capsule", "center": [0.0449, 0.358, 0.1733], "radius": 0.03, "height": 0.0895, "transform": {"position": [0.0449, 0.358, 0.1733], "rotation": [-1.3358, -0.4214, 0.5295]}}, {"id": "collar7", "type": "capsule", "center": [0.017, 0.358, 0.0868], "radius": 0.03, "height": 0.0948, "transform": {"position": [0.017, 0.358, 0.0868], "rotation": [-1.5472, -0.1516, 0.1552]}}, {"id": "collar8", "type": "capsule", "center": [0.017, 0.358, -0.0068], "radius": 0.03, "height": 0.0948, "transform": {"position": [0.017, 0.358, -0.0068], "rotation": [-1.5472, 0.1516, -0.1552]}}, {"id": "collar9", "type": "capsule", "center": [0.0449, 0.358, -0.0933], "radius": 0.03, "height": 0.0895, "transform": {"position": [0.0449, 0.358, -0.0933], "rotation": [-1.3358, 0.4214, -0.5295]}}, {"id": "collar10", "type": "capsule", "center": [0.0964, 0.358, -0.1596], "radius": 0.03, "height": 0.0814, "transform": {"position": [0.0964, 0.358, -0.1596], "rotation": [-0.8479, 0.5171, -1.06]}}, {"id": "collar11", "type": "capsule", "center": [0.1636, 0.358, -0.1954], "radius": 0.03, "height": 0.0751, "transform": {"position": [0.1636, 0.358, -0.1954], "rotation": [-0.2583, 0.2425, -1.5074]}}, {"id": "collar12", "type": "capsule", "center": [0.2364, 0.358, -0.1954], "radius": 0.03, "height": 0.0751, "transform": {"position": [0.2364, 0.358, -0.1954], "rotation": [0.2583, -0.2425, -1.5074]}}, {"id": "collar13", "type": "capsule", "center": [0.3036, 0.358, -0.1596], "radius": 0.03, "height": 0.0814, "transform": {"position": [0.3036, 0.358, -0.1596], "rotation": [0.8479, -0.5171, -1.06]}}, {"id": "collar14", "type": "capsule", "center": [0.3551, 0.358, -0.0933], "radius": 0.03, "height": 0.0895, "transform": {"position": [0.3551, 0.358, -0.0933], "rotation": [1.3358, -0.4214, -0.5295]}}, {"id": "collar15", "type": "capsule", "center": [0.383, 0.358, -0.0068], "radius": 0.03, "height": 0.0948, "transform": {"position": [0.383, 0.358, -0.0068], "rotation": [1.5472, -0.1516, -0.1552]}}], "operations": [{"id": "foot", "type": "smooth-union", "left": "shaft", "right": "toe", "radius": 0.1}, {"id": "sole", "type": "intersect", "left": "sole-print", "right": "sole-slab"}, {"id": "soled", "type": "smooth-union", "left": "foot", "right": "sole", "radius": 0.03}, {"id": "cut", "type": "subtract", "left": "soled", "right": "top"}, {"id": "boot-cut", "type": "subtract", "left": "cut", "right": "under"}, {"id": "boot-t0", "type": "smooth-union", "left": "collar0", "right": "collar1", "radius": 0.001}, {"id": "boot-t1", "type": "smooth-union", "left": "boot-t0", "right": "collar2", "radius": 0.001}, {"id": "boot-t2", "type": "smooth-union", "left": "boot-t1", "right": "collar3", "radius": 0.001}, {"id": "boot-t3", "type": "smooth-union", "left": "boot-t2", "right": "collar4", "radius": 0.001}, {"id": "boot-t4", "type": "smooth-union", "left": "boot-t3", "right": "collar5", "radius": 0.001}, {"id": "boot-t5", "type": "smooth-union", "left": "boot-t4", "right": "collar6", "radius": 0.001}, {"id": "boot-t6", "type": "smooth-union", "left": "boot-t5", "right": "collar7", "radius": 0.001}, {"id": "boot-t7", "type": "smooth-union", "left": "boot-t6", "right": "collar8", "radius": 0.001}, {"id": "boot-t8", "type": "smooth-union", "left": "boot-t7", "right": "collar9", "radius": 0.001}, {"id": "boot-t9", "type": "smooth-union", "left": "boot-t8", "right": "collar10", "radius": 0.001}, {"id": "boot-t10", "type": "smooth-union", "left": "boot-t9", "right": "collar11", "radius": 0.001}, {"id": "boot-t11", "type": "smooth-union", "left": "boot-t10", "right": "collar12", "radius": 0.001}, {"id": "boot-t12", "type": "smooth-union", "left": "boot-t11", "right": "collar13", "radius": 0.001}, {"id": "boot-t13", "type": "smooth-union", "left": "boot-t12", "right": "collar14", "radius": 0.001}, {"id": "boot-t14", "type": "smooth-union", "left": "boot-t13", "right": "collar15", "radius": 0.001}, {"id": "boot", "type": "smooth-union", "left": "boot-cut", "right": "boot-t14", "radius": 0.03}], "bounds": {"min": [-0.04999999999999999, -0.01, -0.25], "max": [0.45, 0.4, 0.48]}, "resolution": 64}, "decimate": {"targetRatio": 0.1}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1.0, 1.0, 1.0]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-shell-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "boot-leather"}}, "material": "boot-leather", "materialLayers": ["boot-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-toe-sole-l", "kind": "ridge", "description": "bulbous toe and thick sole"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(72, 45, 43, 1.0)", "secondaryAlbedo": "rgba(51, 37, 35, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/boot-leather.png"]}};
+  node_boot_shell_l_23.add(mesh_boot_shell_l_23);
+  meshes["boot-shell-l"] = mesh_boot_shell_l_23;
+  colliders["boot-shell-l"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-shell-l"] ??= [];
+  destructionGroups["boot-shell-l"].push(node_boot_shell_l_23);
+
+  const endpoint_boot_eyelet_l0a_24 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_l0a_24 = new THREE.Group();
+  node_boot_eyelet_l0a_24.name = "Boot eyelet__pivot";
+  node_boot_eyelet_l0a_24.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_l0a_24) {
+    node_boot_eyelet_l0a_24.position.copy(endpoint_boot_eyelet_l0a_24.start);
+    node_boot_eyelet_l0a_24.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_l0a_24.position.set(0.135, 0.17, 0.3787);
+    node_boot_eyelet_l0a_24.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_l0a_24.userData.sculptComponent = {"id": "boot-eyelet-l0a", "name": "Boot eyelet", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.135, 0.17, 0.3787], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l0a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l0a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l0a_24.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l0a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l0a_24);
+  nodes["boot-eyelet-l0a"] = node_boot_eyelet_l0a_24;
+  const mesh_boot_eyelet_l0a_24GeometryDense = endpoint_boot_eyelet_l0a_24
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l0a_24.endRadius, endpoint_boot_eyelet_l0a_24.baseRadius, endpoint_boot_eyelet_l0a_24.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_l0a_24Geometry = decimateGeometry(mesh_boot_eyelet_l0a_24GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_l0a_24) {
+    mesh_boot_eyelet_l0a_24Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_l0a_24 = new THREE.Mesh(
+    mesh_boot_eyelet_l0a_24Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_l0a_24.name = "Boot eyelet";
+  if (endpoint_boot_eyelet_l0a_24) {
+    mesh_boot_eyelet_l0a_24.position.copy(endpoint_boot_eyelet_l0a_24.midpoint);
+    mesh_boot_eyelet_l0a_24.quaternion.copy(endpoint_boot_eyelet_l0a_24.quaternion);
+  }
+  mesh_boot_eyelet_l0a_24.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_l0a_24.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_l0a_24.userData.sculptComponent = {"id": "boot-eyelet-l0a", "name": "Boot eyelet", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.135, 0.17, 0.3787], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l0a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l0a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l0a_24.add(mesh_boot_eyelet_l0a_24);
+  meshes["boot-eyelet-l0a"] = mesh_boot_eyelet_l0a_24;
+  colliders["boot-eyelet-l0a"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-l0a"] ??= [];
+  destructionGroups["boot-eyelet-l0a"].push(node_boot_eyelet_l0a_24);
+
+  const endpoint_boot_eyelet_l0b_25 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_l0b_25 = new THREE.Group();
+  node_boot_eyelet_l0b_25.name = "Boot eyelet boot-eyelet-l0b__pivot";
+  node_boot_eyelet_l0b_25.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_l0b_25) {
+    node_boot_eyelet_l0b_25.position.copy(endpoint_boot_eyelet_l0b_25.start);
+    node_boot_eyelet_l0b_25.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_l0b_25.position.set(0.265, 0.17, 0.3787);
+    node_boot_eyelet_l0b_25.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_l0b_25.userData.sculptComponent = {"id": "boot-eyelet-l0b", "name": "Boot eyelet boot-eyelet-l0b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.265, 0.17, 0.3787], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l0b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l0b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l0b_25.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l0b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l0b_25);
+  nodes["boot-eyelet-l0b"] = node_boot_eyelet_l0b_25;
+  const mesh_boot_eyelet_l0b_25GeometryDense = endpoint_boot_eyelet_l0b_25
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l0b_25.endRadius, endpoint_boot_eyelet_l0b_25.baseRadius, endpoint_boot_eyelet_l0b_25.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_l0b_25Geometry = decimateGeometry(mesh_boot_eyelet_l0b_25GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_l0b_25) {
+    mesh_boot_eyelet_l0b_25Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_l0b_25 = new THREE.Mesh(
+    mesh_boot_eyelet_l0b_25Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_l0b_25.name = "Boot eyelet boot-eyelet-l0b";
+  if (endpoint_boot_eyelet_l0b_25) {
+    mesh_boot_eyelet_l0b_25.position.copy(endpoint_boot_eyelet_l0b_25.midpoint);
+    mesh_boot_eyelet_l0b_25.quaternion.copy(endpoint_boot_eyelet_l0b_25.quaternion);
+  }
+  mesh_boot_eyelet_l0b_25.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_l0b_25.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_l0b_25.userData.sculptComponent = {"id": "boot-eyelet-l0b", "name": "Boot eyelet boot-eyelet-l0b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.265, 0.17, 0.3787], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l0b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l0b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l0b_25.add(mesh_boot_eyelet_l0b_25);
+  meshes["boot-eyelet-l0b"] = mesh_boot_eyelet_l0b_25;
+  colliders["boot-eyelet-l0b"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-l0b"] ??= [];
+  destructionGroups["boot-eyelet-l0b"].push(node_boot_eyelet_l0b_25);
+
+  const endpoint_boot_eyelet_l1a_26 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_l1a_26 = new THREE.Group();
+  node_boot_eyelet_l1a_26.name = "Boot eyelet boot-eyelet-l1a__pivot";
+  node_boot_eyelet_l1a_26.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_l1a_26) {
+    node_boot_eyelet_l1a_26.position.copy(endpoint_boot_eyelet_l1a_26.start);
+    node_boot_eyelet_l1a_26.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_l1a_26.position.set(0.135, 0.215, 0.3273);
+    node_boot_eyelet_l1a_26.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_l1a_26.userData.sculptComponent = {"id": "boot-eyelet-l1a", "name": "Boot eyelet boot-eyelet-l1a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.135, 0.215, 0.3273], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l1a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l1a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l1a_26.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l1a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l1a_26);
+  nodes["boot-eyelet-l1a"] = node_boot_eyelet_l1a_26;
+  const mesh_boot_eyelet_l1a_26GeometryDense = endpoint_boot_eyelet_l1a_26
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l1a_26.endRadius, endpoint_boot_eyelet_l1a_26.baseRadius, endpoint_boot_eyelet_l1a_26.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_l1a_26Geometry = decimateGeometry(mesh_boot_eyelet_l1a_26GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_l1a_26) {
+    mesh_boot_eyelet_l1a_26Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_l1a_26 = new THREE.Mesh(
+    mesh_boot_eyelet_l1a_26Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_l1a_26.name = "Boot eyelet boot-eyelet-l1a";
+  if (endpoint_boot_eyelet_l1a_26) {
+    mesh_boot_eyelet_l1a_26.position.copy(endpoint_boot_eyelet_l1a_26.midpoint);
+    mesh_boot_eyelet_l1a_26.quaternion.copy(endpoint_boot_eyelet_l1a_26.quaternion);
+  }
+  mesh_boot_eyelet_l1a_26.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_l1a_26.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_l1a_26.userData.sculptComponent = {"id": "boot-eyelet-l1a", "name": "Boot eyelet boot-eyelet-l1a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.135, 0.215, 0.3273], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l1a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l1a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l1a_26.add(mesh_boot_eyelet_l1a_26);
+  meshes["boot-eyelet-l1a"] = mesh_boot_eyelet_l1a_26;
+  colliders["boot-eyelet-l1a"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-l1a"] ??= [];
+  destructionGroups["boot-eyelet-l1a"].push(node_boot_eyelet_l1a_26);
+
+  const endpoint_boot_eyelet_l1b_27 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_l1b_27 = new THREE.Group();
+  node_boot_eyelet_l1b_27.name = "Boot eyelet boot-eyelet-l1b__pivot";
+  node_boot_eyelet_l1b_27.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_l1b_27) {
+    node_boot_eyelet_l1b_27.position.copy(endpoint_boot_eyelet_l1b_27.start);
+    node_boot_eyelet_l1b_27.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_l1b_27.position.set(0.265, 0.215, 0.3273);
+    node_boot_eyelet_l1b_27.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_l1b_27.userData.sculptComponent = {"id": "boot-eyelet-l1b", "name": "Boot eyelet boot-eyelet-l1b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.265, 0.215, 0.3273], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l1b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l1b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l1b_27.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l1b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l1b_27);
+  nodes["boot-eyelet-l1b"] = node_boot_eyelet_l1b_27;
+  const mesh_boot_eyelet_l1b_27GeometryDense = endpoint_boot_eyelet_l1b_27
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l1b_27.endRadius, endpoint_boot_eyelet_l1b_27.baseRadius, endpoint_boot_eyelet_l1b_27.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_l1b_27Geometry = decimateGeometry(mesh_boot_eyelet_l1b_27GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_l1b_27) {
+    mesh_boot_eyelet_l1b_27Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_l1b_27 = new THREE.Mesh(
+    mesh_boot_eyelet_l1b_27Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_l1b_27.name = "Boot eyelet boot-eyelet-l1b";
+  if (endpoint_boot_eyelet_l1b_27) {
+    mesh_boot_eyelet_l1b_27.position.copy(endpoint_boot_eyelet_l1b_27.midpoint);
+    mesh_boot_eyelet_l1b_27.quaternion.copy(endpoint_boot_eyelet_l1b_27.quaternion);
+  }
+  mesh_boot_eyelet_l1b_27.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_l1b_27.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_l1b_27.userData.sculptComponent = {"id": "boot-eyelet-l1b", "name": "Boot eyelet boot-eyelet-l1b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.265, 0.215, 0.3273], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l1b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l1b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l1b_27.add(mesh_boot_eyelet_l1b_27);
+  meshes["boot-eyelet-l1b"] = mesh_boot_eyelet_l1b_27;
+  colliders["boot-eyelet-l1b"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-l1b"] ??= [];
+  destructionGroups["boot-eyelet-l1b"].push(node_boot_eyelet_l1b_27);
+
+  const endpoint_boot_eyelet_l2a_28 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_l2a_28 = new THREE.Group();
+  node_boot_eyelet_l2a_28.name = "Boot eyelet boot-eyelet-l2a__pivot";
+  node_boot_eyelet_l2a_28.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_l2a_28) {
+    node_boot_eyelet_l2a_28.position.copy(endpoint_boot_eyelet_l2a_28.start);
+    node_boot_eyelet_l2a_28.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_l2a_28.position.set(0.135, 0.26, 0.2955);
+    node_boot_eyelet_l2a_28.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_l2a_28.userData.sculptComponent = {"id": "boot-eyelet-l2a", "name": "Boot eyelet boot-eyelet-l2a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.135, 0.26, 0.2955], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l2a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l2a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l2a_28.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l2a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l2a_28);
+  nodes["boot-eyelet-l2a"] = node_boot_eyelet_l2a_28;
+  const mesh_boot_eyelet_l2a_28GeometryDense = endpoint_boot_eyelet_l2a_28
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l2a_28.endRadius, endpoint_boot_eyelet_l2a_28.baseRadius, endpoint_boot_eyelet_l2a_28.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_l2a_28Geometry = decimateGeometry(mesh_boot_eyelet_l2a_28GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_l2a_28) {
+    mesh_boot_eyelet_l2a_28Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_l2a_28 = new THREE.Mesh(
+    mesh_boot_eyelet_l2a_28Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_l2a_28.name = "Boot eyelet boot-eyelet-l2a";
+  if (endpoint_boot_eyelet_l2a_28) {
+    mesh_boot_eyelet_l2a_28.position.copy(endpoint_boot_eyelet_l2a_28.midpoint);
+    mesh_boot_eyelet_l2a_28.quaternion.copy(endpoint_boot_eyelet_l2a_28.quaternion);
+  }
+  mesh_boot_eyelet_l2a_28.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_l2a_28.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_l2a_28.userData.sculptComponent = {"id": "boot-eyelet-l2a", "name": "Boot eyelet boot-eyelet-l2a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.135, 0.26, 0.2955], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l2a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l2a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l2a_28.add(mesh_boot_eyelet_l2a_28);
+  meshes["boot-eyelet-l2a"] = mesh_boot_eyelet_l2a_28;
+  colliders["boot-eyelet-l2a"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-l2a"] ??= [];
+  destructionGroups["boot-eyelet-l2a"].push(node_boot_eyelet_l2a_28);
+
+  const endpoint_boot_eyelet_l2b_29 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_l2b_29 = new THREE.Group();
+  node_boot_eyelet_l2b_29.name = "Boot eyelet boot-eyelet-l2b__pivot";
+  node_boot_eyelet_l2b_29.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_l2b_29) {
+    node_boot_eyelet_l2b_29.position.copy(endpoint_boot_eyelet_l2b_29.start);
+    node_boot_eyelet_l2b_29.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_l2b_29.position.set(0.265, 0.26, 0.2955);
+    node_boot_eyelet_l2b_29.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_l2b_29.userData.sculptComponent = {"id": "boot-eyelet-l2b", "name": "Boot eyelet boot-eyelet-l2b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.265, 0.26, 0.2955], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l2b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l2b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l2b_29.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l2b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l2b_29);
+  nodes["boot-eyelet-l2b"] = node_boot_eyelet_l2b_29;
+  const mesh_boot_eyelet_l2b_29GeometryDense = endpoint_boot_eyelet_l2b_29
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l2b_29.endRadius, endpoint_boot_eyelet_l2b_29.baseRadius, endpoint_boot_eyelet_l2b_29.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_l2b_29Geometry = decimateGeometry(mesh_boot_eyelet_l2b_29GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_l2b_29) {
+    mesh_boot_eyelet_l2b_29Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_l2b_29 = new THREE.Mesh(
+    mesh_boot_eyelet_l2b_29Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_l2b_29.name = "Boot eyelet boot-eyelet-l2b";
+  if (endpoint_boot_eyelet_l2b_29) {
+    mesh_boot_eyelet_l2b_29.position.copy(endpoint_boot_eyelet_l2b_29.midpoint);
+    mesh_boot_eyelet_l2b_29.quaternion.copy(endpoint_boot_eyelet_l2b_29.quaternion);
+  }
+  mesh_boot_eyelet_l2b_29.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_l2b_29.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_l2b_29.userData.sculptComponent = {"id": "boot-eyelet-l2b", "name": "Boot eyelet boot-eyelet-l2b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.265, 0.26, 0.2955], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l2b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l2b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l2b_29.add(mesh_boot_eyelet_l2b_29);
+  meshes["boot-eyelet-l2b"] = mesh_boot_eyelet_l2b_29;
+  colliders["boot-eyelet-l2b"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-l2b"] ??= [];
+  destructionGroups["boot-eyelet-l2b"].push(node_boot_eyelet_l2b_29);
+
+  const endpoint_boot_eyelet_l3a_30 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_l3a_30 = new THREE.Group();
+  node_boot_eyelet_l3a_30.name = "Boot eyelet boot-eyelet-l3a__pivot";
+  node_boot_eyelet_l3a_30.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_l3a_30) {
+    node_boot_eyelet_l3a_30.position.copy(endpoint_boot_eyelet_l3a_30.start);
+    node_boot_eyelet_l3a_30.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_l3a_30.position.set(0.135, 0.305, 0.2802);
+    node_boot_eyelet_l3a_30.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_l3a_30.userData.sculptComponent = {"id": "boot-eyelet-l3a", "name": "Boot eyelet boot-eyelet-l3a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.135, 0.305, 0.2802], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l3a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l3a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l3a_30.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l3a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l3a_30);
+  nodes["boot-eyelet-l3a"] = node_boot_eyelet_l3a_30;
+  const mesh_boot_eyelet_l3a_30GeometryDense = endpoint_boot_eyelet_l3a_30
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l3a_30.endRadius, endpoint_boot_eyelet_l3a_30.baseRadius, endpoint_boot_eyelet_l3a_30.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_l3a_30Geometry = decimateGeometry(mesh_boot_eyelet_l3a_30GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_l3a_30) {
+    mesh_boot_eyelet_l3a_30Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_l3a_30 = new THREE.Mesh(
+    mesh_boot_eyelet_l3a_30Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_l3a_30.name = "Boot eyelet boot-eyelet-l3a";
+  if (endpoint_boot_eyelet_l3a_30) {
+    mesh_boot_eyelet_l3a_30.position.copy(endpoint_boot_eyelet_l3a_30.midpoint);
+    mesh_boot_eyelet_l3a_30.quaternion.copy(endpoint_boot_eyelet_l3a_30.quaternion);
+  }
+  mesh_boot_eyelet_l3a_30.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_l3a_30.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_l3a_30.userData.sculptComponent = {"id": "boot-eyelet-l3a", "name": "Boot eyelet boot-eyelet-l3a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.135, 0.305, 0.2802], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l3a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l3a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l3a_30.add(mesh_boot_eyelet_l3a_30);
+  meshes["boot-eyelet-l3a"] = mesh_boot_eyelet_l3a_30;
+  colliders["boot-eyelet-l3a"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-l3a"] ??= [];
+  destructionGroups["boot-eyelet-l3a"].push(node_boot_eyelet_l3a_30);
+
+  const endpoint_boot_eyelet_l3b_31 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_l3b_31 = new THREE.Group();
+  node_boot_eyelet_l3b_31.name = "Boot eyelet boot-eyelet-l3b__pivot";
+  node_boot_eyelet_l3b_31.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_l3b_31) {
+    node_boot_eyelet_l3b_31.position.copy(endpoint_boot_eyelet_l3b_31.start);
+    node_boot_eyelet_l3b_31.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_l3b_31.position.set(0.265, 0.305, 0.2802);
+    node_boot_eyelet_l3b_31.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_l3b_31.userData.sculptComponent = {"id": "boot-eyelet-l3b", "name": "Boot eyelet boot-eyelet-l3b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.265, 0.305, 0.2802], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l3b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l3b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l3b_31.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l3b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l3b_31);
+  nodes["boot-eyelet-l3b"] = node_boot_eyelet_l3b_31;
+  const mesh_boot_eyelet_l3b_31GeometryDense = endpoint_boot_eyelet_l3b_31
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l3b_31.endRadius, endpoint_boot_eyelet_l3b_31.baseRadius, endpoint_boot_eyelet_l3b_31.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_l3b_31Geometry = decimateGeometry(mesh_boot_eyelet_l3b_31GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_l3b_31) {
+    mesh_boot_eyelet_l3b_31Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_l3b_31 = new THREE.Mesh(
+    mesh_boot_eyelet_l3b_31Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_l3b_31.name = "Boot eyelet boot-eyelet-l3b";
+  if (endpoint_boot_eyelet_l3b_31) {
+    mesh_boot_eyelet_l3b_31.position.copy(endpoint_boot_eyelet_l3b_31.midpoint);
+    mesh_boot_eyelet_l3b_31.quaternion.copy(endpoint_boot_eyelet_l3b_31.quaternion);
+  }
+  mesh_boot_eyelet_l3b_31.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_l3b_31.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_l3b_31.userData.sculptComponent = {"id": "boot-eyelet-l3b", "name": "Boot eyelet boot-eyelet-l3b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.265, 0.305, 0.2802], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l3b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l3b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l3b_31.add(mesh_boot_eyelet_l3b_31);
+  meshes["boot-eyelet-l3b"] = mesh_boot_eyelet_l3b_31;
+  colliders["boot-eyelet-l3b"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-l3b"] ??= [];
+  destructionGroups["boot-eyelet-l3b"].push(node_boot_eyelet_l3b_31);
+
+  const endpoint_boot_eyelet_l4a_32 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_l4a_32 = new THREE.Group();
+  node_boot_eyelet_l4a_32.name = "Boot eyelet boot-eyelet-l4a__pivot";
+  node_boot_eyelet_l4a_32.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_l4a_32) {
+    node_boot_eyelet_l4a_32.position.copy(endpoint_boot_eyelet_l4a_32.start);
+    node_boot_eyelet_l4a_32.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_l4a_32.position.set(0.135, 0.35, 0.2969);
+    node_boot_eyelet_l4a_32.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_l4a_32.userData.sculptComponent = {"id": "boot-eyelet-l4a", "name": "Boot eyelet boot-eyelet-l4a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.135, 0.35, 0.2969], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l4a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l4a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l4a_32.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l4a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l4a_32);
+  nodes["boot-eyelet-l4a"] = node_boot_eyelet_l4a_32;
+  const mesh_boot_eyelet_l4a_32GeometryDense = endpoint_boot_eyelet_l4a_32
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l4a_32.endRadius, endpoint_boot_eyelet_l4a_32.baseRadius, endpoint_boot_eyelet_l4a_32.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_l4a_32Geometry = decimateGeometry(mesh_boot_eyelet_l4a_32GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_l4a_32) {
+    mesh_boot_eyelet_l4a_32Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_l4a_32 = new THREE.Mesh(
+    mesh_boot_eyelet_l4a_32Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_l4a_32.name = "Boot eyelet boot-eyelet-l4a";
+  if (endpoint_boot_eyelet_l4a_32) {
+    mesh_boot_eyelet_l4a_32.position.copy(endpoint_boot_eyelet_l4a_32.midpoint);
+    mesh_boot_eyelet_l4a_32.quaternion.copy(endpoint_boot_eyelet_l4a_32.quaternion);
+  }
+  mesh_boot_eyelet_l4a_32.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_l4a_32.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_l4a_32.userData.sculptComponent = {"id": "boot-eyelet-l4a", "name": "Boot eyelet boot-eyelet-l4a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.135, 0.35, 0.2969], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l4a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l4a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l4a_32.add(mesh_boot_eyelet_l4a_32);
+  meshes["boot-eyelet-l4a"] = mesh_boot_eyelet_l4a_32;
+  colliders["boot-eyelet-l4a"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-l4a"] ??= [];
+  destructionGroups["boot-eyelet-l4a"].push(node_boot_eyelet_l4a_32);
+
+  const endpoint_boot_eyelet_l4b_33 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_l4b_33 = new THREE.Group();
+  node_boot_eyelet_l4b_33.name = "Boot eyelet boot-eyelet-l4b__pivot";
+  node_boot_eyelet_l4b_33.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_l4b_33) {
+    node_boot_eyelet_l4b_33.position.copy(endpoint_boot_eyelet_l4b_33.start);
+    node_boot_eyelet_l4b_33.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_l4b_33.position.set(0.265, 0.35, 0.2969);
+    node_boot_eyelet_l4b_33.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_l4b_33.userData.sculptComponent = {"id": "boot-eyelet-l4b", "name": "Boot eyelet boot-eyelet-l4b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.265, 0.35, 0.2969], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l4b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l4b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l4b_33.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l4b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l4b_33);
+  nodes["boot-eyelet-l4b"] = node_boot_eyelet_l4b_33;
+  const mesh_boot_eyelet_l4b_33GeometryDense = endpoint_boot_eyelet_l4b_33
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l4b_33.endRadius, endpoint_boot_eyelet_l4b_33.baseRadius, endpoint_boot_eyelet_l4b_33.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_l4b_33Geometry = decimateGeometry(mesh_boot_eyelet_l4b_33GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_l4b_33) {
+    mesh_boot_eyelet_l4b_33Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_l4b_33 = new THREE.Mesh(
+    mesh_boot_eyelet_l4b_33Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_l4b_33.name = "Boot eyelet boot-eyelet-l4b";
+  if (endpoint_boot_eyelet_l4b_33) {
+    mesh_boot_eyelet_l4b_33.position.copy(endpoint_boot_eyelet_l4b_33.midpoint);
+    mesh_boot_eyelet_l4b_33.quaternion.copy(endpoint_boot_eyelet_l4b_33.quaternion);
+  }
+  mesh_boot_eyelet_l4b_33.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_l4b_33.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_l4b_33.userData.sculptComponent = {"id": "boot-eyelet-l4b", "name": "Boot eyelet boot-eyelet-l4b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-l", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.265, 0.35, 0.2969], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-l4b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-l4b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_l4b_33.add(mesh_boot_eyelet_l4b_33);
+  meshes["boot-eyelet-l4b"] = mesh_boot_eyelet_l4b_33;
+  colliders["boot-eyelet-l4b"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-l4b"] ??= [];
+  destructionGroups["boot-eyelet-l4b"].push(node_boot_eyelet_l4b_33);
+
+  const attachment_boot_lace_la0_34 = {"parentSocket": "boot-l-eyelets", "localStart": [0.265, 0.17, 0.3887], "localEnd": [0.135, 0.215, 0.3373], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_la0_34 = makeAttachmentEndpoint(attachment_boot_lace_la0_34);
+  const node_boot_lace_la0_34 = new THREE.Group();
+  node_boot_lace_la0_34.name = "Boot lace run__pivot";
+  node_boot_lace_la0_34.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_la0_34) {
+    node_boot_lace_la0_34.position.copy(endpoint_boot_lace_la0_34.start);
+    node_boot_lace_la0_34.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_la0_34.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_la0_34.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_la0_34.userData.sculptComponent = {"id": "boot-lace-la0", "name": "Boot lace run", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.265, 0.17, 0.3887], "localEnd": [0.135, 0.215, 0.3373], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-la0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-la0", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_la0_34.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-la0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la0_34);
+  nodes["boot-lace-la0"] = node_boot_lace_la0_34;
+  const mesh_boot_lace_la0_34Geometry = endpoint_boot_lace_la0_34
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_la0_34.endRadius, endpoint_boot_lace_la0_34.baseRadius, endpoint_boot_lace_la0_34.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_la0_34) {
+    mesh_boot_lace_la0_34Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_la0_34 = new THREE.Mesh(
+    mesh_boot_lace_la0_34Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_la0_34.name = "Boot lace run";
+  if (endpoint_boot_lace_la0_34) {
+    mesh_boot_lace_la0_34.position.copy(endpoint_boot_lace_la0_34.midpoint);
+    mesh_boot_lace_la0_34.quaternion.copy(endpoint_boot_lace_la0_34.quaternion);
+  }
+  mesh_boot_lace_la0_34.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_la0_34.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_la0_34.userData.sculptComponent = {"id": "boot-lace-la0", "name": "Boot lace run", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.265, 0.17, 0.3887], "localEnd": [0.135, 0.215, 0.3373], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-la0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-la0", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_la0_34.add(mesh_boot_lace_la0_34);
+  meshes["boot-lace-la0"] = mesh_boot_lace_la0_34;
+  colliders["boot-lace-la0"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-la0"] ??= [];
+  destructionGroups["boot-lace-la0"].push(node_boot_lace_la0_34);
+
+  const attachment_boot_lace_la1_35 = {"parentSocket": "boot-l-eyelets", "localStart": [0.135, 0.215, 0.3373], "localEnd": [0.265, 0.26, 0.3055], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_la1_35 = makeAttachmentEndpoint(attachment_boot_lace_la1_35);
+  const node_boot_lace_la1_35 = new THREE.Group();
+  node_boot_lace_la1_35.name = "Boot lace run boot-lace-la1__pivot";
+  node_boot_lace_la1_35.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_la1_35) {
+    node_boot_lace_la1_35.position.copy(endpoint_boot_lace_la1_35.start);
+    node_boot_lace_la1_35.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_la1_35.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_la1_35.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_la1_35.userData.sculptComponent = {"id": "boot-lace-la1", "name": "Boot lace run boot-lace-la1", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.135, 0.215, 0.3373], "localEnd": [0.265, 0.26, 0.3055], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-la1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-la1", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_la1_35.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-la1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la1_35);
+  nodes["boot-lace-la1"] = node_boot_lace_la1_35;
+  const mesh_boot_lace_la1_35Geometry = endpoint_boot_lace_la1_35
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_la1_35.endRadius, endpoint_boot_lace_la1_35.baseRadius, endpoint_boot_lace_la1_35.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_la1_35) {
+    mesh_boot_lace_la1_35Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_la1_35 = new THREE.Mesh(
+    mesh_boot_lace_la1_35Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_la1_35.name = "Boot lace run boot-lace-la1";
+  if (endpoint_boot_lace_la1_35) {
+    mesh_boot_lace_la1_35.position.copy(endpoint_boot_lace_la1_35.midpoint);
+    mesh_boot_lace_la1_35.quaternion.copy(endpoint_boot_lace_la1_35.quaternion);
+  }
+  mesh_boot_lace_la1_35.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_la1_35.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_la1_35.userData.sculptComponent = {"id": "boot-lace-la1", "name": "Boot lace run boot-lace-la1", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.135, 0.215, 0.3373], "localEnd": [0.265, 0.26, 0.3055], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-la1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-la1", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_la1_35.add(mesh_boot_lace_la1_35);
+  meshes["boot-lace-la1"] = mesh_boot_lace_la1_35;
+  colliders["boot-lace-la1"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-la1"] ??= [];
+  destructionGroups["boot-lace-la1"].push(node_boot_lace_la1_35);
+
+  const attachment_boot_lace_la2_36 = {"parentSocket": "boot-l-eyelets", "localStart": [0.265, 0.26, 0.3055], "localEnd": [0.135, 0.305, 0.2903], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_la2_36 = makeAttachmentEndpoint(attachment_boot_lace_la2_36);
+  const node_boot_lace_la2_36 = new THREE.Group();
+  node_boot_lace_la2_36.name = "Boot lace run boot-lace-la2__pivot";
+  node_boot_lace_la2_36.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_la2_36) {
+    node_boot_lace_la2_36.position.copy(endpoint_boot_lace_la2_36.start);
+    node_boot_lace_la2_36.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_la2_36.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_la2_36.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_la2_36.userData.sculptComponent = {"id": "boot-lace-la2", "name": "Boot lace run boot-lace-la2", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.265, 0.26, 0.3055], "localEnd": [0.135, 0.305, 0.2903], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-la2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-la2", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_la2_36.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-la2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la2_36);
+  nodes["boot-lace-la2"] = node_boot_lace_la2_36;
+  const mesh_boot_lace_la2_36Geometry = endpoint_boot_lace_la2_36
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_la2_36.endRadius, endpoint_boot_lace_la2_36.baseRadius, endpoint_boot_lace_la2_36.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_la2_36) {
+    mesh_boot_lace_la2_36Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_la2_36 = new THREE.Mesh(
+    mesh_boot_lace_la2_36Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_la2_36.name = "Boot lace run boot-lace-la2";
+  if (endpoint_boot_lace_la2_36) {
+    mesh_boot_lace_la2_36.position.copy(endpoint_boot_lace_la2_36.midpoint);
+    mesh_boot_lace_la2_36.quaternion.copy(endpoint_boot_lace_la2_36.quaternion);
+  }
+  mesh_boot_lace_la2_36.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_la2_36.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_la2_36.userData.sculptComponent = {"id": "boot-lace-la2", "name": "Boot lace run boot-lace-la2", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.265, 0.26, 0.3055], "localEnd": [0.135, 0.305, 0.2903], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-la2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-la2", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_la2_36.add(mesh_boot_lace_la2_36);
+  meshes["boot-lace-la2"] = mesh_boot_lace_la2_36;
+  colliders["boot-lace-la2"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-la2"] ??= [];
+  destructionGroups["boot-lace-la2"].push(node_boot_lace_la2_36);
+
+  const attachment_boot_lace_la3_37 = {"parentSocket": "boot-l-eyelets", "localStart": [0.135, 0.305, 0.2903], "localEnd": [0.265, 0.35, 0.3069], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_la3_37 = makeAttachmentEndpoint(attachment_boot_lace_la3_37);
+  const node_boot_lace_la3_37 = new THREE.Group();
+  node_boot_lace_la3_37.name = "Boot lace run boot-lace-la3__pivot";
+  node_boot_lace_la3_37.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_la3_37) {
+    node_boot_lace_la3_37.position.copy(endpoint_boot_lace_la3_37.start);
+    node_boot_lace_la3_37.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_la3_37.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_la3_37.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_la3_37.userData.sculptComponent = {"id": "boot-lace-la3", "name": "Boot lace run boot-lace-la3", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.135, 0.305, 0.2903], "localEnd": [0.265, 0.35, 0.3069], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-la3", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-la3", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_la3_37.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-la3", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la3_37);
+  nodes["boot-lace-la3"] = node_boot_lace_la3_37;
+  const mesh_boot_lace_la3_37Geometry = endpoint_boot_lace_la3_37
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_la3_37.endRadius, endpoint_boot_lace_la3_37.baseRadius, endpoint_boot_lace_la3_37.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_la3_37) {
+    mesh_boot_lace_la3_37Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_la3_37 = new THREE.Mesh(
+    mesh_boot_lace_la3_37Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_la3_37.name = "Boot lace run boot-lace-la3";
+  if (endpoint_boot_lace_la3_37) {
+    mesh_boot_lace_la3_37.position.copy(endpoint_boot_lace_la3_37.midpoint);
+    mesh_boot_lace_la3_37.quaternion.copy(endpoint_boot_lace_la3_37.quaternion);
+  }
+  mesh_boot_lace_la3_37.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_la3_37.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_la3_37.userData.sculptComponent = {"id": "boot-lace-la3", "name": "Boot lace run boot-lace-la3", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.135, 0.305, 0.2903], "localEnd": [0.265, 0.35, 0.3069], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-la3", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-la3", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_la3_37.add(mesh_boot_lace_la3_37);
+  meshes["boot-lace-la3"] = mesh_boot_lace_la3_37;
+  colliders["boot-lace-la3"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-la3"] ??= [];
+  destructionGroups["boot-lace-la3"].push(node_boot_lace_la3_37);
+
+  const attachment_boot_lace_lb0_38 = {"parentSocket": "boot-l-eyelets", "localStart": [0.135, 0.17, 0.3887], "localEnd": [0.265, 0.215, 0.3373], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_lb0_38 = makeAttachmentEndpoint(attachment_boot_lace_lb0_38);
+  const node_boot_lace_lb0_38 = new THREE.Group();
+  node_boot_lace_lb0_38.name = "Boot lace run boot-lace-lb0__pivot";
+  node_boot_lace_lb0_38.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_lb0_38) {
+    node_boot_lace_lb0_38.position.copy(endpoint_boot_lace_lb0_38.start);
+    node_boot_lace_lb0_38.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_lb0_38.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_lb0_38.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_lb0_38.userData.sculptComponent = {"id": "boot-lace-lb0", "name": "Boot lace run boot-lace-lb0", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.135, 0.17, 0.3887], "localEnd": [0.265, 0.215, 0.3373], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-lb0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-lb0", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_lb0_38.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-lb0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb0_38);
+  nodes["boot-lace-lb0"] = node_boot_lace_lb0_38;
+  const mesh_boot_lace_lb0_38Geometry = endpoint_boot_lace_lb0_38
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_lb0_38.endRadius, endpoint_boot_lace_lb0_38.baseRadius, endpoint_boot_lace_lb0_38.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_lb0_38) {
+    mesh_boot_lace_lb0_38Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_lb0_38 = new THREE.Mesh(
+    mesh_boot_lace_lb0_38Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_lb0_38.name = "Boot lace run boot-lace-lb0";
+  if (endpoint_boot_lace_lb0_38) {
+    mesh_boot_lace_lb0_38.position.copy(endpoint_boot_lace_lb0_38.midpoint);
+    mesh_boot_lace_lb0_38.quaternion.copy(endpoint_boot_lace_lb0_38.quaternion);
+  }
+  mesh_boot_lace_lb0_38.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_lb0_38.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_lb0_38.userData.sculptComponent = {"id": "boot-lace-lb0", "name": "Boot lace run boot-lace-lb0", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.135, 0.17, 0.3887], "localEnd": [0.265, 0.215, 0.3373], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-lb0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-lb0", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_lb0_38.add(mesh_boot_lace_lb0_38);
+  meshes["boot-lace-lb0"] = mesh_boot_lace_lb0_38;
+  colliders["boot-lace-lb0"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-lb0"] ??= [];
+  destructionGroups["boot-lace-lb0"].push(node_boot_lace_lb0_38);
+
+  const attachment_boot_lace_lb1_39 = {"parentSocket": "boot-l-eyelets", "localStart": [0.265, 0.215, 0.3373], "localEnd": [0.135, 0.26, 0.3055], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_lb1_39 = makeAttachmentEndpoint(attachment_boot_lace_lb1_39);
+  const node_boot_lace_lb1_39 = new THREE.Group();
+  node_boot_lace_lb1_39.name = "Boot lace run boot-lace-lb1__pivot";
+  node_boot_lace_lb1_39.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_lb1_39) {
+    node_boot_lace_lb1_39.position.copy(endpoint_boot_lace_lb1_39.start);
+    node_boot_lace_lb1_39.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_lb1_39.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_lb1_39.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_lb1_39.userData.sculptComponent = {"id": "boot-lace-lb1", "name": "Boot lace run boot-lace-lb1", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.265, 0.215, 0.3373], "localEnd": [0.135, 0.26, 0.3055], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-lb1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-lb1", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_lb1_39.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-lb1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb1_39);
+  nodes["boot-lace-lb1"] = node_boot_lace_lb1_39;
+  const mesh_boot_lace_lb1_39Geometry = endpoint_boot_lace_lb1_39
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_lb1_39.endRadius, endpoint_boot_lace_lb1_39.baseRadius, endpoint_boot_lace_lb1_39.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_lb1_39) {
+    mesh_boot_lace_lb1_39Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_lb1_39 = new THREE.Mesh(
+    mesh_boot_lace_lb1_39Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_lb1_39.name = "Boot lace run boot-lace-lb1";
+  if (endpoint_boot_lace_lb1_39) {
+    mesh_boot_lace_lb1_39.position.copy(endpoint_boot_lace_lb1_39.midpoint);
+    mesh_boot_lace_lb1_39.quaternion.copy(endpoint_boot_lace_lb1_39.quaternion);
+  }
+  mesh_boot_lace_lb1_39.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_lb1_39.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_lb1_39.userData.sculptComponent = {"id": "boot-lace-lb1", "name": "Boot lace run boot-lace-lb1", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.265, 0.215, 0.3373], "localEnd": [0.135, 0.26, 0.3055], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-lb1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-lb1", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_lb1_39.add(mesh_boot_lace_lb1_39);
+  meshes["boot-lace-lb1"] = mesh_boot_lace_lb1_39;
+  colliders["boot-lace-lb1"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-lb1"] ??= [];
+  destructionGroups["boot-lace-lb1"].push(node_boot_lace_lb1_39);
+
+  const attachment_boot_lace_lb2_40 = {"parentSocket": "boot-l-eyelets", "localStart": [0.135, 0.26, 0.3055], "localEnd": [0.265, 0.305, 0.2903], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_lb2_40 = makeAttachmentEndpoint(attachment_boot_lace_lb2_40);
+  const node_boot_lace_lb2_40 = new THREE.Group();
+  node_boot_lace_lb2_40.name = "Boot lace run boot-lace-lb2__pivot";
+  node_boot_lace_lb2_40.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_lb2_40) {
+    node_boot_lace_lb2_40.position.copy(endpoint_boot_lace_lb2_40.start);
+    node_boot_lace_lb2_40.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_lb2_40.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_lb2_40.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_lb2_40.userData.sculptComponent = {"id": "boot-lace-lb2", "name": "Boot lace run boot-lace-lb2", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.135, 0.26, 0.3055], "localEnd": [0.265, 0.305, 0.2903], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-lb2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-lb2", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_lb2_40.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-lb2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb2_40);
+  nodes["boot-lace-lb2"] = node_boot_lace_lb2_40;
+  const mesh_boot_lace_lb2_40Geometry = endpoint_boot_lace_lb2_40
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_lb2_40.endRadius, endpoint_boot_lace_lb2_40.baseRadius, endpoint_boot_lace_lb2_40.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_lb2_40) {
+    mesh_boot_lace_lb2_40Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_lb2_40 = new THREE.Mesh(
+    mesh_boot_lace_lb2_40Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_lb2_40.name = "Boot lace run boot-lace-lb2";
+  if (endpoint_boot_lace_lb2_40) {
+    mesh_boot_lace_lb2_40.position.copy(endpoint_boot_lace_lb2_40.midpoint);
+    mesh_boot_lace_lb2_40.quaternion.copy(endpoint_boot_lace_lb2_40.quaternion);
+  }
+  mesh_boot_lace_lb2_40.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_lb2_40.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_lb2_40.userData.sculptComponent = {"id": "boot-lace-lb2", "name": "Boot lace run boot-lace-lb2", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.135, 0.26, 0.3055], "localEnd": [0.265, 0.305, 0.2903], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-lb2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-lb2", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_lb2_40.add(mesh_boot_lace_lb2_40);
+  meshes["boot-lace-lb2"] = mesh_boot_lace_lb2_40;
+  colliders["boot-lace-lb2"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-lb2"] ??= [];
+  destructionGroups["boot-lace-lb2"].push(node_boot_lace_lb2_40);
+
+  const attachment_boot_lace_lb3_41 = {"parentSocket": "boot-l-eyelets", "localStart": [0.265, 0.305, 0.2903], "localEnd": [0.135, 0.35, 0.3069], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_lb3_41 = makeAttachmentEndpoint(attachment_boot_lace_lb3_41);
+  const node_boot_lace_lb3_41 = new THREE.Group();
+  node_boot_lace_lb3_41.name = "Boot lace run boot-lace-lb3__pivot";
+  node_boot_lace_lb3_41.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_lb3_41) {
+    node_boot_lace_lb3_41.position.copy(endpoint_boot_lace_lb3_41.start);
+    node_boot_lace_lb3_41.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_lb3_41.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_lb3_41.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_lb3_41.userData.sculptComponent = {"id": "boot-lace-lb3", "name": "Boot lace run boot-lace-lb3", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.265, 0.305, 0.2903], "localEnd": [0.135, 0.35, 0.3069], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-lb3", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-lb3", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_lb3_41.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-lb3", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb3_41);
+  nodes["boot-lace-lb3"] = node_boot_lace_lb3_41;
+  const mesh_boot_lace_lb3_41Geometry = endpoint_boot_lace_lb3_41
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_lb3_41.endRadius, endpoint_boot_lace_lb3_41.baseRadius, endpoint_boot_lace_lb3_41.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_lb3_41) {
+    mesh_boot_lace_lb3_41Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_lb3_41 = new THREE.Mesh(
+    mesh_boot_lace_lb3_41Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_lb3_41.name = "Boot lace run boot-lace-lb3";
+  if (endpoint_boot_lace_lb3_41) {
+    mesh_boot_lace_lb3_41.position.copy(endpoint_boot_lace_lb3_41.midpoint);
+    mesh_boot_lace_lb3_41.quaternion.copy(endpoint_boot_lace_lb3_41.quaternion);
+  }
+  mesh_boot_lace_lb3_41.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_lb3_41.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_lb3_41.userData.sculptComponent = {"id": "boot-lace-lb3", "name": "Boot lace run boot-lace-lb3", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-l", "attachment": {"parentSocket": "boot-l-eyelets", "localStart": [0.265, 0.305, 0.2903], "localEnd": [0.135, 0.35, 0.3069], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-lb3", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-lb3", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_lb3_41.add(mesh_boot_lace_lb3_41);
+  meshes["boot-lace-lb3"] = mesh_boot_lace_lb3_41;
+  colliders["boot-lace-lb3"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-lb3"] ??= [];
+  destructionGroups["boot-lace-lb3"].push(node_boot_lace_lb3_41);
+
+  const endpoint_boot_shell_r_42 = makeAttachmentEndpoint(null);
+  const node_boot_shell_r_42 = new THREE.Group();
+  node_boot_shell_r_42.name = "Lace-up boot (right)__pivot";
+  node_boot_shell_r_42.scale.set(1, 1, 1);
+  if (endpoint_boot_shell_r_42) {
+    node_boot_shell_r_42.position.copy(endpoint_boot_shell_r_42.start);
+    node_boot_shell_r_42.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_shell_r_42.position.set(0.0, 0.0, 0.0);
+    node_boot_shell_r_42.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_shell_r_42.userData.sculptComponent = {"id": "boot-shell-r", "name": "Lace-up boot (right)", "level": "macro", "role": "body", "importance": 0.95, "confidence": 0.8, "primitive": "ellipsoid", "topologyClass": "implicit", "topologyRationale": "Boot over the shoe and lower leg: shaft and bulbous toe box blended over a flat sole, top cut at mid-shin.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "sdf": {"primitives": [{"id": "shaft", "type": "ellipsoid", "center": [-0.2, 0.22, 0.04], "radii": [0.205, 0.33, 0.265]}, {"id": "toe", "type": "ellipsoid", "center": [-0.2, 0.1, 0.19], "radii": [0.185, 0.115, 0.255]}, {"id": "sole-print", "type": "ellipsoid", "center": [-0.2, 0.03, 0.12], "radii": [0.19, 0.6, 0.31]}, {"id": "sole-slab", "type": "box", "center": [-0.2, 0.03, 0.12], "size": [1.0, 0.06, 1.0]}, {"id": "top", "type": "box", "center": [-0.2, 0.6699999999999999, 0.1], "size": [0.8, 0.6, 1.2]}, {"id": "under", "type": "box", "center": [-0.2, -0.3, 0.1], "size": [0.8, 0.6, 1.2]}, {"id": "collar0", "type": "capsule", "center": [-0.017, 0.358, 0.0868], "radius": 0.03, "height": 0.0948, "transform": {"position": [-0.017, 0.358, 0.0868], "rotation": [1.5472, 0.1516, 0.1552]}}, {"id": "collar1", "type": "capsule", "center": [-0.0449, 0.358, 0.1733], "radius": 0.03, "height": 0.0895, "transform": {"position": [-0.0449, 0.358, 0.1733], "rotation": [1.3358, 0.4214, 0.5295]}}, {"id": "collar2", "type": "capsule", "center": [-0.0964, 0.358, 0.2396], "radius": 0.03, "height": 0.0814, "transform": {"position": [-0.0964, 0.358, 0.2396], "rotation": [0.8479, 0.5171, 1.06]}}, {"id": "collar3", "type": "capsule", "center": [-0.1636, 0.358, 0.2754], "radius": 0.03, "height": 0.0751, "transform": {"position": [-0.1636, 0.358, 0.2754], "rotation": [0.2583, 0.2425, 1.5074]}}, {"id": "collar4", "type": "capsule", "center": [-0.2364, 0.358, 0.2754], "radius": 0.03, "height": 0.0751, "transform": {"position": [-0.2364, 0.358, 0.2754], "rotation": [-0.2583, -0.2425, 1.5074]}}, {"id": "collar5", "type": "capsule", "center": [-0.3036, 0.358, 0.2396], "radius": 0.03, "height": 0.0814, "transform": {"position": [-0.3036, 0.358, 0.2396], "rotation": [-0.8479, -0.5171, 1.06]}}, {"id": "collar6", "type": "capsule", "center": [-0.3551, 0.358, 0.1733], "radius": 0.03, "height": 0.0895, "transform": {"position": [-0.3551, 0.358, 0.1733], "rotation": [-1.3358, -0.4214, 0.5295]}}, {"id": "collar7", "type": "capsule", "center": [-0.383, 0.358, 0.0868], "radius": 0.03, "height": 0.0948, "transform": {"position": [-0.383, 0.358, 0.0868], "rotation": [-1.5472, -0.1516, 0.1552]}}, {"id": "collar8", "type": "capsule", "center": [-0.383, 0.358, -0.0068], "radius": 0.03, "height": 0.0948, "transform": {"position": [-0.383, 0.358, -0.0068], "rotation": [-1.5472, 0.1516, -0.1552]}}, {"id": "collar9", "type": "capsule", "center": [-0.3551, 0.358, -0.0933], "radius": 0.03, "height": 0.0895, "transform": {"position": [-0.3551, 0.358, -0.0933], "rotation": [-1.3358, 0.4214, -0.5295]}}, {"id": "collar10", "type": "capsule", "center": [-0.3036, 0.358, -0.1596], "radius": 0.03, "height": 0.0814, "transform": {"position": [-0.3036, 0.358, -0.1596], "rotation": [-0.8479, 0.5171, -1.06]}}, {"id": "collar11", "type": "capsule", "center": [-0.2364, 0.358, -0.1954], "radius": 0.03, "height": 0.0751, "transform": {"position": [-0.2364, 0.358, -0.1954], "rotation": [-0.2583, 0.2425, -1.5074]}}, {"id": "collar12", "type": "capsule", "center": [-0.1636, 0.358, -0.1954], "radius": 0.03, "height": 0.0751, "transform": {"position": [-0.1636, 0.358, -0.1954], "rotation": [0.2583, -0.2425, -1.5074]}}, {"id": "collar13", "type": "capsule", "center": [-0.0964, 0.358, -0.1596], "radius": 0.03, "height": 0.0814, "transform": {"position": [-0.0964, 0.358, -0.1596], "rotation": [0.8479, -0.5171, -1.06]}}, {"id": "collar14", "type": "capsule", "center": [-0.0449, 0.358, -0.0933], "radius": 0.03, "height": 0.0895, "transform": {"position": [-0.0449, 0.358, -0.0933], "rotation": [1.3358, -0.4214, -0.5295]}}, {"id": "collar15", "type": "capsule", "center": [-0.017, 0.358, -0.0068], "radius": 0.03, "height": 0.0948, "transform": {"position": [-0.017, 0.358, -0.0068], "rotation": [1.5472, -0.1516, -0.1552]}}], "operations": [{"id": "foot", "type": "smooth-union", "left": "shaft", "right": "toe", "radius": 0.1}, {"id": "sole", "type": "intersect", "left": "sole-print", "right": "sole-slab"}, {"id": "soled", "type": "smooth-union", "left": "foot", "right": "sole", "radius": 0.03}, {"id": "cut", "type": "subtract", "left": "soled", "right": "top"}, {"id": "boot-cut", "type": "subtract", "left": "cut", "right": "under"}, {"id": "boot-t0", "type": "smooth-union", "left": "collar0", "right": "collar1", "radius": 0.001}, {"id": "boot-t1", "type": "smooth-union", "left": "boot-t0", "right": "collar2", "radius": 0.001}, {"id": "boot-t2", "type": "smooth-union", "left": "boot-t1", "right": "collar3", "radius": 0.001}, {"id": "boot-t3", "type": "smooth-union", "left": "boot-t2", "right": "collar4", "radius": 0.001}, {"id": "boot-t4", "type": "smooth-union", "left": "boot-t3", "right": "collar5", "radius": 0.001}, {"id": "boot-t5", "type": "smooth-union", "left": "boot-t4", "right": "collar6", "radius": 0.001}, {"id": "boot-t6", "type": "smooth-union", "left": "boot-t5", "right": "collar7", "radius": 0.001}, {"id": "boot-t7", "type": "smooth-union", "left": "boot-t6", "right": "collar8", "radius": 0.001}, {"id": "boot-t8", "type": "smooth-union", "left": "boot-t7", "right": "collar9", "radius": 0.001}, {"id": "boot-t9", "type": "smooth-union", "left": "boot-t8", "right": "collar10", "radius": 0.001}, {"id": "boot-t10", "type": "smooth-union", "left": "boot-t9", "right": "collar11", "radius": 0.001}, {"id": "boot-t11", "type": "smooth-union", "left": "boot-t10", "right": "collar12", "radius": 0.001}, {"id": "boot-t12", "type": "smooth-union", "left": "boot-t11", "right": "collar13", "radius": 0.001}, {"id": "boot-t13", "type": "smooth-union", "left": "boot-t12", "right": "collar14", "radius": 0.001}, {"id": "boot-t14", "type": "smooth-union", "left": "boot-t13", "right": "collar15", "radius": 0.001}, {"id": "boot", "type": "smooth-union", "left": "boot-cut", "right": "boot-t14", "radius": 0.03}], "bounds": {"min": [-0.45, -0.01, -0.25], "max": [0.04999999999999999, 0.4, 0.48]}, "resolution": 64}, "decimate": {"targetRatio": 0.1}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1.0, 1.0, 1.0]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-shell-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "boot-leather"}}, "material": "boot-leather", "materialLayers": ["boot-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-toe-sole-r", "kind": "ridge", "description": "bulbous toe and thick sole"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(72, 45, 43, 1.0)", "secondaryAlbedo": "rgba(51, 37, 35, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/boot-leather.png"]}};
+  node_boot_shell_r_42.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-shell-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "boot-leather"}};
+  (nodes["vest-shell"] ?? root).add(node_boot_shell_r_42);
+  nodes["boot-shell-r"] = node_boot_shell_r_42;
+  const mesh_boot_shell_r_42GeometryDense = polygonizeSdf({"primitives": [{"id": "shaft", "type": "ellipsoid", "center": [-0.2, 0.22, 0.04], "radii": [0.205, 0.33, 0.265]}, {"id": "toe", "type": "ellipsoid", "center": [-0.2, 0.1, 0.19], "radii": [0.185, 0.115, 0.255]}, {"id": "sole-print", "type": "ellipsoid", "center": [-0.2, 0.03, 0.12], "radii": [0.19, 0.6, 0.31]}, {"id": "sole-slab", "type": "box", "center": [-0.2, 0.03, 0.12], "size": [1.0, 0.06, 1.0]}, {"id": "top", "type": "box", "center": [-0.2, 0.6699999999999999, 0.1], "size": [0.8, 0.6, 1.2]}, {"id": "under", "type": "box", "center": [-0.2, -0.3, 0.1], "size": [0.8, 0.6, 1.2]}, {"id": "collar0", "type": "capsule", "center": [-0.017, 0.358, 0.0868], "radius": 0.03, "height": 0.0948, "transform": {"position": [-0.017, 0.358, 0.0868], "rotation": [1.5472, 0.1516, 0.1552]}}, {"id": "collar1", "type": "capsule", "center": [-0.0449, 0.358, 0.1733], "radius": 0.03, "height": 0.0895, "transform": {"position": [-0.0449, 0.358, 0.1733], "rotation": [1.3358, 0.4214, 0.5295]}}, {"id": "collar2", "type": "capsule", "center": [-0.0964, 0.358, 0.2396], "radius": 0.03, "height": 0.0814, "transform": {"position": [-0.0964, 0.358, 0.2396], "rotation": [0.8479, 0.5171, 1.06]}}, {"id": "collar3", "type": "capsule", "center": [-0.1636, 0.358, 0.2754], "radius": 0.03, "height": 0.0751, "transform": {"position": [-0.1636, 0.358, 0.2754], "rotation": [0.2583, 0.2425, 1.5074]}}, {"id": "collar4", "type": "capsule", "center": [-0.2364, 0.358, 0.2754], "radius": 0.03, "height": 0.0751, "transform": {"position": [-0.2364, 0.358, 0.2754], "rotation": [-0.2583, -0.2425, 1.5074]}}, {"id": "collar5", "type": "capsule", "center": [-0.3036, 0.358, 0.2396], "radius": 0.03, "height": 0.0814, "transform": {"position": [-0.3036, 0.358, 0.2396], "rotation": [-0.8479, -0.5171, 1.06]}}, {"id": "collar6", "type": "capsule", "center": [-0.3551, 0.358, 0.1733], "radius": 0.03, "height": 0.0895, "transform": {"position": [-0.3551, 0.358, 0.1733], "rotation": [-1.3358, -0.4214, 0.5295]}}, {"id": "collar7", "type": "capsule", "center": [-0.383, 0.358, 0.0868], "radius": 0.03, "height": 0.0948, "transform": {"position": [-0.383, 0.358, 0.0868], "rotation": [-1.5472, -0.1516, 0.1552]}}, {"id": "collar8", "type": "capsule", "center": [-0.383, 0.358, -0.0068], "radius": 0.03, "height": 0.0948, "transform": {"position": [-0.383, 0.358, -0.0068], "rotation": [-1.5472, 0.1516, -0.1552]}}, {"id": "collar9", "type": "capsule", "center": [-0.3551, 0.358, -0.0933], "radius": 0.03, "height": 0.0895, "transform": {"position": [-0.3551, 0.358, -0.0933], "rotation": [-1.3358, 0.4214, -0.5295]}}, {"id": "collar10", "type": "capsule", "center": [-0.3036, 0.358, -0.1596], "radius": 0.03, "height": 0.0814, "transform": {"position": [-0.3036, 0.358, -0.1596], "rotation": [-0.8479, 0.5171, -1.06]}}, {"id": "collar11", "type": "capsule", "center": [-0.2364, 0.358, -0.1954], "radius": 0.03, "height": 0.0751, "transform": {"position": [-0.2364, 0.358, -0.1954], "rotation": [-0.2583, 0.2425, -1.5074]}}, {"id": "collar12", "type": "capsule", "center": [-0.1636, 0.358, -0.1954], "radius": 0.03, "height": 0.0751, "transform": {"position": [-0.1636, 0.358, -0.1954], "rotation": [0.2583, -0.2425, -1.5074]}}, {"id": "collar13", "type": "capsule", "center": [-0.0964, 0.358, -0.1596], "radius": 0.03, "height": 0.0814, "transform": {"position": [-0.0964, 0.358, -0.1596], "rotation": [0.8479, -0.5171, -1.06]}}, {"id": "collar14", "type": "capsule", "center": [-0.0449, 0.358, -0.0933], "radius": 0.03, "height": 0.0895, "transform": {"position": [-0.0449, 0.358, -0.0933], "rotation": [1.3358, -0.4214, -0.5295]}}, {"id": "collar15", "type": "capsule", "center": [-0.017, 0.358, -0.0068], "radius": 0.03, "height": 0.0948, "transform": {"position": [-0.017, 0.358, -0.0068], "rotation": [1.5472, -0.1516, -0.1552]}}], "operations": [{"id": "foot", "type": "smooth-union", "left": "shaft", "right": "toe", "radius": 0.1}, {"id": "sole", "type": "intersect", "left": "sole-print", "right": "sole-slab"}, {"id": "soled", "type": "smooth-union", "left": "foot", "right": "sole", "radius": 0.03}, {"id": "cut", "type": "subtract", "left": "soled", "right": "top"}, {"id": "boot-cut", "type": "subtract", "left": "cut", "right": "under"}, {"id": "boot-t0", "type": "smooth-union", "left": "collar0", "right": "collar1", "radius": 0.001}, {"id": "boot-t1", "type": "smooth-union", "left": "boot-t0", "right": "collar2", "radius": 0.001}, {"id": "boot-t2", "type": "smooth-union", "left": "boot-t1", "right": "collar3", "radius": 0.001}, {"id": "boot-t3", "type": "smooth-union", "left": "boot-t2", "right": "collar4", "radius": 0.001}, {"id": "boot-t4", "type": "smooth-union", "left": "boot-t3", "right": "collar5", "radius": 0.001}, {"id": "boot-t5", "type": "smooth-union", "left": "boot-t4", "right": "collar6", "radius": 0.001}, {"id": "boot-t6", "type": "smooth-union", "left": "boot-t5", "right": "collar7", "radius": 0.001}, {"id": "boot-t7", "type": "smooth-union", "left": "boot-t6", "right": "collar8", "radius": 0.001}, {"id": "boot-t8", "type": "smooth-union", "left": "boot-t7", "right": "collar9", "radius": 0.001}, {"id": "boot-t9", "type": "smooth-union", "left": "boot-t8", "right": "collar10", "radius": 0.001}, {"id": "boot-t10", "type": "smooth-union", "left": "boot-t9", "right": "collar11", "radius": 0.001}, {"id": "boot-t11", "type": "smooth-union", "left": "boot-t10", "right": "collar12", "radius": 0.001}, {"id": "boot-t12", "type": "smooth-union", "left": "boot-t11", "right": "collar13", "radius": 0.001}, {"id": "boot-t13", "type": "smooth-union", "left": "boot-t12", "right": "collar14", "radius": 0.001}, {"id": "boot-t14", "type": "smooth-union", "left": "boot-t13", "right": "collar15", "radius": 0.001}, {"id": "boot", "type": "smooth-union", "left": "boot-cut", "right": "boot-t14", "radius": 0.03}], "bounds": {"min": [-0.45, -0.01, -0.25], "max": [0.04999999999999999, 0.4, 0.48]}, "resolution": 40});
+  const mesh_boot_shell_r_42Geometry = decimateGeometry(mesh_boot_shell_r_42GeometryDense, 0.1);
+  if (!endpoint_boot_shell_r_42) {
+    mesh_boot_shell_r_42Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_shell_r_42 = new THREE.Mesh(
+    mesh_boot_shell_r_42Geometry,
+    createSculptMaterial("boot-leather", {"id": "boot-leather", "name": "Boot leather", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#482D2B", "color": "#482D2B", "albedo": {"dominant": "#482D2B", "secondary": ["#332523"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/boot-leather.png."}, "colorVariation": {"palette": ["#482D2B", "#332523"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.7, "variation": 0.1, "map": "none", "localResponse": "satin highlight band on the rounded faces, as painted in the reference"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/boot-leather.texture.json: mottle 0.008, specularFraction 0.0, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}}, options, true)
+  );
+  mesh_boot_shell_r_42.name = "Lace-up boot (right)";
+  if (endpoint_boot_shell_r_42) {
+    mesh_boot_shell_r_42.position.copy(endpoint_boot_shell_r_42.midpoint);
+    mesh_boot_shell_r_42.quaternion.copy(endpoint_boot_shell_r_42.quaternion);
+  }
+  mesh_boot_shell_r_42.castShadow = options.castShadow ?? true;
+  mesh_boot_shell_r_42.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_shell_r_42.userData.sculptComponent = {"id": "boot-shell-r", "name": "Lace-up boot (right)", "level": "macro", "role": "body", "importance": 0.95, "confidence": 0.8, "primitive": "ellipsoid", "topologyClass": "implicit", "topologyRationale": "Boot over the shoe and lower leg: shaft and bulbous toe box blended over a flat sole, top cut at mid-shin.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "sdf": {"primitives": [{"id": "shaft", "type": "ellipsoid", "center": [-0.2, 0.22, 0.04], "radii": [0.205, 0.33, 0.265]}, {"id": "toe", "type": "ellipsoid", "center": [-0.2, 0.1, 0.19], "radii": [0.185, 0.115, 0.255]}, {"id": "sole-print", "type": "ellipsoid", "center": [-0.2, 0.03, 0.12], "radii": [0.19, 0.6, 0.31]}, {"id": "sole-slab", "type": "box", "center": [-0.2, 0.03, 0.12], "size": [1.0, 0.06, 1.0]}, {"id": "top", "type": "box", "center": [-0.2, 0.6699999999999999, 0.1], "size": [0.8, 0.6, 1.2]}, {"id": "under", "type": "box", "center": [-0.2, -0.3, 0.1], "size": [0.8, 0.6, 1.2]}, {"id": "collar0", "type": "capsule", "center": [-0.017, 0.358, 0.0868], "radius": 0.03, "height": 0.0948, "transform": {"position": [-0.017, 0.358, 0.0868], "rotation": [1.5472, 0.1516, 0.1552]}}, {"id": "collar1", "type": "capsule", "center": [-0.0449, 0.358, 0.1733], "radius": 0.03, "height": 0.0895, "transform": {"position": [-0.0449, 0.358, 0.1733], "rotation": [1.3358, 0.4214, 0.5295]}}, {"id": "collar2", "type": "capsule", "center": [-0.0964, 0.358, 0.2396], "radius": 0.03, "height": 0.0814, "transform": {"position": [-0.0964, 0.358, 0.2396], "rotation": [0.8479, 0.5171, 1.06]}}, {"id": "collar3", "type": "capsule", "center": [-0.1636, 0.358, 0.2754], "radius": 0.03, "height": 0.0751, "transform": {"position": [-0.1636, 0.358, 0.2754], "rotation": [0.2583, 0.2425, 1.5074]}}, {"id": "collar4", "type": "capsule", "center": [-0.2364, 0.358, 0.2754], "radius": 0.03, "height": 0.0751, "transform": {"position": [-0.2364, 0.358, 0.2754], "rotation": [-0.2583, -0.2425, 1.5074]}}, {"id": "collar5", "type": "capsule", "center": [-0.3036, 0.358, 0.2396], "radius": 0.03, "height": 0.0814, "transform": {"position": [-0.3036, 0.358, 0.2396], "rotation": [-0.8479, -0.5171, 1.06]}}, {"id": "collar6", "type": "capsule", "center": [-0.3551, 0.358, 0.1733], "radius": 0.03, "height": 0.0895, "transform": {"position": [-0.3551, 0.358, 0.1733], "rotation": [-1.3358, -0.4214, 0.5295]}}, {"id": "collar7", "type": "capsule", "center": [-0.383, 0.358, 0.0868], "radius": 0.03, "height": 0.0948, "transform": {"position": [-0.383, 0.358, 0.0868], "rotation": [-1.5472, -0.1516, 0.1552]}}, {"id": "collar8", "type": "capsule", "center": [-0.383, 0.358, -0.0068], "radius": 0.03, "height": 0.0948, "transform": {"position": [-0.383, 0.358, -0.0068], "rotation": [-1.5472, 0.1516, -0.1552]}}, {"id": "collar9", "type": "capsule", "center": [-0.3551, 0.358, -0.0933], "radius": 0.03, "height": 0.0895, "transform": {"position": [-0.3551, 0.358, -0.0933], "rotation": [-1.3358, 0.4214, -0.5295]}}, {"id": "collar10", "type": "capsule", "center": [-0.3036, 0.358, -0.1596], "radius": 0.03, "height": 0.0814, "transform": {"position": [-0.3036, 0.358, -0.1596], "rotation": [-0.8479, 0.5171, -1.06]}}, {"id": "collar11", "type": "capsule", "center": [-0.2364, 0.358, -0.1954], "radius": 0.03, "height": 0.0751, "transform": {"position": [-0.2364, 0.358, -0.1954], "rotation": [-0.2583, 0.2425, -1.5074]}}, {"id": "collar12", "type": "capsule", "center": [-0.1636, 0.358, -0.1954], "radius": 0.03, "height": 0.0751, "transform": {"position": [-0.1636, 0.358, -0.1954], "rotation": [0.2583, -0.2425, -1.5074]}}, {"id": "collar13", "type": "capsule", "center": [-0.0964, 0.358, -0.1596], "radius": 0.03, "height": 0.0814, "transform": {"position": [-0.0964, 0.358, -0.1596], "rotation": [0.8479, -0.5171, -1.06]}}, {"id": "collar14", "type": "capsule", "center": [-0.0449, 0.358, -0.0933], "radius": 0.03, "height": 0.0895, "transform": {"position": [-0.0449, 0.358, -0.0933], "rotation": [1.3358, -0.4214, -0.5295]}}, {"id": "collar15", "type": "capsule", "center": [-0.017, 0.358, -0.0068], "radius": 0.03, "height": 0.0948, "transform": {"position": [-0.017, 0.358, -0.0068], "rotation": [1.5472, -0.1516, -0.1552]}}], "operations": [{"id": "foot", "type": "smooth-union", "left": "shaft", "right": "toe", "radius": 0.1}, {"id": "sole", "type": "intersect", "left": "sole-print", "right": "sole-slab"}, {"id": "soled", "type": "smooth-union", "left": "foot", "right": "sole", "radius": 0.03}, {"id": "cut", "type": "subtract", "left": "soled", "right": "top"}, {"id": "boot-cut", "type": "subtract", "left": "cut", "right": "under"}, {"id": "boot-t0", "type": "smooth-union", "left": "collar0", "right": "collar1", "radius": 0.001}, {"id": "boot-t1", "type": "smooth-union", "left": "boot-t0", "right": "collar2", "radius": 0.001}, {"id": "boot-t2", "type": "smooth-union", "left": "boot-t1", "right": "collar3", "radius": 0.001}, {"id": "boot-t3", "type": "smooth-union", "left": "boot-t2", "right": "collar4", "radius": 0.001}, {"id": "boot-t4", "type": "smooth-union", "left": "boot-t3", "right": "collar5", "radius": 0.001}, {"id": "boot-t5", "type": "smooth-union", "left": "boot-t4", "right": "collar6", "radius": 0.001}, {"id": "boot-t6", "type": "smooth-union", "left": "boot-t5", "right": "collar7", "radius": 0.001}, {"id": "boot-t7", "type": "smooth-union", "left": "boot-t6", "right": "collar8", "radius": 0.001}, {"id": "boot-t8", "type": "smooth-union", "left": "boot-t7", "right": "collar9", "radius": 0.001}, {"id": "boot-t9", "type": "smooth-union", "left": "boot-t8", "right": "collar10", "radius": 0.001}, {"id": "boot-t10", "type": "smooth-union", "left": "boot-t9", "right": "collar11", "radius": 0.001}, {"id": "boot-t11", "type": "smooth-union", "left": "boot-t10", "right": "collar12", "radius": 0.001}, {"id": "boot-t12", "type": "smooth-union", "left": "boot-t11", "right": "collar13", "radius": 0.001}, {"id": "boot-t13", "type": "smooth-union", "left": "boot-t12", "right": "collar14", "radius": 0.001}, {"id": "boot-t14", "type": "smooth-union", "left": "boot-t13", "right": "collar15", "radius": 0.001}, {"id": "boot", "type": "smooth-union", "left": "boot-cut", "right": "boot-t14", "radius": 0.03}], "bounds": {"min": [-0.45, -0.01, -0.25], "max": [0.04999999999999999, 0.4, 0.48]}, "resolution": 64}, "decimate": {"targetRatio": 0.1}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1.0, 1.0, 1.0]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-shell-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "boot-leather"}}, "material": "boot-leather", "materialLayers": ["boot-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-toe-sole-r", "kind": "ridge", "description": "bulbous toe and thick sole"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(72, 45, 43, 1.0)", "secondaryAlbedo": "rgba(51, 37, 35, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/boot-leather.png"]}};
+  node_boot_shell_r_42.add(mesh_boot_shell_r_42);
+  meshes["boot-shell-r"] = mesh_boot_shell_r_42;
+  colliders["boot-shell-r"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-shell-r"] ??= [];
+  destructionGroups["boot-shell-r"].push(node_boot_shell_r_42);
+
+  const endpoint_boot_eyelet_r0a_43 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_r0a_43 = new THREE.Group();
+  node_boot_eyelet_r0a_43.name = "Boot eyelet boot-eyelet-r0a__pivot";
+  node_boot_eyelet_r0a_43.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_r0a_43) {
+    node_boot_eyelet_r0a_43.position.copy(endpoint_boot_eyelet_r0a_43.start);
+    node_boot_eyelet_r0a_43.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_r0a_43.position.set(-0.265, 0.17, 0.3787);
+    node_boot_eyelet_r0a_43.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_r0a_43.userData.sculptComponent = {"id": "boot-eyelet-r0a", "name": "Boot eyelet boot-eyelet-r0a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.265, 0.17, 0.3787], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r0a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r0a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r0a_43.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r0a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r0a_43);
+  nodes["boot-eyelet-r0a"] = node_boot_eyelet_r0a_43;
+  const mesh_boot_eyelet_r0a_43GeometryDense = endpoint_boot_eyelet_r0a_43
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r0a_43.endRadius, endpoint_boot_eyelet_r0a_43.baseRadius, endpoint_boot_eyelet_r0a_43.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_r0a_43Geometry = decimateGeometry(mesh_boot_eyelet_r0a_43GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_r0a_43) {
+    mesh_boot_eyelet_r0a_43Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_r0a_43 = new THREE.Mesh(
+    mesh_boot_eyelet_r0a_43Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_r0a_43.name = "Boot eyelet boot-eyelet-r0a";
+  if (endpoint_boot_eyelet_r0a_43) {
+    mesh_boot_eyelet_r0a_43.position.copy(endpoint_boot_eyelet_r0a_43.midpoint);
+    mesh_boot_eyelet_r0a_43.quaternion.copy(endpoint_boot_eyelet_r0a_43.quaternion);
+  }
+  mesh_boot_eyelet_r0a_43.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_r0a_43.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_r0a_43.userData.sculptComponent = {"id": "boot-eyelet-r0a", "name": "Boot eyelet boot-eyelet-r0a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.265, 0.17, 0.3787], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r0a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r0a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r0a_43.add(mesh_boot_eyelet_r0a_43);
+  meshes["boot-eyelet-r0a"] = mesh_boot_eyelet_r0a_43;
+  colliders["boot-eyelet-r0a"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-r0a"] ??= [];
+  destructionGroups["boot-eyelet-r0a"].push(node_boot_eyelet_r0a_43);
+
+  const endpoint_boot_eyelet_r0b_44 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_r0b_44 = new THREE.Group();
+  node_boot_eyelet_r0b_44.name = "Boot eyelet boot-eyelet-r0b__pivot";
+  node_boot_eyelet_r0b_44.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_r0b_44) {
+    node_boot_eyelet_r0b_44.position.copy(endpoint_boot_eyelet_r0b_44.start);
+    node_boot_eyelet_r0b_44.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_r0b_44.position.set(-0.135, 0.17, 0.3787);
+    node_boot_eyelet_r0b_44.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_r0b_44.userData.sculptComponent = {"id": "boot-eyelet-r0b", "name": "Boot eyelet boot-eyelet-r0b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.135, 0.17, 0.3787], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r0b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r0b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r0b_44.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r0b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r0b_44);
+  nodes["boot-eyelet-r0b"] = node_boot_eyelet_r0b_44;
+  const mesh_boot_eyelet_r0b_44GeometryDense = endpoint_boot_eyelet_r0b_44
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r0b_44.endRadius, endpoint_boot_eyelet_r0b_44.baseRadius, endpoint_boot_eyelet_r0b_44.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_r0b_44Geometry = decimateGeometry(mesh_boot_eyelet_r0b_44GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_r0b_44) {
+    mesh_boot_eyelet_r0b_44Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_r0b_44 = new THREE.Mesh(
+    mesh_boot_eyelet_r0b_44Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_r0b_44.name = "Boot eyelet boot-eyelet-r0b";
+  if (endpoint_boot_eyelet_r0b_44) {
+    mesh_boot_eyelet_r0b_44.position.copy(endpoint_boot_eyelet_r0b_44.midpoint);
+    mesh_boot_eyelet_r0b_44.quaternion.copy(endpoint_boot_eyelet_r0b_44.quaternion);
+  }
+  mesh_boot_eyelet_r0b_44.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_r0b_44.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_r0b_44.userData.sculptComponent = {"id": "boot-eyelet-r0b", "name": "Boot eyelet boot-eyelet-r0b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.135, 0.17, 0.3787], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r0b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r0b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r0b_44.add(mesh_boot_eyelet_r0b_44);
+  meshes["boot-eyelet-r0b"] = mesh_boot_eyelet_r0b_44;
+  colliders["boot-eyelet-r0b"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-r0b"] ??= [];
+  destructionGroups["boot-eyelet-r0b"].push(node_boot_eyelet_r0b_44);
+
+  const endpoint_boot_eyelet_r1a_45 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_r1a_45 = new THREE.Group();
+  node_boot_eyelet_r1a_45.name = "Boot eyelet boot-eyelet-r1a__pivot";
+  node_boot_eyelet_r1a_45.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_r1a_45) {
+    node_boot_eyelet_r1a_45.position.copy(endpoint_boot_eyelet_r1a_45.start);
+    node_boot_eyelet_r1a_45.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_r1a_45.position.set(-0.265, 0.215, 0.3273);
+    node_boot_eyelet_r1a_45.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_r1a_45.userData.sculptComponent = {"id": "boot-eyelet-r1a", "name": "Boot eyelet boot-eyelet-r1a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.265, 0.215, 0.3273], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r1a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r1a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r1a_45.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r1a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r1a_45);
+  nodes["boot-eyelet-r1a"] = node_boot_eyelet_r1a_45;
+  const mesh_boot_eyelet_r1a_45GeometryDense = endpoint_boot_eyelet_r1a_45
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r1a_45.endRadius, endpoint_boot_eyelet_r1a_45.baseRadius, endpoint_boot_eyelet_r1a_45.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_r1a_45Geometry = decimateGeometry(mesh_boot_eyelet_r1a_45GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_r1a_45) {
+    mesh_boot_eyelet_r1a_45Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_r1a_45 = new THREE.Mesh(
+    mesh_boot_eyelet_r1a_45Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_r1a_45.name = "Boot eyelet boot-eyelet-r1a";
+  if (endpoint_boot_eyelet_r1a_45) {
+    mesh_boot_eyelet_r1a_45.position.copy(endpoint_boot_eyelet_r1a_45.midpoint);
+    mesh_boot_eyelet_r1a_45.quaternion.copy(endpoint_boot_eyelet_r1a_45.quaternion);
+  }
+  mesh_boot_eyelet_r1a_45.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_r1a_45.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_r1a_45.userData.sculptComponent = {"id": "boot-eyelet-r1a", "name": "Boot eyelet boot-eyelet-r1a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.265, 0.215, 0.3273], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r1a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r1a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r1a_45.add(mesh_boot_eyelet_r1a_45);
+  meshes["boot-eyelet-r1a"] = mesh_boot_eyelet_r1a_45;
+  colliders["boot-eyelet-r1a"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-r1a"] ??= [];
+  destructionGroups["boot-eyelet-r1a"].push(node_boot_eyelet_r1a_45);
+
+  const endpoint_boot_eyelet_r1b_46 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_r1b_46 = new THREE.Group();
+  node_boot_eyelet_r1b_46.name = "Boot eyelet boot-eyelet-r1b__pivot";
+  node_boot_eyelet_r1b_46.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_r1b_46) {
+    node_boot_eyelet_r1b_46.position.copy(endpoint_boot_eyelet_r1b_46.start);
+    node_boot_eyelet_r1b_46.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_r1b_46.position.set(-0.135, 0.215, 0.3273);
+    node_boot_eyelet_r1b_46.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_r1b_46.userData.sculptComponent = {"id": "boot-eyelet-r1b", "name": "Boot eyelet boot-eyelet-r1b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.135, 0.215, 0.3273], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r1b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r1b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r1b_46.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r1b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r1b_46);
+  nodes["boot-eyelet-r1b"] = node_boot_eyelet_r1b_46;
+  const mesh_boot_eyelet_r1b_46GeometryDense = endpoint_boot_eyelet_r1b_46
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r1b_46.endRadius, endpoint_boot_eyelet_r1b_46.baseRadius, endpoint_boot_eyelet_r1b_46.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_r1b_46Geometry = decimateGeometry(mesh_boot_eyelet_r1b_46GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_r1b_46) {
+    mesh_boot_eyelet_r1b_46Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_r1b_46 = new THREE.Mesh(
+    mesh_boot_eyelet_r1b_46Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_r1b_46.name = "Boot eyelet boot-eyelet-r1b";
+  if (endpoint_boot_eyelet_r1b_46) {
+    mesh_boot_eyelet_r1b_46.position.copy(endpoint_boot_eyelet_r1b_46.midpoint);
+    mesh_boot_eyelet_r1b_46.quaternion.copy(endpoint_boot_eyelet_r1b_46.quaternion);
+  }
+  mesh_boot_eyelet_r1b_46.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_r1b_46.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_r1b_46.userData.sculptComponent = {"id": "boot-eyelet-r1b", "name": "Boot eyelet boot-eyelet-r1b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.135, 0.215, 0.3273], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r1b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r1b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r1b_46.add(mesh_boot_eyelet_r1b_46);
+  meshes["boot-eyelet-r1b"] = mesh_boot_eyelet_r1b_46;
+  colliders["boot-eyelet-r1b"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-r1b"] ??= [];
+  destructionGroups["boot-eyelet-r1b"].push(node_boot_eyelet_r1b_46);
+
+  const endpoint_boot_eyelet_r2a_47 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_r2a_47 = new THREE.Group();
+  node_boot_eyelet_r2a_47.name = "Boot eyelet boot-eyelet-r2a__pivot";
+  node_boot_eyelet_r2a_47.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_r2a_47) {
+    node_boot_eyelet_r2a_47.position.copy(endpoint_boot_eyelet_r2a_47.start);
+    node_boot_eyelet_r2a_47.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_r2a_47.position.set(-0.265, 0.26, 0.2955);
+    node_boot_eyelet_r2a_47.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_r2a_47.userData.sculptComponent = {"id": "boot-eyelet-r2a", "name": "Boot eyelet boot-eyelet-r2a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.265, 0.26, 0.2955], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r2a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r2a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r2a_47.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r2a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r2a_47);
+  nodes["boot-eyelet-r2a"] = node_boot_eyelet_r2a_47;
+  const mesh_boot_eyelet_r2a_47GeometryDense = endpoint_boot_eyelet_r2a_47
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r2a_47.endRadius, endpoint_boot_eyelet_r2a_47.baseRadius, endpoint_boot_eyelet_r2a_47.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_r2a_47Geometry = decimateGeometry(mesh_boot_eyelet_r2a_47GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_r2a_47) {
+    mesh_boot_eyelet_r2a_47Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_r2a_47 = new THREE.Mesh(
+    mesh_boot_eyelet_r2a_47Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_r2a_47.name = "Boot eyelet boot-eyelet-r2a";
+  if (endpoint_boot_eyelet_r2a_47) {
+    mesh_boot_eyelet_r2a_47.position.copy(endpoint_boot_eyelet_r2a_47.midpoint);
+    mesh_boot_eyelet_r2a_47.quaternion.copy(endpoint_boot_eyelet_r2a_47.quaternion);
+  }
+  mesh_boot_eyelet_r2a_47.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_r2a_47.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_r2a_47.userData.sculptComponent = {"id": "boot-eyelet-r2a", "name": "Boot eyelet boot-eyelet-r2a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.265, 0.26, 0.2955], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r2a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r2a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r2a_47.add(mesh_boot_eyelet_r2a_47);
+  meshes["boot-eyelet-r2a"] = mesh_boot_eyelet_r2a_47;
+  colliders["boot-eyelet-r2a"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-r2a"] ??= [];
+  destructionGroups["boot-eyelet-r2a"].push(node_boot_eyelet_r2a_47);
+
+  const endpoint_boot_eyelet_r2b_48 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_r2b_48 = new THREE.Group();
+  node_boot_eyelet_r2b_48.name = "Boot eyelet boot-eyelet-r2b__pivot";
+  node_boot_eyelet_r2b_48.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_r2b_48) {
+    node_boot_eyelet_r2b_48.position.copy(endpoint_boot_eyelet_r2b_48.start);
+    node_boot_eyelet_r2b_48.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_r2b_48.position.set(-0.135, 0.26, 0.2955);
+    node_boot_eyelet_r2b_48.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_r2b_48.userData.sculptComponent = {"id": "boot-eyelet-r2b", "name": "Boot eyelet boot-eyelet-r2b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.135, 0.26, 0.2955], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r2b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r2b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r2b_48.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r2b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r2b_48);
+  nodes["boot-eyelet-r2b"] = node_boot_eyelet_r2b_48;
+  const mesh_boot_eyelet_r2b_48GeometryDense = endpoint_boot_eyelet_r2b_48
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r2b_48.endRadius, endpoint_boot_eyelet_r2b_48.baseRadius, endpoint_boot_eyelet_r2b_48.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_r2b_48Geometry = decimateGeometry(mesh_boot_eyelet_r2b_48GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_r2b_48) {
+    mesh_boot_eyelet_r2b_48Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_r2b_48 = new THREE.Mesh(
+    mesh_boot_eyelet_r2b_48Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_r2b_48.name = "Boot eyelet boot-eyelet-r2b";
+  if (endpoint_boot_eyelet_r2b_48) {
+    mesh_boot_eyelet_r2b_48.position.copy(endpoint_boot_eyelet_r2b_48.midpoint);
+    mesh_boot_eyelet_r2b_48.quaternion.copy(endpoint_boot_eyelet_r2b_48.quaternion);
+  }
+  mesh_boot_eyelet_r2b_48.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_r2b_48.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_r2b_48.userData.sculptComponent = {"id": "boot-eyelet-r2b", "name": "Boot eyelet boot-eyelet-r2b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.135, 0.26, 0.2955], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r2b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r2b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r2b_48.add(mesh_boot_eyelet_r2b_48);
+  meshes["boot-eyelet-r2b"] = mesh_boot_eyelet_r2b_48;
+  colliders["boot-eyelet-r2b"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-r2b"] ??= [];
+  destructionGroups["boot-eyelet-r2b"].push(node_boot_eyelet_r2b_48);
+
+  const endpoint_boot_eyelet_r3a_49 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_r3a_49 = new THREE.Group();
+  node_boot_eyelet_r3a_49.name = "Boot eyelet boot-eyelet-r3a__pivot";
+  node_boot_eyelet_r3a_49.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_r3a_49) {
+    node_boot_eyelet_r3a_49.position.copy(endpoint_boot_eyelet_r3a_49.start);
+    node_boot_eyelet_r3a_49.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_r3a_49.position.set(-0.265, 0.305, 0.2802);
+    node_boot_eyelet_r3a_49.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_r3a_49.userData.sculptComponent = {"id": "boot-eyelet-r3a", "name": "Boot eyelet boot-eyelet-r3a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.265, 0.305, 0.2802], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r3a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r3a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r3a_49.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r3a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r3a_49);
+  nodes["boot-eyelet-r3a"] = node_boot_eyelet_r3a_49;
+  const mesh_boot_eyelet_r3a_49GeometryDense = endpoint_boot_eyelet_r3a_49
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r3a_49.endRadius, endpoint_boot_eyelet_r3a_49.baseRadius, endpoint_boot_eyelet_r3a_49.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_r3a_49Geometry = decimateGeometry(mesh_boot_eyelet_r3a_49GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_r3a_49) {
+    mesh_boot_eyelet_r3a_49Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_r3a_49 = new THREE.Mesh(
+    mesh_boot_eyelet_r3a_49Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_r3a_49.name = "Boot eyelet boot-eyelet-r3a";
+  if (endpoint_boot_eyelet_r3a_49) {
+    mesh_boot_eyelet_r3a_49.position.copy(endpoint_boot_eyelet_r3a_49.midpoint);
+    mesh_boot_eyelet_r3a_49.quaternion.copy(endpoint_boot_eyelet_r3a_49.quaternion);
+  }
+  mesh_boot_eyelet_r3a_49.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_r3a_49.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_r3a_49.userData.sculptComponent = {"id": "boot-eyelet-r3a", "name": "Boot eyelet boot-eyelet-r3a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.265, 0.305, 0.2802], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r3a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r3a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r3a_49.add(mesh_boot_eyelet_r3a_49);
+  meshes["boot-eyelet-r3a"] = mesh_boot_eyelet_r3a_49;
+  colliders["boot-eyelet-r3a"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-r3a"] ??= [];
+  destructionGroups["boot-eyelet-r3a"].push(node_boot_eyelet_r3a_49);
+
+  const endpoint_boot_eyelet_r3b_50 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_r3b_50 = new THREE.Group();
+  node_boot_eyelet_r3b_50.name = "Boot eyelet boot-eyelet-r3b__pivot";
+  node_boot_eyelet_r3b_50.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_r3b_50) {
+    node_boot_eyelet_r3b_50.position.copy(endpoint_boot_eyelet_r3b_50.start);
+    node_boot_eyelet_r3b_50.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_r3b_50.position.set(-0.135, 0.305, 0.2802);
+    node_boot_eyelet_r3b_50.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_r3b_50.userData.sculptComponent = {"id": "boot-eyelet-r3b", "name": "Boot eyelet boot-eyelet-r3b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.135, 0.305, 0.2802], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r3b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r3b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r3b_50.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r3b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r3b_50);
+  nodes["boot-eyelet-r3b"] = node_boot_eyelet_r3b_50;
+  const mesh_boot_eyelet_r3b_50GeometryDense = endpoint_boot_eyelet_r3b_50
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r3b_50.endRadius, endpoint_boot_eyelet_r3b_50.baseRadius, endpoint_boot_eyelet_r3b_50.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_r3b_50Geometry = decimateGeometry(mesh_boot_eyelet_r3b_50GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_r3b_50) {
+    mesh_boot_eyelet_r3b_50Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_r3b_50 = new THREE.Mesh(
+    mesh_boot_eyelet_r3b_50Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_r3b_50.name = "Boot eyelet boot-eyelet-r3b";
+  if (endpoint_boot_eyelet_r3b_50) {
+    mesh_boot_eyelet_r3b_50.position.copy(endpoint_boot_eyelet_r3b_50.midpoint);
+    mesh_boot_eyelet_r3b_50.quaternion.copy(endpoint_boot_eyelet_r3b_50.quaternion);
+  }
+  mesh_boot_eyelet_r3b_50.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_r3b_50.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_r3b_50.userData.sculptComponent = {"id": "boot-eyelet-r3b", "name": "Boot eyelet boot-eyelet-r3b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.135, 0.305, 0.2802], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r3b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r3b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r3b_50.add(mesh_boot_eyelet_r3b_50);
+  meshes["boot-eyelet-r3b"] = mesh_boot_eyelet_r3b_50;
+  colliders["boot-eyelet-r3b"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-r3b"] ??= [];
+  destructionGroups["boot-eyelet-r3b"].push(node_boot_eyelet_r3b_50);
+
+  const endpoint_boot_eyelet_r4a_51 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_r4a_51 = new THREE.Group();
+  node_boot_eyelet_r4a_51.name = "Boot eyelet boot-eyelet-r4a__pivot";
+  node_boot_eyelet_r4a_51.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_r4a_51) {
+    node_boot_eyelet_r4a_51.position.copy(endpoint_boot_eyelet_r4a_51.start);
+    node_boot_eyelet_r4a_51.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_r4a_51.position.set(-0.265, 0.35, 0.2969);
+    node_boot_eyelet_r4a_51.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_r4a_51.userData.sculptComponent = {"id": "boot-eyelet-r4a", "name": "Boot eyelet boot-eyelet-r4a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.265, 0.35, 0.2969], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r4a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r4a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r4a_51.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r4a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r4a_51);
+  nodes["boot-eyelet-r4a"] = node_boot_eyelet_r4a_51;
+  const mesh_boot_eyelet_r4a_51GeometryDense = endpoint_boot_eyelet_r4a_51
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r4a_51.endRadius, endpoint_boot_eyelet_r4a_51.baseRadius, endpoint_boot_eyelet_r4a_51.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_r4a_51Geometry = decimateGeometry(mesh_boot_eyelet_r4a_51GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_r4a_51) {
+    mesh_boot_eyelet_r4a_51Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_r4a_51 = new THREE.Mesh(
+    mesh_boot_eyelet_r4a_51Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_r4a_51.name = "Boot eyelet boot-eyelet-r4a";
+  if (endpoint_boot_eyelet_r4a_51) {
+    mesh_boot_eyelet_r4a_51.position.copy(endpoint_boot_eyelet_r4a_51.midpoint);
+    mesh_boot_eyelet_r4a_51.quaternion.copy(endpoint_boot_eyelet_r4a_51.quaternion);
+  }
+  mesh_boot_eyelet_r4a_51.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_r4a_51.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_r4a_51.userData.sculptComponent = {"id": "boot-eyelet-r4a", "name": "Boot eyelet boot-eyelet-r4a", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.265, 0.35, 0.2969], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r4a", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r4a-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r4a_51.add(mesh_boot_eyelet_r4a_51);
+  meshes["boot-eyelet-r4a"] = mesh_boot_eyelet_r4a_51;
+  colliders["boot-eyelet-r4a"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-r4a"] ??= [];
+  destructionGroups["boot-eyelet-r4a"].push(node_boot_eyelet_r4a_51);
+
+  const endpoint_boot_eyelet_r4b_52 = makeAttachmentEndpoint(null);
+  const node_boot_eyelet_r4b_52 = new THREE.Group();
+  node_boot_eyelet_r4b_52.name = "Boot eyelet boot-eyelet-r4b__pivot";
+  node_boot_eyelet_r4b_52.scale.set(1, 1, 1);
+  if (endpoint_boot_eyelet_r4b_52) {
+    node_boot_eyelet_r4b_52.position.copy(endpoint_boot_eyelet_r4b_52.start);
+    node_boot_eyelet_r4b_52.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_eyelet_r4b_52.position.set(-0.135, 0.35, 0.2969);
+    node_boot_eyelet_r4b_52.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_eyelet_r4b_52.userData.sculptComponent = {"id": "boot-eyelet-r4b", "name": "Boot eyelet boot-eyelet-r4b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.135, 0.35, 0.2969], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r4b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r4b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r4b_52.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r4b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r4b_52);
+  nodes["boot-eyelet-r4b"] = node_boot_eyelet_r4b_52;
+  const mesh_boot_eyelet_r4b_52GeometryDense = endpoint_boot_eyelet_r4b_52
+    ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r4b_52.endRadius, endpoint_boot_eyelet_r4b_52.baseRadius, endpoint_boot_eyelet_r4b_52.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_boot_eyelet_r4b_52Geometry = decimateGeometry(mesh_boot_eyelet_r4b_52GeometryDense, 0.06);
+  if (!endpoint_boot_eyelet_r4b_52) {
+    mesh_boot_eyelet_r4b_52Geometry.scale(0.022, 0.022, 0.014);
+  }
+  const mesh_boot_eyelet_r4b_52 = new THREE.Mesh(
+    mesh_boot_eyelet_r4b_52Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_eyelet_r4b_52.name = "Boot eyelet boot-eyelet-r4b";
+  if (endpoint_boot_eyelet_r4b_52) {
+    mesh_boot_eyelet_r4b_52.position.copy(endpoint_boot_eyelet_r4b_52.midpoint);
+    mesh_boot_eyelet_r4b_52.quaternion.copy(endpoint_boot_eyelet_r4b_52.quaternion);
+  }
+  mesh_boot_eyelet_r4b_52.castShadow = options.castShadow ?? true;
+  mesh_boot_eyelet_r4b_52.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_eyelet_r4b_52.userData.sculptComponent = {"id": "boot-eyelet-r4b", "name": "Boot eyelet boot-eyelet-r4b", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A small brass grommet: a discrete squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "boot-shell-r", "attachment": null, "dimensions": {"width": 0.022, "height": 0.022, "depth": 0.014, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.135, 0.35, 0.2969], "rotation": [0, 0, 0], "scale": [0.022, 0.022, 0.014]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-eyelet-r4b", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-eyelet-r4b-ring", "kind": "fastener", "description": "brass eyelet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_boot_eyelet_r4b_52.add(mesh_boot_eyelet_r4b_52);
+  meshes["boot-eyelet-r4b"] = mesh_boot_eyelet_r4b_52;
+  colliders["boot-eyelet-r4b"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-eyelet-r4b"] ??= [];
+  destructionGroups["boot-eyelet-r4b"].push(node_boot_eyelet_r4b_52);
+
+  const attachment_boot_lace_ra0_53 = {"parentSocket": "boot-r-eyelets", "localStart": [-0.135, 0.17, 0.3887], "localEnd": [-0.265, 0.215, 0.3373], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_ra0_53 = makeAttachmentEndpoint(attachment_boot_lace_ra0_53);
+  const node_boot_lace_ra0_53 = new THREE.Group();
+  node_boot_lace_ra0_53.name = "Boot lace run boot-lace-ra0__pivot";
+  node_boot_lace_ra0_53.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_ra0_53) {
+    node_boot_lace_ra0_53.position.copy(endpoint_boot_lace_ra0_53.start);
+    node_boot_lace_ra0_53.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_ra0_53.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_ra0_53.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_ra0_53.userData.sculptComponent = {"id": "boot-lace-ra0", "name": "Boot lace run boot-lace-ra0", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.135, 0.17, 0.3887], "localEnd": [-0.265, 0.215, 0.3373], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-ra0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-ra0", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_ra0_53.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-ra0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra0_53);
+  nodes["boot-lace-ra0"] = node_boot_lace_ra0_53;
+  const mesh_boot_lace_ra0_53Geometry = endpoint_boot_lace_ra0_53
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_ra0_53.endRadius, endpoint_boot_lace_ra0_53.baseRadius, endpoint_boot_lace_ra0_53.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_ra0_53) {
+    mesh_boot_lace_ra0_53Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_ra0_53 = new THREE.Mesh(
+    mesh_boot_lace_ra0_53Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_ra0_53.name = "Boot lace run boot-lace-ra0";
+  if (endpoint_boot_lace_ra0_53) {
+    mesh_boot_lace_ra0_53.position.copy(endpoint_boot_lace_ra0_53.midpoint);
+    mesh_boot_lace_ra0_53.quaternion.copy(endpoint_boot_lace_ra0_53.quaternion);
+  }
+  mesh_boot_lace_ra0_53.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_ra0_53.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_ra0_53.userData.sculptComponent = {"id": "boot-lace-ra0", "name": "Boot lace run boot-lace-ra0", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.135, 0.17, 0.3887], "localEnd": [-0.265, 0.215, 0.3373], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-ra0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-ra0", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_ra0_53.add(mesh_boot_lace_ra0_53);
+  meshes["boot-lace-ra0"] = mesh_boot_lace_ra0_53;
+  colliders["boot-lace-ra0"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-ra0"] ??= [];
+  destructionGroups["boot-lace-ra0"].push(node_boot_lace_ra0_53);
+
+  const attachment_boot_lace_ra1_54 = {"parentSocket": "boot-r-eyelets", "localStart": [-0.265, 0.215, 0.3373], "localEnd": [-0.135, 0.26, 0.3055], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_ra1_54 = makeAttachmentEndpoint(attachment_boot_lace_ra1_54);
+  const node_boot_lace_ra1_54 = new THREE.Group();
+  node_boot_lace_ra1_54.name = "Boot lace run boot-lace-ra1__pivot";
+  node_boot_lace_ra1_54.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_ra1_54) {
+    node_boot_lace_ra1_54.position.copy(endpoint_boot_lace_ra1_54.start);
+    node_boot_lace_ra1_54.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_ra1_54.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_ra1_54.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_ra1_54.userData.sculptComponent = {"id": "boot-lace-ra1", "name": "Boot lace run boot-lace-ra1", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.265, 0.215, 0.3373], "localEnd": [-0.135, 0.26, 0.3055], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-ra1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-ra1", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_ra1_54.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-ra1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra1_54);
+  nodes["boot-lace-ra1"] = node_boot_lace_ra1_54;
+  const mesh_boot_lace_ra1_54Geometry = endpoint_boot_lace_ra1_54
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_ra1_54.endRadius, endpoint_boot_lace_ra1_54.baseRadius, endpoint_boot_lace_ra1_54.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_ra1_54) {
+    mesh_boot_lace_ra1_54Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_ra1_54 = new THREE.Mesh(
+    mesh_boot_lace_ra1_54Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_ra1_54.name = "Boot lace run boot-lace-ra1";
+  if (endpoint_boot_lace_ra1_54) {
+    mesh_boot_lace_ra1_54.position.copy(endpoint_boot_lace_ra1_54.midpoint);
+    mesh_boot_lace_ra1_54.quaternion.copy(endpoint_boot_lace_ra1_54.quaternion);
+  }
+  mesh_boot_lace_ra1_54.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_ra1_54.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_ra1_54.userData.sculptComponent = {"id": "boot-lace-ra1", "name": "Boot lace run boot-lace-ra1", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.265, 0.215, 0.3373], "localEnd": [-0.135, 0.26, 0.3055], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-ra1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-ra1", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_ra1_54.add(mesh_boot_lace_ra1_54);
+  meshes["boot-lace-ra1"] = mesh_boot_lace_ra1_54;
+  colliders["boot-lace-ra1"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-ra1"] ??= [];
+  destructionGroups["boot-lace-ra1"].push(node_boot_lace_ra1_54);
+
+  const attachment_boot_lace_ra2_55 = {"parentSocket": "boot-r-eyelets", "localStart": [-0.135, 0.26, 0.3055], "localEnd": [-0.265, 0.305, 0.2903], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_ra2_55 = makeAttachmentEndpoint(attachment_boot_lace_ra2_55);
+  const node_boot_lace_ra2_55 = new THREE.Group();
+  node_boot_lace_ra2_55.name = "Boot lace run boot-lace-ra2__pivot";
+  node_boot_lace_ra2_55.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_ra2_55) {
+    node_boot_lace_ra2_55.position.copy(endpoint_boot_lace_ra2_55.start);
+    node_boot_lace_ra2_55.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_ra2_55.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_ra2_55.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_ra2_55.userData.sculptComponent = {"id": "boot-lace-ra2", "name": "Boot lace run boot-lace-ra2", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.135, 0.26, 0.3055], "localEnd": [-0.265, 0.305, 0.2903], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-ra2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-ra2", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_ra2_55.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-ra2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra2_55);
+  nodes["boot-lace-ra2"] = node_boot_lace_ra2_55;
+  const mesh_boot_lace_ra2_55Geometry = endpoint_boot_lace_ra2_55
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_ra2_55.endRadius, endpoint_boot_lace_ra2_55.baseRadius, endpoint_boot_lace_ra2_55.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_ra2_55) {
+    mesh_boot_lace_ra2_55Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_ra2_55 = new THREE.Mesh(
+    mesh_boot_lace_ra2_55Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_ra2_55.name = "Boot lace run boot-lace-ra2";
+  if (endpoint_boot_lace_ra2_55) {
+    mesh_boot_lace_ra2_55.position.copy(endpoint_boot_lace_ra2_55.midpoint);
+    mesh_boot_lace_ra2_55.quaternion.copy(endpoint_boot_lace_ra2_55.quaternion);
+  }
+  mesh_boot_lace_ra2_55.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_ra2_55.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_ra2_55.userData.sculptComponent = {"id": "boot-lace-ra2", "name": "Boot lace run boot-lace-ra2", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.135, 0.26, 0.3055], "localEnd": [-0.265, 0.305, 0.2903], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-ra2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-ra2", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_ra2_55.add(mesh_boot_lace_ra2_55);
+  meshes["boot-lace-ra2"] = mesh_boot_lace_ra2_55;
+  colliders["boot-lace-ra2"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-ra2"] ??= [];
+  destructionGroups["boot-lace-ra2"].push(node_boot_lace_ra2_55);
+
+  const attachment_boot_lace_ra3_56 = {"parentSocket": "boot-r-eyelets", "localStart": [-0.265, 0.305, 0.2903], "localEnd": [-0.135, 0.35, 0.3069], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_ra3_56 = makeAttachmentEndpoint(attachment_boot_lace_ra3_56);
+  const node_boot_lace_ra3_56 = new THREE.Group();
+  node_boot_lace_ra3_56.name = "Boot lace run boot-lace-ra3__pivot";
+  node_boot_lace_ra3_56.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_ra3_56) {
+    node_boot_lace_ra3_56.position.copy(endpoint_boot_lace_ra3_56.start);
+    node_boot_lace_ra3_56.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_ra3_56.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_ra3_56.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_ra3_56.userData.sculptComponent = {"id": "boot-lace-ra3", "name": "Boot lace run boot-lace-ra3", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.265, 0.305, 0.2903], "localEnd": [-0.135, 0.35, 0.3069], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-ra3", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-ra3", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_ra3_56.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-ra3", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra3_56);
+  nodes["boot-lace-ra3"] = node_boot_lace_ra3_56;
+  const mesh_boot_lace_ra3_56Geometry = endpoint_boot_lace_ra3_56
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_ra3_56.endRadius, endpoint_boot_lace_ra3_56.baseRadius, endpoint_boot_lace_ra3_56.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_ra3_56) {
+    mesh_boot_lace_ra3_56Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_ra3_56 = new THREE.Mesh(
+    mesh_boot_lace_ra3_56Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_ra3_56.name = "Boot lace run boot-lace-ra3";
+  if (endpoint_boot_lace_ra3_56) {
+    mesh_boot_lace_ra3_56.position.copy(endpoint_boot_lace_ra3_56.midpoint);
+    mesh_boot_lace_ra3_56.quaternion.copy(endpoint_boot_lace_ra3_56.quaternion);
+  }
+  mesh_boot_lace_ra3_56.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_ra3_56.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_ra3_56.userData.sculptComponent = {"id": "boot-lace-ra3", "name": "Boot lace run boot-lace-ra3", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.265, 0.305, 0.2903], "localEnd": [-0.135, 0.35, 0.3069], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-ra3", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-ra3", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_ra3_56.add(mesh_boot_lace_ra3_56);
+  meshes["boot-lace-ra3"] = mesh_boot_lace_ra3_56;
+  colliders["boot-lace-ra3"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-ra3"] ??= [];
+  destructionGroups["boot-lace-ra3"].push(node_boot_lace_ra3_56);
+
+  const attachment_boot_lace_rb0_57 = {"parentSocket": "boot-r-eyelets", "localStart": [-0.265, 0.17, 0.3887], "localEnd": [-0.135, 0.215, 0.3373], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_rb0_57 = makeAttachmentEndpoint(attachment_boot_lace_rb0_57);
+  const node_boot_lace_rb0_57 = new THREE.Group();
+  node_boot_lace_rb0_57.name = "Boot lace run boot-lace-rb0__pivot";
+  node_boot_lace_rb0_57.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_rb0_57) {
+    node_boot_lace_rb0_57.position.copy(endpoint_boot_lace_rb0_57.start);
+    node_boot_lace_rb0_57.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_rb0_57.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_rb0_57.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_rb0_57.userData.sculptComponent = {"id": "boot-lace-rb0", "name": "Boot lace run boot-lace-rb0", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.265, 0.17, 0.3887], "localEnd": [-0.135, 0.215, 0.3373], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-rb0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-rb0", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_rb0_57.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-rb0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb0_57);
+  nodes["boot-lace-rb0"] = node_boot_lace_rb0_57;
+  const mesh_boot_lace_rb0_57Geometry = endpoint_boot_lace_rb0_57
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_rb0_57.endRadius, endpoint_boot_lace_rb0_57.baseRadius, endpoint_boot_lace_rb0_57.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_rb0_57) {
+    mesh_boot_lace_rb0_57Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_rb0_57 = new THREE.Mesh(
+    mesh_boot_lace_rb0_57Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_rb0_57.name = "Boot lace run boot-lace-rb0";
+  if (endpoint_boot_lace_rb0_57) {
+    mesh_boot_lace_rb0_57.position.copy(endpoint_boot_lace_rb0_57.midpoint);
+    mesh_boot_lace_rb0_57.quaternion.copy(endpoint_boot_lace_rb0_57.quaternion);
+  }
+  mesh_boot_lace_rb0_57.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_rb0_57.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_rb0_57.userData.sculptComponent = {"id": "boot-lace-rb0", "name": "Boot lace run boot-lace-rb0", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.265, 0.17, 0.3887], "localEnd": [-0.135, 0.215, 0.3373], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-rb0", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-rb0", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_rb0_57.add(mesh_boot_lace_rb0_57);
+  meshes["boot-lace-rb0"] = mesh_boot_lace_rb0_57;
+  colliders["boot-lace-rb0"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-rb0"] ??= [];
+  destructionGroups["boot-lace-rb0"].push(node_boot_lace_rb0_57);
+
+  const attachment_boot_lace_rb1_58 = {"parentSocket": "boot-r-eyelets", "localStart": [-0.135, 0.215, 0.3373], "localEnd": [-0.265, 0.26, 0.3055], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_rb1_58 = makeAttachmentEndpoint(attachment_boot_lace_rb1_58);
+  const node_boot_lace_rb1_58 = new THREE.Group();
+  node_boot_lace_rb1_58.name = "Boot lace run boot-lace-rb1__pivot";
+  node_boot_lace_rb1_58.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_rb1_58) {
+    node_boot_lace_rb1_58.position.copy(endpoint_boot_lace_rb1_58.start);
+    node_boot_lace_rb1_58.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_rb1_58.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_rb1_58.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_rb1_58.userData.sculptComponent = {"id": "boot-lace-rb1", "name": "Boot lace run boot-lace-rb1", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.135, 0.215, 0.3373], "localEnd": [-0.265, 0.26, 0.3055], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-rb1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-rb1", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_rb1_58.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-rb1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb1_58);
+  nodes["boot-lace-rb1"] = node_boot_lace_rb1_58;
+  const mesh_boot_lace_rb1_58Geometry = endpoint_boot_lace_rb1_58
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_rb1_58.endRadius, endpoint_boot_lace_rb1_58.baseRadius, endpoint_boot_lace_rb1_58.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_rb1_58) {
+    mesh_boot_lace_rb1_58Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_rb1_58 = new THREE.Mesh(
+    mesh_boot_lace_rb1_58Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_rb1_58.name = "Boot lace run boot-lace-rb1";
+  if (endpoint_boot_lace_rb1_58) {
+    mesh_boot_lace_rb1_58.position.copy(endpoint_boot_lace_rb1_58.midpoint);
+    mesh_boot_lace_rb1_58.quaternion.copy(endpoint_boot_lace_rb1_58.quaternion);
+  }
+  mesh_boot_lace_rb1_58.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_rb1_58.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_rb1_58.userData.sculptComponent = {"id": "boot-lace-rb1", "name": "Boot lace run boot-lace-rb1", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.135, 0.215, 0.3373], "localEnd": [-0.265, 0.26, 0.3055], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-rb1", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-rb1", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_rb1_58.add(mesh_boot_lace_rb1_58);
+  meshes["boot-lace-rb1"] = mesh_boot_lace_rb1_58;
+  colliders["boot-lace-rb1"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-rb1"] ??= [];
+  destructionGroups["boot-lace-rb1"].push(node_boot_lace_rb1_58);
+
+  const attachment_boot_lace_rb2_59 = {"parentSocket": "boot-r-eyelets", "localStart": [-0.265, 0.26, 0.3055], "localEnd": [-0.135, 0.305, 0.2903], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_rb2_59 = makeAttachmentEndpoint(attachment_boot_lace_rb2_59);
+  const node_boot_lace_rb2_59 = new THREE.Group();
+  node_boot_lace_rb2_59.name = "Boot lace run boot-lace-rb2__pivot";
+  node_boot_lace_rb2_59.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_rb2_59) {
+    node_boot_lace_rb2_59.position.copy(endpoint_boot_lace_rb2_59.start);
+    node_boot_lace_rb2_59.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_rb2_59.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_rb2_59.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_rb2_59.userData.sculptComponent = {"id": "boot-lace-rb2", "name": "Boot lace run boot-lace-rb2", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.265, 0.26, 0.3055], "localEnd": [-0.135, 0.305, 0.2903], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-rb2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-rb2", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_rb2_59.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-rb2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb2_59);
+  nodes["boot-lace-rb2"] = node_boot_lace_rb2_59;
+  const mesh_boot_lace_rb2_59Geometry = endpoint_boot_lace_rb2_59
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_rb2_59.endRadius, endpoint_boot_lace_rb2_59.baseRadius, endpoint_boot_lace_rb2_59.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_rb2_59) {
+    mesh_boot_lace_rb2_59Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_rb2_59 = new THREE.Mesh(
+    mesh_boot_lace_rb2_59Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_rb2_59.name = "Boot lace run boot-lace-rb2";
+  if (endpoint_boot_lace_rb2_59) {
+    mesh_boot_lace_rb2_59.position.copy(endpoint_boot_lace_rb2_59.midpoint);
+    mesh_boot_lace_rb2_59.quaternion.copy(endpoint_boot_lace_rb2_59.quaternion);
+  }
+  mesh_boot_lace_rb2_59.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_rb2_59.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_rb2_59.userData.sculptComponent = {"id": "boot-lace-rb2", "name": "Boot lace run boot-lace-rb2", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.265, 0.26, 0.3055], "localEnd": [-0.135, 0.305, 0.2903], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-rb2", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-rb2", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_rb2_59.add(mesh_boot_lace_rb2_59);
+  meshes["boot-lace-rb2"] = mesh_boot_lace_rb2_59;
+  colliders["boot-lace-rb2"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-rb2"] ??= [];
+  destructionGroups["boot-lace-rb2"].push(node_boot_lace_rb2_59);
+
+  const attachment_boot_lace_rb3_60 = {"parentSocket": "boot-r-eyelets", "localStart": [-0.135, 0.305, 0.2903], "localEnd": [-0.265, 0.35, 0.3069], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]};
+  const endpoint_boot_lace_rb3_60 = makeAttachmentEndpoint(attachment_boot_lace_rb3_60);
+  const node_boot_lace_rb3_60 = new THREE.Group();
+  node_boot_lace_rb3_60.name = "Boot lace run boot-lace-rb3__pivot";
+  node_boot_lace_rb3_60.scale.set(1, 1, 1);
+  if (endpoint_boot_lace_rb3_60) {
+    node_boot_lace_rb3_60.position.copy(endpoint_boot_lace_rb3_60.start);
+    node_boot_lace_rb3_60.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_boot_lace_rb3_60.position.set(0.0, 0.0, 0.0);
+    node_boot_lace_rb3_60.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_boot_lace_rb3_60.userData.sculptComponent = {"id": "boot-lace-rb3", "name": "Boot lace run boot-lace-rb3", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.135, 0.305, 0.2903], "localEnd": [-0.265, 0.35, 0.3069], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-rb3", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-rb3", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_rb3_60.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-rb3", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}};
+  (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb3_60);
+  nodes["boot-lace-rb3"] = node_boot_lace_rb3_60;
+  const mesh_boot_lace_rb3_60Geometry = endpoint_boot_lace_rb3_60
+    ? new THREE.CylinderGeometry(endpoint_boot_lace_rb3_60.endRadius, endpoint_boot_lace_rb3_60.baseRadius, endpoint_boot_lace_rb3_60.length, 16, 6)
+    : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+  if (!endpoint_boot_lace_rb3_60) {
+    mesh_boot_lace_rb3_60Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_boot_lace_rb3_60 = new THREE.Mesh(
+    mesh_boot_lace_rb3_60Geometry,
+    materialMap["lace"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_boot_lace_rb3_60.name = "Boot lace run boot-lace-rb3";
+  if (endpoint_boot_lace_rb3_60) {
+    mesh_boot_lace_rb3_60.position.copy(endpoint_boot_lace_rb3_60.midpoint);
+    mesh_boot_lace_rb3_60.quaternion.copy(endpoint_boot_lace_rb3_60.quaternion);
+  }
+  mesh_boot_lace_rb3_60.castShadow = options.castShadow ?? true;
+  mesh_boot_lace_rb3_60.receiveShadow = options.receiveShadow ?? true;
+  mesh_boot_lace_rb3_60.userData.sculptComponent = {"id": "boot-lace-rb3", "name": "Boot lace run boot-lace-rb3", "level": "micro", "role": "body", "importance": 0.85, "confidence": 0.8, "primitive": "cylinder", "topologyClass": "fiber-strand", "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "boot-shell-r", "attachment": {"parentSocket": "boot-r-eyelets", "localStart": [-0.135, 0.305, 0.2903], "localEnd": [-0.265, 0.35, 0.3069], "contactType": "threaded-through", "baseRadius": 0.011, "endRadius": 0.011, "embedDepth": 0.004, "gapTolerance": 0.004, "evidenceRefs": ["boots-zone"]}, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "boot-lace-rb3", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "lace"}}, "material": "lace", "materialLayers": ["lace"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "boot-laces-rb3", "kind": "stitch", "description": "criss-cross lace run"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "boots-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(24, 18, 18, 1.0)", "secondaryAlbedo": "rgba(2, 2, 1, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/lace.png"]}};
+  node_boot_lace_rb3_60.add(mesh_boot_lace_rb3_60);
+  meshes["boot-lace-rb3"] = mesh_boot_lace_rb3_60;
+  colliders["boot-lace-rb3"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["boot-lace-rb3"] ??= [];
+  destructionGroups["boot-lace-rb3"].push(node_boot_lace_rb3_60);
+
+  const endpoint_sheath_body_61 = makeAttachmentEndpoint(null);
+  const node_sheath_body_61 = new THREE.Group();
+  node_sheath_body_61.name = "Knife sheath__pivot";
+  node_sheath_body_61.scale.set(1, 1, 1);
+  if (endpoint_sheath_body_61) {
+    node_sheath_body_61.position.copy(endpoint_sheath_body_61.start);
+    node_sheath_body_61.rotation.set(0.0, 0.0, 0.0);
+  } else {
+    node_sheath_body_61.position.set(0.0, 0.0, 0.0);
+    node_sheath_body_61.rotation.set(0.0, 0.0, 0.0);
+  }
+  node_sheath_body_61.userData.sculptComponent = {"id": "sheath-body", "name": "Knife sheath", "level": "macro", "role": "body", "importance": 0.9, "confidence": 0.8, "primitive": "ellipsoid", "topologyClass": "implicit", "topologyRationale": "A moulded leather sheath: one continuous flattened form, widest at the mouth, curving and tapering to its tip.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "sdf": {"primitives": [{"id": "sh0", "type": "ellipsoid", "center": [-0.3812, 0.5967, 0.3097], "radii": [0.0714, 0.0397, 0.022], "transform": {"position": [-0.3812, 0.5967, 0.3097], "rotation": [0.0, -0.96, 0.0159]}}, {"id": "sh1", "type": "ellipsoid", "center": [-0.3821, 0.55, 0.3085], "radii": [0.0684, 0.0397, 0.022], "transform": {"position": [-0.3821, 0.55, 0.3085], "rotation": [0.0, -0.96, 0.0476]}}, {"id": "sh2", "type": "ellipsoid", "center": [-0.3838, 0.5033, 0.3061], "radii": [0.0638, 0.0397, 0.022], "transform": {"position": [-0.3838, 0.5033, 0.3061], "rotation": [0.0, -0.96, 0.0792]}}, {"id": "sh3", "type": "ellipsoid", "center": [-0.3863, 0.4567, 0.3024], "radii": [0.058, 0.0397, 0.022], "transform": {"position": [-0.3863, 0.4567, 0.3024], "rotation": [0.0, -0.96, 0.1107]}}, {"id": "sh4", "type": "ellipsoid", "center": [-0.3897, 0.41, 0.2976], "radii": [0.0511, 0.0397, 0.022], "transform": {"position": [-0.3897, 0.41, 0.2976], "rotation": [0.0, -0.96, 0.1419]}}, {"id": "sh5", "type": "ellipsoid", "center": [-0.394, 0.3633, 0.2915], "radii": [0.0432, 0.0397, 0.022], "transform": {"position": [-0.394, 0.3633, 0.2915], "rotation": [0.0, -0.96, 0.1729]}}, {"id": "sh6", "type": "ellipsoid", "center": [-0.3991, 0.3167, 0.2842], "radii": [0.0344, 0.0397, 0.022], "transform": {"position": [-0.3991, 0.3167, 0.2842], "rotation": [0.0, -0.96, 0.2035]}}, {"id": "sh7", "type": "ellipsoid", "center": [-0.405, 0.27, 0.2757], "radii": [0.0247, 0.0397, 0.022], "transform": {"position": [-0.405, 0.27, 0.2757], "rotation": [0.0, -0.96, 0.2337]}}, {"id": "sh8", "type": "ellipsoid", "center": [-0.4118, 0.2233, 0.266], "radii": [0.0142, 0.0397, 0.022], "transform": {"position": [-0.4118, 0.2233, 0.266], "rotation": [0.0, -0.96, 0.2636]}}], "operations": [{"id": "sho1", "type": "smooth-union", "left": "sh0", "right": "sh1", "radius": 0.03}, {"id": "sho2", "type": "smooth-union", "left": "sho1", "right": "sh2", "radius": 0.03}, {"id": "sho3", "type": "smooth-union", "left": "sho2", "right": "sh3", "radius": 0.03}, {"id": "sho4", "type": "smooth-union", "left": "sho3", "right": "sh4", "radius": 0.03}, {"id": "sho5", "type": "smooth-union", "left": "sho4", "right": "sh5", "radius": 0.03}, {"id": "sho6", "type": "smooth-union", "left": "sho5", "right": "sh6", "radius": 0.03}, {"id": "sho7", "type": "smooth-union", "left": "sho6", "right": "sh7", "radius": 0.03}, {"id": "sheath", "type": "smooth-union", "left": "sho7", "right": "sh8", "radius": 0.03}], "resolution": 48, "bounds": {"min": [-0.541, 0.15, 0.15], "max": [-0.221, 0.67, 0.47]}}, "decimate": {"targetRatio": 0.25}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1.0, 1.0, 1.0]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sheath-body", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "sheath-leather"}}, "material": "sheath-leather", "materialLayers": ["sheath-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "sheath-right-hip", "kind": "seam", "description": "curved sheath body tapering to a point"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "hip-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(128, 88, 22, 1.0)", "secondaryAlbedo": "rgba(94, 63, 16, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/sheath-leather.png"]}};
+  node_sheath_body_61.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sheath-body", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "sheath-leather"}};
+  (nodes["vest-shell"] ?? root).add(node_sheath_body_61);
+  nodes["sheath-body"] = node_sheath_body_61;
+  const mesh_sheath_body_61GeometryDense = polygonizeSdf({"primitives": [{"id": "sh0", "type": "ellipsoid", "center": [-0.3812, 0.5967, 0.3097], "radii": [0.0714, 0.0397, 0.022], "transform": {"position": [-0.3812, 0.5967, 0.3097], "rotation": [0.0, -0.96, 0.0159]}}, {"id": "sh1", "type": "ellipsoid", "center": [-0.3821, 0.55, 0.3085], "radii": [0.0684, 0.0397, 0.022], "transform": {"position": [-0.3821, 0.55, 0.3085], "rotation": [0.0, -0.96, 0.0476]}}, {"id": "sh2", "type": "ellipsoid", "center": [-0.3838, 0.5033, 0.3061], "radii": [0.0638, 0.0397, 0.022], "transform": {"position": [-0.3838, 0.5033, 0.3061], "rotation": [0.0, -0.96, 0.0792]}}, {"id": "sh3", "type": "ellipsoid", "center": [-0.3863, 0.4567, 0.3024], "radii": [0.058, 0.0397, 0.022], "transform": {"position": [-0.3863, 0.4567, 0.3024], "rotation": [0.0, -0.96, 0.1107]}}, {"id": "sh4", "type": "ellipsoid", "center": [-0.3897, 0.41, 0.2976], "radii": [0.0511, 0.0397, 0.022], "transform": {"position": [-0.3897, 0.41, 0.2976], "rotation": [0.0, -0.96, 0.1419]}}, {"id": "sh5", "type": "ellipsoid", "center": [-0.394, 0.3633, 0.2915], "radii": [0.0432, 0.0397, 0.022], "transform": {"position": [-0.394, 0.3633, 0.2915], "rotation": [0.0, -0.96, 0.1729]}}, {"id": "sh6", "type": "ellipsoid", "center": [-0.3991, 0.3167, 0.2842], "radii": [0.0344, 0.0397, 0.022], "transform": {"position": [-0.3991, 0.3167, 0.2842], "rotation": [0.0, -0.96, 0.2035]}}, {"id": "sh7", "type": "ellipsoid", "center": [-0.405, 0.27, 0.2757], "radii": [0.0247, 0.0397, 0.022], "transform": {"position": [-0.405, 0.27, 0.2757], "rotation": [0.0, -0.96, 0.2337]}}, {"id": "sh8", "type": "ellipsoid", "center": [-0.4118, 0.2233, 0.266], "radii": [0.0142, 0.0397, 0.022], "transform": {"position": [-0.4118, 0.2233, 0.266], "rotation": [0.0, -0.96, 0.2636]}}], "operations": [{"id": "sho1", "type": "smooth-union", "left": "sh0", "right": "sh1", "radius": 0.03}, {"id": "sho2", "type": "smooth-union", "left": "sho1", "right": "sh2", "radius": 0.03}, {"id": "sho3", "type": "smooth-union", "left": "sho2", "right": "sh3", "radius": 0.03}, {"id": "sho4", "type": "smooth-union", "left": "sho3", "right": "sh4", "radius": 0.03}, {"id": "sho5", "type": "smooth-union", "left": "sho4", "right": "sh5", "radius": 0.03}, {"id": "sho6", "type": "smooth-union", "left": "sho5", "right": "sh6", "radius": 0.03}, {"id": "sho7", "type": "smooth-union", "left": "sho6", "right": "sh7", "radius": 0.03}, {"id": "sheath", "type": "smooth-union", "left": "sho7", "right": "sh8", "radius": 0.03}], "resolution": 40, "bounds": {"min": [-0.541, 0.15, 0.15], "max": [-0.221, 0.67, 0.47]}});
+  const mesh_sheath_body_61Geometry = decimateGeometry(mesh_sheath_body_61GeometryDense, 0.25);
+  if (!endpoint_sheath_body_61) {
+    mesh_sheath_body_61Geometry.scale(1.0, 1.0, 1.0);
+  }
+  const mesh_sheath_body_61 = new THREE.Mesh(
+    mesh_sheath_body_61Geometry,
+    createSculptMaterial("sheath-leather", {"id": "sheath-leather", "name": "Sheath leather", "type": "standard", "shaderModel": "MeshStandardMaterial / PBR approximation", "baseColor": "#805816", "color": "#805816", "albedo": {"dominant": "#805816", "secondary": ["#5E3F10"], "samplingNotes": "Lit / shadow cel tones measured from material-evidence/sheath-leather.png."}, "colorVariation": {"palette": ["#805816", "#5E3F10"], "pattern": "cel two-tone (lit / shadow)", "amplitude": 0.0, "heightCorrelation": 0.0}, "roughness": {"base": 0.75, "variation": 0.0, "map": "none", "localResponse": "uniform: the game draws cel shading, no roughness maps reach it"}, "metalness": {"base": 0.0, "variation": 0.0}, "ambientOcclusion": {"cavityStrength": 0.25, "contactShadowBias": 0.35, "notes": "Darken creases, seams, intersections, and recessed local features."}, "wear": {"edgeWear": 0.0, "scratches": [], "chips": []}, "dirt": {"amount": 0.0, "cavityBias": 0.0, "color": "#2F2A22"}, "localOverrides": [], "shaderNotes": ["Prefer MeshPhysicalMaterial when clearcoat, sheen, transmission, or thin-surface response is observed; otherwise use MeshStandardMaterial-compatible PBR channels.", "Generate albedo, roughness, height/normal, and AO independently; never alias albedo into roughness.", "Use normal/bump/displacement only when they map to observed surface relief.", "Use displacement geometry when the observed relief changes the close-up silhouette; texture-only relief is insufficient there."], "notes": "Stylized cartoon target: the Skin Studio bakes this colour into the model pack's palette texture; the game's own toon shader lights it, so no texture maps are authored.", "textureless": {"declared": true, "evidence": ["material-evidence/sheath-leather.texture.json: mottle 0.007, specularFraction 0.011, finishClass painted-metal - flat cartoon paint, no grain, print or pores"]}}, options, true)
+  );
+  mesh_sheath_body_61.name = "Knife sheath";
+  if (endpoint_sheath_body_61) {
+    mesh_sheath_body_61.position.copy(endpoint_sheath_body_61.midpoint);
+    mesh_sheath_body_61.quaternion.copy(endpoint_sheath_body_61.quaternion);
+  }
+  mesh_sheath_body_61.castShadow = options.castShadow ?? true;
+  mesh_sheath_body_61.receiveShadow = options.receiveShadow ?? true;
+  mesh_sheath_body_61.userData.sculptComponent = {"id": "sheath-body", "name": "Knife sheath", "level": "macro", "role": "body", "importance": 0.9, "confidence": 0.8, "primitive": "ellipsoid", "topologyClass": "implicit", "topologyRationale": "A moulded leather sheath: one continuous flattened form, widest at the mouth, curving and tapering to its tip.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "sdf": {"primitives": [{"id": "sh0", "type": "ellipsoid", "center": [-0.3812, 0.5967, 0.3097], "radii": [0.0714, 0.0397, 0.022], "transform": {"position": [-0.3812, 0.5967, 0.3097], "rotation": [0.0, -0.96, 0.0159]}}, {"id": "sh1", "type": "ellipsoid", "center": [-0.3821, 0.55, 0.3085], "radii": [0.0684, 0.0397, 0.022], "transform": {"position": [-0.3821, 0.55, 0.3085], "rotation": [0.0, -0.96, 0.0476]}}, {"id": "sh2", "type": "ellipsoid", "center": [-0.3838, 0.5033, 0.3061], "radii": [0.0638, 0.0397, 0.022], "transform": {"position": [-0.3838, 0.5033, 0.3061], "rotation": [0.0, -0.96, 0.0792]}}, {"id": "sh3", "type": "ellipsoid", "center": [-0.3863, 0.4567, 0.3024], "radii": [0.058, 0.0397, 0.022], "transform": {"position": [-0.3863, 0.4567, 0.3024], "rotation": [0.0, -0.96, 0.1107]}}, {"id": "sh4", "type": "ellipsoid", "center": [-0.3897, 0.41, 0.2976], "radii": [0.0511, 0.0397, 0.022], "transform": {"position": [-0.3897, 0.41, 0.2976], "rotation": [0.0, -0.96, 0.1419]}}, {"id": "sh5", "type": "ellipsoid", "center": [-0.394, 0.3633, 0.2915], "radii": [0.0432, 0.0397, 0.022], "transform": {"position": [-0.394, 0.3633, 0.2915], "rotation": [0.0, -0.96, 0.1729]}}, {"id": "sh6", "type": "ellipsoid", "center": [-0.3991, 0.3167, 0.2842], "radii": [0.0344, 0.0397, 0.022], "transform": {"position": [-0.3991, 0.3167, 0.2842], "rotation": [0.0, -0.96, 0.2035]}}, {"id": "sh7", "type": "ellipsoid", "center": [-0.405, 0.27, 0.2757], "radii": [0.0247, 0.0397, 0.022], "transform": {"position": [-0.405, 0.27, 0.2757], "rotation": [0.0, -0.96, 0.2337]}}, {"id": "sh8", "type": "ellipsoid", "center": [-0.4118, 0.2233, 0.266], "radii": [0.0142, 0.0397, 0.022], "transform": {"position": [-0.4118, 0.2233, 0.266], "rotation": [0.0, -0.96, 0.2636]}}], "operations": [{"id": "sho1", "type": "smooth-union", "left": "sh0", "right": "sh1", "radius": 0.03}, {"id": "sho2", "type": "smooth-union", "left": "sho1", "right": "sh2", "radius": 0.03}, {"id": "sho3", "type": "smooth-union", "left": "sho2", "right": "sh3", "radius": 0.03}, {"id": "sho4", "type": "smooth-union", "left": "sho3", "right": "sh4", "radius": 0.03}, {"id": "sho5", "type": "smooth-union", "left": "sho4", "right": "sh5", "radius": 0.03}, {"id": "sho6", "type": "smooth-union", "left": "sho5", "right": "sh6", "radius": 0.03}, {"id": "sho7", "type": "smooth-union", "left": "sho6", "right": "sh7", "radius": 0.03}, {"id": "sheath", "type": "smooth-union", "left": "sho7", "right": "sh8", "radius": 0.03}], "resolution": 48, "bounds": {"min": [-0.541, 0.15, 0.15], "max": [-0.221, 0.67, 0.47]}}, "decimate": {"targetRatio": 0.25}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 1.0, "height": 1.0, "depth": 1.0, "units": "relative", "confidence": 0.8}, "transform": {"position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1.0, 1.0, 1.0]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sheath-body", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "sheath-leather"}}, "material": "sheath-leather", "materialLayers": ["sheath-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "sheath-right-hip", "kind": "seam", "description": "curved sheath body tapering to a point"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "hip-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(128, 88, 22, 1.0)", "secondaryAlbedo": "rgba(94, 63, 16, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/sheath-leather.png"]}};
+  node_sheath_body_61.add(mesh_sheath_body_61);
+  meshes["sheath-body"] = mesh_sheath_body_61;
+  colliders["sheath-body"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["sheath-body"] ??= [];
+  destructionGroups["sheath-body"].push(node_sheath_body_61);
+
+  const endpoint_sheath_strap_62 = makeAttachmentEndpoint(null);
+  const node_sheath_strap_62 = new THREE.Group();
+  node_sheath_strap_62.name = "Sheath belt strap__pivot";
+  node_sheath_strap_62.scale.set(1, 1, 1);
+  if (endpoint_sheath_strap_62) {
+    node_sheath_strap_62.position.copy(endpoint_sheath_strap_62.start);
+    node_sheath_strap_62.rotation.set(0.0, -0.96, 0.15);
+  } else {
+    node_sheath_strap_62.position.set(-0.4178636205735449, 0.6, 0.33580839937326057);
+    node_sheath_strap_62.rotation.set(0.0, -0.96, 0.15);
+  }
+  node_sheath_strap_62.userData.sculptComponent = {"id": "sheath-strap", "name": "Sheath belt strap", "level": "meso", "role": "body", "importance": 0.6, "confidence": 0.8, "primitive": "box", "topologyClass": "assembled-solid", "topologyRationale": "A strap looping over the belt: a thin assembled block.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "sheath-body", "attachment": null, "dimensions": {"width": 0.07, "height": 0.13, "depth": 0.025, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.4178636205735449, 0.6, 0.33580839937326057], "rotation": [0, -0.96, 0.15], "scale": [0.07, 0.13, 0.025]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sheath-strap", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "sheath-leather"}}, "material": "sheath-leather", "materialLayers": ["sheath-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "sheath-strap-loop", "kind": "seam", "description": "belt loop strap"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "hip-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(128, 88, 22, 1.0)", "secondaryAlbedo": "rgba(94, 63, 16, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/sheath-leather.png"]}};
+  node_sheath_strap_62.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sheath-strap", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "sheath-leather"}};
+  (nodes["sheath-body"] ?? root).add(node_sheath_strap_62);
+  nodes["sheath-strap"] = node_sheath_strap_62;
+  const mesh_sheath_strap_62Geometry = endpoint_sheath_strap_62
+    ? new THREE.CylinderGeometry(endpoint_sheath_strap_62.endRadius, endpoint_sheath_strap_62.baseRadius, endpoint_sheath_strap_62.length, 16, 6)
+    : new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
+  if (!endpoint_sheath_strap_62) {
+    mesh_sheath_strap_62Geometry.scale(0.07, 0.13, 0.025);
+  }
+  const mesh_sheath_strap_62 = new THREE.Mesh(
+    mesh_sheath_strap_62Geometry,
+    materialMap["sheath-leather"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_sheath_strap_62.name = "Sheath belt strap";
+  if (endpoint_sheath_strap_62) {
+    mesh_sheath_strap_62.position.copy(endpoint_sheath_strap_62.midpoint);
+    mesh_sheath_strap_62.quaternion.copy(endpoint_sheath_strap_62.quaternion);
+  }
+  mesh_sheath_strap_62.castShadow = options.castShadow ?? true;
+  mesh_sheath_strap_62.receiveShadow = options.receiveShadow ?? true;
+  mesh_sheath_strap_62.userData.sculptComponent = {"id": "sheath-strap", "name": "Sheath belt strap", "level": "meso", "role": "body", "importance": 0.6, "confidence": 0.8, "primitive": "box", "topologyClass": "assembled-solid", "topologyRationale": "A strap looping over the belt: a thin assembled block.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "sheath-body", "attachment": null, "dimensions": {"width": 0.07, "height": 0.13, "depth": 0.025, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.4178636205735449, 0.6, 0.33580839937326057], "rotation": [0, -0.96, 0.15], "scale": [0.07, 0.13, 0.025]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sheath-strap", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "sheath-leather"}}, "material": "sheath-leather", "materialLayers": ["sheath-leather"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "sheath-strap-loop", "kind": "seam", "description": "belt loop strap"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "hip-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(128, 88, 22, 1.0)", "secondaryAlbedo": "rgba(94, 63, 16, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/sheath-leather.png"]}};
+  node_sheath_strap_62.add(mesh_sheath_strap_62);
+  meshes["sheath-strap"] = mesh_sheath_strap_62;
+  colliders["sheath-strap"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["sheath-strap"] ??= [];
+  destructionGroups["sheath-strap"].push(node_sheath_strap_62);
+
+  const endpoint_sheath_stud_63 = makeAttachmentEndpoint(null);
+  const node_sheath_stud_63 = new THREE.Group();
+  node_sheath_stud_63.name = "Sheath strap stud__pivot";
+  node_sheath_stud_63.scale.set(1, 1, 1);
+  if (endpoint_sheath_stud_63) {
+    node_sheath_stud_63.position.copy(endpoint_sheath_stud_63.start);
+    node_sheath_stud_63.rotation.set(0.2103, 0.94414, -0.25766);
+  } else {
+    node_sheath_stud_63.position.set(-0.00299, -0.01978, 0.015);
+    node_sheath_stud_63.rotation.set(0.2103, 0.94414, -0.25766);
+  }
+  node_sheath_stud_63.userData.sculptComponent = {"id": "sheath-stud", "name": "Sheath strap stud", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A brass rivet head: a small sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "sheath-strap", "attachment": null, "dimensions": {"width": 0.025, "height": 0.025, "depth": 0.025, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.00299, -0.01978, 0.015], "rotation": [0.2103, 0.94414, -0.25766], "scale": [0.025, 0.025, 0.025]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sheath-stud", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "sheath-strap-stud", "kind": "fastener", "description": "rivet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "hip-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_sheath_stud_63.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sheath-stud", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["sheath-strap"] ?? root).add(node_sheath_stud_63);
+  nodes["sheath-stud"] = node_sheath_stud_63;
+  const mesh_sheath_stud_63GeometryDense = endpoint_sheath_stud_63
+    ? new THREE.CylinderGeometry(endpoint_sheath_stud_63.endRadius, endpoint_sheath_stud_63.baseRadius, endpoint_sheath_stud_63.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_sheath_stud_63Geometry = decimateGeometry(mesh_sheath_stud_63GeometryDense, 0.06);
+  if (!endpoint_sheath_stud_63) {
+    mesh_sheath_stud_63Geometry.scale(0.025, 0.025, 0.025);
+  }
+  const mesh_sheath_stud_63 = new THREE.Mesh(
+    mesh_sheath_stud_63Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_sheath_stud_63.name = "Sheath strap stud";
+  if (endpoint_sheath_stud_63) {
+    mesh_sheath_stud_63.position.copy(endpoint_sheath_stud_63.midpoint);
+    mesh_sheath_stud_63.quaternion.copy(endpoint_sheath_stud_63.quaternion);
+  }
+  mesh_sheath_stud_63.castShadow = options.castShadow ?? true;
+  mesh_sheath_stud_63.receiveShadow = options.receiveShadow ?? true;
+  mesh_sheath_stud_63.userData.sculptComponent = {"id": "sheath-stud", "name": "Sheath strap stud", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A brass rivet head: a small sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "sheath-strap", "attachment": null, "dimensions": {"width": 0.025, "height": 0.025, "depth": 0.025, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.00299, -0.01978, 0.015], "rotation": [0.2103, 0.94414, -0.25766], "scale": [0.025, 0.025, 0.025]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sheath-stud", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "sheath-strap-stud", "kind": "fastener", "description": "rivet"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "hip-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_sheath_stud_63.add(mesh_sheath_stud_63);
+  meshes["sheath-stud"] = mesh_sheath_stud_63;
+  colliders["sheath-stud"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["sheath-stud"] ??= [];
+  destructionGroups["sheath-stud"].push(node_sheath_stud_63);
+
+  const endpoint_sleeve_cuff_l_64 = makeAttachmentEndpoint(null);
+  const node_sleeve_cuff_l_64 = new THREE.Group();
+  node_sleeve_cuff_l_64.name = "Rolled sleeve cuff (l)__pivot";
+  node_sleeve_cuff_l_64.scale.set(1, 1, 1);
+  if (endpoint_sleeve_cuff_l_64) {
+    node_sleeve_cuff_l_64.position.copy(endpoint_sleeve_cuff_l_64.start);
+    node_sleeve_cuff_l_64.rotation.set(0.0, 1.5708, 0.0);
+  } else {
+    node_sleeve_cuff_l_64.position.set(0.63, 1.17, -0.015);
+    node_sleeve_cuff_l_64.rotation.set(0.0, 1.5708, 0.0);
+  }
+  node_sleeve_cuff_l_64.userData.sculptComponent = {"id": "sleeve-cuff-l", "name": "Rolled sleeve cuff (l)", "level": "meso", "role": "body", "importance": 0.75, "confidence": 0.8, "primitive": "torus", "topologyClass": "assembled-solid", "topologyRationale": "A rolled band around the sleeve end: a torus ring.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "torusTubeRatio": 0.2, "decimate": {"targetRatio": 0.3}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.37, "height": 0.37, "depth": 0.5, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.63, 1.17, -0.015], "rotation": [0, 1.5708, 0], "scale": [0.37, 0.37, 0.5]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-cuff-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "cuff"}}, "material": "cuff", "materialLayers": ["cuff"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "cuff-roll-l", "kind": "ridge", "description": "rolled band"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(127, 160, 109, 1.0)", "secondaryAlbedo": "rgba(96, 124, 82, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/cuff.png"]}};
+  node_sleeve_cuff_l_64.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-cuff-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "cuff"}};
+  (nodes["vest-shell"] ?? root).add(node_sleeve_cuff_l_64);
+  nodes["sleeve-cuff-l"] = node_sleeve_cuff_l_64;
+  const mesh_sleeve_cuff_l_64GeometryDense = endpoint_sleeve_cuff_l_64
+    ? new THREE.CylinderGeometry(endpoint_sleeve_cuff_l_64.endRadius, endpoint_sleeve_cuff_l_64.baseRadius, endpoint_sleeve_cuff_l_64.length, 16, 6)
+    : new THREE.TorusGeometry(0.45, 0.09, 12, 48);
+  const mesh_sleeve_cuff_l_64Geometry = decimateGeometry(mesh_sleeve_cuff_l_64GeometryDense, 0.3);
+  if (!endpoint_sleeve_cuff_l_64) {
+    mesh_sleeve_cuff_l_64Geometry.scale(0.37, 0.37, 0.5);
+  }
+  const mesh_sleeve_cuff_l_64 = new THREE.Mesh(
+    mesh_sleeve_cuff_l_64Geometry,
+    materialMap["cuff"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_sleeve_cuff_l_64.name = "Rolled sleeve cuff (l)";
+  if (endpoint_sleeve_cuff_l_64) {
+    mesh_sleeve_cuff_l_64.position.copy(endpoint_sleeve_cuff_l_64.midpoint);
+    mesh_sleeve_cuff_l_64.quaternion.copy(endpoint_sleeve_cuff_l_64.quaternion);
+  }
+  mesh_sleeve_cuff_l_64.castShadow = options.castShadow ?? true;
+  mesh_sleeve_cuff_l_64.receiveShadow = options.receiveShadow ?? true;
+  mesh_sleeve_cuff_l_64.userData.sculptComponent = {"id": "sleeve-cuff-l", "name": "Rolled sleeve cuff (l)", "level": "meso", "role": "body", "importance": 0.75, "confidence": 0.8, "primitive": "torus", "topologyClass": "assembled-solid", "topologyRationale": "A rolled band around the sleeve end: a torus ring.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "torusTubeRatio": 0.2, "decimate": {"targetRatio": 0.3}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.37, "height": 0.37, "depth": 0.5, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.63, 1.17, -0.015], "rotation": [0, 1.5708, 0], "scale": [0.37, 0.37, 0.5]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-cuff-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "cuff"}}, "material": "cuff", "materialLayers": ["cuff"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "cuff-roll-l", "kind": "ridge", "description": "rolled band"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(127, 160, 109, 1.0)", "secondaryAlbedo": "rgba(96, 124, 82, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/cuff.png"]}};
+  node_sleeve_cuff_l_64.add(mesh_sleeve_cuff_l_64);
+  meshes["sleeve-cuff-l"] = mesh_sleeve_cuff_l_64;
+  colliders["sleeve-cuff-l"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["sleeve-cuff-l"] ??= [];
+  destructionGroups["sleeve-cuff-l"].push(node_sleeve_cuff_l_64);
+
+  const endpoint_sleeve_tab_l_65 = makeAttachmentEndpoint(null);
+  const node_sleeve_tab_l_65 = new THREE.Group();
+  node_sleeve_tab_l_65.name = "Sleeve strap tab (l)__pivot";
+  node_sleeve_tab_l_65.scale.set(1, 1, 1);
+  if (endpoint_sleeve_tab_l_65) {
+    node_sleeve_tab_l_65.position.copy(endpoint_sleeve_tab_l_65.start);
+    node_sleeve_tab_l_65.rotation.set(0.0, -1.57079, 0.0);
+  } else {
+    node_sleeve_tab_l_65.position.set(-0.005, 0.158, -0.065);
+    node_sleeve_tab_l_65.rotation.set(0.0, -1.57079, 0.0);
+  }
+  node_sleeve_tab_l_65.userData.sculptComponent = {"id": "sleeve-tab-l", "name": "Sleeve strap tab (l)", "level": "meso", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "box", "topologyClass": "assembled-solid", "topologyRationale": "The roll-up strap: a thin tab on the outer side.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "sleeve-cuff-l", "attachment": null, "dimensions": {"width": 0.1, "height": 0.018, "depth": 0.055, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.005, 0.158, -0.065], "rotation": [0.0, -1.57079, 0.0], "scale": [0.1, 0.018, 0.055]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-tab-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "cuff"}}, "material": "cuff", "materialLayers": ["cuff"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "cuff-tab-l", "kind": "seam", "description": "tab"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(127, 160, 109, 1.0)", "secondaryAlbedo": "rgba(96, 124, 82, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/cuff.png"]}};
+  node_sleeve_tab_l_65.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-tab-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "cuff"}};
+  (nodes["sleeve-cuff-l"] ?? root).add(node_sleeve_tab_l_65);
+  nodes["sleeve-tab-l"] = node_sleeve_tab_l_65;
+  const mesh_sleeve_tab_l_65Geometry = endpoint_sleeve_tab_l_65
+    ? new THREE.CylinderGeometry(endpoint_sleeve_tab_l_65.endRadius, endpoint_sleeve_tab_l_65.baseRadius, endpoint_sleeve_tab_l_65.length, 16, 6)
+    : new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
+  if (!endpoint_sleeve_tab_l_65) {
+    mesh_sleeve_tab_l_65Geometry.scale(0.1, 0.018, 0.055);
+  }
+  const mesh_sleeve_tab_l_65 = new THREE.Mesh(
+    mesh_sleeve_tab_l_65Geometry,
+    materialMap["cuff"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_sleeve_tab_l_65.name = "Sleeve strap tab (l)";
+  if (endpoint_sleeve_tab_l_65) {
+    mesh_sleeve_tab_l_65.position.copy(endpoint_sleeve_tab_l_65.midpoint);
+    mesh_sleeve_tab_l_65.quaternion.copy(endpoint_sleeve_tab_l_65.quaternion);
+  }
+  mesh_sleeve_tab_l_65.castShadow = options.castShadow ?? true;
+  mesh_sleeve_tab_l_65.receiveShadow = options.receiveShadow ?? true;
+  mesh_sleeve_tab_l_65.userData.sculptComponent = {"id": "sleeve-tab-l", "name": "Sleeve strap tab (l)", "level": "meso", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "box", "topologyClass": "assembled-solid", "topologyRationale": "The roll-up strap: a thin tab on the outer side.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "sleeve-cuff-l", "attachment": null, "dimensions": {"width": 0.1, "height": 0.018, "depth": 0.055, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.005, 0.158, -0.065], "rotation": [0.0, -1.57079, 0.0], "scale": [0.1, 0.018, 0.055]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-tab-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "cuff"}}, "material": "cuff", "materialLayers": ["cuff"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "cuff-tab-l", "kind": "seam", "description": "tab"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(127, 160, 109, 1.0)", "secondaryAlbedo": "rgba(96, 124, 82, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/cuff.png"]}};
+  node_sleeve_tab_l_65.add(mesh_sleeve_tab_l_65);
+  meshes["sleeve-tab-l"] = mesh_sleeve_tab_l_65;
+  colliders["sleeve-tab-l"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["sleeve-tab-l"] ??= [];
+  destructionGroups["sleeve-tab-l"].push(node_sleeve_tab_l_65);
+
+  const endpoint_sleeve_button_l_66 = makeAttachmentEndpoint(null);
+  const node_sleeve_button_l_66 = new THREE.Group();
+  node_sleeve_button_l_66.name = "Sleeve tab button (l)__pivot";
+  node_sleeve_button_l_66.scale.set(1, 1, 1);
+  if (endpoint_sleeve_button_l_66) {
+    node_sleeve_button_l_66.position.copy(endpoint_sleeve_button_l_66.start);
+    node_sleeve_button_l_66.rotation.set(-0.0, 0.0, -0.0);
+  } else {
+    node_sleeve_button_l_66.position.set(-0.025, 0.014, 0.0);
+    node_sleeve_button_l_66.rotation.set(-0.0, 0.0, -0.0);
+  }
+  node_sleeve_button_l_66.userData.sculptComponent = {"id": "sleeve-button-l", "name": "Sleeve tab button (l)", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A brass button: a squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "sleeve-tab-l", "attachment": null, "dimensions": {"width": 0.03, "height": 0.018, "depth": 0.03, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.025, 0.014, 0.0], "rotation": [-0.0, 0.0, -0.0], "scale": [0.03, 0.018, 0.03]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-button-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "cuff-button-l", "kind": "fastener", "description": "button"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_sleeve_button_l_66.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-button-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["sleeve-tab-l"] ?? root).add(node_sleeve_button_l_66);
+  nodes["sleeve-button-l"] = node_sleeve_button_l_66;
+  const mesh_sleeve_button_l_66GeometryDense = endpoint_sleeve_button_l_66
+    ? new THREE.CylinderGeometry(endpoint_sleeve_button_l_66.endRadius, endpoint_sleeve_button_l_66.baseRadius, endpoint_sleeve_button_l_66.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_sleeve_button_l_66Geometry = decimateGeometry(mesh_sleeve_button_l_66GeometryDense, 0.06);
+  if (!endpoint_sleeve_button_l_66) {
+    mesh_sleeve_button_l_66Geometry.scale(0.03, 0.018, 0.03);
+  }
+  const mesh_sleeve_button_l_66 = new THREE.Mesh(
+    mesh_sleeve_button_l_66Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_sleeve_button_l_66.name = "Sleeve tab button (l)";
+  if (endpoint_sleeve_button_l_66) {
+    mesh_sleeve_button_l_66.position.copy(endpoint_sleeve_button_l_66.midpoint);
+    mesh_sleeve_button_l_66.quaternion.copy(endpoint_sleeve_button_l_66.quaternion);
+  }
+  mesh_sleeve_button_l_66.castShadow = options.castShadow ?? true;
+  mesh_sleeve_button_l_66.receiveShadow = options.receiveShadow ?? true;
+  mesh_sleeve_button_l_66.userData.sculptComponent = {"id": "sleeve-button-l", "name": "Sleeve tab button (l)", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A brass button: a squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "sleeve-tab-l", "attachment": null, "dimensions": {"width": 0.03, "height": 0.018, "depth": 0.03, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.025, 0.014, 0.0], "rotation": [-0.0, 0.0, -0.0], "scale": [0.03, 0.018, 0.03]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-button-l", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "cuff-button-l", "kind": "fastener", "description": "button"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_sleeve_button_l_66.add(mesh_sleeve_button_l_66);
+  meshes["sleeve-button-l"] = mesh_sleeve_button_l_66;
+  colliders["sleeve-button-l"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["sleeve-button-l"] ??= [];
+  destructionGroups["sleeve-button-l"].push(node_sleeve_button_l_66);
+
+  const endpoint_sleeve_cuff_r_67 = makeAttachmentEndpoint(null);
+  const node_sleeve_cuff_r_67 = new THREE.Group();
+  node_sleeve_cuff_r_67.name = "Rolled sleeve cuff (r)__pivot";
+  node_sleeve_cuff_r_67.scale.set(1, 1, 1);
+  if (endpoint_sleeve_cuff_r_67) {
+    node_sleeve_cuff_r_67.position.copy(endpoint_sleeve_cuff_r_67.start);
+    node_sleeve_cuff_r_67.rotation.set(0.0, -1.5708, 0.0);
+  } else {
+    node_sleeve_cuff_r_67.position.set(-0.63, 1.17, -0.015);
+    node_sleeve_cuff_r_67.rotation.set(0.0, -1.5708, 0.0);
+  }
+  node_sleeve_cuff_r_67.userData.sculptComponent = {"id": "sleeve-cuff-r", "name": "Rolled sleeve cuff (r)", "level": "meso", "role": "body", "importance": 0.75, "confidence": 0.8, "primitive": "torus", "topologyClass": "assembled-solid", "topologyRationale": "A rolled band around the sleeve end: a torus ring.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "torusTubeRatio": 0.2, "decimate": {"targetRatio": 0.3}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.37, "height": 0.37, "depth": 0.5, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.63, 1.17, -0.015], "rotation": [0, -1.5708, 0], "scale": [0.37, 0.37, 0.5]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-cuff-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "cuff"}}, "material": "cuff", "materialLayers": ["cuff"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "cuff-roll-r", "kind": "ridge", "description": "rolled band"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(127, 160, 109, 1.0)", "secondaryAlbedo": "rgba(96, 124, 82, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/cuff.png"]}};
+  node_sleeve_cuff_r_67.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-cuff-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "cuff"}};
+  (nodes["vest-shell"] ?? root).add(node_sleeve_cuff_r_67);
+  nodes["sleeve-cuff-r"] = node_sleeve_cuff_r_67;
+  const mesh_sleeve_cuff_r_67GeometryDense = endpoint_sleeve_cuff_r_67
+    ? new THREE.CylinderGeometry(endpoint_sleeve_cuff_r_67.endRadius, endpoint_sleeve_cuff_r_67.baseRadius, endpoint_sleeve_cuff_r_67.length, 16, 6)
+    : new THREE.TorusGeometry(0.45, 0.09, 12, 48);
+  const mesh_sleeve_cuff_r_67Geometry = decimateGeometry(mesh_sleeve_cuff_r_67GeometryDense, 0.3);
+  if (!endpoint_sleeve_cuff_r_67) {
+    mesh_sleeve_cuff_r_67Geometry.scale(0.37, 0.37, 0.5);
+  }
+  const mesh_sleeve_cuff_r_67 = new THREE.Mesh(
+    mesh_sleeve_cuff_r_67Geometry,
+    materialMap["cuff"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_sleeve_cuff_r_67.name = "Rolled sleeve cuff (r)";
+  if (endpoint_sleeve_cuff_r_67) {
+    mesh_sleeve_cuff_r_67.position.copy(endpoint_sleeve_cuff_r_67.midpoint);
+    mesh_sleeve_cuff_r_67.quaternion.copy(endpoint_sleeve_cuff_r_67.quaternion);
+  }
+  mesh_sleeve_cuff_r_67.castShadow = options.castShadow ?? true;
+  mesh_sleeve_cuff_r_67.receiveShadow = options.receiveShadow ?? true;
+  mesh_sleeve_cuff_r_67.userData.sculptComponent = {"id": "sleeve-cuff-r", "name": "Rolled sleeve cuff (r)", "level": "meso", "role": "body", "importance": 0.75, "confidence": 0.8, "primitive": "torus", "topologyClass": "assembled-solid", "topologyRationale": "A rolled band around the sleeve end: a torus ring.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "torusTubeRatio": 0.2, "decimate": {"targetRatio": 0.3}}, "parent": "vest-shell", "attachment": null, "dimensions": {"width": 0.37, "height": 0.37, "depth": 0.5, "units": "relative", "confidence": 0.8}, "transform": {"position": [-0.63, 1.17, -0.015], "rotation": [0, -1.5708, 0], "scale": [0.37, 0.37, 0.5]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-cuff-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "cuff"}}, "material": "cuff", "materialLayers": ["cuff"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "cuff-roll-r", "kind": "ridge", "description": "rolled band"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(127, 160, 109, 1.0)", "secondaryAlbedo": "rgba(96, 124, 82, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/cuff.png"]}};
+  node_sleeve_cuff_r_67.add(mesh_sleeve_cuff_r_67);
+  meshes["sleeve-cuff-r"] = mesh_sleeve_cuff_r_67;
+  colliders["sleeve-cuff-r"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["sleeve-cuff-r"] ??= [];
+  destructionGroups["sleeve-cuff-r"].push(node_sleeve_cuff_r_67);
+
+  const endpoint_sleeve_tab_r_68 = makeAttachmentEndpoint(null);
+  const node_sleeve_tab_r_68 = new THREE.Group();
+  node_sleeve_tab_r_68.name = "Sleeve strap tab (r)__pivot";
+  node_sleeve_tab_r_68.scale.set(1, 1, 1);
+  if (endpoint_sleeve_tab_r_68) {
+    node_sleeve_tab_r_68.position.copy(endpoint_sleeve_tab_r_68.start);
+    node_sleeve_tab_r_68.rotation.set(0.0, 1.57079, 0.0);
+  } else {
+    node_sleeve_tab_r_68.position.set(0.005, 0.158, -0.065);
+    node_sleeve_tab_r_68.rotation.set(0.0, 1.57079, 0.0);
+  }
+  node_sleeve_tab_r_68.userData.sculptComponent = {"id": "sleeve-tab-r", "name": "Sleeve strap tab (r)", "level": "meso", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "box", "topologyClass": "assembled-solid", "topologyRationale": "The roll-up strap: a thin tab on the outer side.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "sleeve-cuff-r", "attachment": null, "dimensions": {"width": 0.1, "height": 0.018, "depth": 0.055, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.005, 0.158, -0.065], "rotation": [0.0, 1.57079, 0.0], "scale": [0.1, 0.018, 0.055]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-tab-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "cuff"}}, "material": "cuff", "materialLayers": ["cuff"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "cuff-tab-r", "kind": "seam", "description": "tab"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(127, 160, 109, 1.0)", "secondaryAlbedo": "rgba(96, 124, 82, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/cuff.png"]}};
+  node_sleeve_tab_r_68.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-tab-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "cuff"}};
+  (nodes["sleeve-cuff-r"] ?? root).add(node_sleeve_tab_r_68);
+  nodes["sleeve-tab-r"] = node_sleeve_tab_r_68;
+  const mesh_sleeve_tab_r_68Geometry = endpoint_sleeve_tab_r_68
+    ? new THREE.CylinderGeometry(endpoint_sleeve_tab_r_68.endRadius, endpoint_sleeve_tab_r_68.baseRadius, endpoint_sleeve_tab_r_68.length, 16, 6)
+    : new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
+  if (!endpoint_sleeve_tab_r_68) {
+    mesh_sleeve_tab_r_68Geometry.scale(0.1, 0.018, 0.055);
+  }
+  const mesh_sleeve_tab_r_68 = new THREE.Mesh(
+    mesh_sleeve_tab_r_68Geometry,
+    materialMap["cuff"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_sleeve_tab_r_68.name = "Sleeve strap tab (r)";
+  if (endpoint_sleeve_tab_r_68) {
+    mesh_sleeve_tab_r_68.position.copy(endpoint_sleeve_tab_r_68.midpoint);
+    mesh_sleeve_tab_r_68.quaternion.copy(endpoint_sleeve_tab_r_68.quaternion);
+  }
+  mesh_sleeve_tab_r_68.castShadow = options.castShadow ?? true;
+  mesh_sleeve_tab_r_68.receiveShadow = options.receiveShadow ?? true;
+  mesh_sleeve_tab_r_68.userData.sculptComponent = {"id": "sleeve-tab-r", "name": "Sleeve strap tab (r)", "level": "meso", "role": "body", "importance": 0.5, "confidence": 0.8, "primitive": "box", "topologyClass": "assembled-solid", "topologyRationale": "The roll-up strap: a thin tab on the outer side.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals"}, "parent": "sleeve-cuff-r", "attachment": null, "dimensions": {"width": 0.1, "height": 0.018, "depth": 0.055, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.005, 0.158, -0.065], "rotation": [0.0, 1.57079, 0.0], "scale": [0.1, 0.018, 0.055]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-tab-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "cuff"}}, "material": "cuff", "materialLayers": ["cuff"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "cuff-tab-r", "kind": "seam", "description": "tab"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(127, 160, 109, 1.0)", "secondaryAlbedo": "rgba(96, 124, 82, 1.0)", "materialClass": "fabric", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/cuff.png"]}};
+  node_sleeve_tab_r_68.add(mesh_sleeve_tab_r_68);
+  meshes["sleeve-tab-r"] = mesh_sleeve_tab_r_68;
+  colliders["sleeve-tab-r"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["sleeve-tab-r"] ??= [];
+  destructionGroups["sleeve-tab-r"].push(node_sleeve_tab_r_68);
+
+  const endpoint_sleeve_button_r_69 = makeAttachmentEndpoint(null);
+  const node_sleeve_button_r_69 = new THREE.Group();
+  node_sleeve_button_r_69.name = "Sleeve tab button (r)__pivot";
+  node_sleeve_button_r_69.scale.set(1, 1, 1);
+  if (endpoint_sleeve_button_r_69) {
+    node_sleeve_button_r_69.position.copy(endpoint_sleeve_button_r_69.start);
+    node_sleeve_button_r_69.rotation.set(-0.0, 0.0, -0.0);
+  } else {
+    node_sleeve_button_r_69.position.set(0.025, 0.014, 0.0);
+    node_sleeve_button_r_69.rotation.set(-0.0, 0.0, -0.0);
+  }
+  node_sleeve_button_r_69.userData.sculptComponent = {"id": "sleeve-button-r", "name": "Sleeve tab button (r)", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A brass button: a squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "sleeve-tab-r", "attachment": null, "dimensions": {"width": 0.03, "height": 0.018, "depth": 0.03, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.025, 0.014, 0.0], "rotation": [-0.0, 0.0, -0.0], "scale": [0.03, 0.018, 0.03]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-button-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "cuff-button-r", "kind": "fastener", "description": "button"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_sleeve_button_r_69.userData.actionProfile = {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-button-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}};
+  (nodes["sleeve-tab-r"] ?? root).add(node_sleeve_button_r_69);
+  nodes["sleeve-button-r"] = node_sleeve_button_r_69;
+  const mesh_sleeve_button_r_69GeometryDense = endpoint_sleeve_button_r_69
+    ? new THREE.CylinderGeometry(endpoint_sleeve_button_r_69.endRadius, endpoint_sleeve_button_r_69.baseRadius, endpoint_sleeve_button_r_69.length, 16, 6)
+    : new THREE.SphereGeometry(0.5, 32, 20);
+  const mesh_sleeve_button_r_69Geometry = decimateGeometry(mesh_sleeve_button_r_69GeometryDense, 0.06);
+  if (!endpoint_sleeve_button_r_69) {
+    mesh_sleeve_button_r_69Geometry.scale(0.03, 0.018, 0.03);
+  }
+  const mesh_sleeve_button_r_69 = new THREE.Mesh(
+    mesh_sleeve_button_r_69Geometry,
+    materialMap["brass"] ?? new THREE.MeshStandardMaterial({ color: 0x888888 })
+  );
+  mesh_sleeve_button_r_69.name = "Sleeve tab button (r)";
+  if (endpoint_sleeve_button_r_69) {
+    mesh_sleeve_button_r_69.position.copy(endpoint_sleeve_button_r_69.midpoint);
+    mesh_sleeve_button_r_69.quaternion.copy(endpoint_sleeve_button_r_69.quaternion);
+  }
+  mesh_sleeve_button_r_69.castShadow = options.castShadow ?? true;
+  mesh_sleeve_button_r_69.receiveShadow = options.receiveShadow ?? true;
+  mesh_sleeve_button_r_69.userData.sculptComponent = {"id": "sleeve-button-r", "name": "Sleeve tab button (r)", "level": "micro", "role": "body", "importance": 0.4, "confidence": 0.8, "primitive": "sphere", "topologyClass": "assembled-solid", "topologyRationale": "A brass button: a squashed sphere.", "geometryDescriptor": {"topologyIntent": "stylized character part", "edgeTreatment": {"type": "none", "bevelRadius": 0.0, "segments": 1}, "deformationStack": [], "uvStrategy": "generated procedural coordinates", "normalStrategy": "smooth vertex normals", "decimate": {"targetRatio": 0.06}}, "parent": "sleeve-tab-r", "attachment": null, "dimensions": {"width": 0.03, "height": 0.018, "depth": 0.03, "units": "relative", "confidence": 0.8}, "transform": {"position": [0.025, 0.014, 0.0], "rotation": [-0.0, 0.0, -0.0], "scale": [0.03, 0.018, 0.03]}, "actionProfile": {"animationRole": "static", "pivot": {"mode": "center", "localPosition": [0, 0, 0], "axis": [0, 1, 0], "confidence": 0.7}, "transformChannels": {"translate": true, "rotate": true, "scale": true, "bend": false, "twist": false, "detach": false, "visibility": true, "materialState": false}, "sockets": [], "collider": {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"}, "constraints": [], "destruction": {"breakable": false, "fractureGroup": "sleeve-button-r", "seamRefs": [], "detachableFragments": [], "breakImpulse": 0.0, "debrisMaterial": "brass"}}, "material": "brass", "materialLayers": ["brass"], "deformations": [], "joints": [], "seams": [], "localFeatures": [{"id": "cuff-button-r", "kind": "fastener", "description": "button"}], "surfaceDetail": {"macroRoughness": 0.0, "microRoughness": 0.0, "bumpAmplitude": 0.0, "normalPattern": "", "displacementPattern": "", "occlusionPattern": "", "edgeWearPattern": "", "notes": ""}, "evidenceRefs": ["full-object", "torso-zone"], "details": [], "fidelityTier": "form", "colorMaterialRecipe": {"dominantAlbedo": "rgba(145, 109, 44, 1.0)", "secondaryAlbedo": "rgba(133, 95, 23, 1.0)", "materialClass": "metal", "materialClassConfidence": 0.7, "evidenceRefs": ["material-evidence/brass.png"]}};
+  node_sleeve_button_r_69.add(mesh_sleeve_button_r_69);
+  meshes["sleeve-button-r"] = mesh_sleeve_button_r_69;
+  colliders["sleeve-button-r"] = {"type": "box", "offset": [0, 0, 0], "scale": [1, 1, 1], "isTrigger": false, "notes": "box proxy"};
+  destructionGroups["sleeve-button-r"] ??= [];
+  destructionGroups["sleeve-button-r"].push(node_sleeve_button_r_69);
+  // repetition system "vest-buttons" describes 10 parts that are already built individually; not instanced.
+  // repetition system "boot-eyelets" describes 20 parts that are already built individually; not instanced.
+  // repetition system "mirrored-pairs" describes 4 parts that are already built individually; not instanced.
+
+  root.userData.sculptRuntime = { nodes, meshes, sockets, colliders, destructionGroups } satisfies ProceduralModelRuntime;
+  root.userData.lookDevTargets = {"qualityPriority": "balanced", "materialPass": {"albedoPaletteRequired": true, "roughnessVariationRequired": true, "normalOrBumpRequired": true, "localOverridesRequired": true, "minimumTextureResolution": 1024, "preferredTextureResolution": 2048, "independentMapChannels": ["albedo", "roughness", "height", "normal", "ambient-occlusion"], "requiredSurfaceFrequencyBands": ["macro", "meso", "micro"], "geometryReliefRequiredWhenSilhouetteAffected": true, "referencePbrExtraction": {"requiredWhenSourceImagePresent": true, "targetThreshold": 0.7, "stopOnLowConfidence": true, "script": "forge/stage1_intake/extract_pbr_evidence.py", "acceptedLimitation": "single-image extraction is reference-derived inference, not exact photogrammetry"}, "mustAvoid": ["single flat albedo per material", "uniform roughness", "albedo texture reused as roughness/height/normal/AO", "single-frequency random noise", "plastic-looking smooth bark, stone, cloth, foliage, or aged material", "local color/detail described only in prose without material masks", "claiming exact PBR recovery when confidence is below the target threshold"]}, "lightingPass": {"requiredTerms": ["key light", "fill light", "rim or environment light", "exposure", "tone mapping", "background", "contact shadow"], "mustAvoid": ["ambient-only lighting", "flat value range", "missing contact shadow", "reference lighting copied without separating material readability"]}, "screenshotReview": ["Compare albedo palette and local color zones.", "Compare roughness/normal/bump response under light.", "Compare cavity dirt, edge wear, stains, moss, scratches, or other local masks.", "Compare key/fill/rim structure, exposure, tone mapping, background, and contact shadows.", "Capture a neutral-light render to verify material readability without reference lighting.", "Capture a grazing-light close-up to expose flat normals, uniform roughness, tiling, and plastic highlights.", "Capture a reference-matched render from the same camera framing as the source."], "notes": "Real-time game asset rendered by the game's own cel shader with a palette texture; flat albedo per part is the measured reference finish."};
+  root.userData.actionReadiness = {
+    note: 'Use root.userData.sculptRuntime.nodes for transforms, sockets for attachments, colliders for physics proxies, and destructionGroups for breakable sets.',
+  };
+  return root;
+}
+
+export function createPeterAdventurerOutfitLookDevLights(
+  mode: 'neutral' | 'grazing' | 'reference' = 'neutral',
+): THREE.Group {
+  const lights = new THREE.Group();
+  lights.name = "Peter adventurer outfit look-dev lights";
+  const hemi = new THREE.HemisphereLight(
+    mode === 'reference' ? 0xfff0d6 : 0xf2f4ff,
+    0x363b42,
+    mode === 'grazing' ? 0.28 : mode === 'reference' ? 0.72 : 0.85,
+  );
+  lights.add(hemi);
+  const key = new THREE.DirectionalLight(
+    mode === 'reference' ? 0xffcf8a : 0xfff4e8,
+    mode === 'grazing' ? 4.2 : mode === 'reference' ? 2.6 : 2.15,
+  );
+  if (mode === 'grazing') key.position.set(7.5, 1.1, 4.0);
+  else if (mode === 'reference') key.position.set(-4.5, 7.5, 5.0);
+  else key.position.set(-4.0, 6.0, 5.5);
+  key.castShadow = true;
+  key.shadow.mapSize.set(4096, 4096);
+  key.shadow.bias = -0.00025;
+  key.shadow.normalBias = 0.018;
+  key.shadow.radius = 7;
+  key.shadow.blurSamples = 24;
+  key.shadow.camera.near = 0.5;
+  key.shadow.camera.far = 30;
+  key.shadow.camera.left = -2.6;
+  key.shadow.camera.right = 2.6;
+  key.shadow.camera.top = 2.6;
+  key.shadow.camera.bottom = -2.6;
+  key.shadow.camera.updateProjectionMatrix();
+  lights.add(key);
+  const fill = new THREE.DirectionalLight(0xa8c4ff, mode === 'grazing' ? 0.12 : 0.42);
+  fill.position.set(4.0, 3.0, 3.5);
+  lights.add(fill);
+  const rim = new THREE.DirectionalLight(0xfff1c4, mode === 'grazing' ? 0.28 : 0.85);
+  rim.position.set(0.5, 4.5, -6.0);
+  lights.add(rim);
+  lights.userData.reviewMode = mode;
+  lights.userData.lightingFromPhoto = [{"id": "key", "type": "directional", "direction": [-0.4, 0.8, 0.6], "intensity": 2.2, "color": "#FFFFFF", "notes": "Reference is flat cel art lit from the upper front-left; review renders use a key from there."}, {"id": "fill", "type": "hemisphere", "skyColor": "#FFFFFF", "groundColor": "#8A7F78", "intensity": 1.1, "notes": "Soft fill so shadow sides keep the cel shadow tone instead of going black."}, {"id": "rim", "type": "directional", "direction": [0.5, 0.4, -0.8], "intensity": 0.6, "color": "#FFFFFF", "notes": "Rim / environment light separating the silhouette from the white review background."}, {"id": "exposure", "type": "tone", "toneMapping": "ACES filmic", "exposure": 1.0, "notes": "Exposure 1.0 with ACES tone mapping in the review harness; in game the toon shader decides."}, {"id": "contact", "type": "shadow", "notes": "Contact shadow under the boots on a ground plane (review only)."}];
+  lights.userData.lookDevTargets = {"qualityPriority": "balanced", "materialPass": {"albedoPaletteRequired": true, "roughnessVariationRequired": true, "normalOrBumpRequired": true, "localOverridesRequired": true, "minimumTextureResolution": 1024, "preferredTextureResolution": 2048, "independentMapChannels": ["albedo", "roughness", "height", "normal", "ambient-occlusion"], "requiredSurfaceFrequencyBands": ["macro", "meso", "micro"], "geometryReliefRequiredWhenSilhouetteAffected": true, "referencePbrExtraction": {"requiredWhenSourceImagePresent": true, "targetThreshold": 0.7, "stopOnLowConfidence": true, "script": "forge/stage1_intake/extract_pbr_evidence.py", "acceptedLimitation": "single-image extraction is reference-derived inference, not exact photogrammetry"}, "mustAvoid": ["single flat albedo per material", "uniform roughness", "albedo texture reused as roughness/height/normal/AO", "single-frequency random noise", "plastic-looking smooth bark, stone, cloth, foliage, or aged material", "local color/detail described only in prose without material masks", "claiming exact PBR recovery when confidence is below the target threshold"]}, "lightingPass": {"requiredTerms": ["key light", "fill light", "rim or environment light", "exposure", "tone mapping", "background", "contact shadow"], "mustAvoid": ["ambient-only lighting", "flat value range", "missing contact shadow", "reference lighting copied without separating material readability"]}, "screenshotReview": ["Compare albedo palette and local color zones.", "Compare roughness/normal/bump response under light.", "Compare cavity dirt, edge wear, stains, moss, scratches, or other local masks.", "Compare key/fill/rim structure, exposure, tone mapping, background, and contact shadows.", "Capture a neutral-light render to verify material readability without reference lighting.", "Capture a grazing-light close-up to expose flat normals, uniform roughness, tiling, and plastic highlights.", "Capture a reference-matched render from the same camera framing as the source."], "notes": "Real-time game asset rendered by the game's own cel shader with a palette texture; flat albedo per part is the measured reference finish."};
+  return lights;
+}
+
+// PBR materials (clearcoat/iridescence/transmission/anisotropy) need an environment
+// map to visually behave as intended — call this once per renderer and assign the
+// result to scene.environment before rendering. No external HDR asset required.
+export function createPeterAdventurerOutfitEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const texture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmrem.dispose();
+  return texture;
+}
+
+// Plan 1.3 §3.2 — auto-framing by bounding box. The Divine Eye can only compare a
+// render to the reference if the object is FRAMED consistently (an object framed
+// differently scores as wrong even when its shape is right). This positions the camera
+// deterministically from the object's bounding box so it fills the frame at a stable
+// margin, and sets near/far to the object scale. Call after adding the model to the
+// scene, and again on resize (after updating camera.aspect).
+export function framePeterAdventurerOutfitCamera(
+  camera: THREE.PerspectiveCamera,
+  object: THREE.Object3D,
+  options: { margin?: number; azimuthDeg?: number; elevationDeg?: number } = {},
+): void {
+  const box = new THREE.Box3().setFromObject(object);
+  if (box.isEmpty()) return;
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const margin = options.margin ?? 1.15;
+  const maxDim = Math.max(size.x, size.y, size.z) * margin;
+  const fov = (camera.fov * Math.PI) / 180;
+  // distance so the largest object dimension fits vertically in the frame
+  const distance = (maxDim / 2) / Math.tan(fov / 2);
+  const az = ((options.azimuthDeg ?? 0) * Math.PI) / 180;
+  const el = ((options.elevationDeg ?? 0) * Math.PI) / 180;
+  const dir = new THREE.Vector3(
+    Math.sin(az) * Math.cos(el),
+    Math.sin(el),
+    Math.cos(az) * Math.cos(el),
+  );
+  camera.position.copy(center).addScaledVector(dir, distance);
+  camera.near = Math.max(0.01, distance - maxDim);
+  camera.far = distance + maxDim * 2;
+  camera.lookAt(center);
+  camera.updateProjectionMatrix();
+}
+
+// Plan 1.3 §3.2c — PRESENTATION composer (DOF + bloom). CRITICAL (R-POSTFX): this is
+// for the showcase/hero render ONLY. The Divine Eye's EVALUATION render MUST use a
+// plain renderer with NO composer — bloom blows highlights and DOF blurs edges, which
+// would corrupt the deterministic IoU/DCD/edge/blowout signals. Enable dof/bloom ONLY
+// when the reference photo actually exhibits them (detect_reference_effects.py authorizes).
+export function createPeterAdventurerOutfitPresentationComposer(
+  renderer: THREE.WebGLRenderer,
+  scene: THREE.Scene,
+  camera: THREE.Camera,
+  options: { dof?: boolean; bloom?: boolean; bloomStrength?: number; dofFocus?: number; dofAperture?: number } = {},
+): EffectComposer {
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  if (options.dof) {
+    composer.addPass(new BokehPass(scene, camera, {
+      focus: options.dofFocus ?? 10.0,
+      aperture: options.dofAperture ?? 0.0002,
+      maxblur: 0.01,
+    }));
+  }
+  if (options.bloom) {
+    const size = new THREE.Vector2();
+    renderer.getSize(size);
+    composer.addPass(new UnrealBloomPass(size, options.bloomStrength ?? 0.4, 0.4, 0.85));
+  }
+  return composer;
+}
+
+export function configurePeterAdventurerOutfitRenderer(renderer: THREE.WebGLRenderer): void {
+  // Load-bearing for view-dependent finishes (anodized / Doppler): without ACES + sRGB
+  // the environment reflection reads flat/washed instead of a believable metal response.
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+}
+
+export function createPeterAdventurerOutfitInspectControls(
+  camera: THREE.Camera,
+  domElement: HTMLElement,
+): OrbitControls {
+  // View-dependent finishes only read correctly once the user orbits — their color
+  // comes from the environment reflection, not albedo, so free rotation matters here.
+  const controls = new OrbitControls(camera, domElement);
+  controls.enableDamping = true;
+  controls.minDistance = 1.0;
+  controls.maxDistance = 8.0;
+  controls.autoRotate = false;
+  return controls;
+}

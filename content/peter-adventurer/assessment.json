@@ -1,0 +1,607 @@
+{
+  "targetName": "Peter adventurer outfit",
+  "sourceImage": "reference.png",
+  "preSpecAssessment": {
+    "objectClass": {
+      "primaryType": "costume accessory set (hat, vest, boots, sheath, pendant, sleeve cuffs) worn on a rigged cartoon character",
+      "primaryDomain": "object",
+      "formLanguage": [
+        "organic shells offset from a body surface",
+        "lathed brim and crown",
+        "extruded flat pockets",
+        "tapered sheath"
+      ],
+      "structureKind": [
+        "wearable layer",
+        "mirrored pairs",
+        "belt-hung attachment"
+      ],
+      "motionPotential": [
+        "skinned to the wearer's skeleton (deforms with the body)"
+      ],
+      "materialFamilies": [
+        "felt",
+        "leather",
+        "brass",
+        "cord"
+      ],
+      "notes": "Worn by Peter Griffin (the game's own rigged model, not rebuilt). Pieces are fitted on his T-pose bind mesh (peter_rig.glb, a fitting reference only) and skinned to his skeleton in the Skin Studio."
+    },
+    "complexity": {
+      "tier": "complex",
+      "scores": {
+        "silhouetteComplexity": 3,
+        "componentCount": 4,
+        "hierarchyDepth": 3,
+        "repetitionDensity": 3,
+        "materialLayerCount": 3,
+        "localDetailDensity": 3,
+        "occlusionRisk": 2,
+        "actionReadinessNeed": 3
+      },
+      "estimatedCounts": {
+        "macroComponents": 6,
+        "mesoComponents": 12,
+        "microFeatureGroups": 6,
+        "materialLayers": 8,
+        "repetitionSystems": 4
+      },
+      "reasoning": [
+        "Six macro pieces (hat, vest, boot pair, sheath, pendant, cuff pair), each with meso sub-assemblies (band, pockets + flaps, lace panels, strap) and micro repetition (rivets, eyelets, crossed laces).",
+        "Organic shells must follow the wearer's body surface: offset from his bind mesh rather than primitive boxes."
+      ]
+    },
+    "specDepthDecision": {
+      "requiredDepth": "complex",
+      "minimumComponentLevels": [
+        "macro",
+        "meso",
+        "micro"
+      ],
+      "needsRepetitionSystems": true,
+      "needsMaterialLocalOverrides": true,
+      "needsMultipleReviewViews": true,
+      "needsActionReadyHierarchy": true,
+      "rationale": "Complex: multiple macro garments with meso pockets / lace panels and micro repeated rivets / eyelets; multiple review views (front, side) needed."
+    },
+    "unknownsToResolveBeforeImplementation": [
+      "Back of the hat, vest back and boot heels are hidden: symmetric hat, plain vest back panel, mirrored boots assumed.",
+      "Rivet / eyelet counts approximate at this resolution (270 x 507).",
+      "Pendant cord hidden by the collar: no cord modelled."
+    ],
+    "detailInventory": {
+      "scanMethod": "grid-3x3",
+      "targetMinDetails": 10,
+      "note": "Enumerate every identity-defining small detail before authoring the spec. Each detail must map to a component.localFeatures entry or material.localOverrides entry, never prose only. Use forge/stage1_intake/build_detail_inventory.py to scan zones.",
+      "details": [
+        {
+          "id": "hat-brim-curl",
+          "kind": "ridge",
+          "description": "brim rolled up at both lateral sides, dipping front and back",
+          "region": {
+            "x": 0.15,
+            "y": 0.08,
+            "width": 0.6,
+            "height": 0.12,
+            "units": "normalized"
+          },
+          "scale": "meso",
+          "affects": "silhouette",
+          "mapsTo": {
+            "type": "component",
+            "ref": "hat-brim"
+          },
+          "evidenceRef": "detail-inventory/zone-r0c1.png",
+          "confidence": 0.85
+        },
+        {
+          "id": "hat-band",
+          "kind": "ridge",
+          "description": "slate blue band wrapping the crown base, slightly proud of the felt",
+          "region": {
+            "x": 0.32,
+            "y": 0.1,
+            "width": 0.33,
+            "height": 0.04,
+            "units": "normalized"
+          },
+          "scale": "meso",
+          "affects": "albedo+relief",
+          "mapsTo": {
+            "type": "component",
+            "ref": "hat-band"
+          },
+          "evidenceRef": "detail-inventory/zone-r0c1.png",
+          "confidence": 0.9
+        },
+        {
+          "id": "hat-crown-crease",
+          "kind": "groove",
+          "description": "front-to-back pinch crease along the crown top",
+          "region": {
+            "x": 0.35,
+            "y": 0.0,
+            "width": 0.25,
+            "height": 0.08,
+            "units": "normalized"
+          },
+          "scale": "micro",
+          "affects": "relief",
+          "mapsTo": {
+            "type": "component",
+            "ref": "hat-crown"
+          },
+          "evidenceRef": "detail-inventory/zone-r0c1.png",
+          "confidence": 0.7
+        },
+        {
+          "id": "vest-chest-pocket-flap",
+          "kind": "seam",
+          "description": "flap pocket on each chest panel, flap edge a raised seam, one brass button",
+          "region": {
+            "x": 0.35,
+            "y": 0.42,
+            "width": 0.55,
+            "height": 0.1,
+            "units": "normalized"
+          },
+          "scale": "meso",
+          "affects": "relief",
+          "mapsTo": {
+            "type": "component",
+            "ref": "vest-chest-pockets"
+          },
+          "evidenceRef": "detail-inventory/zone-r1c1.png",
+          "confidence": 0.8
+        },
+        {
+          "id": "vest-lower-pocket-flap",
+          "kind": "seam",
+          "description": "large flap pocket on each lower front panel, one brass button",
+          "region": {
+            "x": 0.3,
+            "y": 0.52,
+            "width": 0.65,
+            "height": 0.12,
+            "units": "normalized"
+          },
+          "scale": "meso",
+          "affects": "relief",
+          "mapsTo": {
+            "type": "component",
+            "ref": "vest-lower-pockets"
+          },
+          "evidenceRef": "detail-inventory/zone-r1c1.png",
+          "confidence": 0.85
+        },
+        {
+          "id": "vest-panel-studs",
+          "kind": "fastener",
+          "description": "brass studs down each front panel edge (~3 per side)",
+          "region": {
+            "x": 0.48,
+            "y": 0.5,
+            "width": 0.35,
+            "height": 0.16,
+            "units": "normalized"
+          },
+          "scale": "micro",
+          "affects": "albedo+relief",
+          "mapsTo": {
+            "type": "component",
+            "ref": "vest-studs"
+          },
+          "evidenceRef": "detail-inventory/zone-r1c1.png",
+          "confidence": 0.6
+        },
+        {
+          "id": "vest-open-front",
+          "kind": "seam",
+          "description": "open front: shirt placket visible between the two front panels",
+          "region": {
+            "x": 0.5,
+            "y": 0.4,
+            "width": 0.28,
+            "height": 0.27,
+            "units": "normalized"
+          },
+          "scale": "macro",
+          "affects": "silhouette",
+          "mapsTo": {
+            "type": "component",
+            "ref": "vest-shell"
+          },
+          "evidenceRef": "detail-inventory/zone-r1c1.png",
+          "confidence": 0.85
+        },
+        {
+          "id": "pendant-claw",
+          "kind": "ridge",
+          "description": "black curled claw hook at the sternum below the collar",
+          "region": {
+            "x": 0.53,
+            "y": 0.36,
+            "width": 0.1,
+            "height": 0.08,
+            "units": "normalized"
+          },
+          "scale": "meso",
+          "affects": "silhouette",
+          "mapsTo": {
+            "type": "component",
+            "ref": "pendant-claw"
+          },
+          "evidenceRef": "detail-inventory/zone-r1c1.png",
+          "confidence": 0.8
+        },
+        {
+          "id": "sheath-right-hip",
+          "kind": "seam",
+          "description": "ochre tan curved blade sheath hanging off the belt on the wearer's right hip",
+          "region": {
+            "x": 0.12,
+            "y": 0.68,
+            "width": 0.18,
+            "height": 0.17,
+            "units": "normalized"
+          },
+          "scale": "macro",
+          "affects": "silhouette",
+          "mapsTo": {
+            "type": "component",
+            "ref": "sheath-body"
+          },
+          "evidenceRef": "detail-inventory/zone-r2c0.png",
+          "confidence": 0.85
+        },
+        {
+          "id": "sheath-strap-stud",
+          "kind": "fastener",
+          "description": "strap over the belt at the sheath mouth with one stud",
+          "region": {
+            "x": 0.18,
+            "y": 0.68,
+            "width": 0.12,
+            "height": 0.05,
+            "units": "normalized"
+          },
+          "scale": "micro",
+          "affects": "relief",
+          "mapsTo": {
+            "type": "component",
+            "ref": "sheath-strap"
+          },
+          "evidenceRef": "detail-inventory/zone-r2c0.png",
+          "confidence": 0.6
+        },
+        {
+          "id": "boot-laces",
+          "kind": "stitch",
+          "description": "black criss-cross laces up the front of each boot",
+          "region": {
+            "x": 0.35,
+            "y": 0.78,
+            "width": 0.45,
+            "height": 0.12,
+            "units": "normalized"
+          },
+          "scale": "micro",
+          "affects": "albedo+relief",
+          "mapsTo": {
+            "type": "component",
+            "ref": "boot-laces"
+          },
+          "evidenceRef": "detail-inventory/zone-r2c1.png",
+          "confidence": 0.85
+        },
+        {
+          "id": "boot-eyelets",
+          "kind": "fastener",
+          "description": "brass eyelets in two columns along each lace panel",
+          "region": {
+            "x": 0.35,
+            "y": 0.78,
+            "width": 0.45,
+            "height": 0.12,
+            "units": "normalized"
+          },
+          "scale": "micro",
+          "affects": "albedo",
+          "mapsTo": {
+            "type": "component",
+            "ref": "boot-eyelets"
+          },
+          "evidenceRef": "detail-inventory/zone-r2c1.png",
+          "confidence": 0.6
+        },
+        {
+          "id": "boot-toe-sole",
+          "kind": "ridge",
+          "description": "bulbous toe box over a thick sole",
+          "region": {
+            "x": 0.2,
+            "y": 0.88,
+            "width": 0.7,
+            "height": 0.12,
+            "units": "normalized"
+          },
+          "scale": "meso",
+          "affects": "silhouette",
+          "mapsTo": {
+            "type": "component",
+            "ref": "boot-shells"
+          },
+          "evidenceRef": "detail-inventory/zone-r2c1.png",
+          "confidence": 0.8
+        },
+        {
+          "id": "cuff-roll-button",
+          "kind": "fastener",
+          "description": "rolled sleeve band with a strap tab and brass button on the outer side",
+          "region": {
+            "x": 0.04,
+            "y": 0.44,
+            "width": 0.93,
+            "height": 0.1,
+            "units": "normalized"
+          },
+          "scale": "micro",
+          "affects": "relief",
+          "mapsTo": {
+            "type": "component",
+            "ref": "sleeve-cuffs"
+          },
+          "evidenceRef": "detail-inventory/zone-r1c0.png",
+          "confidence": 0.7
+        }
+      ]
+    },
+    "anatomy": {
+      "applies": false,
+      "styleHeads": 0.0,
+      "proportions": {
+        "headUnit": 0.0,
+        "torso": 0.0,
+        "legs": 0.0,
+        "shoulderWidth": 0.0,
+        "hipWidth": 0.0
+      },
+      "pose": {
+        "type": "unassessed",
+        "jointAngles": {}
+      },
+      "faceLandmarks": {
+        "eyeLine": 0.0,
+        "eyeSpacing": 0.0,
+        "noseBase": 0.0,
+        "mouthLine": 0.0,
+        "hairline": 0.0
+      },
+      "features": [],
+      "confidence": 0.0,
+      "note": "Only meaningful when objectClass.primaryDomain is character or hybrid. Set applies=true and fill from forge/stage1_intake/extract_landmarks.py. See grimoire/character/reconstruction.md and grimoire/character/likeness_maximization.md."
+    },
+    "sourceImage": "reference.png"
+  },
+  "qualityContract": {
+    "qualityBar": "complex",
+    "definitionOfDone": [
+      "The rendered model matches the reference silhouette, primary proportions, visible component hierarchy, material response, and most recognizable local features for the selected fidelity tier."
+    ],
+    "minimumSpecDepth": {
+      "macroComponents": 3,
+      "mesoComponents": 8,
+      "microFeatureGroups": 5,
+      "materialLayers": 3,
+      "repetitionSystems": 1,
+      "reviewViewpoints": 4
+    },
+    "featureGroups": [
+      {
+        "id": "overall-silhouette",
+        "name": "Overall silhouette and proportions",
+        "required": true,
+        "qualityCriteria": [
+          "Bounding shape, dominant curves, negative spaces, and scale relationships are explicitly described."
+        ],
+        "evidenceRefs": [
+          "full-object"
+        ],
+        "failureModes": [
+          "model reads as a generic placeholder instead of the reference object",
+          "major proportions are guessed without evidence"
+        ]
+      },
+      {
+        "id": "primary-structure",
+        "name": "Primary structure and hierarchy",
+        "required": true,
+        "qualityCriteria": [
+          "Major parts, joints, seams, contact points, and parent-child relationships are named before code generation."
+        ],
+        "evidenceRefs": [
+          "full-object"
+        ],
+        "failureModes": [
+          "large visible parts are merged into one mesh",
+          "component hierarchy is too shallow for the observed complexity"
+        ]
+      },
+      {
+        "id": "attachment-joint-correctness",
+        "name": "Attachment and joint correctness",
+        "required": true,
+        "qualityCriteria": [
+          "Every visible child appendage, branch, limb, handle, connector, tube, cable, horn, wing, leg, or hinged part has an attachment contract with parent socket, localStart/localEnd, contact type, embed/overlap, and gap tolerance."
+        ],
+        "evidenceRefs": [
+          "full-object"
+        ],
+        "failureModes": [
+          "child part root floats away from the parent",
+          "branch/limb/tube is centered in space instead of pivoting from its root",
+          "parent-child transform mixes world and local coordinates"
+        ]
+      },
+      {
+        "id": "surface-material-response",
+        "name": "Surface material response",
+        "required": true,
+        "qualityCriteria": [
+          "Albedo zones, roughness, normal/bump/displacement intent, cavity dirt, edge wear, and local overrides are specified where visible.",
+          "Important materials define independent albedo, roughness, height/normal, and AO responses instead of reusing one texture for unrelated PBR channels.",
+          "Surface response is decomposed into macro, meso, and micro frequency bands with scale and amplitude tied to object scale."
+        ],
+        "evidenceRefs": [
+          "full-object"
+        ],
+        "failureModes": [
+          "surface looks like flat plastic",
+          "local material variation is missing or not tied to image evidence"
+        ]
+      },
+      {
+        "id": "reference-lookdev",
+        "name": "Reference color, material, and lighting response",
+        "required": true,
+        "qualityCriteria": [
+          "Material-pass names the reference-derived albedo palette, roughness variation, tactile normal/bump/displacement response, and local masks.",
+          "When a source image is available, run reference PBR extraction and require confidence >= 0.7 before treating maps as implementation-ready.",
+          "Lighting-pass names key/fill/rim or environment light, exposure, tone mapping, background, and contact shadow behavior.",
+          "Neutral, grazing-angle, and reference-matched renders prove that surface relief survives relighting and is not painted into albedo."
+        ],
+        "evidenceRefs": [
+          "full-object"
+        ],
+        "failureModes": [
+          "model has acceptable shape but reads as flat shaded or plastic",
+          "colors are a generic average instead of reference-observed local color zones",
+          "lighting is evenly ambient and cannot reproduce the source value range"
+        ]
+      }
+    ],
+    "visualDeltaChecks": [
+      "silhouette and negative-space delta",
+      "component hierarchy depth delta",
+      "repetition density and distribution delta",
+      "material albedo/roughness/normal response delta",
+      "local feature placement and scale delta"
+    ],
+    "antiShallowSpecRules": [
+      "Do not proceed to code if qualityContract.qualityBar is unassessed.",
+      "Do not proceed to code if the spec only contains a root component for a moderate or complex object.",
+      "Do not proceed to code if required featureGroups are not represented by componentTree, materials, or repetitionSystems.",
+      "Do not proceed to code if visible local features are described only in prose and not attached to components/materials/evidenceRefs.",
+      "Do not proceed past structural-pass if attached child parts lack attachment.parentSocket, localStart, localEnd, embedDepth/overlap, and gapTolerance.",
+      "Do not pass material look-dev when albedo is reused as roughness, height, normal, or AO.",
+      "Do not pass material look-dev without macro, meso, and micro surface frequency bands for close-up materials.",
+      "Do not pass reference-fidelity material look-dev from a source image without usable referencePbr maps or an explicit documented limitation.",
+      "Do not patch a spec with extracted PBR maps when extraction confidence is below the target threshold unless the user explicitly accepts lower fidelity.",
+      "Do not place adjacent separate-geometry parts below 0.02 world-unit seam overlap (source: grimoire/build/geometry_patterns.md).",
+      "Do not satisfy raised or recessed relief, fasteners, or grip structure with a map alone when the feature affects form; use geometry or displacement (source: grimoire/build/geometry_patterns.md)."
+    ]
+  },
+  "authoringInstruction": "Fill observed object class, complexity reasoning, featureGroups, visualDeltaChecks, and unknowns before generating or implementing ObjectSculptSpec.",
+  "localSpecSearch": {
+    "collection": "core_3d",
+    "query": "Peter adventurer outfit leather vest pockets rivets wide brim hat band lace-up boots knife sheath",
+    "index": {
+      "status": "rebuilt",
+      "reason": "missing",
+      "fingerprint": "06f0b2ece2935e441653f5c3533f91b3a4d6163f2aec4267559d7d8419bdd040"
+    },
+    "matches": [
+      {
+        "record_id": "core.pbr-roughness",
+        "file_path": "grimoire/glossary/3d_vocabulary.md",
+        "heading": "Material And PBR",
+        "key_path": null,
+        "score": 3.510601679118,
+        "snippets": [
+          "... cues: low roughness reads as a sharp, mirror-like, tight specular highlight; high roughness reads as a blurry, wide, dim highlight and matte appearance; worn/scratched regions show broken-up, uneven highlight shapes versus the ..."
+        ],
+        "source_refs": [
+          {
+            "path": "grimoire/glossary/3d_vocabulary.md",
+            "heading": "Material And PBR",
+            "key_path": null
+          },
+          {
+            "path": "grimoire/intake/image_analysis.md",
+            "heading": "Layer 5 — Materials & surface (PBR)",
+            "key_path": null
+          },
+          {
+            "path": "docs/raw/img2threejs-skill-dataset.json",
+            "heading": null,
+            "key_path": "categories.material_pbr[1]"
+          }
+        ],
+        "evidence_refs": [
+          {
+            "kind": "source",
+            "ref": "grimoire/glossary/3d_vocabulary.md"
+          },
+          {
+            "kind": "notebooklm-research",
+            "ref": "notebooklm:4b03c2f9-8393-411f-b5b4-039ab9532843",
+            "note": "Validated generic schema vocabulary; numeric claims remain backed by local source_refs."
+          },
+          {
+            "kind": "source",
+            "ref": "docs/raw/img2threejs-skill-dataset.json",
+            "note": "img2threejs NotebookLM research distillation — merged recognition cues + Three.js target instead of duplicating this entity."
+          }
+        ]
+      },
+      {
+        "record_id": "core.pbr-subsurface-scattering-sss",
+        "file_path": "docs/raw/img2threejs-skill-dataset.json",
+        "heading": null,
+        "key_path": "categories.material_pbr[5]",
+        "score": 2.888753984226,
+        "snippets": [
+          "... sections of the material glow softly when backlit rather than showing a hard black silhouette; Relevant mainly to glove leather/polymer trims and agent-model skin, not metal weapon parts Dấu hiệu nhận diện: Các cạnh/phần mỏng của vật liệu ..."
+        ],
+        "source_refs": [
+          {
+            "path": "docs/raw/img2threejs-skill-dataset.json",
+            "heading": null,
+            "key_path": "categories.material_pbr[5]"
+          }
+        ],
+        "evidence_refs": [
+          {
+            "kind": "source",
+            "ref": "docs/raw/img2threejs-skill-dataset.json",
+            "note": "img2threejs NotebookLM research distillation"
+          }
+        ]
+      },
+      {
+        "record_id": "core.shader-mapping-torusgeometry-rings-loops",
+        "file_path": "docs/raw/img2threejs-skill-dataset.json",
+        "heading": null,
+        "key_path": "categories.rendering_shader_mapping[8]",
+        "score": 2.506589989107,
+        "snippets": [
+          "... tiết hình vòng tròn kiểu donut. Recognition cues: Circular loop feature — bayonet handle ring, finger loop on a Talon knife, trigger guard loop, carrying handle Dấu hiệu nhận diện: Chi tiết vòng tròn — vòng cán lưỡi lê, vòng ngón tay trên ..."
+        ],
+        "source_refs": [
+          {
+            "path": "docs/raw/img2threejs-skill-dataset.json",
+            "heading": null,
+            "key_path": "categories.rendering_shader_mapping[8]"
+          }
+        ],
+        "evidence_refs": [
+          {
+            "kind": "source",
+            "ref": "docs/raw/img2threejs-skill-dataset.json",
+            "note": "img2threejs NotebookLM research distillation"
+          }
+        ]
+      }
+    ]
+  }
+}

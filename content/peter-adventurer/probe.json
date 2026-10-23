@@ -1,0 +1,13 @@
+{
+  "path": "A:\\Alphain\\Alphain\\PROJECTS\\7. 2026\\4. Random\\Family Guy Modding\\content\\peter-adventurer\\reference.png",
+  "type": "png",
+  "bytes": 141366,
+  "width": 270,
+  "height": 507,
+  "aspectRatio": 0.5325443786982249,
+  "technicalSuitability": "conditional",
+  "warnings": [
+    "low resolution; small geometry/material details may be unreliable"
+  ],
+  "note": "This is only technical image probing. Semantic object suitability still requires visual inspection."
+}

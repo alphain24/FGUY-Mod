@@ -1,0 +1,301 @@
+STATUS pass=structural-pass completed=1 blocked=none next=diagnose_render.py
+{
+  "passed": true,
+  "checks": {
+    "silhouetteIoU": 0.8744,
+    "aspectRatioDelta": 0.0184,
+    "scaleDelta": 0.0463,
+    "bilateralSymmetryError": 0.0531,
+    "colorDelta": {
+      "checked": 70,
+      "maxDeltaE": 32.95,
+      "perComponent": [
+        {
+          "componentId": null,
+          "deltaE": 5.78
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.78
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.72
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.78
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.72
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.78
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.72
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.78
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.72
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 3.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 3.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.47
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.33
+        },
+        {
+          "componentId": null,
+          "deltaE": 3.82
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 3.82
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 29.88
+        },
+        {
+          "componentId": null,
+          "deltaE": 29.88
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 2.67
+        },
+        {
+          "componentId": null,
+          "deltaE": 2.67
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        },
+        {
+          "componentId": null,
+          "deltaE": 2.67
+        },
+        {
+          "componentId": null,
+          "deltaE": 2.67
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.95
+        }
+      ],
+      "gated": false
+    }
+  },
+  "failures": [],
+  "maskWarnings": [],
+  "renderHash": "b3367624761092bb",
+  "passId": "structural-pass"
+}

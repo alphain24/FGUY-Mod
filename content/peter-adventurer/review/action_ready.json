@@ -1,0 +1,2 @@
+{"sculptRuntime": true, "nodes": 71, "meshes": 70, "colliders": 70, "destructionGroups": 70, "sockets": 0,
+ "notes": "root.userData.sculptRuntime exposes a named pivot Group per component (plus the model root) with a named mesh child, a collider proxy and a destruction group each; no sockets are authored (the pieces are worn, not handled). In game every piece is skinned to Peter's skeleton by the Skin Studio instead of animated through these pivots."}

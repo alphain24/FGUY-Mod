@@ -1,0 +1,3 @@
+STATUS pass=form-refinement completed=2 blocked=none next=forge/stage3_build/orchestrate_passes.py check A:\Alphain\Alphain\PROJECTS\7. 2026\4. Random\Family Guy Modding\content\peter-adventurer\object-sculpt-spec.json
+PASS
+pass 'form-refinement' is the current unlocked pass

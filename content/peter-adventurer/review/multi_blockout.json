@@ -1,0 +1,26 @@
+{
+  "referenceAreaFraction": 0.28504444444444443,
+  "angles": [
+    {
+      "path": "review\\captures\\outfit_blockout_right.png",
+      "areaFraction": 0.24012962962962964,
+      "ratio": 0.8424287310620826,
+      "degenerate": false
+    },
+    {
+      "path": "review\\captures\\outfit_blockout_rear.png",
+      "areaFraction": 0.27243703703703703,
+      "ratio": 0.9557703801876251,
+      "degenerate": false
+    },
+    {
+      "path": "review\\captures\\outfit_blockout_left.png",
+      "areaFraction": 0.2401148148148148,
+      "ratio": 0.8423767573607754,
+      "degenerate": false
+    }
+  ],
+  "degenerate": false,
+  "collapseRatio": 0.15,
+  "note": "deterministic; zero token; a flat-plane-faking-a-volume collapses in silhouette area when orbited"
+}

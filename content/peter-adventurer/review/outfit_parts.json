@@ -1,0 +1,427 @@
+{
+ "model": "peter-adventurer-outfit",
+ "parts": [
+  {
+   "name": "Leather vest shell",
+   "kind": "part",
+   "module": "vest-shell",
+   "triangles": 2322
+  },
+  {
+   "name": "Vest chest pocket (left)",
+   "kind": "part",
+   "module": "vest-chest-pocket-l",
+   "triangles": 60
+  },
+  {
+   "name": "Vest chest pocket flap (l)",
+   "kind": "part",
+   "module": "vest-chest-flap-l",
+   "triangles": 60
+  },
+  {
+   "name": "Vest chest pocket (right)",
+   "kind": "part",
+   "module": "vest-chest-pocket-r",
+   "triangles": 60
+  },
+  {
+   "name": "Vest chest pocket flap (r)",
+   "kind": "part",
+   "module": "vest-chest-flap-r",
+   "triangles": 60
+  },
+  {
+   "name": "Vest lower pocket (left)",
+   "kind": "part",
+   "module": "vest-lower-pocket-l",
+   "triangles": 60
+  },
+  {
+   "name": "Vest lower pocket flap (l)",
+   "kind": "part",
+   "module": "vest-lower-flap-l",
+   "triangles": 60
+  },
+  {
+   "name": "Vest lower pocket (right)",
+   "kind": "part",
+   "module": "vest-lower-pocket-r",
+   "triangles": 60
+  },
+  {
+   "name": "Vest lower pocket flap (r)",
+   "kind": "part",
+   "module": "vest-lower-flap-r",
+   "triangles": 60
+  },
+  {
+   "name": "Brass button / stud",
+   "kind": "part",
+   "module": "vest-chest-button-l",
+   "triangles": 72
+  },
+  {
+   "name": "Brass button / stud vest-chest-button-r",
+   "kind": "part",
+   "module": "vest-chest-button-r",
+   "triangles": 72
+  },
+  {
+   "name": "Brass button / stud vest-lower-button-l",
+   "kind": "part",
+   "module": "vest-lower-button-l",
+   "triangles": 72
+  },
+  {
+   "name": "Brass button / stud vest-lower-button-r",
+   "kind": "part",
+   "module": "vest-lower-button-r",
+   "triangles": 72
+  },
+  {
+   "name": "Brass button / stud vest-stud-l0",
+   "kind": "part",
+   "module": "vest-stud-l0",
+   "triangles": 72
+  },
+  {
+   "name": "Brass button / stud vest-stud-l1",
+   "kind": "part",
+   "module": "vest-stud-l1",
+   "triangles": 72
+  },
+  {
+   "name": "Brass button / stud vest-stud-l2",
+   "kind": "part",
+   "module": "vest-stud-l2",
+   "triangles": 72
+  },
+  {
+   "name": "Brass button / stud vest-stud-r0",
+   "kind": "part",
+   "module": "vest-stud-r0",
+   "triangles": 72
+  },
+  {
+   "name": "Brass button / stud vest-stud-r1",
+   "kind": "part",
+   "module": "vest-stud-r1",
+   "triangles": 72
+  },
+  {
+   "name": "Brass button / stud vest-stud-r2",
+   "kind": "part",
+   "module": "vest-stud-r2",
+   "triangles": 72
+  },
+  {
+   "name": "Black claw pendant",
+   "kind": "part",
+   "module": "pendant-claw",
+   "triangles": 260
+  },
+  {
+   "name": "Pendant bail",
+   "kind": "part",
+   "module": "pendant-bail",
+   "triangles": 344
+  },
+  {
+   "name": "Wide-brim hat (crown and brim)",
+   "kind": "part",
+   "module": "hat-crown",
+   "triangles": 1928
+  },
+  {
+   "name": "Hat band",
+   "kind": "part",
+   "module": "hat-band",
+   "triangles": 344
+  },
+  {
+   "name": "Lace-up boot (left)",
+   "kind": "part",
+   "module": "boot-shell-l",
+   "triangles": 1466
+  },
+  {
+   "name": "Boot eyelet",
+   "kind": "part",
+   "module": "boot-eyelet-l0a",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-l0b",
+   "kind": "part",
+   "module": "boot-eyelet-l0b",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-l1a",
+   "kind": "part",
+   "module": "boot-eyelet-l1a",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-l1b",
+   "kind": "part",
+   "module": "boot-eyelet-l1b",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-l2a",
+   "kind": "part",
+   "module": "boot-eyelet-l2a",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-l2b",
+   "kind": "part",
+   "module": "boot-eyelet-l2b",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-l3a",
+   "kind": "part",
+   "module": "boot-eyelet-l3a",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-l3b",
+   "kind": "part",
+   "module": "boot-eyelet-l3b",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-l4a",
+   "kind": "part",
+   "module": "boot-eyelet-l4a",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-l4b",
+   "kind": "part",
+   "module": "boot-eyelet-l4b",
+   "triangles": 72
+  },
+  {
+   "name": "Boot lace run",
+   "kind": "part",
+   "module": "boot-lace-la0",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-la1",
+   "kind": "part",
+   "module": "boot-lace-la1",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-la2",
+   "kind": "part",
+   "module": "boot-lace-la2",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-la3",
+   "kind": "part",
+   "module": "boot-lace-la3",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-lb0",
+   "kind": "part",
+   "module": "boot-lace-lb0",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-lb1",
+   "kind": "part",
+   "module": "boot-lace-lb1",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-lb2",
+   "kind": "part",
+   "module": "boot-lace-lb2",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-lb3",
+   "kind": "part",
+   "module": "boot-lace-lb3",
+   "triangles": 224
+  },
+  {
+   "name": "Lace-up boot (right)",
+   "kind": "part",
+   "module": "boot-shell-r",
+   "triangles": 1466
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-r0a",
+   "kind": "part",
+   "module": "boot-eyelet-r0a",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-r0b",
+   "kind": "part",
+   "module": "boot-eyelet-r0b",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-r1a",
+   "kind": "part",
+   "module": "boot-eyelet-r1a",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-r1b",
+   "kind": "part",
+   "module": "boot-eyelet-r1b",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-r2a",
+   "kind": "part",
+   "module": "boot-eyelet-r2a",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-r2b",
+   "kind": "part",
+   "module": "boot-eyelet-r2b",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-r3a",
+   "kind": "part",
+   "module": "boot-eyelet-r3a",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-r3b",
+   "kind": "part",
+   "module": "boot-eyelet-r3b",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-r4a",
+   "kind": "part",
+   "module": "boot-eyelet-r4a",
+   "triangles": 72
+  },
+  {
+   "name": "Boot eyelet boot-eyelet-r4b",
+   "kind": "part",
+   "module": "boot-eyelet-r4b",
+   "triangles": 72
+  },
+  {
+   "name": "Boot lace run boot-lace-ra0",
+   "kind": "part",
+   "module": "boot-lace-ra0",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-ra1",
+   "kind": "part",
+   "module": "boot-lace-ra1",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-ra2",
+   "kind": "part",
+   "module": "boot-lace-ra2",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-ra3",
+   "kind": "part",
+   "module": "boot-lace-ra3",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-rb0",
+   "kind": "part",
+   "module": "boot-lace-rb0",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-rb1",
+   "kind": "part",
+   "module": "boot-lace-rb1",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-rb2",
+   "kind": "part",
+   "module": "boot-lace-rb2",
+   "triangles": 224
+  },
+  {
+   "name": "Boot lace run boot-lace-rb3",
+   "kind": "part",
+   "module": "boot-lace-rb3",
+   "triangles": 224
+  },
+  {
+   "name": "Knife sheath",
+   "kind": "part",
+   "module": "sheath-body",
+   "triangles": 886
+  },
+  {
+   "name": "Sheath belt strap",
+   "kind": "part",
+   "module": "sheath-strap",
+   "triangles": 192
+  },
+  {
+   "name": "Sheath strap stud",
+   "kind": "part",
+   "module": "sheath-stud",
+   "triangles": 72
+  },
+  {
+   "name": "Rolled sleeve cuff (l)",
+   "kind": "part",
+   "module": "sleeve-cuff-l",
+   "triangles": 344
+  },
+  {
+   "name": "Sleeve strap tab (l)",
+   "kind": "part",
+   "module": "sleeve-tab-l",
+   "triangles": 192
+  },
+  {
+   "name": "Sleeve tab button (l)",
+   "kind": "part",
+   "module": "sleeve-button-l",
+   "triangles": 72
+  },
+  {
+   "name": "Rolled sleeve cuff (r)",
+   "kind": "part",
+   "module": "sleeve-cuff-r",
+   "triangles": 344
+  },
+  {
+   "name": "Sleeve strap tab (r)",
+   "kind": "part",
+   "module": "sleeve-tab-r",
+   "triangles": 192
+  },
+  {
+   "name": "Sleeve tab button (r)",
+   "kind": "part",
+   "module": "sleeve-button-r",
+   "triangles": 72
+  }
+ ],
+ "unnamedMeshes": 0,
+ "integralMeshes": 0
+}

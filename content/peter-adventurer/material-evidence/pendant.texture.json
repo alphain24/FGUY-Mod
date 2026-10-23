@@ -1,0 +1,32 @@
+{
+  "finishClass": "worn-composite",
+  "recipe": {
+    "metalness": 0.0,
+    "roughness": 0.9,
+    "clearcoat": 0.0,
+    "clearcoatRoughness": 0.0,
+    "transmission": 0.0,
+    "ior": 1.5,
+    "envMapIntensity": 0.5,
+    "anisotropy": 0.0,
+    "procedural": "mottle"
+  },
+  "palette": [
+    "#816860",
+    "#242120",
+    "#262726",
+    "#232323",
+    "#262726"
+  ],
+  "paletteHueRisk": [],
+  "gradientAxis": "vertical",
+  "stats": {
+    "meanLum": 42.4,
+    "meanSaturation": 0.124,
+    "gradientStrength": 0.32,
+    "mottle": 0.011,
+    "streakRatio": 1.04,
+    "hueSpread": 0.217,
+    "specularFraction": 0.0
+  }
+}

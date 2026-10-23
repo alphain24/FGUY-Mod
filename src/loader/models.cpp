@@ -8,6 +8,8 @@
 // skinned character (cosmetics.cpp: its position stream is the game's per-frame buffer, the draw at that player's
 // position) is ours instead: the game's own shader, camera and lights, our vertices (the same layout: position,
 // normal as TEXCOORD1, uv as TEXCOORD0), our textures on stage 1; their character's other pieces aren't drawn.
+// A pack worn over the character (model.json "over": true - outfit pieces: a hat, a vest...) is drawn as well as it:
+// their pieces and ink lines stay, ours is drawn with their biggest piece. A skin pack can carry one (cosmetics.cpp).
 // Test pipe: "modelload <slot> <file.fgmodel | ''>".
 #include "common.h"
 
@@ -24,6 +26,7 @@ struct Vert { float pos[3], nrm[3], uv[2]; unsigned char bone[4], weight[4]; };
 struct Part { unsigned first, count, texture; };
 struct Model {
     std::wstring name;
+    bool over = false;                     // (worn over the character, not instead of it)
     int skel = 0;                          // its skeleton's bones (the game's pose has one more: the root)
     std::vector<int> parent;
     std::vector<float> invBind;            // skel x 12
@@ -99,6 +102,8 @@ Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
     for (int s = 0; s < S; ++s)   // (parents before their children: one pass makes the matrices)
         if (m->parent[s] >= s) { delete m; return nullptr; }
     std::string js(json.begin(), json.end());   // its textures: "textures": ["textures/0.png", ...]
+    size_t ov = js.find("\"over\"");   // ("over": true - worn over the character)
+    m->over = ov != std::string::npos && js.find("true", ov) == js.find_first_not_of(" \t\r\n:", ov + 6);
     size_t at = js.find("\"textures\"");
     if (at != std::string::npos)
         for (size_t q1 = js.find('"', js.find('[', at) + 1); q1 != std::string::npos && q1 < js.find(']', at); ) {
@@ -143,8 +148,8 @@ void Make(IDirect3DDevice9* dev, Model* m) {
             D3DDECL_END()};
         dev->CreateVertexDeclaration(el, &g_decl);
     }
-    Log(L"Models: %s - %zu vertices, %zu triangles, %zu parts, %zu textures, %d bones", m->name.c_str(), m->verts.size(),
-        m->idx.size() / 3, m->parts.size(), m->tex.size(), m->skel);
+    Log(L"Models: %s - %zu vertices, %zu triangles, %zu parts, %zu textures, %d bones%s", m->name.c_str(), m->verts.size(),
+        m->idx.size() / 3, m->parts.size(), m->tex.size(), m->skel, m->over ? L" - worn over the character" : L"");
 }
 
 // 3x4 row-major: a = b * c
@@ -276,7 +281,8 @@ void ModelsFrame(IDirect3DDevice9* dev) {
     for (int i = 0; i < np && n < 4; ++i) {
         int s = *reinterpret_cast<int*>(players[i] + 0xdf8);
         auto xf = *reinterpret_cast<unsigned char**>(players[i] + 0x38);
-        if (s >= 0 && s < 4 && g_worn[s] && xf && !IsBadReadPtr(xf + 0x30, 12)) g_noLinesStage[n++] = xf;   // (their transform)
+        if (s >= 0 && s < 4 && g_worn[s] && !g_worn[s]->over && xf && !IsBadReadPtr(xf + 0x30, 12))
+            g_noLinesStage[n++] = xf;   // (their transform - a pack worn over them keeps their lines)
     }
     PublishNoLines(n);
     std::vector<Pending> pending;
@@ -293,7 +299,8 @@ void ModelsFrame(IDirect3DDevice9* dev) {
     }
 }
 
-// cosmetics.cpp's DrawIndexedPrimitive: a worn model's player's skinned character - ours instead. True: done (hr set)
+// cosmetics.cpp's DrawIndexedPrimitive: a worn model's player's skinned character - ours instead (true: done, hr set),
+// or, worn over it, ours and then theirs (false: the game's draw goes ahead)
 bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT* hr) {
     if (!g_decl) return false;
     IDirect3DIndexBuffer9* ib = nullptr;
@@ -309,7 +316,9 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     UINT off = 0, stride = 0;
     D3DVERTEXBUFFER_DESC d{};
     if (SUCCEEDED(dev->GetStreamSource(0, &vb, &off, &stride)) && vb) { vb->GetDesc(&d); vb->Release(); }
+    Model* m = g_worn[player];
     if (stride != 12 || !(d.Usage & D3DUSAGE_DYNAMIC)) {   // (that piece drawn from something else - not ours to draw there)
+        if (m->over) return false;
         static std::vector<std::pair<UINT, DWORD>> logged;
         if (std::find(logged.begin(), logged.end(), std::make_pair(stride, d.Usage)) == logged.end() && logged.size() < 8) {
             logged.push_back({stride, d.Usage});
@@ -319,13 +328,16 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
         *hr = D3D_OK;
         return true;
     }
-    Model* m = g_worn[player];
     if (m->failed) return false;
+    if (ib != g_pieces[player].anchor) {   // (another piece of theirs: ours has it all - or, over it, theirs)
+        if (m->over) return false;
+        *hr = D3D_OK;
+        return true;
+    }
     *hr = D3D_OK;
-    if (ib != g_pieces[player].anchor) return true;   // (another piece of theirs: ours has it all)
     static int hide = -1;   // (test knob FGUYMOD_TEST_MODELHIDE=1: nothing drawn for them - research)
     if (hide < 0) { wchar_t v[4] = L""; GetEnvironmentVariableW(L"FGUYMOD_TEST_MODELHIDE", v, 4); hide = v[0] == L'1'; }
-    if (hide) return true;
+    if (hide) return !m->over;
     if (m->frame != g_frame) {
         if (!Skin(player, m)) return false;   // (no pose: their own character, this frame)
         m->frame = g_frame;
@@ -363,7 +375,7 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     if (oldIb) oldIb->Release();
     if (oldTex) oldTex->Release();
     if (oldTex2) oldTex2->Release();
-    return true;
+    return !m->over;
 }
 
 // research ("modelpieces <slot>"): the player's model entity ([[player +0x38] +0x1d4]) - the SkinGeometryEntity objects

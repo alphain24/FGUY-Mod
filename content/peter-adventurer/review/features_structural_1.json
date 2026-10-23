@@ -1,0 +1,5 @@
+[{"id": "hat-silhouette", "score": 0.68, "notes": "the blue band is not visible: it sits at brim+0.045, inside the brim-to-crown fillet"},
+ {"id": "vest-and-pockets", "score": 0.78, "notes": "chest and lower flap pockets on both panels, following the surface; the far panel's pockets foreshorten as in the reference"},
+ {"id": "boots-and-laces", "score": 0.78, "notes": "unchanged from blockout; laces are micro parts (form pass)"},
+ {"id": "sheath-right-hip", "score": 0.7, "notes": "strap over the belt present; body still a flat plank"},
+ {"id": "pendant-and-cuffs", "score": 0.78, "notes": "crescent claw hook at the collar like the reference; rolled cuffs on the sleeves"}]

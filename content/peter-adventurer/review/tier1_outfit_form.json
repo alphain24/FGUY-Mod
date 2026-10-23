@@ -1,0 +1,301 @@
+STATUS pass=form-refinement completed=2 blocked=none next=diagnose_render.py
+{
+  "passed": true,
+  "checks": {
+    "silhouetteIoU": 0.8742,
+    "aspectRatioDelta": 0.0184,
+    "scaleDelta": 0.0463,
+    "bilateralSymmetryError": 0.0527,
+    "colorDelta": {
+      "checked": 70,
+      "maxDeltaE": 33.37,
+      "perComponent": [
+        {
+          "componentId": null,
+          "deltaE": 5.48
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.48
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.91
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.48
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.91
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.48
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.91
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.48
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.91
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 4.07
+        },
+        {
+          "componentId": null,
+          "deltaE": 4.07
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.17
+        },
+        {
+          "componentId": null,
+          "deltaE": 32.41
+        },
+        {
+          "componentId": null,
+          "deltaE": 4.03
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 4.03
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 1.83
+        },
+        {
+          "componentId": null,
+          "deltaE": 30.27
+        },
+        {
+          "componentId": null,
+          "deltaE": 30.27
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 2.77
+        },
+        {
+          "componentId": null,
+          "deltaE": 2.77
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 2.77
+        },
+        {
+          "componentId": null,
+          "deltaE": 2.77
+        },
+        {
+          "componentId": null,
+          "deltaE": 33.37
+        }
+      ],
+      "gated": false
+    }
+  },
+  "failures": [],
+  "maskWarnings": [],
+  "renderHash": "56d0776328c87635",
+  "passId": "form-refinement"
+}

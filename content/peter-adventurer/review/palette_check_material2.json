@@ -1,0 +1,15 @@
+{
+ "method": "nearest render pixel (RGB distance) to each material albedo, reference-framed capture",
+ "nearest": {
+  "hat-felt": 0.0,
+  "hat-band": 2.2,
+  "vest-leather": 0.0,
+  "vest-flap": 2.2,
+  "brass": 2.4,
+  "boot-leather": 0.0,
+  "lace": 1.0,
+  "sheath-leather": 3.6,
+  "pendant": 1.7,
+  "cuff": 1.4
+ }
+}

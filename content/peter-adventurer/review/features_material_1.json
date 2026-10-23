@@ -1,0 +1,4 @@
+[{"id": "outfit-and-palette", "score": 0.82, "notes": "every outfit material's lit tone measured from its reference crop is present in the render within RGB distance 3.6 (review/palette_check_material2.json); shirt/jeans/buckle shown through a preview recolour of Peter's own texture"},
+ {"id": "hat-silhouette", "score": 0.8, "notes": "unchanged after decimation"},
+ {"id": "vest-and-pockets", "score": 0.84, "notes": "unchanged after decimation (vest 19.4k -> 2.3k triangles)"},
+ {"id": "boots-and-laces", "score": 0.85, "notes": "unchanged after decimation"}]

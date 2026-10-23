@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Outfit Review</title>
+<!-- img2threejs review harness (local dev only, served by tools/cosmetics/dev_server.py at /content/...):
+     the generated outfit factory on Peter's bind mesh (build/research/peter_rig.glb, a local export - never shipped).
+     ?view=front|right|back|left|three-quarter  ?peter=0 hides him  ?zoom=hat|torso|boots|hip -->
+<script type="importmap">
+{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+  "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #ffffff; overflow: hidden; }
+  canvas { display: block; }
+  #info { position: fixed; left: 8px; top: 6px; font: 12px sans-serif; color: #555; }
+</style>
+</head>
+<body>
+<div id="info"></div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createPeterAdventurerOutfitModel } from '../src/createObjectModel.js';
+
+const q = new URLSearchParams(location.search);
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
+// lightingFromPhoto: key upper front-left, hemisphere fill, rim from behind
+const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(-0.4, 0.8, 0.6).multiplyScalar(5); scene.add(key);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7f78, 1.1));
+const rim = new THREE.DirectionalLight(0xffffff, 0.6); rim.position.set(0.5, 0.4, -0.8).multiplyScalar(5); scene.add(rim);
+const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.01, 50);
+const controls = new OrbitControls(camera, renderer.domElement);
+
+const outfit = createPeterAdventurerOutfitModel({ castShadow: false });
+scene.add(outfit);
+let peter = null;
+new GLTFLoader().load('/research/peter_rig.glb', (g) => {
+  peter = g.scene;
+  peter.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; } });
+  peter.visible = q.get('peter') !== '0';
+  if (q.get('skin') !== '0') peter.traverse((o) => { if (o.isMesh && o.material.map && /Peter_Char_CO/.test(o.material.map.name || o.material.map.image?.src || '')) recolor(o.material); });
+  scene.add(peter);
+  if (q.get('pose') !== 't') window.armsDown(q.has('arm') ? Number(q.get('arm')) : 45);
+  window.ready = true;
+});
+
+// preview of the outfit's skin recolour on his texture (the pack itself is made in the Skin Studio):
+// white shirt -> sage green, green trousers -> slate blue jeans, orange buckle -> brass (each keeps its shading)
+const RECOLOR = [
+  { test: (r, g, b) => r > 170 && g > 170 && b > 170 && Math.max(r, g, b) - Math.min(r, g, b) < 30, to: [127, 160, 109], ref: 230 },
+  { test: (r, g, b) => g > r + 15 && g > b + 15, to: [79, 94, 114], ref: 99 },
+  { test: (r, g, b) => r > 200 && g > 80 && g < 190 && b < 90, to: [145, 109, 44], ref: 255 },
+];
+function recolor(mat) {
+  const img = mat.map.image;
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const x = c.getContext('2d');
+  x.drawImage(img, 0, 0);
+  const d = x.getImageData(0, 0, c.width, c.height);
+  for (let i = 0; i < d.data.length; i += 4) {
+    const [r, g, b] = [d.data[i], d.data[i + 1], d.data[i + 2]];
+    for (const rule of RECOLOR) {
+      if (!rule.test(r, g, b)) continue;
+      const k = Math.min(1.3, Math.max(r, g, b) / rule.ref);
+      for (let j = 0; j < 3; j++) d.data[i + j] = Math.min(255, rule.to[j] * k);
+      break;
+    }
+  }
+  x.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.flipY = mat.map.flipY; t.colorSpace = mat.map.colorSpace; t.wrapS = mat.map.wrapS; t.wrapT = mat.map.wrapT;
+  mat.map = t;
+  mat.needsUpdate = true;
+}
+const ZOOM = {
+  ref: [0, 1.08, 0.05, 1.95], pendant: [0.02, 1.17, 0.42, 0.35], cuff: [0.6, 1.1, 0, 0.6], all: [0, 0.95, 0, 2.3], hat: [0, 1.85, 0.05, 0.9], torso: [0, 1.0, 0.05, 1.3], boots: [0, 0.22, 0.1, 0.9],
+               hip: [-0.45, 0.45, 0.05, 0.8] };
+const VIEWS = { front: 0, 'three-quarter': -25, right: -90, back: 180, left: 90 };
+window.view = (name = 'front', zoom = 'all', elev = 5) => {
+  const az = (VIEWS[name] ?? Number(name)) * Math.PI / 180;
+  const [x, y, z, size] = ZOOM[zoom] ?? ZOOM.all;
+  const dist = size / (2 * Math.tan(camera.fov * Math.PI / 360)) * 1.15;
+  const e = elev * Math.PI / 180;
+  camera.position.set(x + Math.sin(az) * Math.cos(e) * dist, y + Math.sin(e) * dist, z + Math.cos(az) * Math.cos(e) * dist);
+  controls.target.set(x, y, z);
+  controls.update();
+  document.getElementById('info').textContent = `${name} / ${zoom}`;
+};
+// the reference's pose: both arms lowered (world rotation about Z at the shoulders, bones 19 / 35); the sleeve
+// cuffs ride the arm they sit on (review only - in game every piece is skinned to his skeleton)
+window.armsDown = (deg) => {
+  scene.updateMatrixWorld(true);
+  const bone = (n) => { let b = null; peter.traverse((o) => { if (o.isBone && o.name === n) b = o; }); return b; };
+  for (const [name, side] of [['bone19', 1], ['bone35', -1]]) {
+    const b = bone(name);
+    if (!b) continue;
+    for (const m of [...outfit.getObjectsByProperty('isMesh', true)]) {
+      if (/cuff|Sleeve/i.test(m.name) && Math.sign(new THREE.Box3().setFromObject(m).getCenter(new THREE.Vector3()).x) === side) b.attach(m);
+    }
+    const parentQ = b.parent.getWorldQuaternion(new THREE.Quaternion());
+    const worldQ = b.getWorldQuaternion(new THREE.Quaternion());
+    const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -side * deg * Math.PI / 180);
+    b.quaternion.copy(parentQ.invert().multiply(turn.multiply(worldQ)));
+  }
+  scene.updateMatrixWorld(true);
+};
+// the built part tree for check_part_coverage.py: one named part per mesh (its component id as the module)
+window.partsManifest = async (name = 'outfit_parts.json') => {
+  const parts = []; let unnamed = 0;
+  outfit.traverse((o) => {
+    if (!o.isMesh) return;
+    if (!o.name) { unnamed++; return; }
+    const g = o.geometry;
+    parts.push({ name: o.name, kind: 'part', module: o.userData.sculptComponent?.id ?? o.name,
+                 triangles: (g.index ? g.index.count : g.attributes.position.count) / 3 });
+  });
+  const body = JSON.stringify({ model: 'peter-adventurer-outfit', parts, unnamedMeshes: unnamed, integralMeshes: 0 }, null, 1);
+  const r = await fetch('/save/' + name, { method: 'PUT', body });
+  return { status: r.status, parts: parts.length, triangles: parts.reduce((a, p) => a + p.triangles, 0) };
+};
+// map-stripped evidence for the blockout gate: every texture map off (form and flat colour only)
+window.stripMaps = () => scene.traverse((o) => { if (o.isMesh && o.material.map) { o.material.map = null; o.material.needsUpdate = true; } });
+window.showPeter = (on) => { if (peter) peter.visible = on; };
+window.meshStats = () => {
+  const out = [];
+  outfit.updateMatrixWorld(true);
+  outfit.traverse((o) => {
+    if (!o.isMesh) return;
+    const b = new THREE.Box3().setFromObject(o);
+    out.push({ name: o.name, tris: (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3,
+               min: b.min.toArray().map((v) => +v.toFixed(3)), max: b.max.toArray().map((v) => +v.toFixed(3)) });
+  });
+  return out;
+};
+// the outfit as one GLB in Peter's bind space (instanced meshes expanded), saved to build/research by the dev server
+window.exportOutfit = async (name = 'peter_adventurer_outfit.glb') => {
+  const group = new THREE.Group();
+  outfit.updateMatrixWorld(true);
+  outfit.traverse((o) => {
+    if (!o.isMesh) return;
+    const mats = o.isInstancedMesh ? [...Array(o.count).keys()].map((i) => { const m = new THREE.Matrix4(); o.getMatrixAt(i, m); return m; }) : [new THREE.Matrix4()];
+    for (const m of mats) {
+      const g = o.geometry.clone();
+      g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(o.matrixWorld, m));
+      for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal') g.deleteAttribute(k);
+      if (!g.attributes.normal) g.computeVertexNormals();
+      const mat = new THREE.MeshStandardMaterial({ color: o.material.color.clone(), roughness: 1, metalness: 0 });
+      mat.name = o.material.name || '';
+      const mesh = new THREE.Mesh(g, mat);
+      mesh.name = o.name;
+      group.add(mesh);
+    }
+  });
+  const glb = await new GLTFExporter().parseAsync(group, { binary: true });
+  const r = await fetch('/save/' + name, { method: 'PUT', body: glb });
+  return { status: r.status, bytes: glb.byteLength, meshes: group.children.length };
+};
+// one render of the current view as a PNG, saved to build/research/<name> by the dev server
+window.capture = async (name, w, h) => {
+  if (w) { renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  renderer.render(scene, camera);
+  const blob = await new Promise((r) => renderer.domElement.toBlob(r, 'image/png'));
+  if (w) { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+  const res = await fetch('/save/' + name, { method: 'PUT', body: blob });
+  return res.status;
+};
+// every review capture of a pass: the turntable (square), the reference-framed view, then the map-stripped one
+window.captureAll = async (prefix, extra = []) => {
+  const out = [];
+  for (const [n, v] of [['front', 'front'], ['right', 'right'], ['rear', 'back'], ['left', 'left'], ['tq', 'three-quarter']]) {
+    view(v, 'all', 5); out.push(await capture(`${prefix}_${n}.png`));
+  }
+  for (const [n, v, z, e] of extra) { view(v, z, e); out.push(await capture(`${prefix}_${n}.png`)); }
+  view('three-quarter', 'ref', 3); out.push(await capture(`${prefix}_refview.png`, 540, 1014));
+  stripMaps(); out.push(await capture(`${prefix}_refview_nomaps.png`, 540, 1014));
+  return out;
+};
+window.view(q.get('view') || 'front', q.get('zoom') || 'all');
+renderer.setAnimationLoop(() => renderer.render(scene, camera));
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+</script>
+</body>
+</html>

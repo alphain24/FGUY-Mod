@@ -127,6 +127,7 @@ async function textureFor(info) {
 
 async function selectOutfit(o) {
   state.current = o;
+  if (state.packModel && state.packModel.character !== o.character) { state.packModel = null; showPackModel(); }   // (another character's)
   for (const c of document.querySelectorAll('.chip')) c.classList.toggle('on', c === o.chip);
   for (const b of document.querySelectorAll('.item')) b.classList.toggle('on', b.dataset.char === o.character);
   setStatus('Loading ' + (NICE[o.character] || o.character) + '...');
@@ -418,14 +419,48 @@ function overlayOf(t) {   // the pixels that aren't the recolors' doing - or nul
   return {canvas: c, pixels: n};
 }
 
+// A model pack can come with the skin (outfit pieces made in the Models tab, worn over the character): stored in the
+// pack as model.fgmodel - the game puts it on with the skin, and online it goes along with it.
+function showPackModel() {
+  const m = state.packModel;
+  $('packModelInfo').textContent = m ? `With its model: "${m.name}" (${Math.round(m.bytes.length / 1024).toLocaleString()} KB).`
+    : 'Outfit pieces made in the Models tab (a hat, a vest...) can come with the skin.';
+  $('packModelOff').hidden = !m;
+}
+function modelPackInfo(bytes) {   // its model.json (a model pack - or an error)
+  const files = unzipSync(bytes);
+  if (!files['model.json'] || !files['mesh.bin']) throw new Error("it isn't a model pack");
+  return JSON.parse(strFromU8(files['model.json']));
+}
+$('packModel').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    const bytes = new Uint8Array(await f.arrayBuffer()), info = modelPackInfo(bytes);
+    if (state.current && info.character !== state.current.character)
+      throw new Error(`it's made for ${NICE[info.character] || info.character}, this skin is for ${NICE[state.current.character] || state.current.character}`);
+    state.packModel = {name: info.name || f.name, bytes, character: info.character};
+    showPackModel();
+    setStatus(`"${state.packModel.name}" comes with this skin${info.over ? '' : ' (it takes the character\'s place)'}.`);
+  } catch (err) {
+    setStatus("Couldn't use that model: " + err.message);
+  }
+};
+$('packModelOff').onclick = () => { state.packModel = null; showPackModel(); };
+
 async function buildPack() {
   const o = state.current;
   const edited = (o?.textures || []).filter(t => t.modified);
-  if (!edited.length) return null;
+  if (!o || (!edited.length && !state.packModel)) return null;
   const name = ($('packName').value || $('packName').placeholder).trim();
   const files = {};
   const manifest = {format: 2, name, character: o.character, outfit: o.outfit, model: o.model.name,
     modelId: [o.model.lo, o.model.hi], textures: {}, tool: 'FGUY Skin Studio'};
+  if (state.packModel) {
+    files['model.fgmodel'] = [state.packModel.bytes, {level: 0}];   // (stored, as the mod reads it)
+    manifest.withModel = state.packModel.name;
+  }
   for (const t of edited) {
     const entry = {id: t.id, width: t.canvas.width, height: t.canvas.height, format: t.format, mips: t.mips, ops: t.ops};
     const ov = overlayOf(t);
@@ -443,7 +478,8 @@ $('savePack').onclick = async () => {
   const p = await buildPack();
   if (!p) { setStatus('Change something first - nothing to save yet.'); return; }
   download(p.blob, p.name.replace(/[^\w\- ]+/g, '').trim().replace(/ +/g, '_') + '.fgskin');
-  setStatus('Saved "' + p.name + '" (' + p.count + ' texture' + (p.count > 1 ? 's' : '') + ').');
+  setStatus('Saved "' + p.name + '" (' + p.count + ' texture' + (p.count === 1 ? '' : 's') +
+    (state.packModel ? ', with its model' : '') + ').');
 };
 
 $('openPack').onchange = async e => {
@@ -474,7 +510,10 @@ $('openPack').onchange = async e => {
       }
     }
     $('packName').value = m.name || '';
-    setStatus('Opened "' + (m.name || f.name) + '".');
+    state.packModel = files['model.fgmodel'] ? {name: m.withModel || modelPackInfo(files['model.fgmodel']).name,
+      bytes: files['model.fgmodel'], character: o.character} : null;
+    showPackModel();
+    setStatus('Opened "' + (m.name || f.name) + '"' + (state.packModel ? ', with its model' : '') + '.');
   } catch (err) {
     setStatus("Couldn't open that pack: " + err.message);
   }

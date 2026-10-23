@@ -1,0 +1,11 @@
+# Kept on this PC only: the reference picture (not ours to publish), crops of it, and renders showing the game's own Peter
+reference.png
+reference.webp
+ref_big.png
+detail-inventory/
+material-evidence/*.png
+review/captures/
+review/cmp_*.png
+.work/
+# (measured from the game's own model - remade by measure_peter.py from your copy)
+measure.json

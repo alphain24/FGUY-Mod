@@ -1,0 +1,32 @@
+{
+  "finishClass": "painted-metal",
+  "recipe": {
+    "metalness": 0.0,
+    "roughness": 0.5,
+    "clearcoat": 1.0,
+    "clearcoatRoughness": 0.05,
+    "transmission": 0.0,
+    "ior": 1.5,
+    "envMapIntensity": 1.0,
+    "anisotropy": 0.0,
+    "procedural": "flat-clearcoat"
+  },
+  "palette": [
+    "#0E0909",
+    "#070504",
+    "#010100",
+    "#020100",
+    "#070504"
+  ],
+  "paletteHueRisk": [],
+  "gradientAxis": "horizontal",
+  "stats": {
+    "meanLum": 4.3,
+    "meanSaturation": 0.487,
+    "gradientStrength": 0.038,
+    "mottle": 0.001,
+    "streakRatio": 0.65,
+    "hueSpread": 0.279,
+    "specularFraction": 0.0
+  }
+}

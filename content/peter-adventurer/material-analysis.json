@@ -1,0 +1,146 @@
+{
+ "route": "single-crop",
+ "crops": {
+  "boot-leather": {
+   "crop": "material-evidence/boot-leather.png",
+   "finishClass": "painted-metal",
+   "stats": {
+    "meanLum": 45.2,
+    "meanSaturation": 0.362,
+    "gradientStrength": 0.041,
+    "mottle": 0.008,
+    "streakRatio": 1.66,
+    "hueSpread": 0.003,
+    "specularFraction": 0.0
+   },
+   "verifiedOnPart": true
+  },
+  "brass": {
+   "crop": "material-evidence/brass.png",
+   "finishClass": "painted-metal",
+   "stats": {
+    "meanLum": 92.9,
+    "meanSaturation": 0.786,
+    "gradientStrength": 0.109,
+    "mottle": 0.002,
+    "streakRatio": 1.03,
+    "hueSpread": 0.0,
+    "specularFraction": 0.0
+   },
+   "verifiedOnPart": true
+  },
+  "cuff": {
+   "crop": "material-evidence/cuff.png",
+   "finishClass": "painted-metal",
+   "stats": {
+    "meanLum": 121.7,
+    "meanSaturation": 0.453,
+    "gradientStrength": 0.293,
+    "mottle": 0.031,
+    "streakRatio": 1.9,
+    "hueSpread": 0.119,
+    "specularFraction": 0.0
+   },
+   "verifiedOnPart": true
+  },
+  "hat-band": {
+   "crop": "material-evidence/hat-band.png",
+   "finishClass": "painted-metal",
+   "stats": {
+    "meanLum": 88.1,
+    "meanSaturation": 0.307,
+    "gradientStrength": 0.208,
+    "mottle": 0.008,
+    "streakRatio": 6.14,
+    "hueSpread": 0.071,
+    "specularFraction": 0.0
+   },
+   "verifiedOnPart": true
+  },
+  "hat-felt": {
+   "crop": "material-evidence/hat-felt.png",
+   "finishClass": "painted-metal",
+   "stats": {
+    "meanLum": 76.4,
+    "meanSaturation": 0.345,
+    "gradientStrength": 0.325,
+    "mottle": 0.011,
+    "streakRatio": 3.23,
+    "hueSpread": 0.001,
+    "specularFraction": 0.0
+   },
+   "verifiedOnPart": true
+  },
+  "lace": {
+   "crop": "material-evidence/lace.png",
+   "finishClass": "painted-metal",
+   "stats": {
+    "meanLum": 4.3,
+    "meanSaturation": 0.487,
+    "gradientStrength": 0.038,
+    "mottle": 0.001,
+    "streakRatio": 0.65,
+    "hueSpread": 0.279,
+    "specularFraction": 0.0
+   },
+   "verifiedOnPart": true
+  },
+  "pendant": {
+   "crop": "material-evidence/pendant.png",
+   "finishClass": "worn-composite",
+   "stats": {
+    "meanLum": 42.4,
+    "meanSaturation": 0.124,
+    "gradientStrength": 0.32,
+    "mottle": 0.011,
+    "streakRatio": 1.04,
+    "hueSpread": 0.217,
+    "specularFraction": 0.0
+   },
+   "verifiedOnPart": true
+  },
+  "sheath-leather": {
+   "crop": "material-evidence/sheath-leather.png",
+   "finishClass": "painted-metal",
+   "stats": {
+    "meanLum": 70.5,
+    "meanSaturation": 0.805,
+    "gradientStrength": 0.213,
+    "mottle": 0.007,
+    "streakRatio": 2.33,
+    "hueSpread": 0.001,
+    "specularFraction": 0.011
+   },
+   "verifiedOnPart": true
+  },
+  "vest-flap": {
+   "crop": "material-evidence/vest-flap.png",
+   "finishClass": "painted-metal",
+   "stats": {
+    "meanLum": 62.1,
+    "meanSaturation": 0.43,
+    "gradientStrength": 0.103,
+    "mottle": 0.013,
+    "streakRatio": 1.51,
+    "hueSpread": 0.011,
+    "specularFraction": 0.0
+   },
+   "verifiedOnPart": true
+  },
+  "vest-leather": {
+   "crop": "material-evidence/vest-leather.png",
+   "finishClass": "painted-metal",
+   "stats": {
+    "meanLum": 58.4,
+    "meanSaturation": 0.372,
+    "gradientStrength": 0.115,
+    "mottle": 0.01,
+    "streakRatio": 1.01,
+    "hueSpread": 0.003,
+    "specularFraction": 0.0
+   },
+   "verifiedOnPart": true
+  }
+ },
+ "notes": "Crops checked on material-evidence/crops.png (brass, lace, pendant re-cut onto their parts). Flat cel paint: textureless declared per material; colour recipes from extract_part_color_recipe.py; no PBR maps (the game shader lights the pieces)."
+}

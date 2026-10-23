@@ -848,12 +848,23 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
             delete old;
             g_skins[p.slot] = nullptr;
         }
+        // (a skin pack can carry a model pack - "model.fgmodel": outfit pieces worn with it, models.cpp - put on and
+        //  taken off with the skin; online it comes along in the same pack)
+        static bool skinModel[4] = {};
+        std::vector<unsigned char> model;
+        if (!p.pack.empty() && ZipEntry(p.pack, "model.fgmodel", model)) {
+            ModelsLoad(p.slot, model, (p.name + L" (its model)").c_str());
+            skinModel[p.slot] = true;
+        } else if (skinModel[p.slot]) {
+            ModelsLoad(p.slot, {}, L"");
+            skinModel[p.slot] = false;
+        }
         if (!p.pack.empty()) {
             Skin* s = ParsePack(p.pack, p.name);
             if (s) for (SkinTex& t : s->textures) t.mine = MakeTexture(dev, t);
             g_skins[p.slot] = s;
-            Log(L"Cosmetics: player %d wears %s (%d textures)%s", p.slot, p.name.c_str(), s ? (int)s->textures.size() : 0,
-                s ? L"" : L" - not a skin pack");
+            Log(L"Cosmetics: player %d wears %s (%d textures)%s%s", p.slot, p.name.c_str(), s ? (int)s->textures.size() : 0,
+                s ? L"" : L" - not a skin pack", model.empty() ? L"" : L", with its model");
         } else {
             Log(L"Cosmetics: player %d wears no skin", p.slot);
         }

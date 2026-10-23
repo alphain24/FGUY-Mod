@@ -680,3 +680,12 @@ ematch_<lobby pid>.txt`), whose lobby then
   a .glb - stands, walks, emotes, no trace of the original.
 - Skin packs of format 2 (skinbuild.cpp): the recolors and an overlay of the maker's own pixels; the texture made on
   the player's PC from the GPU's copy of the game's (DXT1 / DXT5 read back, the Studio's recolor, re-encoded).
+- Worn over the character (model.json "over": true): ours is drawn with their biggest piece, then the game's own draw
+  goes ahead; their other pieces and their ink lines stay. A skin pack can carry a model pack (model.fgmodel, stored):
+  put on and taken off with the skin - online it travels in the same pack. Our pieces get no ink lines.
+- Stage 0 under a character's draw: one 128x128 A8R8G8B8 texture (8 levels) for all their pieces - a shading lookup,
+  not an atlas; the colour is stages 1 and 2.
+- The Studio's palette must be sRGB: three.js (GLTFLoader) keeps material and vertex colours linear, and written into
+  the palette PNG as they were, every colour came out about squared (a vest of 98, 63, 59 drawn 26, 11, 8).
+- First outfit made with img2threejs: content/peter-adventurer (its README) - fitted on Peter's measured bind mesh,
+  16,720 triangles (Peter: 8,680). Tested in solo Multiverse Madness at 1920x1080 (tools/test_solo_mp.ps1 -God).

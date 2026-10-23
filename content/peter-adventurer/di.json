@@ -1,0 +1,291 @@
+{
+  "sourceImage": "A:\\Alphain\\Alphain\\PROJECTS\\7. 2026\\4. Random\\Family Guy Modding\\content\\peter-adventurer\\reference.png",
+  "zonesDir": "A:\\Alphain\\Alphain\\PROJECTS\\7. 2026\\4. Random\\Family Guy Modding\\content\\peter-adventurer\\detail-inventory",
+  "detailInventory": {
+    "scanMethod": "grid-3x3",
+    "targetMinDetails": 10,
+    "details": [
+      {
+        "id": "hat-brim-curl",
+        "kind": "ridge",
+        "description": "brim rolled up at both lateral sides, dipping front and back",
+        "region": {
+          "x": 0.15,
+          "y": 0.08,
+          "width": 0.6,
+          "height": 0.12,
+          "units": "normalized"
+        },
+        "scale": "meso",
+        "affects": "silhouette",
+        "mapsTo": {
+          "type": "component",
+          "ref": "hat-brim"
+        },
+        "evidenceRef": "detail-inventory/zone-r0c1.png",
+        "confidence": 0.85
+      },
+      {
+        "id": "hat-band",
+        "kind": "ridge",
+        "description": "slate blue band wrapping the crown base, slightly proud of the felt",
+        "region": {
+          "x": 0.32,
+          "y": 0.1,
+          "width": 0.33,
+          "height": 0.04,
+          "units": "normalized"
+        },
+        "scale": "meso",
+        "affects": "albedo+relief",
+        "mapsTo": {
+          "type": "component",
+          "ref": "hat-band"
+        },
+        "evidenceRef": "detail-inventory/zone-r0c1.png",
+        "confidence": 0.9
+      },
+      {
+        "id": "hat-crown-crease",
+        "kind": "groove",
+        "description": "front-to-back pinch crease along the crown top",
+        "region": {
+          "x": 0.35,
+          "y": 0.0,
+          "width": 0.25,
+          "height": 0.08,
+          "units": "normalized"
+        },
+        "scale": "micro",
+        "affects": "relief",
+        "mapsTo": {
+          "type": "component",
+          "ref": "hat-crown"
+        },
+        "evidenceRef": "detail-inventory/zone-r0c1.png",
+        "confidence": 0.7
+      },
+      {
+        "id": "vest-chest-pocket-flap",
+        "kind": "seam",
+        "description": "flap pocket on each chest panel, flap edge a raised seam, one brass button",
+        "region": {
+          "x": 0.35,
+          "y": 0.42,
+          "width": 0.55,
+          "height": 0.1,
+          "units": "normalized"
+        },
+        "scale": "meso",
+        "affects": "relief",
+        "mapsTo": {
+          "type": "component",
+          "ref": "vest-chest-pockets"
+        },
+        "evidenceRef": "detail-inventory/zone-r1c1.png",
+        "confidence": 0.8
+      },
+      {
+        "id": "vest-lower-pocket-flap",
+        "kind": "seam",
+        "description": "large flap pocket on each lower front panel, one brass button",
+        "region": {
+          "x": 0.3,
+          "y": 0.52,
+          "width": 0.65,
+          "height": 0.12,
+          "units": "normalized"
+        },
+        "scale": "meso",
+        "affects": "relief",
+        "mapsTo": {
+          "type": "component",
+          "ref": "vest-lower-pockets"
+        },
+        "evidenceRef": "detail-inventory/zone-r1c1.png",
+        "confidence": 0.85
+      },
+      {
+        "id": "vest-panel-studs",
+        "kind": "fastener",
+        "description": "brass studs down each front panel edge (~3 per side)",
+        "region": {
+          "x": 0.48,
+          "y": 0.5,
+          "width": 0.35,
+          "height": 0.16,
+          "units": "normalized"
+        },
+        "scale": "micro",
+        "affects": "albedo+relief",
+        "mapsTo": {
+          "type": "component",
+          "ref": "vest-studs"
+        },
+        "evidenceRef": "detail-inventory/zone-r1c1.png",
+        "confidence": 0.6
+      },
+      {
+        "id": "vest-open-front",
+        "kind": "seam",
+        "description": "open front: shirt placket visible between the two front panels",
+        "region": {
+          "x": 0.5,
+          "y": 0.4,
+          "width": 0.28,
+          "height": 0.27,
+          "units": "normalized"
+        },
+        "scale": "macro",
+        "affects": "silhouette",
+        "mapsTo": {
+          "type": "component",
+          "ref": "vest-shell"
+        },
+        "evidenceRef": "detail-inventory/zone-r1c1.png",
+        "confidence": 0.85
+      },
+      {
+        "id": "pendant-claw",
+        "kind": "ridge",
+        "description": "black curled claw hook at the sternum below the collar",
+        "region": {
+          "x": 0.53,
+          "y": 0.36,
+          "width": 0.1,
+          "height": 0.08,
+          "units": "normalized"
+        },
+        "scale": "meso",
+        "affects": "silhouette",
+        "mapsTo": {
+          "type": "component",
+          "ref": "pendant-claw"
+        },
+        "evidenceRef": "detail-inventory/zone-r1c1.png",
+        "confidence": 0.8
+      },
+      {
+        "id": "sheath-right-hip",
+        "kind": "seam",
+        "description": "ochre tan curved blade sheath hanging off the belt on the wearer's right hip",
+        "region": {
+          "x": 0.12,
+          "y": 0.68,
+          "width": 0.18,
+          "height": 0.17,
+          "units": "normalized"
+        },
+        "scale": "macro",
+        "affects": "silhouette",
+        "mapsTo": {
+          "type": "component",
+          "ref": "sheath-body"
+        },
+        "evidenceRef": "detail-inventory/zone-r2c0.png",
+        "confidence": 0.85
+      },
+      {
+        "id": "sheath-strap-stud",
+        "kind": "fastener",
+        "description": "strap over the belt at the sheath mouth with one stud",
+        "region": {
+          "x": 0.18,
+          "y": 0.68,
+          "width": 0.12,
+          "height": 0.05,
+          "units": "normalized"
+        },
+        "scale": "micro",
+        "affects": "relief",
+        "mapsTo": {
+          "type": "component",
+          "ref": "sheath-strap"
+        },
+        "evidenceRef": "detail-inventory/zone-r2c0.png",
+        "confidence": 0.6
+      },
+      {
+        "id": "boot-laces",
+        "kind": "stitch",
+        "description": "black criss-cross laces up the front of each boot",
+        "region": {
+          "x": 0.35,
+          "y": 0.78,
+          "width": 0.45,
+          "height": 0.12,
+          "units": "normalized"
+        },
+        "scale": "micro",
+        "affects": "albedo+relief",
+        "mapsTo": {
+          "type": "component",
+          "ref": "boot-laces"
+        },
+        "evidenceRef": "detail-inventory/zone-r2c1.png",
+        "confidence": 0.85
+      },
+      {
+        "id": "boot-eyelets",
+        "kind": "fastener",
+        "description": "brass eyelets in two columns along each lace panel",
+        "region": {
+          "x": 0.35,
+          "y": 0.78,
+          "width": 0.45,
+          "height": 0.12,
+          "units": "normalized"
+        },
+        "scale": "micro",
+        "affects": "albedo",
+        "mapsTo": {
+          "type": "component",
+          "ref": "boot-eyelets"
+        },
+        "evidenceRef": "detail-inventory/zone-r2c1.png",
+        "confidence": 0.6
+      },
+      {
+        "id": "boot-toe-sole",
+        "kind": "ridge",
+        "description": "bulbous toe box over a thick sole",
+        "region": {
+          "x": 0.2,
+          "y": 0.88,
+          "width": 0.7,
+          "height": 0.12,
+          "units": "normalized"
+        },
+        "scale": "meso",
+        "affects": "silhouette",
+        "mapsTo": {
+          "type": "component",
+          "ref": "boot-shells"
+        },
+        "evidenceRef": "detail-inventory/zone-r2c1.png",
+        "confidence": 0.8
+      },
+      {
+        "id": "cuff-roll-button",
+        "kind": "fastener",
+        "description": "rolled sleeve band with a strap tab and brass button on the outer side",
+        "region": {
+          "x": 0.04,
+          "y": 0.44,
+          "width": 0.93,
+          "height": 0.1,
+          "units": "normalized"
+        },
+        "scale": "micro",
+        "affects": "relief",
+        "mapsTo": {
+          "type": "component",
+          "ref": "sleeve-cuffs"
+        },
+        "evidenceRef": "detail-inventory/zone-r1c0.png",
+        "confidence": 0.7
+      }
+    ]
+  },
+  "authoringInstruction": "Open each zone crop under zonesDir and replace every detail stub's kind, description, scale, affects, mapsTo, and confidence with what is actually observed. Add more detail entries per zone if a single zone contains multiple distinct marks; do not leave stubs unfilled or unlinked (mapsTo must reference a real component.localFeatures or material.localOverrides entry)."
+}

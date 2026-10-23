@@ -1,0 +1,302 @@
+STATUS pass=blockout completed=0 blocked=blockout requires a browser screenshot and self-correction review before structural-pass unlocks next=diagnose_render.py
+{
+  "passed": true,
+  "checks": {
+    "silhouetteIoU": 0.8664,
+    "aspectRatioDelta": 0.0184,
+    "scaleDelta": 0.0463,
+    "bilateralSymmetryError": 0.0784,
+    "colorDelta": {
+      "checked": 70,
+      "maxDeltaE": 31.22,
+      "perComponent": [
+        {
+          "componentId": null,
+          "deltaE": 6.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 9.06
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 9.06
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 9.06
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.55
+        },
+        {
+          "componentId": null,
+          "deltaE": 9.06
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.29
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.29
+        },
+        {
+          "componentId": null,
+          "deltaE": 6.26
+        },
+        {
+          "componentId": null,
+          "deltaE": 31.22
+        },
+        {
+          "componentId": null,
+          "deltaE": 4.36
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 4.36
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 5.37
+        },
+        {
+          "componentId": null,
+          "deltaE": 26.3
+        },
+        {
+          "componentId": null,
+          "deltaE": 26.3
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 22.7
+        },
+        {
+          "componentId": null,
+          "deltaE": 22.7
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        },
+        {
+          "componentId": null,
+          "deltaE": 22.7
+        },
+        {
+          "componentId": null,
+          "deltaE": 22.7
+        },
+        {
+          "componentId": null,
+          "deltaE": 28.28
+        }
+      ],
+      "gated": false
+    }
+  },
+  "failures": [],
+  "maskWarnings": [],
+  "renderHash": "1103904a4b0fa79e",
+  "passId": "blockout",
+  "mapStrippedRender": "review\\captures\\outfit_blockout_refview_nomaps.png"
+}

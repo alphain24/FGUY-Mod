@@ -1,0 +1,16 @@
+{
+  "model": "peter-adventurer-outfit",
+  "specifiedComponents": 69,
+  "builtParts": 70,
+  "errors": 0,
+  "warnings": 0,
+  "result": "pass",
+  "findings": [
+    {
+      "check": "part-not-specified",
+      "severity": "info",
+      "subject": "Leather vest shell",
+      "detail": "built part has no matching component in the spec (fine for detail groups; a sign of spec drift for anything larger)"
+    }
+  ]
+}
