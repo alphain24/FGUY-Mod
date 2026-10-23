@@ -730,10 +730,16 @@ ematch_<lobby pid>.txt`), whose lobby then
 - Its render targets at 1920x1080 (FGUYMOD_TEST_RTLOG): screen-sized A8R8G8B8 (several) and R32F (depth for its
   effects), 960x540 / 482x272 / 240x135 (glow and blur chains), 512x512 and 256x256 (shadows), and a 1920x1080
   StretchRect copy (no filter) every frame.
-- **The blur**: its full-screen passes read the screen-sized targets with bilinear filtering half a texel off, so each
-  pass smears the picture. Reading every screen-sized render target with point filtering (graphics.cpp, found by the
-  texture's GetLevelDesc: RENDERTARGET usage, back-buffer size) gives the same picture without the smear (the glow
-  and lighting stay). The community's fix (dgVoodoo2 set to point sampling) works for the same reason.
+- **The blur**: the port never made up for Direct3D 9's half-pixel offset, so every full-screen pass reads its
+  screen-sized targets half a texel off and bilinear filtering smears the picture, pass after pass. Point filtering on
+  those targets (the first try - and what the community's dgVoodoo2 "point sampling" fix does) sharpens it but breaks
+  the passes that blend on purpose (ambient occlusion, blur, glow: the characters' shading and colours changed,
+  measured in the main menu at 4K). The fix that keeps them: every vertex shader (all 218 are vs_3_0) patched at
+  CreateVertexShader to end with `oPos.xy += c255.xy * oPos.w`, c255 = (-1/viewport width, 1/viewport height) - set at
+  SetViewport (aras-p.info, "Solving DX9 Half-Pixel Offset"). The game never uses c255. c255 = 0 is the game as it was
+  (identical colours, measured), so Sharp picture switches live. At 4K: edge strength 3.9 -> 5.3.
+- Anisotropic filtering and FXAA change little at 4K (edge strength 2.52 -> 2.57 on the ground; FXAA's steps are a
+  4K pixel wide).
 - `G.CameraFOV` in the ini changes nothing on PC (80 and 105 look the same): the levels' cameras set their own.
 - Our own passes at Present (FXAA, sharpening, brightness) compile with d3dcompiler_47.dll's D3DCompile (ps_3_0) and
   run on DXVK and plain Direct3D 9 alike; a full-screen quad with XYZRHW at -0.5 lines up texel for pixel (checked).

@@ -389,6 +389,13 @@ void HandleCommand(char* line) {
                                     rgb ? strtoul(rgb, nullptr, 16) : 0xff00ff);
         return;
     }
+    if (cmd && _stricmp(cmd, "gfx") == 0) {   // test tools: gfx <page> <row> <delta> - a SETTINGS row changed (graphics.cpp)
+        char* page = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* row = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* delta = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (page && row) Log(L"VPad: gfx %S %S -> %d", page, row, GraphicsMenuChange(atoi(page), atoi(row), delta ? atoi(delta) : 0));
+        return;
+    }
     if (cmd && _stricmp(cmd, "uicmd") == 0) {   // test tools: uicmd <command> [args] - a menu command, as a menu sends it
         char* c = strtok_s(nullptr, " \t\r\n", &ctx);
         char* a = strtok_s(nullptr, "\r\n", &ctx);

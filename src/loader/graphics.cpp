@@ -1,9 +1,10 @@
 // Graphics settings: a sharper picture, texture filtering, anti-aliasing, sharpening and brightness.
 //
-// * Sharp picture: the game's full-screen passes (glow, depth of field, the final copy - each one draws the screen-sized
-//   picture again) read it with bilinear filtering, half a pixel off, so every pass smears it a little: the game's
-//   well-known blur (it has no anti-aliasing on PC - its MSAAType setting is never used). We read the game's
-//   screen-sized render targets with point filtering instead: one texel each, exactly - the same picture, not smeared.
+// * Sharp picture: the game draws everything half a pixel off (Direct3D 9's pixel centres, which the console port never
+//   made up for), so each of its full-screen passes (glow, ambient occlusion, depth of field, the final copy) blends
+//   four texels where it meant one - the game's well-known blur (it has no anti-aliasing on PC: its MSAAType setting is
+//   never used). Every vertex shader gets the half pixel back (the half-pixel fix, below): the picture as the consoles
+//   draw it.
 // * Texture filtering: the game's own bilinear, trilinear, or anisotropic 2x-16x for every other texture (floors and
 //   walls seen at an angle stay sharp).
 // * Anti-aliasing (FXAA), sharpening (contrast-adaptive) and brightness: our own pass on the finished frame, just
@@ -39,7 +40,7 @@ SetTexture_t Real_SetTexture;
 SetSamplerState_t Real_SetSamplerState;
 const int kStages = 16;
 DWORD g_want[kStages][3];      // (per stage: the game's MAG / MIN / MIP filter)
-bool g_screen[kStages];        // (a screen-sized render target is set there)
+bool g_screen[kStages];        // (a screen-sized render target is set there: its filtering stays the game's)
 
 int Slot(D3DSAMPLERSTATETYPE t) {
     return t == D3DSAMP_MAGFILTER ? 0 : t == D3DSAMP_MINFILTER ? 1 : t == D3DSAMP_MIPFILTER ? 2 : -1;
@@ -48,7 +49,6 @@ const D3DSAMPLERSTATETYPE kType[3] = {D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DS
 
 // what a filter the game asks for becomes on a stage
 DWORD Filter(int stage, int k, DWORD want) {
-    if (g_screen[stage] && g_sharp) return k == 2 ? D3DTEXF_NONE : D3DTEXF_POINT;
     if (g_screen[stage]) return want;
     int f = g_filter;
     if (k == 1 && want == D3DTEXF_LINEAR && f >= 2) return D3DTEXF_ANISOTROPIC;
@@ -102,6 +102,116 @@ HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* self, DWORD stage, I
             g_screen[stage] = screen;
             ApplyStage(self, stage);
         }
+    }
+    return hr;
+}
+
+// ---- the half-pixel fix (Sharp picture) ---------------------------------------------------------------------------
+// Direct3D 9 puts pixel centres half a pixel off from where Direct3D 10+, OpenGL and the consoles put them. A console
+// port that doesn't make up for it draws every full-screen pass half a pixel off - bilinear filtering then blends four
+// texels where one was meant: the blur. The fix (as in aras-p.info's "Solving DX9 Half-Pixel Offset"): every vertex
+// shader made to end with oPos.xy += c[kHalf].xy * oPos.w, c[kHalf] = (-1 / viewport width, 1 / viewport height) -
+// everything lands where the console draws it. c[kHalf] = 0 is the game as it was: on / off at once.
+const DWORD kHalf = 255;
+int g_vsSeen = 0, g_vsPatched = 0;
+float g_halfConst[4] = {0, 0, 0, 0};
+
+int RegType(DWORD t) { return (int)(((t >> 28) & 7) | ((t >> 8) & 0x18)); }
+DWORD RegNum(DWORD t) { return t & 0x7FF; }
+DWORD RegTok(int type, DWORD num) { return 0x80000000u | ((DWORD)(type & 7) << 28) | ((DWORD)(type & 0x18) << 8) | num; }
+
+// the shader with the fix at its end - false: left as it is (vs_1_x, no position output, no free temp, c255 used)
+bool PatchVertexShader(const DWORD* in, std::vector<DWORD>& out, const char** why) {
+    DWORD ver = in[0];
+    int major = (int)((ver >> 8) & 0xFF);
+    if ((ver & 0xFFFF0000) != 0xFFFE0000 || major < 2) { *why = "not vs_2/3"; return false; }
+    int posType = major >= 3 ? -1 : 4;   // (vs_2: oPos - vs_3: the output declared as position)
+    DWORD posNum = 0;
+    int maxTemp = -1;
+    size_t i = 1, n = 0;
+    for (; in[i] != 0x0000FFFF && n < 200000; ++n) {
+        DWORD tok = in[i], op = tok & 0xFFFF;
+        if (op == 0xFFFE) { i += 1 + ((tok >> 16) & 0x7FFF); continue; }   // (a comment)
+        DWORD len = (tok >> 24) & 0xF;
+        if (op == 31) {   // dcl: usage, register
+            if (major >= 3 && RegType(in[i + 2]) == 6 && (in[i + 1] & 0x1F) == 0 && ((in[i + 1] >> 16) & 0xF) == 0) {
+                posType = 6;   // (D3DSPR_OUTPUT)
+                posNum = RegNum(in[i + 2]);
+            }
+        } else if (op != 81 && op != 48 && op != 47) {   // (def / defi / defb: values, not registers)
+            for (DWORD k = 1; k <= len; ++k) {
+                DWORD t = in[i + k];
+                if (!(t & 0x80000000)) continue;
+                if (RegType(t) == 0 && (int)RegNum(t) > maxTemp) maxTemp = (int)RegNum(t);
+                if (RegType(t) == 2 && RegNum(t) == kHalf) { *why = "uses c255"; return false; }
+            }
+        }
+        i += 1 + len;
+    }
+    if (in[i] != 0x0000FFFF) { *why = "no end"; return false; }
+    if (posType < 0) { *why = "no position output"; return false; }
+    DWORD temp = (DWORD)(maxTemp + 1);
+    if (temp >= (major >= 3 ? 32u : 12u)) { *why = "no free temp"; return false; }
+    out.assign(in, in + i);
+    for (size_t j = 1; j < out.size();) {   // every write to the position: to the temp instead
+        DWORD tok = out[j], op = tok & 0xFFFF;
+        if (op == 0xFFFE) { j += 1 + ((tok >> 16) & 0x7FFF); continue; }
+        DWORD len = (tok >> 24) & 0xF;
+        if (op != 31 && op != 81 && op != 48 && op != 47 && len >= 1) {
+            DWORD d = out[j + 1];
+            if ((d & 0x80000000) && RegType(d) == posType && RegNum(d) == posNum && !(d & 0x2000))
+                out[j + 1] = RegTok(0, temp) | (d & 0x00FF0000);
+        }
+        j += 1 + len;
+    }
+    DWORD pos = RegTok(posType, posNum), t = RegTok(0, temp);
+    out.insert(out.end(), {4u | (4u << 24), pos | (0x3u << 16), t | (0xFFu << 16), RegTok(2, kHalf) | (0xE4u << 16),
+                           t | (0xE4u << 16)});                                 // mad oPos.xy, t.w, c255, t
+    out.insert(out.end(), {1u | (2u << 24), pos | (0xCu << 16), t | (0xE4u << 16)});   // mov oPos.zw, t
+    out.push_back(0x0000FFFF);
+    return true;
+}
+
+using CreateVertexShader_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, const DWORD*, IDirect3DVertexShader9**);
+using SetViewport_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, const D3DVIEWPORT9*);
+using SetVSConstF_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, UINT, const float*, UINT);
+CreateVertexShader_t Real_CreateVertexShader;
+SetViewport_t Real_SetViewport;
+SetVSConstF_t Real_SetVSConstF;
+
+void PutHalf(IDirect3DDevice9* dev, DWORD w, DWORD h) {
+    bool on = g_sharp && w && h;
+    g_halfConst[0] = on ? -1.0f / w : 0;
+    g_halfConst[1] = on ? 1.0f / h : 0;
+    Real_SetVSConstF(dev, kHalf, g_halfConst, 1);
+}
+
+HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* self, const DWORD* code, IDirect3DVertexShader9** out) {
+    std::vector<DWORD> patched;
+    const char* why = "";
+    ++g_vsSeen;
+    if (code && PatchVertexShader(code, patched, &why)) {
+        HRESULT hr = Real_CreateVertexShader(self, patched.data(), out);
+        if (SUCCEEDED(hr)) { ++g_vsPatched; return hr; }
+        why = "refused";
+    }
+    static int told = 0;
+    if (code && told++ < 20) Log(L"Graphics: vertex shader %08lx left as it is (%S, from %p)", code[0], why, _ReturnAddress());
+    return Real_CreateVertexShader(self, code, out);
+}
+
+HRESULT STDMETHODCALLTYPE Hook_SetViewport(IDirect3DDevice9* self, const D3DVIEWPORT9* vp) {
+    HRESULT hr = Real_SetViewport(self, vp);
+    if (vp) PutHalf(self, vp->Width, vp->Height);
+    return hr;
+}
+
+HRESULT STDMETHODCALLTYPE Hook_SetVSConstF(IDirect3DDevice9* self, UINT start, const float* data, UINT count) {
+    HRESULT hr = Real_SetVSConstF(self, start, data, count);
+    if (start <= kHalf && start + count > kHalf) {   // (the game's own over ours: ours again)
+        static int told = 0;
+        if (told++ < 5) Log(L"Graphics: the game sets vertex constants %u-%u (over c%u)", start, start + count - 1, kHalf);
+        Real_SetVSConstF(self, kHalf, g_halfConst, 1);
     }
     return hr;
 }
@@ -266,6 +376,11 @@ void GraphicsDeviceCreated(IDirect3DDevice9* dev, UINT w, UINT h) {
     if (SUCCEEDED(dev->GetDeviceCaps(&caps)) && caps.MaxAnisotropy) g_maxAniso = caps.MaxAnisotropy;
     if (void* o = Patch(dev, 65, (void*)Hook_SetTexture)) Real_SetTexture = (SetTexture_t)o;
     if (void* o = Patch(dev, 69, (void*)Hook_SetSamplerState)) Real_SetSamplerState = (SetSamplerState_t)o;
+    // (the shaders always get the fix, so Sharp picture switches at once: off is c255 = 0)
+    if (void* o = Patch(dev, 91, (void*)Hook_CreateVertexShader)) Real_CreateVertexShader = (CreateVertexShader_t)o;
+    if (void* o = Patch(dev, 47, (void*)Hook_SetViewport)) Real_SetViewport = (SetViewport_t)o;
+    if (void* o = Patch(dev, 94, (void*)Hook_SetVSConstF)) Real_SetVSConstF = (SetVSConstF_t)o;
+    PutHalf(dev, w, h);
     ResetStages(dev);
 }
 
@@ -279,6 +394,8 @@ void GraphicsAfterReset(IDirect3DDevice9* dev, UINT w, UINT h) {
 
 // d3d9.cpp, every Present (before the frame is shown): our passes
 void GraphicsPresent(IDirect3DDevice9* dev) {
+    static int frames = 0;
+    if (++frames == 600) Log(L"Graphics: %d of %d vertex shaders have the half-pixel fix", g_vsPatched, g_vsSeen);
     if (g_statesDirty && Real_SetSamplerState) {
         g_statesDirty = false;
         for (int s = 0; s < kStages; ++s) {
@@ -369,9 +486,9 @@ const char* GraphicsMenuRows(int page) {
         sprintf_s(v, "%d", (int)g_bright);
         row("Brightness", v, 's', "50 is the game's own");
     } else if (page == 1) {
-        row("Sharp picture", g_sharp ? "ON" : "OFF", 'c', "Fixes the game's blur (its effects smear the picture). Off: the game as it was");
-        row("Anti-aliasing", g_aa ? "FXAA" : "OFF", 'c', "Smooths jagged edges. Off is sharpest");
-        row("Texture filtering", kFilterNames[FilterIndex()], 'c', "Sharper floors and walls seen at an angle");
+        row("Sharp picture", g_sharp ? "ON" : "OFF", 'c', "Fixes the game's blur: it draws half a pixel off. Off: the game as it was");
+        row("Anti-aliasing", g_aa ? "FXAA" : "OFF", 'c', "Smooths jagged edges - most at 1080p and below (at 4K they're tiny). Off is sharpest");
+        row("Texture filtering", kFilterNames[FilterIndex()], 'c', "Sharper ground far off, seen at a low angle (a small change in this game)");
         sprintf_s(v, "%d", (int)g_sharpen);
         row("Sharpening", v, 's', "Crisper lines and textures. 0: none");
     } else {
