@@ -280,7 +280,10 @@ float4 main(float2 uv : TEXCOORD0) : COLOR0 {
         mx += max(mx, max(max(a, c), max(g, i)));
         float3 amp = sqrt(saturate(min(mn, 2 - mx) / max(mx, 0.0001)));
         float3 w = amp * (-1 / lerp(8, 5, opt.x));
-        e = saturate((b * w + d * w + f * w + h * w + e) / (1 + 4 * w));
+        float3 lo = min(min(min(a, b), min(c, d)), min(min(e, f), min(min(g, h), i)));
+        float3 hi = max(max(max(a, b), max(c, d)), max(max(e, f), max(max(g, h), i)));
+        // (never past its neighbours: no light rim beside the game's black outlines)
+        e = clamp((b * w + d * w + f * w + h * w + e) / (1 + 4 * w), lo, hi);
     }
     return float4(pow(e, opt.y), 1);
 }
