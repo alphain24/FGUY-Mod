@@ -149,6 +149,16 @@ void CosmeticsDeviceCreated(IDirect3DDevice9* dev);   //   d3d9.cpp: the game's 
 struct IDirect3DTexture9;
 bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, const std::vector<unsigned char>& overlay,
                       std::vector<unsigned char>& dds);   // skinbuild.cpp: a skin's texture from the game's own (format 2)
+bool SkinPngToDds(const std::vector<unsigned char>& png, std::vector<unsigned char>& dds);   //   a PNG as a DXT5 DDS, its mips
+IDirect3DTexture9* CosmeticsTextureFromDds(IDirect3DDevice9* dev, const std::vector<unsigned char>& dds);   // cosmetics.cpp
+int CosmeticsDrawPlayer();             //   which player this draw is of (-1 none)
+// models.cpp: new characters (the FGUY Cosmetics mod's models)
+using ModelsRealDraw = HRESULT(__stdcall*)(IDirect3DDevice9*, int, int, unsigned, unsigned, unsigned, unsigned);
+void ModelsLoad(int slot, const std::vector<unsigned char>& pack, const wchar_t* name);   // a player wears a model ({}: none)
+void ModelsLoadFile(int slot, const wchar_t* path);   //   test pipe "modelload <slot> <file.fgmodel>"
+bool ModelsWorn();
+void ModelsFrame(IDirect3DDevice9* dev);   //   cosmetics.cpp, after each frame
+bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT* hr);   //   a draw of theirs: ours instead
 void CosmeticsTrace(unsigned lo, unsigned hi);   //   test pipe "texdraws": a frame's draws with that texture
 void InitMotion();                     // characters' poses: read / ours instead              (motion.cpp)
 void MotionFrame();                    //   d3d9.cpp: a frame was drawn
@@ -160,6 +170,7 @@ float MotionLength(const MotionClip& m);
 void MotionPlay(int slot, std::shared_ptr<const MotionClip> clip, const std::vector<bool>& uses, bool loop);   //   on a player
 void MotionStop(int slot);             //   (blending back to the game's own)
 bool MotionPlaying(int slot);
+bool MotionPose(int slot, std::vector<float>& out, int* bones);   //   a player's pose this frame (models.cpp)
 struct _XINPUT_STATE;
 void EmotesPad(DWORD pad, _XINPUT_STATE* st);   // emotes.cpp: held Back is the emote wheel     (emotes.cpp)
 bool EmotesMouse(LONG* dx, LONG* dy, LONG* dz);  //   kbm.cpp: the mouse, the keyboard's wheel open (true: taken)

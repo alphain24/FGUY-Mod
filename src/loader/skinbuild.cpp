@@ -143,7 +143,8 @@ void Recolor(Rgba& d, const double* P, const double* Q, double tol) {
 }
 
 // ---- the overlay (a PNG, through Windows' own image decoder) --------------------------------------------------------
-bool DecodePng(const std::vector<unsigned char>& png, unsigned w, unsigned h, Rgba& out) {
+bool DecodePng(const std::vector<unsigned char>& png, unsigned w, unsigned h, Rgba& out, unsigned* gotW = nullptr,
+               unsigned* gotH = nullptr) {   // (w, h 0: any size - gotW, gotH)
     HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     bool ok = false;
     IWICImagingFactory* f = nullptr;
@@ -156,11 +157,13 @@ bool DecodePng(const std::vector<unsigned char>& png, unsigned w, unsigned h, Rg
         SUCCEEDED(f->CreateStream(&stream)) &&
         SUCCEEDED(stream->InitializeFromMemory(const_cast<BYTE*>(png.data()), (DWORD)png.size())) &&
         SUCCEEDED(f->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnDemand, &dec)) &&
-        SUCCEEDED(dec->GetFrame(0, &frame)) && SUCCEEDED(frame->GetSize(&fw, &fh)) && fw == w && fh == h &&
+        SUCCEEDED(dec->GetFrame(0, &frame)) && SUCCEEDED(frame->GetSize(&fw, &fh)) && (!w || (fw == w && fh == h)) &&
         SUCCEEDED(f->CreateFormatConverter(&conv)) &&
         SUCCEEDED(conv->Initialize(frame, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom))) {
-        out.assign((size_t)w * h * 4, 0);
-        ok = SUCCEEDED(conv->CopyPixels(nullptr, w * 4, (UINT)out.size(), out.data()));
+        out.assign((size_t)fw * fh * 4, 0);
+        ok = SUCCEEDED(conv->CopyPixels(nullptr, fw * 4, (UINT)out.size(), out.data()));
+        if (gotW) *gotW = fw;
+        if (gotH) *gotH = fh;
     }
     if (conv) conv->Release();
     if (frame) frame->Release();
@@ -321,5 +324,16 @@ bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, c
             }
     }
     dds = EncodeDds(px, w, h, fmt == D3DFMT_DXT3 ? D3DFMT_DXT5 : fmt, mips);
+    return true;
+}
+
+// models.cpp: a model's texture (a PNG, its own art) as a DXT5 DDS with all its mip levels
+bool SkinPngToDds(const std::vector<unsigned char>& png, std::vector<unsigned char>& dds) {
+    Rgba px;
+    unsigned w = 0, h = 0;
+    if (!DecodePng(png, 0, 0, px, &w, &h) || !w || !h) return false;
+    unsigned mips = 1;
+    while ((w >> mips) || (h >> mips)) ++mips;
+    dds = EncodeDds(px, w, h, D3DFMT_DXT5, mips);
     return true;
 }

@@ -49,8 +49,11 @@ struct Track {
     std::vector<bool> uses;
     bool loop = false;
     double playStart = 0, stopAt = 0;     // (stopAt: blending back to the game's own since then)
+    std::vector<float> last;              // the pose this frame, as built (models.cpp skins a new model with it)
+    int lastBones = 0;
 };
 Track g_tracks[4];
+volatile bool g_palArm[4];
 CRITICAL_SECTION g_lock;
 
 double Now() {
@@ -137,9 +140,25 @@ void __cdecl Hook_PoseBuild(unsigned char* ent, float* rot, float* pos, float* s
             }
             Scatter(game.data(), bones, rot, pos, scale);
         }
+        tr.last.resize(bones * kFloats);
+        Gather(rot, pos, scale, bones, tr.last.data());
+        tr.lastBones = bones;
     }
     LeaveCriticalSection(&g_lock);
     g_poseOriginal(ent, rot, pos, scale, bones);
+    for (int s = 0; s < 4; ++s)   // (research: where its bone matrices went - pipe "posepal <slot>")
+        if (g_palArm[s] && g_tracks[s].ent == ent) {
+            g_palArm[s] = false;
+            const DWORD* at = reinterpret_cast<const DWORD*>(ent + 0x1d8);
+            Log(L"Motion: player %d's entity %p +0x1d8: %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx", s, ent, at[0], at[1],
+                at[2], at[3], at[4], at[5], at[6], at[7]);
+            for (int k = 0; k < 8; ++k) {
+                const float* m = reinterpret_cast<const float*>(at[k]);
+                if (at[k] < 0x10000 || IsBadReadPtr(m, 96)) continue;
+                Log(L"Motion:   [+%#x] %p: bone 0 %.3f %.3f %.3f %.3f / %.3f %.3f %.3f %.3f / %.3f %.3f %.3f %.3f", 0x1d8 + k * 4, m,
+                    m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11]);
+            }
+        }
 }
 
 bool SaveMotion(const Motion& m, const wchar_t* path) {
@@ -235,6 +254,16 @@ void MotionStop(int slot) {
     if (g_tracks[slot].play && !g_tracks[slot].stopAt) g_tracks[slot].stopAt = Now();
     LeaveCriticalSection(&g_lock);
 }
+// models.cpp: a player's pose this frame (a bone: rotation x y z w, translation, scale - local), false: none yet
+bool MotionPose(int slot, std::vector<float>& out, int* bones) {
+    if (slot < 0 || slot >= 4 || !g_poseOriginal) return false;
+    EnterCriticalSection(&g_lock);
+    bool have = g_tracks[slot].lastBones > 0 && g_tracks[slot].ent;
+    if (have) { out = g_tracks[slot].last; *bones = g_tracks[slot].lastBones; }
+    LeaveCriticalSection(&g_lock);
+    return have;
+}
+
 bool MotionPlaying(int slot) {
     if (slot < 0 || slot >= 4 || !g_poseOriginal) return false;
     EnterCriticalSection(&g_lock);
@@ -278,6 +307,7 @@ void MotionCommand(const char* cmd, const char* a, const char* b) {
         g_tracks[slot].frozen.clear();
         Log(L"Motion: player %d - %s", slot, g_tracks[slot].freeze ? L"pose frozen" : L"pose free");
     }
+    if (_stricmp(cmd, "posepal") == 0 && forSlot) g_palArm[slot] = true;
     if (_stricmp(cmd, "posestop") == 0 && forSlot) {
         if (g_tracks[slot].play && !g_tracks[slot].stopAt) g_tracks[slot].stopAt = Now();
         g_tracks[slot].freeze = false;

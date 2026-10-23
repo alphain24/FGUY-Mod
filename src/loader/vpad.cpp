@@ -342,10 +342,19 @@ void HandleCommand(char* line) {
         return;
     }
     if (cmd && (_stricmp(cmd, "poserec") == 0 || _stricmp(cmd, "posefreeze") == 0 || _stricmp(cmd, "poseplay") == 0 ||
-                _stricmp(cmd, "posestop") == 0 || _stricmp(cmd, "findptr") == 0)) {
+                _stricmp(cmd, "posestop") == 0 || _stricmp(cmd, "findptr") == 0 ||
+                _stricmp(cmd, "posepal") == 0)) {
         char* a = strtok_s(nullptr, " \t\r\n", &ctx);   // research: characters' poses (motion.cpp)
         char* b = strtok_s(nullptr, " \t\r\n", &ctx);
         MotionCommand(cmd, a, b);
+        return;
+    }
+    if (cmd && _stricmp(cmd, "modelload") == 0) {   // test tools: modelload <slot> <file.fgmodel | ''> - wear a new character
+        char* slot = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* path = strtok_s(nullptr, "\r\n", &ctx);
+        wchar_t wpath[MAX_PATH] = L"";
+        if (path && strcmp(path, "''") != 0) MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, MAX_PATH);
+        if (slot) ModelsLoadFile(atoi(slot), wpath);
         return;
     }
     if (cmd && _stricmp(cmd, "emotekey") == 0) {   // test tools: emotekey <0|1> [dx dy] - B held / let go, the mouse moved

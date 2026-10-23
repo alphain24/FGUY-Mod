@@ -287,6 +287,10 @@ HRESULT STDMETHODCALLTYPE Hook_SetVSConstF(IDirect3DDevice9* self, UINT reg, con
 }
 HRESULT STDMETHODCALLTYPE Hook_DrawIndexed(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT base, UINT minIdx,
                                            UINT verts, UINT start, UINT prims) {
+    if (ModelsWorn()) {   // (a player wearing a new character: theirs drawn as ours - models.cpp)
+        HRESULT hr = D3D_OK;
+        if (ModelsDraw(self, DrawPlayer(), reinterpret_cast<ModelsRealDraw>(Real_DrawIndexed), &hr)) return hr;
+    }
     if (g_tracing) {
         ++g_traceAllDraws;
         for (int st = 0; st < 8; ++st) if (g_stages[st] == g_traceTex) ++g_traceStageHit[st];
@@ -308,6 +312,44 @@ HRESULT STDMETHODCALLTYPE Hook_DrawIndexed(IDirect3DDevice9* self, D3DPRIMITIVET
             }
         Log(L"Cosmetics: trace - draw %d: %u vertices, %u triangles; near players:%s", g_traceDraws, verts, prims,
             hits.empty() ? L" none" : hits.c_str());
+        if (g_traceDraws <= 3) {   // (what a character's draw is made of: its vertex layout, streams, triangles, textures)
+            std::wstring d;
+            wchar_t b[160];
+            IDirect3DVertexDeclaration9* decl = nullptr;
+            if (SUCCEEDED(self->GetVertexDeclaration(&decl)) && decl) {
+                D3DVERTEXELEMENT9 el[MAXD3DDECLLENGTH + 1];
+                UINT n = 0;
+                if (SUCCEEDED(decl->GetDeclaration(el, &n)))
+                    for (UINT i = 0; i < n && el[i].Stream != 0xff; ++i) {
+                        swprintf_s(b, L" [s%u +%u type %u usage %u.%u]", el[i].Stream, el[i].Offset, el[i].Type, el[i].Usage,
+                                   el[i].UsageIndex);
+                        d += b;
+                    }
+                decl->Release();
+            }
+            for (UINT s = 0; s < 4; ++s) {
+                IDirect3DVertexBuffer9* vb = nullptr;
+                UINT off = 0, stride = 0;
+                if (SUCCEEDED(self->GetStreamSource(s, &vb, &off, &stride)) && vb) {
+                    D3DVERTEXBUFFER_DESC vd{};
+                    vb->GetDesc(&vd);
+                    swprintf_s(b, L" | stream %u %p +%u stride %u (%u bytes, usage %#lx)", s, vb, off, stride, vd.Size, vd.Usage);
+                    d += b;
+                    vb->Release();
+                }
+            }
+            IDirect3DIndexBuffer9* ib = nullptr;
+            if (SUCCEEDED(self->GetIndices(&ib)) && ib) {
+                D3DINDEXBUFFER_DESC id{};
+                ib->GetDesc(&id);
+                swprintf_s(b, L" | indices %p (%u bytes, format %u) base %d first %u start %u", ib, id.Size, (unsigned)id.Format, base,
+                           minIdx, start);
+                d += b;
+                ib->Release();
+            }
+            for (int st = 0; st < 4; ++st) { swprintf_s(b, L" | tex%d %p", st, g_stages[st]); d += b; }
+            Log(L"Cosmetics: trace - draw %d is%s", g_traceDraws, d.c_str());
+        }
     }
     if (!g_swaps.empty()) {   // a skinned player's character: their own textures for this draw
         IDirect3DBaseTexture9* restore[3] = {};
@@ -352,6 +394,13 @@ unsigned g_traceLo = 0, g_traceHi = 0;
 bool ZipRead(const std::vector<unsigned char>& zip, const std::string& name, std::vector<unsigned char>& out) {
     return ZipEntry(zip, name, out);
 }
+
+IDirect3DTexture9* CosmeticsTextureFromDds(IDirect3DDevice9* dev, const std::vector<unsigned char>& dds) {
+    SkinTex t;
+    t.dds = dds;
+    return MakeTexture(dev, t);
+}
+int CosmeticsDrawPlayer() { return DrawPlayer(); }
 
 void CosmeticsDeviceCreated(IDirect3DDevice9* dev) {
     if (void* o = Patch(dev, 65, (void*)Hook_SetTexture)) Real_SetTexture = (SetTexture_t)o;
@@ -678,6 +727,7 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
         Log(L"Cosmetics: trace - the texture is %p", g_traceTex);
         if (!g_traceTex) Log(L"Cosmetics: trace - no texture %x:%x here", g_traceLo, g_traceHi);
     }
+    ModelsFrame(dev);   // (new characters: models.cpp)
     if (!g_lockInit) return;
     std::vector<TestCmd> tests;
     std::vector<PendingSkin> pending;
@@ -725,7 +775,7 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
         if (changed) RebuildSwaps();
         if (!any) g_swaps.clear();
     }
-    if (!g_swaps.empty()) {   // where the players are (for which player a draw is of)
+    if (!g_swaps.empty() || ModelsWorn()) {   // where the players are (for which player a draw is of)
         unsigned char* players[8];
         int n = GamePlayers(players, 8);
         memset(g_playerHere, 0, sizeof(g_playerHere));
