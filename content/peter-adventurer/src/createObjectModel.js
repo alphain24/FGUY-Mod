@@ -19983,7 +19983,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "shaft",
                         "type": "ellipsoid",
                         "center": [
-                            0.215,
+                            0.217,
                             0.22,
                             0.04
                         ],
@@ -19997,12 +19997,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "toe",
                         "type": "ellipsoid",
                         "center": [
-                            0.215,
+                            0.217,
                             0.1,
                             0.19
                         ],
                         "radii": [
-                            0.185,
+                            0.195,
                             0.115,
                             0.255
                         ]
@@ -20011,7 +20011,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-print",
                         "type": "ellipsoid",
                         "center": [
-                            0.215,
+                            0.217,
                             0.03,
                             0.12
                         ],
@@ -20025,8 +20025,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-slab",
                         "type": "box",
                         "center": [
-                            0.215,
-                            0.03,
+                            0.217,
+                            0.025,
                             0.12
                         ],
                         "size": [
@@ -20039,8 +20039,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "top",
                         "type": "box",
                         "center": [
-                            0.215,
-                            0.6699999999999999,
+                            0.217,
+                            0.59,
                             0.1
                         ],
                         "size": [
@@ -20053,8 +20053,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "under",
                         "type": "box",
                         "center": [
-                            0.215,
-                            -0.3,
+                            0.217,
+                            -0.305,
                             0.1
                         ],
                         "size": [
@@ -20067,22 +20067,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar0",
                         "type": "capsule",
                         "center": [
-                            0.3936,
-                            0.358,
-                            0.0868
+                            0.4064,
+                            0.278,
+                            0.0907
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                0.3936,
-                                0.358,
-                                0.0868
+                                0.4064,
+                                0.278,
+                                0.0907
                             ],
                             "rotation": [
-                                1.5483,
-                                0.1481,
-                                0.1515
+                                1.5492,
+                                0.1452,
+                                0.1484
                             ]
                         }
                     },
@@ -20090,22 +20090,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar1",
                         "type": "capsule",
                         "center": [
-                            0.3664,
-                            0.358,
-                            0.1733
+                            0.3776,
+                            0.278,
+                            0.1843
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                0.3664,
-                                0.358,
-                                0.1733
+                                0.3776,
+                                0.278,
+                                0.1843
                             ],
                             "rotation": [
-                                1.3455,
-                                0.4151,
-                                0.5169
+                                1.3534,
+                                0.4098,
+                                0.5063
                             ]
                         }
                     },
@@ -20113,22 +20113,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar2",
                         "type": "capsule",
                         "center": [
-                            0.3162,
-                            0.358,
-                            0.2396
+                            0.3243,
+                            0.278,
+                            0.256
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                0.3162,
-                                0.358,
-                                0.2396
+                                0.3243,
+                                0.278,
+                                0.256
                             ],
                             "rotation": [
-                                0.865,
-                                0.519,
-                                1.0437
+                                0.8796,
+                                0.5203,
+                                1.0297
                             ]
                         }
                     },
@@ -20136,22 +20136,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar3",
                         "type": "capsule",
                         "center": [
-                            0.2505,
-                            0.358,
-                            0.2754
+                            0.2547,
+                            0.278,
+                            0.2948
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                0.2505,
-                                0.358,
-                                0.2754
+                                0.2547,
+                                0.278,
+                                0.2948
                             ],
                             "rotation": [
-                                0.2647,
-                                0.2478,
-                                1.5044
+                                0.2702,
+                                0.2524,
+                                1.5017
                             ]
                         }
                     },
@@ -20159,22 +20159,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar4",
                         "type": "capsule",
                         "center": [
-                            0.1795,
-                            0.358,
-                            0.2754
+                            0.1793,
+                            0.278,
+                            0.2948
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                0.1795,
-                                0.358,
-                                0.2754
+                                0.1793,
+                                0.278,
+                                0.2948
                             ],
                             "rotation": [
-                                -0.2647,
-                                -0.2478,
-                                1.5044
+                                -0.2702,
+                                -0.2524,
+                                1.5017
                             ]
                         }
                     },
@@ -20182,22 +20182,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar5",
                         "type": "capsule",
                         "center": [
-                            0.1138,
-                            0.358,
-                            0.2396
+                            0.1097,
+                            0.278,
+                            0.256
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                0.1138,
-                                0.358,
-                                0.2396
+                                0.1097,
+                                0.278,
+                                0.256
                             ],
                             "rotation": [
-                                -0.865,
-                                -0.519,
-                                1.0437
+                                -0.8796,
+                                -0.5203,
+                                1.0297
                             ]
                         }
                     },
@@ -20205,22 +20205,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar6",
                         "type": "capsule",
                         "center": [
-                            0.0636,
-                            0.358,
-                            0.1733
+                            0.0564,
+                            0.278,
+                            0.1843
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                0.0636,
-                                0.358,
-                                0.1733
+                                0.0564,
+                                0.278,
+                                0.1843
                             ],
                             "rotation": [
-                                -1.3455,
-                                -0.4151,
-                                0.5169
+                                -1.3534,
+                                -0.4098,
+                                0.5063
                             ]
                         }
                     },
@@ -20228,22 +20228,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar7",
                         "type": "capsule",
                         "center": [
-                            0.0364,
-                            0.358,
-                            0.0868
+                            0.0276,
+                            0.278,
+                            0.0907
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                0.0364,
-                                0.358,
-                                0.0868
+                                0.0276,
+                                0.278,
+                                0.0907
                             ],
                             "rotation": [
-                                -1.5483,
-                                -0.1481,
-                                0.1515
+                                -1.5492,
+                                -0.1452,
+                                0.1484
                             ]
                         }
                     },
@@ -20251,22 +20251,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar8",
                         "type": "capsule",
                         "center": [
-                            0.0364,
-                            0.358,
-                            -0.0068
+                            0.0276,
+                            0.278,
+                            -0.0107
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                0.0364,
-                                0.358,
-                                -0.0068
+                                0.0276,
+                                0.278,
+                                -0.0107
                             ],
                             "rotation": [
-                                -1.5483,
-                                0.1481,
-                                -0.1515
+                                -1.5492,
+                                0.1452,
+                                -0.1484
                             ]
                         }
                     },
@@ -20274,22 +20274,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar9",
                         "type": "capsule",
                         "center": [
-                            0.0636,
-                            0.358,
-                            -0.0933
+                            0.0564,
+                            0.278,
+                            -0.1043
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                0.0636,
-                                0.358,
-                                -0.0933
+                                0.0564,
+                                0.278,
+                                -0.1043
                             ],
                             "rotation": [
-                                -1.3455,
-                                0.4151,
-                                -0.5169
+                                -1.3534,
+                                0.4098,
+                                -0.5063
                             ]
                         }
                     },
@@ -20297,22 +20297,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar10",
                         "type": "capsule",
                         "center": [
-                            0.1138,
-                            0.358,
-                            -0.1596
+                            0.1097,
+                            0.278,
+                            -0.176
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                0.1138,
-                                0.358,
-                                -0.1596
+                                0.1097,
+                                0.278,
+                                -0.176
                             ],
                             "rotation": [
-                                -0.865,
-                                0.519,
-                                -1.0437
+                                -0.8796,
+                                0.5203,
+                                -1.0297
                             ]
                         }
                     },
@@ -20320,22 +20320,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar11",
                         "type": "capsule",
                         "center": [
-                            0.1795,
-                            0.358,
-                            -0.1954
+                            0.1793,
+                            0.278,
+                            -0.2148
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                0.1795,
-                                0.358,
-                                -0.1954
+                                0.1793,
+                                0.278,
+                                -0.2148
                             ],
                             "rotation": [
-                                -0.2647,
-                                0.2478,
-                                -1.5044
+                                -0.2702,
+                                0.2524,
+                                -1.5017
                             ]
                         }
                     },
@@ -20343,22 +20343,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar12",
                         "type": "capsule",
                         "center": [
-                            0.2505,
-                            0.358,
-                            -0.1954
+                            0.2547,
+                            0.278,
+                            -0.2148
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                0.2505,
-                                0.358,
-                                -0.1954
+                                0.2547,
+                                0.278,
+                                -0.2148
                             ],
                             "rotation": [
-                                0.2647,
-                                -0.2478,
-                                -1.5044
+                                0.2702,
+                                -0.2524,
+                                -1.5017
                             ]
                         }
                     },
@@ -20366,22 +20366,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar13",
                         "type": "capsule",
                         "center": [
-                            0.3162,
-                            0.358,
-                            -0.1596
+                            0.3243,
+                            0.278,
+                            -0.176
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                0.3162,
-                                0.358,
-                                -0.1596
+                                0.3243,
+                                0.278,
+                                -0.176
                             ],
                             "rotation": [
-                                0.865,
-                                -0.519,
-                                -1.0437
+                                0.8796,
+                                -0.5203,
+                                -1.0297
                             ]
                         }
                     },
@@ -20389,22 +20389,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar14",
                         "type": "capsule",
                         "center": [
-                            0.3664,
-                            0.358,
-                            -0.0933
+                            0.3776,
+                            0.278,
+                            -0.1043
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                0.3664,
-                                0.358,
-                                -0.0933
+                                0.3776,
+                                0.278,
+                                -0.1043
                             ],
                             "rotation": [
-                                1.3455,
-                                -0.4151,
-                                -0.5169
+                                1.3534,
+                                -0.4098,
+                                -0.5063
                             ]
                         }
                     },
@@ -20412,22 +20412,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar15",
                         "type": "capsule",
                         "center": [
-                            0.3936,
-                            0.358,
-                            -0.0068
+                            0.4064,
+                            0.278,
+                            -0.0107
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                0.3936,
-                                0.358,
-                                -0.0068
+                                0.4064,
+                                0.278,
+                                -0.0107
                             ],
                             "rotation": [
-                                1.5483,
-                                -0.1481,
-                                -0.1515
+                                1.5492,
+                                -0.1452,
+                                -0.1484
                             ]
                         }
                     }
@@ -20580,13 +20580,13 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 ],
                 "bounds": {
                     "min": [
-                        -0.035,
-                        -0.01,
+                        -0.033,
+                        -0.015,
                         -0.25
                     ],
                     "max": [
-                        0.46499999999999997,
-                        0.4,
+                        0.46699999999999997,
+                        0.31999999999999995,
                         0.48
                     ]
                 },
@@ -20774,7 +20774,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "shaft",
                 "type": "ellipsoid",
                 "center": [
-                    0.215,
+                    0.217,
                     0.22,
                     0.04
                 ],
@@ -20788,12 +20788,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "toe",
                 "type": "ellipsoid",
                 "center": [
-                    0.215,
+                    0.217,
                     0.1,
                     0.19
                 ],
                 "radii": [
-                    0.185,
+                    0.195,
                     0.115,
                     0.255
                 ]
@@ -20802,7 +20802,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "sole-print",
                 "type": "ellipsoid",
                 "center": [
-                    0.215,
+                    0.217,
                     0.03,
                     0.12
                 ],
@@ -20816,8 +20816,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "sole-slab",
                 "type": "box",
                 "center": [
-                    0.215,
-                    0.03,
+                    0.217,
+                    0.025,
                     0.12
                 ],
                 "size": [
@@ -20830,8 +20830,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "top",
                 "type": "box",
                 "center": [
-                    0.215,
-                    0.6699999999999999,
+                    0.217,
+                    0.59,
                     0.1
                 ],
                 "size": [
@@ -20844,8 +20844,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "under",
                 "type": "box",
                 "center": [
-                    0.215,
-                    -0.3,
+                    0.217,
+                    -0.305,
                     0.1
                 ],
                 "size": [
@@ -20858,22 +20858,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar0",
                 "type": "capsule",
                 "center": [
-                    0.3936,
-                    0.358,
-                    0.0868
+                    0.4064,
+                    0.278,
+                    0.0907
                 ],
-                "radius": 0.027,
-                "height": 0.0947,
+                "radius": 0.022,
+                "height": 0.1025,
                 "transform": {
                     "position": [
-                        0.3936,
-                        0.358,
-                        0.0868
+                        0.4064,
+                        0.278,
+                        0.0907
                     ],
                     "rotation": [
-                        1.5483,
-                        0.1481,
-                        0.1515
+                        1.5492,
+                        0.1452,
+                        0.1484
                     ]
                 }
             },
@@ -20881,22 +20881,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar1",
                 "type": "capsule",
                 "center": [
-                    0.3664,
-                    0.358,
-                    0.1733
+                    0.3776,
+                    0.278,
+                    0.1843
                 ],
-                "radius": 0.027,
-                "height": 0.089,
+                "radius": 0.022,
+                "height": 0.0959,
                 "transform": {
                     "position": [
-                        0.3664,
-                        0.358,
-                        0.1733
+                        0.3776,
+                        0.278,
+                        0.1843
                     ],
                     "rotation": [
-                        1.3455,
-                        0.4151,
-                        0.5169
+                        1.3534,
+                        0.4098,
+                        0.5063
                     ]
                 }
             },
@@ -20904,22 +20904,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar2",
                 "type": "capsule",
                 "center": [
-                    0.3162,
-                    0.358,
-                    0.2396
+                    0.3243,
+                    0.278,
+                    0.256
                 ],
-                "radius": 0.027,
-                "height": 0.0803,
+                "radius": 0.022,
+                "height": 0.0859,
                 "transform": {
                     "position": [
-                        0.3162,
-                        0.358,
-                        0.2396
+                        0.3243,
+                        0.278,
+                        0.256
                     ],
                     "rotation": [
-                        0.865,
-                        0.519,
-                        1.0437
+                        0.8796,
+                        0.5203,
+                        1.0297
                     ]
                 }
             },
@@ -20927,22 +20927,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar3",
                 "type": "capsule",
                 "center": [
-                    0.2505,
-                    0.358,
-                    0.2754
+                    0.2547,
+                    0.278,
+                    0.2948
                 ],
-                "radius": 0.027,
-                "height": 0.0735,
+                "radius": 0.022,
+                "height": 0.078,
                 "transform": {
                     "position": [
-                        0.2505,
-                        0.358,
-                        0.2754
+                        0.2547,
+                        0.278,
+                        0.2948
                     ],
                     "rotation": [
-                        0.2647,
-                        0.2478,
-                        1.5044
+                        0.2702,
+                        0.2524,
+                        1.5017
                     ]
                 }
             },
@@ -20950,22 +20950,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar4",
                 "type": "capsule",
                 "center": [
-                    0.1795,
-                    0.358,
-                    0.2754
+                    0.1793,
+                    0.278,
+                    0.2948
                 ],
-                "radius": 0.027,
-                "height": 0.0735,
+                "radius": 0.022,
+                "height": 0.078,
                 "transform": {
                     "position": [
-                        0.1795,
-                        0.358,
-                        0.2754
+                        0.1793,
+                        0.278,
+                        0.2948
                     ],
                     "rotation": [
-                        -0.2647,
-                        -0.2478,
-                        1.5044
+                        -0.2702,
+                        -0.2524,
+                        1.5017
                     ]
                 }
             },
@@ -20973,22 +20973,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar5",
                 "type": "capsule",
                 "center": [
-                    0.1138,
-                    0.358,
-                    0.2396
+                    0.1097,
+                    0.278,
+                    0.256
                 ],
-                "radius": 0.027,
-                "height": 0.0803,
+                "radius": 0.022,
+                "height": 0.0859,
                 "transform": {
                     "position": [
-                        0.1138,
-                        0.358,
-                        0.2396
+                        0.1097,
+                        0.278,
+                        0.256
                     ],
                     "rotation": [
-                        -0.865,
-                        -0.519,
-                        1.0437
+                        -0.8796,
+                        -0.5203,
+                        1.0297
                     ]
                 }
             },
@@ -20996,22 +20996,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar6",
                 "type": "capsule",
                 "center": [
-                    0.0636,
-                    0.358,
-                    0.1733
+                    0.0564,
+                    0.278,
+                    0.1843
                 ],
-                "radius": 0.027,
-                "height": 0.089,
+                "radius": 0.022,
+                "height": 0.0959,
                 "transform": {
                     "position": [
-                        0.0636,
-                        0.358,
-                        0.1733
+                        0.0564,
+                        0.278,
+                        0.1843
                     ],
                     "rotation": [
-                        -1.3455,
-                        -0.4151,
-                        0.5169
+                        -1.3534,
+                        -0.4098,
+                        0.5063
                     ]
                 }
             },
@@ -21019,22 +21019,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar7",
                 "type": "capsule",
                 "center": [
-                    0.0364,
-                    0.358,
-                    0.0868
+                    0.0276,
+                    0.278,
+                    0.0907
                 ],
-                "radius": 0.027,
-                "height": 0.0947,
+                "radius": 0.022,
+                "height": 0.1025,
                 "transform": {
                     "position": [
-                        0.0364,
-                        0.358,
-                        0.0868
+                        0.0276,
+                        0.278,
+                        0.0907
                     ],
                     "rotation": [
-                        -1.5483,
-                        -0.1481,
-                        0.1515
+                        -1.5492,
+                        -0.1452,
+                        0.1484
                     ]
                 }
             },
@@ -21042,22 +21042,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar8",
                 "type": "capsule",
                 "center": [
-                    0.0364,
-                    0.358,
-                    -0.0068
+                    0.0276,
+                    0.278,
+                    -0.0107
                 ],
-                "radius": 0.027,
-                "height": 0.0947,
+                "radius": 0.022,
+                "height": 0.1025,
                 "transform": {
                     "position": [
-                        0.0364,
-                        0.358,
-                        -0.0068
+                        0.0276,
+                        0.278,
+                        -0.0107
                     ],
                     "rotation": [
-                        -1.5483,
-                        0.1481,
-                        -0.1515
+                        -1.5492,
+                        0.1452,
+                        -0.1484
                     ]
                 }
             },
@@ -21065,22 +21065,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar9",
                 "type": "capsule",
                 "center": [
-                    0.0636,
-                    0.358,
-                    -0.0933
+                    0.0564,
+                    0.278,
+                    -0.1043
                 ],
-                "radius": 0.027,
-                "height": 0.089,
+                "radius": 0.022,
+                "height": 0.0959,
                 "transform": {
                     "position": [
-                        0.0636,
-                        0.358,
-                        -0.0933
+                        0.0564,
+                        0.278,
+                        -0.1043
                     ],
                     "rotation": [
-                        -1.3455,
-                        0.4151,
-                        -0.5169
+                        -1.3534,
+                        0.4098,
+                        -0.5063
                     ]
                 }
             },
@@ -21088,22 +21088,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar10",
                 "type": "capsule",
                 "center": [
-                    0.1138,
-                    0.358,
-                    -0.1596
+                    0.1097,
+                    0.278,
+                    -0.176
                 ],
-                "radius": 0.027,
-                "height": 0.0803,
+                "radius": 0.022,
+                "height": 0.0859,
                 "transform": {
                     "position": [
-                        0.1138,
-                        0.358,
-                        -0.1596
+                        0.1097,
+                        0.278,
+                        -0.176
                     ],
                     "rotation": [
-                        -0.865,
-                        0.519,
-                        -1.0437
+                        -0.8796,
+                        0.5203,
+                        -1.0297
                     ]
                 }
             },
@@ -21111,22 +21111,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar11",
                 "type": "capsule",
                 "center": [
-                    0.1795,
-                    0.358,
-                    -0.1954
+                    0.1793,
+                    0.278,
+                    -0.2148
                 ],
-                "radius": 0.027,
-                "height": 0.0735,
+                "radius": 0.022,
+                "height": 0.078,
                 "transform": {
                     "position": [
-                        0.1795,
-                        0.358,
-                        -0.1954
+                        0.1793,
+                        0.278,
+                        -0.2148
                     ],
                     "rotation": [
-                        -0.2647,
-                        0.2478,
-                        -1.5044
+                        -0.2702,
+                        0.2524,
+                        -1.5017
                     ]
                 }
             },
@@ -21134,22 +21134,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar12",
                 "type": "capsule",
                 "center": [
-                    0.2505,
-                    0.358,
-                    -0.1954
+                    0.2547,
+                    0.278,
+                    -0.2148
                 ],
-                "radius": 0.027,
-                "height": 0.0735,
+                "radius": 0.022,
+                "height": 0.078,
                 "transform": {
                     "position": [
-                        0.2505,
-                        0.358,
-                        -0.1954
+                        0.2547,
+                        0.278,
+                        -0.2148
                     ],
                     "rotation": [
-                        0.2647,
-                        -0.2478,
-                        -1.5044
+                        0.2702,
+                        -0.2524,
+                        -1.5017
                     ]
                 }
             },
@@ -21157,22 +21157,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar13",
                 "type": "capsule",
                 "center": [
-                    0.3162,
-                    0.358,
-                    -0.1596
+                    0.3243,
+                    0.278,
+                    -0.176
                 ],
-                "radius": 0.027,
-                "height": 0.0803,
+                "radius": 0.022,
+                "height": 0.0859,
                 "transform": {
                     "position": [
-                        0.3162,
-                        0.358,
-                        -0.1596
+                        0.3243,
+                        0.278,
+                        -0.176
                     ],
                     "rotation": [
-                        0.865,
-                        -0.519,
-                        -1.0437
+                        0.8796,
+                        -0.5203,
+                        -1.0297
                     ]
                 }
             },
@@ -21180,22 +21180,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar14",
                 "type": "capsule",
                 "center": [
-                    0.3664,
-                    0.358,
-                    -0.0933
+                    0.3776,
+                    0.278,
+                    -0.1043
                 ],
-                "radius": 0.027,
-                "height": 0.089,
+                "radius": 0.022,
+                "height": 0.0959,
                 "transform": {
                     "position": [
-                        0.3664,
-                        0.358,
-                        -0.0933
+                        0.3776,
+                        0.278,
+                        -0.1043
                     ],
                     "rotation": [
-                        1.3455,
-                        -0.4151,
-                        -0.5169
+                        1.3534,
+                        -0.4098,
+                        -0.5063
                     ]
                 }
             },
@@ -21203,22 +21203,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar15",
                 "type": "capsule",
                 "center": [
-                    0.3936,
-                    0.358,
-                    -0.0068
+                    0.4064,
+                    0.278,
+                    -0.0107
                 ],
-                "radius": 0.027,
-                "height": 0.0947,
+                "radius": 0.022,
+                "height": 0.1025,
                 "transform": {
                     "position": [
-                        0.3936,
-                        0.358,
-                        -0.0068
+                        0.4064,
+                        0.278,
+                        -0.0107
                     ],
                     "rotation": [
-                        1.5483,
-                        -0.1481,
-                        -0.1515
+                        1.5492,
+                        -0.1452,
+                        -0.1484
                     ]
                 }
             }
@@ -21371,13 +21371,13 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         ],
         "bounds": {
             "min": [
-                -0.035,
-                -0.01,
+                -0.033,
+                -0.015,
                 -0.25
             ],
             "max": [
-                0.46499999999999997,
-                0.4,
+                0.46699999999999997,
+                0.31999999999999995,
                 0.48
             ]
         },
@@ -21483,7 +21483,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "shaft",
                         "type": "ellipsoid",
                         "center": [
-                            0.215,
+                            0.217,
                             0.22,
                             0.04
                         ],
@@ -21497,12 +21497,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "toe",
                         "type": "ellipsoid",
                         "center": [
-                            0.215,
+                            0.217,
                             0.1,
                             0.19
                         ],
                         "radii": [
-                            0.185,
+                            0.195,
                             0.115,
                             0.255
                         ]
@@ -21511,7 +21511,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-print",
                         "type": "ellipsoid",
                         "center": [
-                            0.215,
+                            0.217,
                             0.03,
                             0.12
                         ],
@@ -21525,8 +21525,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-slab",
                         "type": "box",
                         "center": [
-                            0.215,
-                            0.03,
+                            0.217,
+                            0.025,
                             0.12
                         ],
                         "size": [
@@ -21539,8 +21539,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "top",
                         "type": "box",
                         "center": [
-                            0.215,
-                            0.6699999999999999,
+                            0.217,
+                            0.59,
                             0.1
                         ],
                         "size": [
@@ -21553,8 +21553,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "under",
                         "type": "box",
                         "center": [
-                            0.215,
-                            -0.3,
+                            0.217,
+                            -0.305,
                             0.1
                         ],
                         "size": [
@@ -21567,22 +21567,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar0",
                         "type": "capsule",
                         "center": [
-                            0.3936,
-                            0.358,
-                            0.0868
+                            0.4064,
+                            0.278,
+                            0.0907
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                0.3936,
-                                0.358,
-                                0.0868
+                                0.4064,
+                                0.278,
+                                0.0907
                             ],
                             "rotation": [
-                                1.5483,
-                                0.1481,
-                                0.1515
+                                1.5492,
+                                0.1452,
+                                0.1484
                             ]
                         }
                     },
@@ -21590,22 +21590,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar1",
                         "type": "capsule",
                         "center": [
-                            0.3664,
-                            0.358,
-                            0.1733
+                            0.3776,
+                            0.278,
+                            0.1843
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                0.3664,
-                                0.358,
-                                0.1733
+                                0.3776,
+                                0.278,
+                                0.1843
                             ],
                             "rotation": [
-                                1.3455,
-                                0.4151,
-                                0.5169
+                                1.3534,
+                                0.4098,
+                                0.5063
                             ]
                         }
                     },
@@ -21613,22 +21613,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar2",
                         "type": "capsule",
                         "center": [
-                            0.3162,
-                            0.358,
-                            0.2396
+                            0.3243,
+                            0.278,
+                            0.256
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                0.3162,
-                                0.358,
-                                0.2396
+                                0.3243,
+                                0.278,
+                                0.256
                             ],
                             "rotation": [
-                                0.865,
-                                0.519,
-                                1.0437
+                                0.8796,
+                                0.5203,
+                                1.0297
                             ]
                         }
                     },
@@ -21636,22 +21636,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar3",
                         "type": "capsule",
                         "center": [
-                            0.2505,
-                            0.358,
-                            0.2754
+                            0.2547,
+                            0.278,
+                            0.2948
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                0.2505,
-                                0.358,
-                                0.2754
+                                0.2547,
+                                0.278,
+                                0.2948
                             ],
                             "rotation": [
-                                0.2647,
-                                0.2478,
-                                1.5044
+                                0.2702,
+                                0.2524,
+                                1.5017
                             ]
                         }
                     },
@@ -21659,22 +21659,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar4",
                         "type": "capsule",
                         "center": [
-                            0.1795,
-                            0.358,
-                            0.2754
+                            0.1793,
+                            0.278,
+                            0.2948
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                0.1795,
-                                0.358,
-                                0.2754
+                                0.1793,
+                                0.278,
+                                0.2948
                             ],
                             "rotation": [
-                                -0.2647,
-                                -0.2478,
-                                1.5044
+                                -0.2702,
+                                -0.2524,
+                                1.5017
                             ]
                         }
                     },
@@ -21682,22 +21682,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar5",
                         "type": "capsule",
                         "center": [
-                            0.1138,
-                            0.358,
-                            0.2396
+                            0.1097,
+                            0.278,
+                            0.256
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                0.1138,
-                                0.358,
-                                0.2396
+                                0.1097,
+                                0.278,
+                                0.256
                             ],
                             "rotation": [
-                                -0.865,
-                                -0.519,
-                                1.0437
+                                -0.8796,
+                                -0.5203,
+                                1.0297
                             ]
                         }
                     },
@@ -21705,22 +21705,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar6",
                         "type": "capsule",
                         "center": [
-                            0.0636,
-                            0.358,
-                            0.1733
+                            0.0564,
+                            0.278,
+                            0.1843
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                0.0636,
-                                0.358,
-                                0.1733
+                                0.0564,
+                                0.278,
+                                0.1843
                             ],
                             "rotation": [
-                                -1.3455,
-                                -0.4151,
-                                0.5169
+                                -1.3534,
+                                -0.4098,
+                                0.5063
                             ]
                         }
                     },
@@ -21728,22 +21728,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar7",
                         "type": "capsule",
                         "center": [
-                            0.0364,
-                            0.358,
-                            0.0868
+                            0.0276,
+                            0.278,
+                            0.0907
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                0.0364,
-                                0.358,
-                                0.0868
+                                0.0276,
+                                0.278,
+                                0.0907
                             ],
                             "rotation": [
-                                -1.5483,
-                                -0.1481,
-                                0.1515
+                                -1.5492,
+                                -0.1452,
+                                0.1484
                             ]
                         }
                     },
@@ -21751,22 +21751,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar8",
                         "type": "capsule",
                         "center": [
-                            0.0364,
-                            0.358,
-                            -0.0068
+                            0.0276,
+                            0.278,
+                            -0.0107
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                0.0364,
-                                0.358,
-                                -0.0068
+                                0.0276,
+                                0.278,
+                                -0.0107
                             ],
                             "rotation": [
-                                -1.5483,
-                                0.1481,
-                                -0.1515
+                                -1.5492,
+                                0.1452,
+                                -0.1484
                             ]
                         }
                     },
@@ -21774,22 +21774,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar9",
                         "type": "capsule",
                         "center": [
-                            0.0636,
-                            0.358,
-                            -0.0933
+                            0.0564,
+                            0.278,
+                            -0.1043
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                0.0636,
-                                0.358,
-                                -0.0933
+                                0.0564,
+                                0.278,
+                                -0.1043
                             ],
                             "rotation": [
-                                -1.3455,
-                                0.4151,
-                                -0.5169
+                                -1.3534,
+                                0.4098,
+                                -0.5063
                             ]
                         }
                     },
@@ -21797,22 +21797,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar10",
                         "type": "capsule",
                         "center": [
-                            0.1138,
-                            0.358,
-                            -0.1596
+                            0.1097,
+                            0.278,
+                            -0.176
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                0.1138,
-                                0.358,
-                                -0.1596
+                                0.1097,
+                                0.278,
+                                -0.176
                             ],
                             "rotation": [
-                                -0.865,
-                                0.519,
-                                -1.0437
+                                -0.8796,
+                                0.5203,
+                                -1.0297
                             ]
                         }
                     },
@@ -21820,22 +21820,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar11",
                         "type": "capsule",
                         "center": [
-                            0.1795,
-                            0.358,
-                            -0.1954
+                            0.1793,
+                            0.278,
+                            -0.2148
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                0.1795,
-                                0.358,
-                                -0.1954
+                                0.1793,
+                                0.278,
+                                -0.2148
                             ],
                             "rotation": [
-                                -0.2647,
-                                0.2478,
-                                -1.5044
+                                -0.2702,
+                                0.2524,
+                                -1.5017
                             ]
                         }
                     },
@@ -21843,22 +21843,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar12",
                         "type": "capsule",
                         "center": [
-                            0.2505,
-                            0.358,
-                            -0.1954
+                            0.2547,
+                            0.278,
+                            -0.2148
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                0.2505,
-                                0.358,
-                                -0.1954
+                                0.2547,
+                                0.278,
+                                -0.2148
                             ],
                             "rotation": [
-                                0.2647,
-                                -0.2478,
-                                -1.5044
+                                0.2702,
+                                -0.2524,
+                                -1.5017
                             ]
                         }
                     },
@@ -21866,22 +21866,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar13",
                         "type": "capsule",
                         "center": [
-                            0.3162,
-                            0.358,
-                            -0.1596
+                            0.3243,
+                            0.278,
+                            -0.176
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                0.3162,
-                                0.358,
-                                -0.1596
+                                0.3243,
+                                0.278,
+                                -0.176
                             ],
                             "rotation": [
-                                0.865,
-                                -0.519,
-                                -1.0437
+                                0.8796,
+                                -0.5203,
+                                -1.0297
                             ]
                         }
                     },
@@ -21889,22 +21889,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar14",
                         "type": "capsule",
                         "center": [
-                            0.3664,
-                            0.358,
-                            -0.0933
+                            0.3776,
+                            0.278,
+                            -0.1043
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                0.3664,
-                                0.358,
-                                -0.0933
+                                0.3776,
+                                0.278,
+                                -0.1043
                             ],
                             "rotation": [
-                                1.3455,
-                                -0.4151,
-                                -0.5169
+                                1.3534,
+                                -0.4098,
+                                -0.5063
                             ]
                         }
                     },
@@ -21912,22 +21912,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar15",
                         "type": "capsule",
                         "center": [
-                            0.3936,
-                            0.358,
-                            -0.0068
+                            0.4064,
+                            0.278,
+                            -0.0107
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                0.3936,
-                                0.358,
-                                -0.0068
+                                0.4064,
+                                0.278,
+                                -0.0107
                             ],
                             "rotation": [
-                                1.5483,
-                                -0.1481,
-                                -0.1515
+                                1.5492,
+                                -0.1452,
+                                -0.1484
                             ]
                         }
                     }
@@ -22080,13 +22080,13 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 ],
                 "bounds": {
                     "min": [
-                        -0.035,
-                        -0.01,
+                        -0.033,
+                        -0.015,
                         -0.25
                     ],
                     "max": [
-                        0.46499999999999997,
-                        0.4,
+                        0.46699999999999997,
+                        0.31999999999999995,
                         0.48
                     ]
                 },
@@ -22241,7 +22241,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l0a_24.position.copy(endpoint_boot_eyelet_l0a_24.start);
         node_boot_eyelet_l0a_24.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l0a_24.position.set(0.15, 0.17, 0.3793);
+        node_boot_eyelet_l0a_24.position.set(0.161, 0.115, 0.434);
         node_boot_eyelet_l0a_24.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l0a_24.userData.sculptComponent = {
@@ -22271,17 +22271,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.15,
-                0.17,
-                0.3793
+                0.161,
+                0.115,
+                0.434
             ],
             "rotation": [
                 0,
@@ -22289,9 +22289,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -22443,7 +22443,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const mesh_boot_eyelet_l0a_24GeometryDense = endpoint_boot_eyelet_l0a_24 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l0a_24.endRadius, endpoint_boot_eyelet_l0a_24.baseRadius, endpoint_boot_eyelet_l0a_24.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
     const mesh_boot_eyelet_l0a_24Geometry = decimateGeometry(mesh_boot_eyelet_l0a_24GeometryDense, 0.06);
     if (!endpoint_boot_eyelet_l0a_24) {
-        mesh_boot_eyelet_l0a_24Geometry.scale(0.022, 0.022, 0.014);
+        mesh_boot_eyelet_l0a_24Geometry.scale(0.027, 0.027, 0.015);
     }
     const mesh_boot_eyelet_l0a_24 = new THREE.Mesh(mesh_boot_eyelet_l0a_24Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
@@ -22482,17 +22482,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.15,
-                0.17,
-                0.3793
+                0.161,
+                0.115,
+                0.434
             ],
             "rotation": [
                 0,
@@ -22500,9 +22500,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -22624,7 +22624,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l0b_25.position.copy(endpoint_boot_eyelet_l0b_25.start);
         node_boot_eyelet_l0b_25.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l0b_25.position.set(0.28, 0.17, 0.3793);
+        node_boot_eyelet_l0b_25.position.set(0.273, 0.115, 0.434);
         node_boot_eyelet_l0b_25.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l0b_25.userData.sculptComponent = {
@@ -22654,17 +22654,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.28,
-                0.17,
-                0.3793
+                0.273,
+                0.115,
+                0.434
             ],
             "rotation": [
                 0,
@@ -22672,9 +22672,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -22826,7 +22826,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const mesh_boot_eyelet_l0b_25GeometryDense = endpoint_boot_eyelet_l0b_25 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l0b_25.endRadius, endpoint_boot_eyelet_l0b_25.baseRadius, endpoint_boot_eyelet_l0b_25.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
     const mesh_boot_eyelet_l0b_25Geometry = decimateGeometry(mesh_boot_eyelet_l0b_25GeometryDense, 0.06);
     if (!endpoint_boot_eyelet_l0b_25) {
-        mesh_boot_eyelet_l0b_25Geometry.scale(0.022, 0.022, 0.014);
+        mesh_boot_eyelet_l0b_25Geometry.scale(0.027, 0.027, 0.015);
     }
     const mesh_boot_eyelet_l0b_25 = new THREE.Mesh(mesh_boot_eyelet_l0b_25Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
@@ -22865,17 +22865,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.28,
-                0.17,
-                0.3793
+                0.273,
+                0.115,
+                0.434
             ],
             "rotation": [
                 0,
@@ -22883,9 +22883,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -23007,7 +23007,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l1a_26.position.copy(endpoint_boot_eyelet_l1a_26.start);
         node_boot_eyelet_l1a_26.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l1a_26.position.set(0.15, 0.215, 0.3275);
+        node_boot_eyelet_l1a_26.position.set(0.161, 0.158, 0.4026);
         node_boot_eyelet_l1a_26.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l1a_26.userData.sculptComponent = {
@@ -23037,17 +23037,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.15,
-                0.215,
-                0.3275
+                0.161,
+                0.158,
+                0.4026
             ],
             "rotation": [
                 0,
@@ -23055,9 +23055,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -23209,7 +23209,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const mesh_boot_eyelet_l1a_26GeometryDense = endpoint_boot_eyelet_l1a_26 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l1a_26.endRadius, endpoint_boot_eyelet_l1a_26.baseRadius, endpoint_boot_eyelet_l1a_26.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
     const mesh_boot_eyelet_l1a_26Geometry = decimateGeometry(mesh_boot_eyelet_l1a_26GeometryDense, 0.06);
     if (!endpoint_boot_eyelet_l1a_26) {
-        mesh_boot_eyelet_l1a_26Geometry.scale(0.022, 0.022, 0.014);
+        mesh_boot_eyelet_l1a_26Geometry.scale(0.027, 0.027, 0.015);
     }
     const mesh_boot_eyelet_l1a_26 = new THREE.Mesh(mesh_boot_eyelet_l1a_26Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
@@ -23248,17 +23248,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.15,
-                0.215,
-                0.3275
+                0.161,
+                0.158,
+                0.4026
             ],
             "rotation": [
                 0,
@@ -23266,9 +23266,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -23390,7 +23390,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l1b_27.position.copy(endpoint_boot_eyelet_l1b_27.start);
         node_boot_eyelet_l1b_27.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l1b_27.position.set(0.28, 0.215, 0.3275);
+        node_boot_eyelet_l1b_27.position.set(0.273, 0.158, 0.4026);
         node_boot_eyelet_l1b_27.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l1b_27.userData.sculptComponent = {
@@ -23420,17 +23420,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.28,
-                0.215,
-                0.3275
+                0.273,
+                0.158,
+                0.4026
             ],
             "rotation": [
                 0,
@@ -23438,9 +23438,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -23592,7 +23592,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const mesh_boot_eyelet_l1b_27GeometryDense = endpoint_boot_eyelet_l1b_27 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l1b_27.endRadius, endpoint_boot_eyelet_l1b_27.baseRadius, endpoint_boot_eyelet_l1b_27.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
     const mesh_boot_eyelet_l1b_27Geometry = decimateGeometry(mesh_boot_eyelet_l1b_27GeometryDense, 0.06);
     if (!endpoint_boot_eyelet_l1b_27) {
-        mesh_boot_eyelet_l1b_27Geometry.scale(0.022, 0.022, 0.014);
+        mesh_boot_eyelet_l1b_27Geometry.scale(0.027, 0.027, 0.015);
     }
     const mesh_boot_eyelet_l1b_27 = new THREE.Mesh(mesh_boot_eyelet_l1b_27Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
@@ -23631,17 +23631,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.28,
-                0.215,
-                0.3275
+                0.273,
+                0.158,
+                0.4026
             ],
             "rotation": [
                 0,
@@ -23649,9 +23649,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -23773,7 +23773,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l2a_28.position.copy(endpoint_boot_eyelet_l2a_28.start);
         node_boot_eyelet_l2a_28.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l2a_28.position.set(0.15, 0.26, 0.295);
+        node_boot_eyelet_l2a_28.position.set(0.161, 0.201, 0.3514);
         node_boot_eyelet_l2a_28.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l2a_28.userData.sculptComponent = {
@@ -23803,17 +23803,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.15,
-                0.26,
-                0.295
+                0.161,
+                0.201,
+                0.3514
             ],
             "rotation": [
                 0,
@@ -23821,9 +23821,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -23975,7 +23975,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const mesh_boot_eyelet_l2a_28GeometryDense = endpoint_boot_eyelet_l2a_28 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l2a_28.endRadius, endpoint_boot_eyelet_l2a_28.baseRadius, endpoint_boot_eyelet_l2a_28.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
     const mesh_boot_eyelet_l2a_28Geometry = decimateGeometry(mesh_boot_eyelet_l2a_28GeometryDense, 0.06);
     if (!endpoint_boot_eyelet_l2a_28) {
-        mesh_boot_eyelet_l2a_28Geometry.scale(0.022, 0.022, 0.014);
+        mesh_boot_eyelet_l2a_28Geometry.scale(0.027, 0.027, 0.015);
     }
     const mesh_boot_eyelet_l2a_28 = new THREE.Mesh(mesh_boot_eyelet_l2a_28Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
@@ -24014,17 +24014,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.15,
-                0.26,
-                0.295
+                0.161,
+                0.201,
+                0.3514
             ],
             "rotation": [
                 0,
@@ -24032,9 +24032,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -24156,7 +24156,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l2b_29.position.copy(endpoint_boot_eyelet_l2b_29.start);
         node_boot_eyelet_l2b_29.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l2b_29.position.set(0.28, 0.26, 0.295);
+        node_boot_eyelet_l2b_29.position.set(0.273, 0.201, 0.3514);
         node_boot_eyelet_l2b_29.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l2b_29.userData.sculptComponent = {
@@ -24186,17 +24186,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.28,
-                0.26,
-                0.295
+                0.273,
+                0.201,
+                0.3514
             ],
             "rotation": [
                 0,
@@ -24204,9 +24204,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -24358,7 +24358,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const mesh_boot_eyelet_l2b_29GeometryDense = endpoint_boot_eyelet_l2b_29 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l2b_29.endRadius, endpoint_boot_eyelet_l2b_29.baseRadius, endpoint_boot_eyelet_l2b_29.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
     const mesh_boot_eyelet_l2b_29Geometry = decimateGeometry(mesh_boot_eyelet_l2b_29GeometryDense, 0.06);
     if (!endpoint_boot_eyelet_l2b_29) {
-        mesh_boot_eyelet_l2b_29Geometry.scale(0.022, 0.022, 0.014);
+        mesh_boot_eyelet_l2b_29Geometry.scale(0.027, 0.027, 0.015);
     }
     const mesh_boot_eyelet_l2b_29 = new THREE.Mesh(mesh_boot_eyelet_l2b_29Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
@@ -24397,17 +24397,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.28,
-                0.26,
-                0.295
+                0.273,
+                0.201,
+                0.3514
             ],
             "rotation": [
                 0,
@@ -24415,9 +24415,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -24539,7 +24539,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l3a_30.position.copy(endpoint_boot_eyelet_l3a_30.start);
         node_boot_eyelet_l3a_30.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l3a_30.position.set(0.15, 0.305, 0.2792);
+        node_boot_eyelet_l3a_30.position.set(0.161, 0.244, 0.315);
         node_boot_eyelet_l3a_30.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l3a_30.userData.sculptComponent = {
@@ -24569,17 +24569,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.15,
-                0.305,
-                0.2792
+                0.161,
+                0.244,
+                0.315
             ],
             "rotation": [
                 0,
@@ -24587,9 +24587,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -24741,7 +24741,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const mesh_boot_eyelet_l3a_30GeometryDense = endpoint_boot_eyelet_l3a_30 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l3a_30.endRadius, endpoint_boot_eyelet_l3a_30.baseRadius, endpoint_boot_eyelet_l3a_30.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
     const mesh_boot_eyelet_l3a_30Geometry = decimateGeometry(mesh_boot_eyelet_l3a_30GeometryDense, 0.06);
     if (!endpoint_boot_eyelet_l3a_30) {
-        mesh_boot_eyelet_l3a_30Geometry.scale(0.022, 0.022, 0.014);
+        mesh_boot_eyelet_l3a_30Geometry.scale(0.027, 0.027, 0.015);
     }
     const mesh_boot_eyelet_l3a_30 = new THREE.Mesh(mesh_boot_eyelet_l3a_30Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
@@ -24780,17 +24780,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.15,
-                0.305,
-                0.2792
+                0.161,
+                0.244,
+                0.315
             ],
             "rotation": [
                 0,
@@ -24798,9 +24798,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -24922,7 +24922,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         node_boot_eyelet_l3b_31.position.copy(endpoint_boot_eyelet_l3b_31.start);
         node_boot_eyelet_l3b_31.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_l3b_31.position.set(0.28, 0.305, 0.2792);
+        node_boot_eyelet_l3b_31.position.set(0.273, 0.244, 0.315);
         node_boot_eyelet_l3b_31.rotation.set(0.0, 0.0, 0.0);
     }
     node_boot_eyelet_l3b_31.userData.sculptComponent = {
@@ -24952,17 +24952,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.28,
-                0.305,
-                0.2792
+                0.273,
+                0.244,
+                0.315
             ],
             "rotation": [
                 0,
@@ -24970,9 +24970,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -25124,7 +25124,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     const mesh_boot_eyelet_l3b_31GeometryDense = endpoint_boot_eyelet_l3b_31 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l3b_31.endRadius, endpoint_boot_eyelet_l3b_31.baseRadius, endpoint_boot_eyelet_l3b_31.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
     const mesh_boot_eyelet_l3b_31Geometry = decimateGeometry(mesh_boot_eyelet_l3b_31GeometryDense, 0.06);
     if (!endpoint_boot_eyelet_l3b_31) {
-        mesh_boot_eyelet_l3b_31Geometry.scale(0.022, 0.022, 0.014);
+        mesh_boot_eyelet_l3b_31Geometry.scale(0.027, 0.027, 0.015);
     }
     const mesh_boot_eyelet_l3b_31 = new THREE.Mesh(mesh_boot_eyelet_l3b_31Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
@@ -25163,17 +25163,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-l",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                0.28,
-                0.305,
-                0.2792
+                0.273,
+                0.244,
+                0.315
             ],
             "rotation": [
                 0,
@@ -25181,9 +25181,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -25297,806 +25297,40 @@ export function createPeterAdventurerOutfitModel(options = {}) {
     };
     destructionGroups["boot-eyelet-l3b"] ??= [];
     destructionGroups["boot-eyelet-l3b"].push(node_boot_eyelet_l3b_31);
-    const endpoint_boot_eyelet_l4a_32 = makeAttachmentEndpoint(null);
-    const node_boot_eyelet_l4a_32 = new THREE.Group();
-    node_boot_eyelet_l4a_32.name = "Boot eyelet boot-eyelet-l4a__pivot";
-    node_boot_eyelet_l4a_32.scale.set(1, 1, 1);
-    if (endpoint_boot_eyelet_l4a_32) {
-        node_boot_eyelet_l4a_32.position.copy(endpoint_boot_eyelet_l4a_32.start);
-        node_boot_eyelet_l4a_32.rotation.set(0.0, 0.0, 0.0);
-    } else {
-        node_boot_eyelet_l4a_32.position.set(0.15, 0.35, 0.2938);
-        node_boot_eyelet_l4a_32.rotation.set(0.0, 0.0, 0.0);
-    }
-    node_boot_eyelet_l4a_32.userData.sculptComponent = {
-        "id": "boot-eyelet-l4a",
-        "name": "Boot eyelet boot-eyelet-l4a",
-        "level": "micro",
-        "role": "body",
-        "importance": 0.4,
-        "confidence": 0.8,
-        "primitive": "sphere",
-        "topologyClass": "assembled-solid",
-        "topologyRationale": "A small brass grommet: a discrete squashed sphere.",
-        "geometryDescriptor": {
-            "topologyIntent": "stylized character part",
-            "edgeTreatment": {
-                "type": "none",
-                "bevelRadius": 0.0,
-                "segments": 1
-            },
-            "deformationStack": [],
-            "uvStrategy": "generated procedural coordinates",
-            "normalStrategy": "smooth vertex normals",
-            "decimate": {
-                "targetRatio": 0.06
-            }
-        },
-        "parent": "boot-shell-l",
-        "attachment": null,
-        "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
-            "units": "relative",
-            "confidence": 0.8
-        },
-        "transform": {
-            "position": [
-                0.15,
-                0.35,
-                0.2938
-            ],
-            "rotation": [
-                0,
-                0,
-                0
-            ],
-            "scale": [
-                0.022,
-                0.022,
-                0.014
-            ]
-        },
-        "actionProfile": {
-            "animationRole": "static",
-            "pivot": {
-                "mode": "center",
-                "localPosition": [
-                    0,
-                    0,
-                    0
-                ],
-                "axis": [
-                    0,
-                    1,
-                    0
-                ],
-                "confidence": 0.7
-            },
-            "transformChannels": {
-                "translate": true,
-                "rotate": true,
-                "scale": true,
-                "bend": false,
-                "twist": false,
-                "detach": false,
-                "visibility": true,
-                "materialState": false
-            },
-            "sockets": [],
-            "collider": {
-                "type": "box",
-                "offset": [
-                    0,
-                    0,
-                    0
-                ],
-                "scale": [
-                    1,
-                    1,
-                    1
-                ],
-                "isTrigger": false,
-                "notes": "box proxy"
-            },
-            "constraints": [],
-            "destruction": {
-                "breakable": false,
-                "fractureGroup": "boot-eyelet-l4a",
-                "seamRefs": [],
-                "detachableFragments": [],
-                "breakImpulse": 0.0,
-                "debrisMaterial": "brass"
-            }
-        },
-        "material": "brass",
-        "materialLayers": [
-            "brass"
-        ],
-        "deformations": [],
-        "joints": [],
-        "seams": [],
-        "localFeatures": [
-            {
-                "id": "boot-eyelet-l4a-ring",
-                "kind": "fastener",
-                "description": "brass eyelet"
-            }
-        ],
-        "surfaceDetail": {
-            "macroRoughness": 0.0,
-            "microRoughness": 0.0,
-            "bumpAmplitude": 0.0,
-            "normalPattern": "",
-            "displacementPattern": "",
-            "occlusionPattern": "",
-            "edgeWearPattern": "",
-            "notes": ""
-        },
-        "evidenceRefs": [
-            "full-object",
-            "boots-zone"
-        ],
-        "details": [],
-        "fidelityTier": "form",
-        "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(145, 109, 44, 1.0)",
-            "secondaryAlbedo": "rgba(133, 95, 23, 1.0)",
-            "materialClass": "metal",
-            "materialClassConfidence": 0.7,
-            "evidenceRefs": [
-                "material-evidence/brass.png"
-            ]
-        }
-    };
-    node_boot_eyelet_l4a_32.userData.actionProfile = {
-        "animationRole": "static",
-        "pivot": {
-            "mode": "center",
-            "localPosition": [
-                0,
-                0,
-                0
-            ],
-            "axis": [
-                0,
-                1,
-                0
-            ],
-            "confidence": 0.7
-        },
-        "transformChannels": {
-            "translate": true,
-            "rotate": true,
-            "scale": true,
-            "bend": false,
-            "twist": false,
-            "detach": false,
-            "visibility": true,
-            "materialState": false
-        },
-        "sockets": [],
-        "collider": {
-            "type": "box",
-            "offset": [
-                0,
-                0,
-                0
-            ],
-            "scale": [
-                1,
-                1,
-                1
-            ],
-            "isTrigger": false,
-            "notes": "box proxy"
-        },
-        "constraints": [],
-        "destruction": {
-            "breakable": false,
-            "fractureGroup": "boot-eyelet-l4a",
-            "seamRefs": [],
-            "detachableFragments": [],
-            "breakImpulse": 0.0,
-            "debrisMaterial": "brass"
-        }
-    };
-    (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l4a_32);
-    nodes["boot-eyelet-l4a"] = node_boot_eyelet_l4a_32;
-    const mesh_boot_eyelet_l4a_32GeometryDense = endpoint_boot_eyelet_l4a_32 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l4a_32.endRadius, endpoint_boot_eyelet_l4a_32.baseRadius, endpoint_boot_eyelet_l4a_32.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_l4a_32Geometry = decimateGeometry(mesh_boot_eyelet_l4a_32GeometryDense, 0.06);
-    if (!endpoint_boot_eyelet_l4a_32) {
-        mesh_boot_eyelet_l4a_32Geometry.scale(0.022, 0.022, 0.014);
-    }
-    const mesh_boot_eyelet_l4a_32 = new THREE.Mesh(mesh_boot_eyelet_l4a_32Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
-        color: 0x888888
-    }));
-    mesh_boot_eyelet_l4a_32.name = "Boot eyelet boot-eyelet-l4a";
-    if (endpoint_boot_eyelet_l4a_32) {
-        mesh_boot_eyelet_l4a_32.position.copy(endpoint_boot_eyelet_l4a_32.midpoint);
-        mesh_boot_eyelet_l4a_32.quaternion.copy(endpoint_boot_eyelet_l4a_32.quaternion);
-    }
-    mesh_boot_eyelet_l4a_32.castShadow = options.castShadow ?? true;
-    mesh_boot_eyelet_l4a_32.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_eyelet_l4a_32.userData.sculptComponent = {
-        "id": "boot-eyelet-l4a",
-        "name": "Boot eyelet boot-eyelet-l4a",
-        "level": "micro",
-        "role": "body",
-        "importance": 0.4,
-        "confidence": 0.8,
-        "primitive": "sphere",
-        "topologyClass": "assembled-solid",
-        "topologyRationale": "A small brass grommet: a discrete squashed sphere.",
-        "geometryDescriptor": {
-            "topologyIntent": "stylized character part",
-            "edgeTreatment": {
-                "type": "none",
-                "bevelRadius": 0.0,
-                "segments": 1
-            },
-            "deformationStack": [],
-            "uvStrategy": "generated procedural coordinates",
-            "normalStrategy": "smooth vertex normals",
-            "decimate": {
-                "targetRatio": 0.06
-            }
-        },
-        "parent": "boot-shell-l",
-        "attachment": null,
-        "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
-            "units": "relative",
-            "confidence": 0.8
-        },
-        "transform": {
-            "position": [
-                0.15,
-                0.35,
-                0.2938
-            ],
-            "rotation": [
-                0,
-                0,
-                0
-            ],
-            "scale": [
-                0.022,
-                0.022,
-                0.014
-            ]
-        },
-        "actionProfile": {
-            "animationRole": "static",
-            "pivot": {
-                "mode": "center",
-                "localPosition": [
-                    0,
-                    0,
-                    0
-                ],
-                "axis": [
-                    0,
-                    1,
-                    0
-                ],
-                "confidence": 0.7
-            },
-            "transformChannels": {
-                "translate": true,
-                "rotate": true,
-                "scale": true,
-                "bend": false,
-                "twist": false,
-                "detach": false,
-                "visibility": true,
-                "materialState": false
-            },
-            "sockets": [],
-            "collider": {
-                "type": "box",
-                "offset": [
-                    0,
-                    0,
-                    0
-                ],
-                "scale": [
-                    1,
-                    1,
-                    1
-                ],
-                "isTrigger": false,
-                "notes": "box proxy"
-            },
-            "constraints": [],
-            "destruction": {
-                "breakable": false,
-                "fractureGroup": "boot-eyelet-l4a",
-                "seamRefs": [],
-                "detachableFragments": [],
-                "breakImpulse": 0.0,
-                "debrisMaterial": "brass"
-            }
-        },
-        "material": "brass",
-        "materialLayers": [
-            "brass"
-        ],
-        "deformations": [],
-        "joints": [],
-        "seams": [],
-        "localFeatures": [
-            {
-                "id": "boot-eyelet-l4a-ring",
-                "kind": "fastener",
-                "description": "brass eyelet"
-            }
-        ],
-        "surfaceDetail": {
-            "macroRoughness": 0.0,
-            "microRoughness": 0.0,
-            "bumpAmplitude": 0.0,
-            "normalPattern": "",
-            "displacementPattern": "",
-            "occlusionPattern": "",
-            "edgeWearPattern": "",
-            "notes": ""
-        },
-        "evidenceRefs": [
-            "full-object",
-            "boots-zone"
-        ],
-        "details": [],
-        "fidelityTier": "form",
-        "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(145, 109, 44, 1.0)",
-            "secondaryAlbedo": "rgba(133, 95, 23, 1.0)",
-            "materialClass": "metal",
-            "materialClassConfidence": 0.7,
-            "evidenceRefs": [
-                "material-evidence/brass.png"
-            ]
-        }
-    };
-    node_boot_eyelet_l4a_32.add(mesh_boot_eyelet_l4a_32);
-    meshes["boot-eyelet-l4a"] = mesh_boot_eyelet_l4a_32;
-    colliders["boot-eyelet-l4a"] = {
-        "type": "box",
-        "offset": [
-            0,
-            0,
-            0
-        ],
-        "scale": [
-            1,
-            1,
-            1
-        ],
-        "isTrigger": false,
-        "notes": "box proxy"
-    };
-    destructionGroups["boot-eyelet-l4a"] ??= [];
-    destructionGroups["boot-eyelet-l4a"].push(node_boot_eyelet_l4a_32);
-    const endpoint_boot_eyelet_l4b_33 = makeAttachmentEndpoint(null);
-    const node_boot_eyelet_l4b_33 = new THREE.Group();
-    node_boot_eyelet_l4b_33.name = "Boot eyelet boot-eyelet-l4b__pivot";
-    node_boot_eyelet_l4b_33.scale.set(1, 1, 1);
-    if (endpoint_boot_eyelet_l4b_33) {
-        node_boot_eyelet_l4b_33.position.copy(endpoint_boot_eyelet_l4b_33.start);
-        node_boot_eyelet_l4b_33.rotation.set(0.0, 0.0, 0.0);
-    } else {
-        node_boot_eyelet_l4b_33.position.set(0.28, 0.35, 0.2938);
-        node_boot_eyelet_l4b_33.rotation.set(0.0, 0.0, 0.0);
-    }
-    node_boot_eyelet_l4b_33.userData.sculptComponent = {
-        "id": "boot-eyelet-l4b",
-        "name": "Boot eyelet boot-eyelet-l4b",
-        "level": "micro",
-        "role": "body",
-        "importance": 0.4,
-        "confidence": 0.8,
-        "primitive": "sphere",
-        "topologyClass": "assembled-solid",
-        "topologyRationale": "A small brass grommet: a discrete squashed sphere.",
-        "geometryDescriptor": {
-            "topologyIntent": "stylized character part",
-            "edgeTreatment": {
-                "type": "none",
-                "bevelRadius": 0.0,
-                "segments": 1
-            },
-            "deformationStack": [],
-            "uvStrategy": "generated procedural coordinates",
-            "normalStrategy": "smooth vertex normals",
-            "decimate": {
-                "targetRatio": 0.06
-            }
-        },
-        "parent": "boot-shell-l",
-        "attachment": null,
-        "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
-            "units": "relative",
-            "confidence": 0.8
-        },
-        "transform": {
-            "position": [
-                0.28,
-                0.35,
-                0.2938
-            ],
-            "rotation": [
-                0,
-                0,
-                0
-            ],
-            "scale": [
-                0.022,
-                0.022,
-                0.014
-            ]
-        },
-        "actionProfile": {
-            "animationRole": "static",
-            "pivot": {
-                "mode": "center",
-                "localPosition": [
-                    0,
-                    0,
-                    0
-                ],
-                "axis": [
-                    0,
-                    1,
-                    0
-                ],
-                "confidence": 0.7
-            },
-            "transformChannels": {
-                "translate": true,
-                "rotate": true,
-                "scale": true,
-                "bend": false,
-                "twist": false,
-                "detach": false,
-                "visibility": true,
-                "materialState": false
-            },
-            "sockets": [],
-            "collider": {
-                "type": "box",
-                "offset": [
-                    0,
-                    0,
-                    0
-                ],
-                "scale": [
-                    1,
-                    1,
-                    1
-                ],
-                "isTrigger": false,
-                "notes": "box proxy"
-            },
-            "constraints": [],
-            "destruction": {
-                "breakable": false,
-                "fractureGroup": "boot-eyelet-l4b",
-                "seamRefs": [],
-                "detachableFragments": [],
-                "breakImpulse": 0.0,
-                "debrisMaterial": "brass"
-            }
-        },
-        "material": "brass",
-        "materialLayers": [
-            "brass"
-        ],
-        "deformations": [],
-        "joints": [],
-        "seams": [],
-        "localFeatures": [
-            {
-                "id": "boot-eyelet-l4b-ring",
-                "kind": "fastener",
-                "description": "brass eyelet"
-            }
-        ],
-        "surfaceDetail": {
-            "macroRoughness": 0.0,
-            "microRoughness": 0.0,
-            "bumpAmplitude": 0.0,
-            "normalPattern": "",
-            "displacementPattern": "",
-            "occlusionPattern": "",
-            "edgeWearPattern": "",
-            "notes": ""
-        },
-        "evidenceRefs": [
-            "full-object",
-            "boots-zone"
-        ],
-        "details": [],
-        "fidelityTier": "form",
-        "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(145, 109, 44, 1.0)",
-            "secondaryAlbedo": "rgba(133, 95, 23, 1.0)",
-            "materialClass": "metal",
-            "materialClassConfidence": 0.7,
-            "evidenceRefs": [
-                "material-evidence/brass.png"
-            ]
-        }
-    };
-    node_boot_eyelet_l4b_33.userData.actionProfile = {
-        "animationRole": "static",
-        "pivot": {
-            "mode": "center",
-            "localPosition": [
-                0,
-                0,
-                0
-            ],
-            "axis": [
-                0,
-                1,
-                0
-            ],
-            "confidence": 0.7
-        },
-        "transformChannels": {
-            "translate": true,
-            "rotate": true,
-            "scale": true,
-            "bend": false,
-            "twist": false,
-            "detach": false,
-            "visibility": true,
-            "materialState": false
-        },
-        "sockets": [],
-        "collider": {
-            "type": "box",
-            "offset": [
-                0,
-                0,
-                0
-            ],
-            "scale": [
-                1,
-                1,
-                1
-            ],
-            "isTrigger": false,
-            "notes": "box proxy"
-        },
-        "constraints": [],
-        "destruction": {
-            "breakable": false,
-            "fractureGroup": "boot-eyelet-l4b",
-            "seamRefs": [],
-            "detachableFragments": [],
-            "breakImpulse": 0.0,
-            "debrisMaterial": "brass"
-        }
-    };
-    (nodes["boot-shell-l"] ?? root).add(node_boot_eyelet_l4b_33);
-    nodes["boot-eyelet-l4b"] = node_boot_eyelet_l4b_33;
-    const mesh_boot_eyelet_l4b_33GeometryDense = endpoint_boot_eyelet_l4b_33 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_l4b_33.endRadius, endpoint_boot_eyelet_l4b_33.baseRadius, endpoint_boot_eyelet_l4b_33.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_l4b_33Geometry = decimateGeometry(mesh_boot_eyelet_l4b_33GeometryDense, 0.06);
-    if (!endpoint_boot_eyelet_l4b_33) {
-        mesh_boot_eyelet_l4b_33Geometry.scale(0.022, 0.022, 0.014);
-    }
-    const mesh_boot_eyelet_l4b_33 = new THREE.Mesh(mesh_boot_eyelet_l4b_33Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
-        color: 0x888888
-    }));
-    mesh_boot_eyelet_l4b_33.name = "Boot eyelet boot-eyelet-l4b";
-    if (endpoint_boot_eyelet_l4b_33) {
-        mesh_boot_eyelet_l4b_33.position.copy(endpoint_boot_eyelet_l4b_33.midpoint);
-        mesh_boot_eyelet_l4b_33.quaternion.copy(endpoint_boot_eyelet_l4b_33.quaternion);
-    }
-    mesh_boot_eyelet_l4b_33.castShadow = options.castShadow ?? true;
-    mesh_boot_eyelet_l4b_33.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_eyelet_l4b_33.userData.sculptComponent = {
-        "id": "boot-eyelet-l4b",
-        "name": "Boot eyelet boot-eyelet-l4b",
-        "level": "micro",
-        "role": "body",
-        "importance": 0.4,
-        "confidence": 0.8,
-        "primitive": "sphere",
-        "topologyClass": "assembled-solid",
-        "topologyRationale": "A small brass grommet: a discrete squashed sphere.",
-        "geometryDescriptor": {
-            "topologyIntent": "stylized character part",
-            "edgeTreatment": {
-                "type": "none",
-                "bevelRadius": 0.0,
-                "segments": 1
-            },
-            "deformationStack": [],
-            "uvStrategy": "generated procedural coordinates",
-            "normalStrategy": "smooth vertex normals",
-            "decimate": {
-                "targetRatio": 0.06
-            }
-        },
-        "parent": "boot-shell-l",
-        "attachment": null,
-        "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
-            "units": "relative",
-            "confidence": 0.8
-        },
-        "transform": {
-            "position": [
-                0.28,
-                0.35,
-                0.2938
-            ],
-            "rotation": [
-                0,
-                0,
-                0
-            ],
-            "scale": [
-                0.022,
-                0.022,
-                0.014
-            ]
-        },
-        "actionProfile": {
-            "animationRole": "static",
-            "pivot": {
-                "mode": "center",
-                "localPosition": [
-                    0,
-                    0,
-                    0
-                ],
-                "axis": [
-                    0,
-                    1,
-                    0
-                ],
-                "confidence": 0.7
-            },
-            "transformChannels": {
-                "translate": true,
-                "rotate": true,
-                "scale": true,
-                "bend": false,
-                "twist": false,
-                "detach": false,
-                "visibility": true,
-                "materialState": false
-            },
-            "sockets": [],
-            "collider": {
-                "type": "box",
-                "offset": [
-                    0,
-                    0,
-                    0
-                ],
-                "scale": [
-                    1,
-                    1,
-                    1
-                ],
-                "isTrigger": false,
-                "notes": "box proxy"
-            },
-            "constraints": [],
-            "destruction": {
-                "breakable": false,
-                "fractureGroup": "boot-eyelet-l4b",
-                "seamRefs": [],
-                "detachableFragments": [],
-                "breakImpulse": 0.0,
-                "debrisMaterial": "brass"
-            }
-        },
-        "material": "brass",
-        "materialLayers": [
-            "brass"
-        ],
-        "deformations": [],
-        "joints": [],
-        "seams": [],
-        "localFeatures": [
-            {
-                "id": "boot-eyelet-l4b-ring",
-                "kind": "fastener",
-                "description": "brass eyelet"
-            }
-        ],
-        "surfaceDetail": {
-            "macroRoughness": 0.0,
-            "microRoughness": 0.0,
-            "bumpAmplitude": 0.0,
-            "normalPattern": "",
-            "displacementPattern": "",
-            "occlusionPattern": "",
-            "edgeWearPattern": "",
-            "notes": ""
-        },
-        "evidenceRefs": [
-            "full-object",
-            "boots-zone"
-        ],
-        "details": [],
-        "fidelityTier": "form",
-        "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(145, 109, 44, 1.0)",
-            "secondaryAlbedo": "rgba(133, 95, 23, 1.0)",
-            "materialClass": "metal",
-            "materialClassConfidence": 0.7,
-            "evidenceRefs": [
-                "material-evidence/brass.png"
-            ]
-        }
-    };
-    node_boot_eyelet_l4b_33.add(mesh_boot_eyelet_l4b_33);
-    meshes["boot-eyelet-l4b"] = mesh_boot_eyelet_l4b_33;
-    colliders["boot-eyelet-l4b"] = {
-        "type": "box",
-        "offset": [
-            0,
-            0,
-            0
-        ],
-        "scale": [
-            1,
-            1,
-            1
-        ],
-        "isTrigger": false,
-        "notes": "box proxy"
-    };
-    destructionGroups["boot-eyelet-l4b"] ??= [];
-    destructionGroups["boot-eyelet-l4b"].push(node_boot_eyelet_l4b_33);
-    const attachment_boot_lace_la0_34 = {
+    const attachment_boot_lace_la00_32 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.28,
-            0.17,
-            0.3893
+            0.273,
+            0.115,
+            0.442
         ],
         "localEnd": [
-            0.15,
-            0.215,
-            0.3375
+            0.217,
+            0.1365,
+            0.4478
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_la0_34 = makeAttachmentEndpoint(attachment_boot_lace_la0_34);
-    const node_boot_lace_la0_34 = new THREE.Group();
-    node_boot_lace_la0_34.name = "Boot lace run__pivot";
-    node_boot_lace_la0_34.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_la0_34) {
-        node_boot_lace_la0_34.position.copy(endpoint_boot_lace_la0_34.start);
-        node_boot_lace_la0_34.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_la00_32 = makeAttachmentEndpoint(attachment_boot_lace_la00_32);
+    const node_boot_lace_la00_32 = new THREE.Group();
+    node_boot_lace_la00_32.name = "Boot lace run__pivot";
+    node_boot_lace_la00_32.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_la00_32) {
+        node_boot_lace_la00_32.position.copy(endpoint_boot_lace_la00_32.start);
+        node_boot_lace_la00_32.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_la0_34.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_la0_34.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_la00_32.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_la00_32.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_la0_34.userData.sculptComponent = {
-        "id": "boot-lace-la0",
+    node_boot_lace_la00_32.userData.sculptComponent = {
+        "id": "boot-lace-la00",
         "name": "Boot lace run",
         "level": "micro",
         "role": "body",
@@ -26104,7 +25338,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -26120,18 +25354,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.28,
-                0.17,
-                0.3893
+                0.273,
+                0.115,
+                0.442
             ],
             "localEnd": [
-                0.15,
-                0.215,
-                0.3375
+                0.217,
+                0.1365,
+                0.4478
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -26207,7 +25441,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-la0",
+                "fractureGroup": "boot-lace-la00",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -26223,7 +25457,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-la0",
+                "id": "boot-laces-la00",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -26254,7 +25488,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_la0_34.userData.actionProfile = {
+    node_boot_lace_la00_32.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -26299,31 +25533,31 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-la0",
+            "fractureGroup": "boot-lace-la00",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la0_34);
-    nodes["boot-lace-la0"] = node_boot_lace_la0_34;
-    const mesh_boot_lace_la0_34Geometry = endpoint_boot_lace_la0_34 ? new THREE.CylinderGeometry(endpoint_boot_lace_la0_34.endRadius, endpoint_boot_lace_la0_34.baseRadius, endpoint_boot_lace_la0_34.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_la0_34) {
-        mesh_boot_lace_la0_34Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la00_32);
+    nodes["boot-lace-la00"] = node_boot_lace_la00_32;
+    const mesh_boot_lace_la00_32Geometry = endpoint_boot_lace_la00_32 ? new THREE.CylinderGeometry(endpoint_boot_lace_la00_32.endRadius, endpoint_boot_lace_la00_32.baseRadius, endpoint_boot_lace_la00_32.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_la00_32) {
+        mesh_boot_lace_la00_32Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_la0_34 = new THREE.Mesh(mesh_boot_lace_la0_34Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_la00_32 = new THREE.Mesh(mesh_boot_lace_la00_32Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_la0_34.name = "Boot lace run";
-    if (endpoint_boot_lace_la0_34) {
-        mesh_boot_lace_la0_34.position.copy(endpoint_boot_lace_la0_34.midpoint);
-        mesh_boot_lace_la0_34.quaternion.copy(endpoint_boot_lace_la0_34.quaternion);
+    mesh_boot_lace_la00_32.name = "Boot lace run";
+    if (endpoint_boot_lace_la00_32) {
+        mesh_boot_lace_la00_32.position.copy(endpoint_boot_lace_la00_32.midpoint);
+        mesh_boot_lace_la00_32.quaternion.copy(endpoint_boot_lace_la00_32.quaternion);
     }
-    mesh_boot_lace_la0_34.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_la0_34.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_la0_34.userData.sculptComponent = {
-        "id": "boot-lace-la0",
+    mesh_boot_lace_la00_32.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_la00_32.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_la00_32.userData.sculptComponent = {
+        "id": "boot-lace-la00",
         "name": "Boot lace run",
         "level": "micro",
         "role": "body",
@@ -26331,7 +25565,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -26347,18 +25581,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.28,
-                0.17,
-                0.3893
+                0.273,
+                0.115,
+                0.442
             ],
             "localEnd": [
-                0.15,
-                0.215,
-                0.3375
+                0.217,
+                0.1365,
+                0.4478
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -26434,7 +25668,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-la0",
+                "fractureGroup": "boot-lace-la00",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -26450,7 +25684,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-la0",
+                "id": "boot-laces-la00",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -26481,9 +25715,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_la0_34.add(mesh_boot_lace_la0_34);
-    meshes["boot-lace-la0"] = mesh_boot_lace_la0_34;
-    colliders["boot-lace-la0"] = {
+    node_boot_lace_la00_32.add(mesh_boot_lace_la00_32);
+    meshes["boot-lace-la00"] = mesh_boot_lace_la00_32;
+    colliders["boot-lace-la00"] = {
         "type": "box",
         "offset": [
             0,
@@ -26498,50 +25732,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-la0"] ??= [];
-    destructionGroups["boot-lace-la0"].push(node_boot_lace_la0_34);
-    const attachment_boot_lace_la1_35 = {
+    destructionGroups["boot-lace-la00"] ??= [];
+    destructionGroups["boot-lace-la00"].push(node_boot_lace_la00_32);
+    const attachment_boot_lace_la01_33 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.15,
-            0.215,
-            0.3375
+            0.217,
+            0.1365,
+            0.4478
         ],
         "localEnd": [
-            0.28,
-            0.26,
-            0.305
+            0.161,
+            0.158,
+            0.4106
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_la1_35 = makeAttachmentEndpoint(attachment_boot_lace_la1_35);
-    const node_boot_lace_la1_35 = new THREE.Group();
-    node_boot_lace_la1_35.name = "Boot lace run boot-lace-la1__pivot";
-    node_boot_lace_la1_35.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_la1_35) {
-        node_boot_lace_la1_35.position.copy(endpoint_boot_lace_la1_35.start);
-        node_boot_lace_la1_35.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_la01_33 = makeAttachmentEndpoint(attachment_boot_lace_la01_33);
+    const node_boot_lace_la01_33 = new THREE.Group();
+    node_boot_lace_la01_33.name = "Boot lace run boot-lace-la01__pivot";
+    node_boot_lace_la01_33.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_la01_33) {
+        node_boot_lace_la01_33.position.copy(endpoint_boot_lace_la01_33.start);
+        node_boot_lace_la01_33.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_la1_35.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_la1_35.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_la01_33.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_la01_33.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_la1_35.userData.sculptComponent = {
-        "id": "boot-lace-la1",
-        "name": "Boot lace run boot-lace-la1",
+    node_boot_lace_la01_33.userData.sculptComponent = {
+        "id": "boot-lace-la01",
+        "name": "Boot lace run boot-lace-la01",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -26557,18 +25791,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.15,
-                0.215,
-                0.3375
+                0.217,
+                0.1365,
+                0.4478
             ],
             "localEnd": [
-                0.28,
-                0.26,
-                0.305
+                0.161,
+                0.158,
+                0.4106
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -26644,7 +25878,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-la1",
+                "fractureGroup": "boot-lace-la01",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -26660,7 +25894,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-la1",
+                "id": "boot-laces-la01",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -26691,7 +25925,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_la1_35.userData.actionProfile = {
+    node_boot_lace_la01_33.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -26736,39 +25970,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-la1",
+            "fractureGroup": "boot-lace-la01",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la1_35);
-    nodes["boot-lace-la1"] = node_boot_lace_la1_35;
-    const mesh_boot_lace_la1_35Geometry = endpoint_boot_lace_la1_35 ? new THREE.CylinderGeometry(endpoint_boot_lace_la1_35.endRadius, endpoint_boot_lace_la1_35.baseRadius, endpoint_boot_lace_la1_35.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_la1_35) {
-        mesh_boot_lace_la1_35Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la01_33);
+    nodes["boot-lace-la01"] = node_boot_lace_la01_33;
+    const mesh_boot_lace_la01_33Geometry = endpoint_boot_lace_la01_33 ? new THREE.CylinderGeometry(endpoint_boot_lace_la01_33.endRadius, endpoint_boot_lace_la01_33.baseRadius, endpoint_boot_lace_la01_33.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_la01_33) {
+        mesh_boot_lace_la01_33Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_la1_35 = new THREE.Mesh(mesh_boot_lace_la1_35Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_la01_33 = new THREE.Mesh(mesh_boot_lace_la01_33Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_la1_35.name = "Boot lace run boot-lace-la1";
-    if (endpoint_boot_lace_la1_35) {
-        mesh_boot_lace_la1_35.position.copy(endpoint_boot_lace_la1_35.midpoint);
-        mesh_boot_lace_la1_35.quaternion.copy(endpoint_boot_lace_la1_35.quaternion);
+    mesh_boot_lace_la01_33.name = "Boot lace run boot-lace-la01";
+    if (endpoint_boot_lace_la01_33) {
+        mesh_boot_lace_la01_33.position.copy(endpoint_boot_lace_la01_33.midpoint);
+        mesh_boot_lace_la01_33.quaternion.copy(endpoint_boot_lace_la01_33.quaternion);
     }
-    mesh_boot_lace_la1_35.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_la1_35.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_la1_35.userData.sculptComponent = {
-        "id": "boot-lace-la1",
-        "name": "Boot lace run boot-lace-la1",
+    mesh_boot_lace_la01_33.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_la01_33.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_la01_33.userData.sculptComponent = {
+        "id": "boot-lace-la01",
+        "name": "Boot lace run boot-lace-la01",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -26784,18 +26018,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.15,
-                0.215,
-                0.3375
+                0.217,
+                0.1365,
+                0.4478
             ],
             "localEnd": [
-                0.28,
-                0.26,
-                0.305
+                0.161,
+                0.158,
+                0.4106
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -26871,7 +26105,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-la1",
+                "fractureGroup": "boot-lace-la01",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -26887,7 +26121,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-la1",
+                "id": "boot-laces-la01",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -26918,9 +26152,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_la1_35.add(mesh_boot_lace_la1_35);
-    meshes["boot-lace-la1"] = mesh_boot_lace_la1_35;
-    colliders["boot-lace-la1"] = {
+    node_boot_lace_la01_33.add(mesh_boot_lace_la01_33);
+    meshes["boot-lace-la01"] = mesh_boot_lace_la01_33;
+    colliders["boot-lace-la01"] = {
         "type": "box",
         "offset": [
             0,
@@ -26935,50 +26169,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-la1"] ??= [];
-    destructionGroups["boot-lace-la1"].push(node_boot_lace_la1_35);
-    const attachment_boot_lace_la2_36 = {
+    destructionGroups["boot-lace-la01"] ??= [];
+    destructionGroups["boot-lace-la01"].push(node_boot_lace_la01_33);
+    const attachment_boot_lace_la10_34 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.28,
-            0.26,
-            0.305
+            0.161,
+            0.158,
+            0.4106
         ],
         "localEnd": [
-            0.15,
-            0.305,
-            0.2892
+            0.217,
+            0.1795,
+            0.4031
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_la2_36 = makeAttachmentEndpoint(attachment_boot_lace_la2_36);
-    const node_boot_lace_la2_36 = new THREE.Group();
-    node_boot_lace_la2_36.name = "Boot lace run boot-lace-la2__pivot";
-    node_boot_lace_la2_36.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_la2_36) {
-        node_boot_lace_la2_36.position.copy(endpoint_boot_lace_la2_36.start);
-        node_boot_lace_la2_36.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_la10_34 = makeAttachmentEndpoint(attachment_boot_lace_la10_34);
+    const node_boot_lace_la10_34 = new THREE.Group();
+    node_boot_lace_la10_34.name = "Boot lace run boot-lace-la10__pivot";
+    node_boot_lace_la10_34.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_la10_34) {
+        node_boot_lace_la10_34.position.copy(endpoint_boot_lace_la10_34.start);
+        node_boot_lace_la10_34.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_la2_36.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_la2_36.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_la10_34.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_la10_34.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_la2_36.userData.sculptComponent = {
-        "id": "boot-lace-la2",
-        "name": "Boot lace run boot-lace-la2",
+    node_boot_lace_la10_34.userData.sculptComponent = {
+        "id": "boot-lace-la10",
+        "name": "Boot lace run boot-lace-la10",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -26994,18 +26228,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.28,
-                0.26,
-                0.305
+                0.161,
+                0.158,
+                0.4106
             ],
             "localEnd": [
-                0.15,
-                0.305,
-                0.2892
+                0.217,
+                0.1795,
+                0.4031
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -27081,7 +26315,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-la2",
+                "fractureGroup": "boot-lace-la10",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -27097,7 +26331,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-la2",
+                "id": "boot-laces-la10",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -27128,7 +26362,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_la2_36.userData.actionProfile = {
+    node_boot_lace_la10_34.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -27173,39 +26407,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-la2",
+            "fractureGroup": "boot-lace-la10",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la2_36);
-    nodes["boot-lace-la2"] = node_boot_lace_la2_36;
-    const mesh_boot_lace_la2_36Geometry = endpoint_boot_lace_la2_36 ? new THREE.CylinderGeometry(endpoint_boot_lace_la2_36.endRadius, endpoint_boot_lace_la2_36.baseRadius, endpoint_boot_lace_la2_36.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_la2_36) {
-        mesh_boot_lace_la2_36Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la10_34);
+    nodes["boot-lace-la10"] = node_boot_lace_la10_34;
+    const mesh_boot_lace_la10_34Geometry = endpoint_boot_lace_la10_34 ? new THREE.CylinderGeometry(endpoint_boot_lace_la10_34.endRadius, endpoint_boot_lace_la10_34.baseRadius, endpoint_boot_lace_la10_34.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_la10_34) {
+        mesh_boot_lace_la10_34Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_la2_36 = new THREE.Mesh(mesh_boot_lace_la2_36Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_la10_34 = new THREE.Mesh(mesh_boot_lace_la10_34Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_la2_36.name = "Boot lace run boot-lace-la2";
-    if (endpoint_boot_lace_la2_36) {
-        mesh_boot_lace_la2_36.position.copy(endpoint_boot_lace_la2_36.midpoint);
-        mesh_boot_lace_la2_36.quaternion.copy(endpoint_boot_lace_la2_36.quaternion);
+    mesh_boot_lace_la10_34.name = "Boot lace run boot-lace-la10";
+    if (endpoint_boot_lace_la10_34) {
+        mesh_boot_lace_la10_34.position.copy(endpoint_boot_lace_la10_34.midpoint);
+        mesh_boot_lace_la10_34.quaternion.copy(endpoint_boot_lace_la10_34.quaternion);
     }
-    mesh_boot_lace_la2_36.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_la2_36.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_la2_36.userData.sculptComponent = {
-        "id": "boot-lace-la2",
-        "name": "Boot lace run boot-lace-la2",
+    mesh_boot_lace_la10_34.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_la10_34.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_la10_34.userData.sculptComponent = {
+        "id": "boot-lace-la10",
+        "name": "Boot lace run boot-lace-la10",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -27221,18 +26455,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.28,
-                0.26,
-                0.305
+                0.161,
+                0.158,
+                0.4106
             ],
             "localEnd": [
-                0.15,
-                0.305,
-                0.2892
+                0.217,
+                0.1795,
+                0.4031
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -27308,7 +26542,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-la2",
+                "fractureGroup": "boot-lace-la10",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -27324,7 +26558,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-la2",
+                "id": "boot-laces-la10",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -27355,9 +26589,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_la2_36.add(mesh_boot_lace_la2_36);
-    meshes["boot-lace-la2"] = mesh_boot_lace_la2_36;
-    colliders["boot-lace-la2"] = {
+    node_boot_lace_la10_34.add(mesh_boot_lace_la10_34);
+    meshes["boot-lace-la10"] = mesh_boot_lace_la10_34;
+    colliders["boot-lace-la10"] = {
         "type": "box",
         "offset": [
             0,
@@ -27372,50 +26606,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-la2"] ??= [];
-    destructionGroups["boot-lace-la2"].push(node_boot_lace_la2_36);
-    const attachment_boot_lace_la3_37 = {
+    destructionGroups["boot-lace-la10"] ??= [];
+    destructionGroups["boot-lace-la10"].push(node_boot_lace_la10_34);
+    const attachment_boot_lace_la11_35 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.15,
-            0.305,
-            0.2892
+            0.217,
+            0.1795,
+            0.4031
         ],
         "localEnd": [
-            0.28,
-            0.35,
-            0.3038
+            0.273,
+            0.201,
+            0.3594
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_la3_37 = makeAttachmentEndpoint(attachment_boot_lace_la3_37);
-    const node_boot_lace_la3_37 = new THREE.Group();
-    node_boot_lace_la3_37.name = "Boot lace run boot-lace-la3__pivot";
-    node_boot_lace_la3_37.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_la3_37) {
-        node_boot_lace_la3_37.position.copy(endpoint_boot_lace_la3_37.start);
-        node_boot_lace_la3_37.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_la11_35 = makeAttachmentEndpoint(attachment_boot_lace_la11_35);
+    const node_boot_lace_la11_35 = new THREE.Group();
+    node_boot_lace_la11_35.name = "Boot lace run boot-lace-la11__pivot";
+    node_boot_lace_la11_35.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_la11_35) {
+        node_boot_lace_la11_35.position.copy(endpoint_boot_lace_la11_35.start);
+        node_boot_lace_la11_35.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_la3_37.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_la3_37.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_la11_35.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_la11_35.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_la3_37.userData.sculptComponent = {
-        "id": "boot-lace-la3",
-        "name": "Boot lace run boot-lace-la3",
+    node_boot_lace_la11_35.userData.sculptComponent = {
+        "id": "boot-lace-la11",
+        "name": "Boot lace run boot-lace-la11",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -27431,18 +26665,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.15,
-                0.305,
-                0.2892
+                0.217,
+                0.1795,
+                0.4031
             ],
             "localEnd": [
-                0.28,
-                0.35,
-                0.3038
+                0.273,
+                0.201,
+                0.3594
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -27518,7 +26752,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-la3",
+                "fractureGroup": "boot-lace-la11",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -27534,7 +26768,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-la3",
+                "id": "boot-laces-la11",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -27565,7 +26799,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_la3_37.userData.actionProfile = {
+    node_boot_lace_la11_35.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -27610,39 +26844,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-la3",
+            "fractureGroup": "boot-lace-la11",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la3_37);
-    nodes["boot-lace-la3"] = node_boot_lace_la3_37;
-    const mesh_boot_lace_la3_37Geometry = endpoint_boot_lace_la3_37 ? new THREE.CylinderGeometry(endpoint_boot_lace_la3_37.endRadius, endpoint_boot_lace_la3_37.baseRadius, endpoint_boot_lace_la3_37.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_la3_37) {
-        mesh_boot_lace_la3_37Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la11_35);
+    nodes["boot-lace-la11"] = node_boot_lace_la11_35;
+    const mesh_boot_lace_la11_35Geometry = endpoint_boot_lace_la11_35 ? new THREE.CylinderGeometry(endpoint_boot_lace_la11_35.endRadius, endpoint_boot_lace_la11_35.baseRadius, endpoint_boot_lace_la11_35.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_la11_35) {
+        mesh_boot_lace_la11_35Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_la3_37 = new THREE.Mesh(mesh_boot_lace_la3_37Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_la11_35 = new THREE.Mesh(mesh_boot_lace_la11_35Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_la3_37.name = "Boot lace run boot-lace-la3";
-    if (endpoint_boot_lace_la3_37) {
-        mesh_boot_lace_la3_37.position.copy(endpoint_boot_lace_la3_37.midpoint);
-        mesh_boot_lace_la3_37.quaternion.copy(endpoint_boot_lace_la3_37.quaternion);
+    mesh_boot_lace_la11_35.name = "Boot lace run boot-lace-la11";
+    if (endpoint_boot_lace_la11_35) {
+        mesh_boot_lace_la11_35.position.copy(endpoint_boot_lace_la11_35.midpoint);
+        mesh_boot_lace_la11_35.quaternion.copy(endpoint_boot_lace_la11_35.quaternion);
     }
-    mesh_boot_lace_la3_37.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_la3_37.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_la3_37.userData.sculptComponent = {
-        "id": "boot-lace-la3",
-        "name": "Boot lace run boot-lace-la3",
+    mesh_boot_lace_la11_35.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_la11_35.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_la11_35.userData.sculptComponent = {
+        "id": "boot-lace-la11",
+        "name": "Boot lace run boot-lace-la11",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -27658,18 +26892,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.15,
-                0.305,
-                0.2892
+                0.217,
+                0.1795,
+                0.4031
             ],
             "localEnd": [
-                0.28,
-                0.35,
-                0.3038
+                0.273,
+                0.201,
+                0.3594
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -27745,7 +26979,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-la3",
+                "fractureGroup": "boot-lace-la11",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -27761,7 +26995,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-la3",
+                "id": "boot-laces-la11",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -27792,9 +27026,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_la3_37.add(mesh_boot_lace_la3_37);
-    meshes["boot-lace-la3"] = mesh_boot_lace_la3_37;
-    colliders["boot-lace-la3"] = {
+    node_boot_lace_la11_35.add(mesh_boot_lace_la11_35);
+    meshes["boot-lace-la11"] = mesh_boot_lace_la11_35;
+    colliders["boot-lace-la11"] = {
         "type": "box",
         "offset": [
             0,
@@ -27809,50 +27043,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-la3"] ??= [];
-    destructionGroups["boot-lace-la3"].push(node_boot_lace_la3_37);
-    const attachment_boot_lace_lb0_38 = {
+    destructionGroups["boot-lace-la11"] ??= [];
+    destructionGroups["boot-lace-la11"].push(node_boot_lace_la11_35);
+    const attachment_boot_lace_la20_36 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.15,
-            0.17,
-            0.3893
+            0.273,
+            0.201,
+            0.3594
         ],
         "localEnd": [
-            0.28,
-            0.215,
-            0.3375
+            0.217,
+            0.2225,
+            0.3546
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_lb0_38 = makeAttachmentEndpoint(attachment_boot_lace_lb0_38);
-    const node_boot_lace_lb0_38 = new THREE.Group();
-    node_boot_lace_lb0_38.name = "Boot lace run boot-lace-lb0__pivot";
-    node_boot_lace_lb0_38.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_lb0_38) {
-        node_boot_lace_lb0_38.position.copy(endpoint_boot_lace_lb0_38.start);
-        node_boot_lace_lb0_38.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_la20_36 = makeAttachmentEndpoint(attachment_boot_lace_la20_36);
+    const node_boot_lace_la20_36 = new THREE.Group();
+    node_boot_lace_la20_36.name = "Boot lace run boot-lace-la20__pivot";
+    node_boot_lace_la20_36.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_la20_36) {
+        node_boot_lace_la20_36.position.copy(endpoint_boot_lace_la20_36.start);
+        node_boot_lace_la20_36.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_lb0_38.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_lb0_38.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_la20_36.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_la20_36.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_lb0_38.userData.sculptComponent = {
-        "id": "boot-lace-lb0",
-        "name": "Boot lace run boot-lace-lb0",
+    node_boot_lace_la20_36.userData.sculptComponent = {
+        "id": "boot-lace-la20",
+        "name": "Boot lace run boot-lace-la20",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -27868,18 +27102,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.15,
-                0.17,
-                0.3893
+                0.273,
+                0.201,
+                0.3594
             ],
             "localEnd": [
-                0.28,
-                0.215,
-                0.3375
+                0.217,
+                0.2225,
+                0.3546
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -27955,7 +27189,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-lb0",
+                "fractureGroup": "boot-lace-la20",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -27971,7 +27205,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-lb0",
+                "id": "boot-laces-la20",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -28002,7 +27236,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_lb0_38.userData.actionProfile = {
+    node_boot_lace_la20_36.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -28047,39 +27281,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-lb0",
+            "fractureGroup": "boot-lace-la20",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb0_38);
-    nodes["boot-lace-lb0"] = node_boot_lace_lb0_38;
-    const mesh_boot_lace_lb0_38Geometry = endpoint_boot_lace_lb0_38 ? new THREE.CylinderGeometry(endpoint_boot_lace_lb0_38.endRadius, endpoint_boot_lace_lb0_38.baseRadius, endpoint_boot_lace_lb0_38.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_lb0_38) {
-        mesh_boot_lace_lb0_38Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la20_36);
+    nodes["boot-lace-la20"] = node_boot_lace_la20_36;
+    const mesh_boot_lace_la20_36Geometry = endpoint_boot_lace_la20_36 ? new THREE.CylinderGeometry(endpoint_boot_lace_la20_36.endRadius, endpoint_boot_lace_la20_36.baseRadius, endpoint_boot_lace_la20_36.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_la20_36) {
+        mesh_boot_lace_la20_36Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_lb0_38 = new THREE.Mesh(mesh_boot_lace_lb0_38Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_la20_36 = new THREE.Mesh(mesh_boot_lace_la20_36Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_lb0_38.name = "Boot lace run boot-lace-lb0";
-    if (endpoint_boot_lace_lb0_38) {
-        mesh_boot_lace_lb0_38.position.copy(endpoint_boot_lace_lb0_38.midpoint);
-        mesh_boot_lace_lb0_38.quaternion.copy(endpoint_boot_lace_lb0_38.quaternion);
+    mesh_boot_lace_la20_36.name = "Boot lace run boot-lace-la20";
+    if (endpoint_boot_lace_la20_36) {
+        mesh_boot_lace_la20_36.position.copy(endpoint_boot_lace_la20_36.midpoint);
+        mesh_boot_lace_la20_36.quaternion.copy(endpoint_boot_lace_la20_36.quaternion);
     }
-    mesh_boot_lace_lb0_38.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_lb0_38.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_lb0_38.userData.sculptComponent = {
-        "id": "boot-lace-lb0",
-        "name": "Boot lace run boot-lace-lb0",
+    mesh_boot_lace_la20_36.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_la20_36.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_la20_36.userData.sculptComponent = {
+        "id": "boot-lace-la20",
+        "name": "Boot lace run boot-lace-la20",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -28095,18 +27329,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.15,
-                0.17,
-                0.3893
+                0.273,
+                0.201,
+                0.3594
             ],
             "localEnd": [
-                0.28,
-                0.215,
-                0.3375
+                0.217,
+                0.2225,
+                0.3546
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -28182,7 +27416,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-lb0",
+                "fractureGroup": "boot-lace-la20",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -28198,7 +27432,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-lb0",
+                "id": "boot-laces-la20",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -28229,9 +27463,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_lb0_38.add(mesh_boot_lace_lb0_38);
-    meshes["boot-lace-lb0"] = mesh_boot_lace_lb0_38;
-    colliders["boot-lace-lb0"] = {
+    node_boot_lace_la20_36.add(mesh_boot_lace_la20_36);
+    meshes["boot-lace-la20"] = mesh_boot_lace_la20_36;
+    colliders["boot-lace-la20"] = {
         "type": "box",
         "offset": [
             0,
@@ -28246,50 +27480,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-lb0"] ??= [];
-    destructionGroups["boot-lace-lb0"].push(node_boot_lace_lb0_38);
-    const attachment_boot_lace_lb1_39 = {
+    destructionGroups["boot-lace-la20"] ??= [];
+    destructionGroups["boot-lace-la20"].push(node_boot_lace_la20_36);
+    const attachment_boot_lace_la21_37 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.28,
-            0.215,
-            0.3375
+            0.217,
+            0.2225,
+            0.3546
         ],
         "localEnd": [
-            0.15,
-            0.26,
-            0.305
+            0.161,
+            0.244,
+            0.323
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_lb1_39 = makeAttachmentEndpoint(attachment_boot_lace_lb1_39);
-    const node_boot_lace_lb1_39 = new THREE.Group();
-    node_boot_lace_lb1_39.name = "Boot lace run boot-lace-lb1__pivot";
-    node_boot_lace_lb1_39.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_lb1_39) {
-        node_boot_lace_lb1_39.position.copy(endpoint_boot_lace_lb1_39.start);
-        node_boot_lace_lb1_39.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_la21_37 = makeAttachmentEndpoint(attachment_boot_lace_la21_37);
+    const node_boot_lace_la21_37 = new THREE.Group();
+    node_boot_lace_la21_37.name = "Boot lace run boot-lace-la21__pivot";
+    node_boot_lace_la21_37.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_la21_37) {
+        node_boot_lace_la21_37.position.copy(endpoint_boot_lace_la21_37.start);
+        node_boot_lace_la21_37.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_lb1_39.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_lb1_39.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_la21_37.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_la21_37.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_lb1_39.userData.sculptComponent = {
-        "id": "boot-lace-lb1",
-        "name": "Boot lace run boot-lace-lb1",
+    node_boot_lace_la21_37.userData.sculptComponent = {
+        "id": "boot-lace-la21",
+        "name": "Boot lace run boot-lace-la21",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -28305,18 +27539,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.28,
-                0.215,
-                0.3375
+                0.217,
+                0.2225,
+                0.3546
             ],
             "localEnd": [
-                0.15,
-                0.26,
-                0.305
+                0.161,
+                0.244,
+                0.323
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -28392,7 +27626,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-lb1",
+                "fractureGroup": "boot-lace-la21",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -28408,7 +27642,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-lb1",
+                "id": "boot-laces-la21",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -28439,7 +27673,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_lb1_39.userData.actionProfile = {
+    node_boot_lace_la21_37.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -28484,39 +27718,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-lb1",
+            "fractureGroup": "boot-lace-la21",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb1_39);
-    nodes["boot-lace-lb1"] = node_boot_lace_lb1_39;
-    const mesh_boot_lace_lb1_39Geometry = endpoint_boot_lace_lb1_39 ? new THREE.CylinderGeometry(endpoint_boot_lace_lb1_39.endRadius, endpoint_boot_lace_lb1_39.baseRadius, endpoint_boot_lace_lb1_39.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_lb1_39) {
-        mesh_boot_lace_lb1_39Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_la21_37);
+    nodes["boot-lace-la21"] = node_boot_lace_la21_37;
+    const mesh_boot_lace_la21_37Geometry = endpoint_boot_lace_la21_37 ? new THREE.CylinderGeometry(endpoint_boot_lace_la21_37.endRadius, endpoint_boot_lace_la21_37.baseRadius, endpoint_boot_lace_la21_37.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_la21_37) {
+        mesh_boot_lace_la21_37Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_lb1_39 = new THREE.Mesh(mesh_boot_lace_lb1_39Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_la21_37 = new THREE.Mesh(mesh_boot_lace_la21_37Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_lb1_39.name = "Boot lace run boot-lace-lb1";
-    if (endpoint_boot_lace_lb1_39) {
-        mesh_boot_lace_lb1_39.position.copy(endpoint_boot_lace_lb1_39.midpoint);
-        mesh_boot_lace_lb1_39.quaternion.copy(endpoint_boot_lace_lb1_39.quaternion);
+    mesh_boot_lace_la21_37.name = "Boot lace run boot-lace-la21";
+    if (endpoint_boot_lace_la21_37) {
+        mesh_boot_lace_la21_37.position.copy(endpoint_boot_lace_la21_37.midpoint);
+        mesh_boot_lace_la21_37.quaternion.copy(endpoint_boot_lace_la21_37.quaternion);
     }
-    mesh_boot_lace_lb1_39.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_lb1_39.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_lb1_39.userData.sculptComponent = {
-        "id": "boot-lace-lb1",
-        "name": "Boot lace run boot-lace-lb1",
+    mesh_boot_lace_la21_37.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_la21_37.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_la21_37.userData.sculptComponent = {
+        "id": "boot-lace-la21",
+        "name": "Boot lace run boot-lace-la21",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -28532,18 +27766,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.28,
-                0.215,
-                0.3375
+                0.217,
+                0.2225,
+                0.3546
             ],
             "localEnd": [
-                0.15,
-                0.26,
-                0.305
+                0.161,
+                0.244,
+                0.323
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -28619,7 +27853,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-lb1",
+                "fractureGroup": "boot-lace-la21",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -28635,7 +27869,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-lb1",
+                "id": "boot-laces-la21",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -28666,9 +27900,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_lb1_39.add(mesh_boot_lace_lb1_39);
-    meshes["boot-lace-lb1"] = mesh_boot_lace_lb1_39;
-    colliders["boot-lace-lb1"] = {
+    node_boot_lace_la21_37.add(mesh_boot_lace_la21_37);
+    meshes["boot-lace-la21"] = mesh_boot_lace_la21_37;
+    colliders["boot-lace-la21"] = {
         "type": "box",
         "offset": [
             0,
@@ -28683,50 +27917,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-lb1"] ??= [];
-    destructionGroups["boot-lace-lb1"].push(node_boot_lace_lb1_39);
-    const attachment_boot_lace_lb2_40 = {
+    destructionGroups["boot-lace-la21"] ??= [];
+    destructionGroups["boot-lace-la21"].push(node_boot_lace_la21_37);
+    const attachment_boot_lace_lb00_38 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.15,
-            0.26,
-            0.305
+            0.161,
+            0.115,
+            0.442
         ],
         "localEnd": [
-            0.28,
-            0.305,
-            0.2892
+            0.217,
+            0.1365,
+            0.4578
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_lb2_40 = makeAttachmentEndpoint(attachment_boot_lace_lb2_40);
-    const node_boot_lace_lb2_40 = new THREE.Group();
-    node_boot_lace_lb2_40.name = "Boot lace run boot-lace-lb2__pivot";
-    node_boot_lace_lb2_40.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_lb2_40) {
-        node_boot_lace_lb2_40.position.copy(endpoint_boot_lace_lb2_40.start);
-        node_boot_lace_lb2_40.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_lb00_38 = makeAttachmentEndpoint(attachment_boot_lace_lb00_38);
+    const node_boot_lace_lb00_38 = new THREE.Group();
+    node_boot_lace_lb00_38.name = "Boot lace run boot-lace-lb00__pivot";
+    node_boot_lace_lb00_38.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_lb00_38) {
+        node_boot_lace_lb00_38.position.copy(endpoint_boot_lace_lb00_38.start);
+        node_boot_lace_lb00_38.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_lb2_40.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_lb2_40.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_lb00_38.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_lb00_38.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_lb2_40.userData.sculptComponent = {
-        "id": "boot-lace-lb2",
-        "name": "Boot lace run boot-lace-lb2",
+    node_boot_lace_lb00_38.userData.sculptComponent = {
+        "id": "boot-lace-lb00",
+        "name": "Boot lace run boot-lace-lb00",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -28742,18 +27976,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.15,
-                0.26,
-                0.305
+                0.161,
+                0.115,
+                0.442
             ],
             "localEnd": [
-                0.28,
-                0.305,
-                0.2892
+                0.217,
+                0.1365,
+                0.4578
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -28829,7 +28063,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-lb2",
+                "fractureGroup": "boot-lace-lb00",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -28845,7 +28079,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-lb2",
+                "id": "boot-laces-lb00",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -28876,7 +28110,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_lb2_40.userData.actionProfile = {
+    node_boot_lace_lb00_38.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -28921,39 +28155,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-lb2",
+            "fractureGroup": "boot-lace-lb00",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb2_40);
-    nodes["boot-lace-lb2"] = node_boot_lace_lb2_40;
-    const mesh_boot_lace_lb2_40Geometry = endpoint_boot_lace_lb2_40 ? new THREE.CylinderGeometry(endpoint_boot_lace_lb2_40.endRadius, endpoint_boot_lace_lb2_40.baseRadius, endpoint_boot_lace_lb2_40.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_lb2_40) {
-        mesh_boot_lace_lb2_40Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb00_38);
+    nodes["boot-lace-lb00"] = node_boot_lace_lb00_38;
+    const mesh_boot_lace_lb00_38Geometry = endpoint_boot_lace_lb00_38 ? new THREE.CylinderGeometry(endpoint_boot_lace_lb00_38.endRadius, endpoint_boot_lace_lb00_38.baseRadius, endpoint_boot_lace_lb00_38.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_lb00_38) {
+        mesh_boot_lace_lb00_38Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_lb2_40 = new THREE.Mesh(mesh_boot_lace_lb2_40Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_lb00_38 = new THREE.Mesh(mesh_boot_lace_lb00_38Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_lb2_40.name = "Boot lace run boot-lace-lb2";
-    if (endpoint_boot_lace_lb2_40) {
-        mesh_boot_lace_lb2_40.position.copy(endpoint_boot_lace_lb2_40.midpoint);
-        mesh_boot_lace_lb2_40.quaternion.copy(endpoint_boot_lace_lb2_40.quaternion);
+    mesh_boot_lace_lb00_38.name = "Boot lace run boot-lace-lb00";
+    if (endpoint_boot_lace_lb00_38) {
+        mesh_boot_lace_lb00_38.position.copy(endpoint_boot_lace_lb00_38.midpoint);
+        mesh_boot_lace_lb00_38.quaternion.copy(endpoint_boot_lace_lb00_38.quaternion);
     }
-    mesh_boot_lace_lb2_40.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_lb2_40.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_lb2_40.userData.sculptComponent = {
-        "id": "boot-lace-lb2",
-        "name": "Boot lace run boot-lace-lb2",
+    mesh_boot_lace_lb00_38.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_lb00_38.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_lb00_38.userData.sculptComponent = {
+        "id": "boot-lace-lb00",
+        "name": "Boot lace run boot-lace-lb00",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -28969,18 +28203,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.15,
-                0.26,
-                0.305
+                0.161,
+                0.115,
+                0.442
             ],
             "localEnd": [
-                0.28,
-                0.305,
-                0.2892
+                0.217,
+                0.1365,
+                0.4578
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -29056,7 +28290,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-lb2",
+                "fractureGroup": "boot-lace-lb00",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -29072,7 +28306,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-lb2",
+                "id": "boot-laces-lb00",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -29103,9 +28337,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_lb2_40.add(mesh_boot_lace_lb2_40);
-    meshes["boot-lace-lb2"] = mesh_boot_lace_lb2_40;
-    colliders["boot-lace-lb2"] = {
+    node_boot_lace_lb00_38.add(mesh_boot_lace_lb00_38);
+    meshes["boot-lace-lb00"] = mesh_boot_lace_lb00_38;
+    colliders["boot-lace-lb00"] = {
         "type": "box",
         "offset": [
             0,
@@ -29120,50 +28354,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-lb2"] ??= [];
-    destructionGroups["boot-lace-lb2"].push(node_boot_lace_lb2_40);
-    const attachment_boot_lace_lb3_41 = {
+    destructionGroups["boot-lace-lb00"] ??= [];
+    destructionGroups["boot-lace-lb00"].push(node_boot_lace_lb00_38);
+    const attachment_boot_lace_lb01_39 = {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-            0.28,
-            0.305,
-            0.2892
+            0.217,
+            0.1365,
+            0.4578
         ],
         "localEnd": [
-            0.15,
-            0.35,
-            0.3038
+            0.273,
+            0.158,
+            0.4106
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_lb3_41 = makeAttachmentEndpoint(attachment_boot_lace_lb3_41);
-    const node_boot_lace_lb3_41 = new THREE.Group();
-    node_boot_lace_lb3_41.name = "Boot lace run boot-lace-lb3__pivot";
-    node_boot_lace_lb3_41.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_lb3_41) {
-        node_boot_lace_lb3_41.position.copy(endpoint_boot_lace_lb3_41.start);
-        node_boot_lace_lb3_41.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_lb01_39 = makeAttachmentEndpoint(attachment_boot_lace_lb01_39);
+    const node_boot_lace_lb01_39 = new THREE.Group();
+    node_boot_lace_lb01_39.name = "Boot lace run boot-lace-lb01__pivot";
+    node_boot_lace_lb01_39.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_lb01_39) {
+        node_boot_lace_lb01_39.position.copy(endpoint_boot_lace_lb01_39.start);
+        node_boot_lace_lb01_39.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_lb3_41.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_lb3_41.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_lb01_39.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_lb01_39.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_lb3_41.userData.sculptComponent = {
-        "id": "boot-lace-lb3",
-        "name": "Boot lace run boot-lace-lb3",
+    node_boot_lace_lb01_39.userData.sculptComponent = {
+        "id": "boot-lace-lb01",
+        "name": "Boot lace run boot-lace-lb01",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -29179,18 +28413,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.28,
-                0.305,
-                0.2892
+                0.217,
+                0.1365,
+                0.4578
             ],
             "localEnd": [
-                0.15,
-                0.35,
-                0.3038
+                0.273,
+                0.158,
+                0.4106
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -29266,7 +28500,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-lb3",
+                "fractureGroup": "boot-lace-lb01",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -29282,7 +28516,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-lb3",
+                "id": "boot-laces-lb01",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -29313,7 +28547,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_lb3_41.userData.actionProfile = {
+    node_boot_lace_lb01_39.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -29358,39 +28592,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-lb3",
+            "fractureGroup": "boot-lace-lb01",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb3_41);
-    nodes["boot-lace-lb3"] = node_boot_lace_lb3_41;
-    const mesh_boot_lace_lb3_41Geometry = endpoint_boot_lace_lb3_41 ? new THREE.CylinderGeometry(endpoint_boot_lace_lb3_41.endRadius, endpoint_boot_lace_lb3_41.baseRadius, endpoint_boot_lace_lb3_41.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_lb3_41) {
-        mesh_boot_lace_lb3_41Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb01_39);
+    nodes["boot-lace-lb01"] = node_boot_lace_lb01_39;
+    const mesh_boot_lace_lb01_39Geometry = endpoint_boot_lace_lb01_39 ? new THREE.CylinderGeometry(endpoint_boot_lace_lb01_39.endRadius, endpoint_boot_lace_lb01_39.baseRadius, endpoint_boot_lace_lb01_39.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_lb01_39) {
+        mesh_boot_lace_lb01_39Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_lb3_41 = new THREE.Mesh(mesh_boot_lace_lb3_41Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_lb01_39 = new THREE.Mesh(mesh_boot_lace_lb01_39Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_lb3_41.name = "Boot lace run boot-lace-lb3";
-    if (endpoint_boot_lace_lb3_41) {
-        mesh_boot_lace_lb3_41.position.copy(endpoint_boot_lace_lb3_41.midpoint);
-        mesh_boot_lace_lb3_41.quaternion.copy(endpoint_boot_lace_lb3_41.quaternion);
+    mesh_boot_lace_lb01_39.name = "Boot lace run boot-lace-lb01";
+    if (endpoint_boot_lace_lb01_39) {
+        mesh_boot_lace_lb01_39.position.copy(endpoint_boot_lace_lb01_39.midpoint);
+        mesh_boot_lace_lb01_39.quaternion.copy(endpoint_boot_lace_lb01_39.quaternion);
     }
-    mesh_boot_lace_lb3_41.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_lb3_41.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_lb3_41.userData.sculptComponent = {
-        "id": "boot-lace-lb3",
-        "name": "Boot lace run boot-lace-lb3",
+    mesh_boot_lace_lb01_39.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_lb01_39.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_lb01_39.userData.sculptComponent = {
+        "id": "boot-lace-lb01",
+        "name": "Boot lace run boot-lace-lb01",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -29406,18 +28640,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-l-eyelets",
             "localStart": [
-                0.28,
-                0.305,
-                0.2892
+                0.217,
+                0.1365,
+                0.4578
             ],
             "localEnd": [
-                0.15,
-                0.35,
-                0.3038
+                0.273,
+                0.158,
+                0.4106
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -29493,7 +28727,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-lb3",
+                "fractureGroup": "boot-lace-lb01",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -29509,7 +28743,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-lb3",
+                "id": "boot-laces-lb01",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -29540,9 +28774,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_lb3_41.add(mesh_boot_lace_lb3_41);
-    meshes["boot-lace-lb3"] = mesh_boot_lace_lb3_41;
-    colliders["boot-lace-lb3"] = {
+    node_boot_lace_lb01_39.add(mesh_boot_lace_lb01_39);
+    meshes["boot-lace-lb01"] = mesh_boot_lace_lb01_39;
+    colliders["boot-lace-lb01"] = {
         "type": "box",
         "offset": [
             0,
@@ -29557,20 +28791,1768 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-lb3"] ??= [];
-    destructionGroups["boot-lace-lb3"].push(node_boot_lace_lb3_41);
-    const endpoint_boot_shell_r_42 = makeAttachmentEndpoint(null);
-    const node_boot_shell_r_42 = new THREE.Group();
-    node_boot_shell_r_42.name = "Lace-up boot (right)__pivot";
-    node_boot_shell_r_42.scale.set(1, 1, 1);
-    if (endpoint_boot_shell_r_42) {
-        node_boot_shell_r_42.position.copy(endpoint_boot_shell_r_42.start);
-        node_boot_shell_r_42.rotation.set(0.0, 0.0, 0.0);
+    destructionGroups["boot-lace-lb01"] ??= [];
+    destructionGroups["boot-lace-lb01"].push(node_boot_lace_lb01_39);
+    const attachment_boot_lace_lb10_40 = {
+        "parentSocket": "boot-l-eyelets",
+        "localStart": [
+            0.273,
+            0.158,
+            0.4106
+        ],
+        "localEnd": [
+            0.217,
+            0.1795,
+            0.4131
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+            "boots-zone"
+        ]
+    };
+    const endpoint_boot_lace_lb10_40 = makeAttachmentEndpoint(attachment_boot_lace_lb10_40);
+    const node_boot_lace_lb10_40 = new THREE.Group();
+    node_boot_lace_lb10_40.name = "Boot lace run boot-lace-lb10__pivot";
+    node_boot_lace_lb10_40.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_lb10_40) {
+        node_boot_lace_lb10_40.position.copy(endpoint_boot_lace_lb10_40.start);
+        node_boot_lace_lb10_40.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_shell_r_42.position.set(0.0, 0.0, 0.0);
-        node_boot_shell_r_42.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_lb10_40.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_lb10_40.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_shell_r_42.userData.sculptComponent = {
+    node_boot_lace_lb10_40.userData.sculptComponent = {
+        "id": "boot-lace-lb10",
+        "name": "Boot lace run boot-lace-lb10",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-l",
+        "attachment": {
+            "parentSocket": "boot-l-eyelets",
+            "localStart": [
+                0.273,
+                0.158,
+                0.4106
+            ],
+            "localEnd": [
+                0.217,
+                0.1795,
+                0.4131
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-lb10",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-lb10",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_lb10_40.userData.actionProfile = {
+        "animationRole": "static",
+        "pivot": {
+            "mode": "center",
+            "localPosition": [
+                0,
+                0,
+                0
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ],
+            "confidence": 0.7
+        },
+        "transformChannels": {
+            "translate": true,
+            "rotate": true,
+            "scale": true,
+            "bend": false,
+            "twist": false,
+            "detach": false,
+            "visibility": true,
+            "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+            "type": "box",
+            "offset": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ],
+            "isTrigger": false,
+            "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+            "breakable": false,
+            "fractureGroup": "boot-lace-lb10",
+            "seamRefs": [],
+            "detachableFragments": [],
+            "breakImpulse": 0.0,
+            "debrisMaterial": "lace"
+        }
+    };
+    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb10_40);
+    nodes["boot-lace-lb10"] = node_boot_lace_lb10_40;
+    const mesh_boot_lace_lb10_40Geometry = endpoint_boot_lace_lb10_40 ? new THREE.CylinderGeometry(endpoint_boot_lace_lb10_40.endRadius, endpoint_boot_lace_lb10_40.baseRadius, endpoint_boot_lace_lb10_40.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_lb10_40) {
+        mesh_boot_lace_lb10_40Geometry.scale(1.0, 1.0, 1.0);
+    }
+    const mesh_boot_lace_lb10_40 = new THREE.Mesh(mesh_boot_lace_lb10_40Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+        color: 0x888888
+    }));
+    mesh_boot_lace_lb10_40.name = "Boot lace run boot-lace-lb10";
+    if (endpoint_boot_lace_lb10_40) {
+        mesh_boot_lace_lb10_40.position.copy(endpoint_boot_lace_lb10_40.midpoint);
+        mesh_boot_lace_lb10_40.quaternion.copy(endpoint_boot_lace_lb10_40.quaternion);
+    }
+    mesh_boot_lace_lb10_40.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_lb10_40.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_lb10_40.userData.sculptComponent = {
+        "id": "boot-lace-lb10",
+        "name": "Boot lace run boot-lace-lb10",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-l",
+        "attachment": {
+            "parentSocket": "boot-l-eyelets",
+            "localStart": [
+                0.273,
+                0.158,
+                0.4106
+            ],
+            "localEnd": [
+                0.217,
+                0.1795,
+                0.4131
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-lb10",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-lb10",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_lb10_40.add(mesh_boot_lace_lb10_40);
+    meshes["boot-lace-lb10"] = mesh_boot_lace_lb10_40;
+    colliders["boot-lace-lb10"] = {
+        "type": "box",
+        "offset": [
+            0,
+            0,
+            0
+        ],
+        "scale": [
+            1,
+            1,
+            1
+        ],
+        "isTrigger": false,
+        "notes": "box proxy"
+    };
+    destructionGroups["boot-lace-lb10"] ??= [];
+    destructionGroups["boot-lace-lb10"].push(node_boot_lace_lb10_40);
+    const attachment_boot_lace_lb11_41 = {
+        "parentSocket": "boot-l-eyelets",
+        "localStart": [
+            0.217,
+            0.1795,
+            0.4131
+        ],
+        "localEnd": [
+            0.161,
+            0.201,
+            0.3594
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+            "boots-zone"
+        ]
+    };
+    const endpoint_boot_lace_lb11_41 = makeAttachmentEndpoint(attachment_boot_lace_lb11_41);
+    const node_boot_lace_lb11_41 = new THREE.Group();
+    node_boot_lace_lb11_41.name = "Boot lace run boot-lace-lb11__pivot";
+    node_boot_lace_lb11_41.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_lb11_41) {
+        node_boot_lace_lb11_41.position.copy(endpoint_boot_lace_lb11_41.start);
+        node_boot_lace_lb11_41.rotation.set(0.0, 0.0, 0.0);
+    } else {
+        node_boot_lace_lb11_41.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_lb11_41.rotation.set(0.0, 0.0, 0.0);
+    }
+    node_boot_lace_lb11_41.userData.sculptComponent = {
+        "id": "boot-lace-lb11",
+        "name": "Boot lace run boot-lace-lb11",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-l",
+        "attachment": {
+            "parentSocket": "boot-l-eyelets",
+            "localStart": [
+                0.217,
+                0.1795,
+                0.4131
+            ],
+            "localEnd": [
+                0.161,
+                0.201,
+                0.3594
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-lb11",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-lb11",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_lb11_41.userData.actionProfile = {
+        "animationRole": "static",
+        "pivot": {
+            "mode": "center",
+            "localPosition": [
+                0,
+                0,
+                0
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ],
+            "confidence": 0.7
+        },
+        "transformChannels": {
+            "translate": true,
+            "rotate": true,
+            "scale": true,
+            "bend": false,
+            "twist": false,
+            "detach": false,
+            "visibility": true,
+            "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+            "type": "box",
+            "offset": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ],
+            "isTrigger": false,
+            "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+            "breakable": false,
+            "fractureGroup": "boot-lace-lb11",
+            "seamRefs": [],
+            "detachableFragments": [],
+            "breakImpulse": 0.0,
+            "debrisMaterial": "lace"
+        }
+    };
+    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb11_41);
+    nodes["boot-lace-lb11"] = node_boot_lace_lb11_41;
+    const mesh_boot_lace_lb11_41Geometry = endpoint_boot_lace_lb11_41 ? new THREE.CylinderGeometry(endpoint_boot_lace_lb11_41.endRadius, endpoint_boot_lace_lb11_41.baseRadius, endpoint_boot_lace_lb11_41.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_lb11_41) {
+        mesh_boot_lace_lb11_41Geometry.scale(1.0, 1.0, 1.0);
+    }
+    const mesh_boot_lace_lb11_41 = new THREE.Mesh(mesh_boot_lace_lb11_41Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+        color: 0x888888
+    }));
+    mesh_boot_lace_lb11_41.name = "Boot lace run boot-lace-lb11";
+    if (endpoint_boot_lace_lb11_41) {
+        mesh_boot_lace_lb11_41.position.copy(endpoint_boot_lace_lb11_41.midpoint);
+        mesh_boot_lace_lb11_41.quaternion.copy(endpoint_boot_lace_lb11_41.quaternion);
+    }
+    mesh_boot_lace_lb11_41.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_lb11_41.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_lb11_41.userData.sculptComponent = {
+        "id": "boot-lace-lb11",
+        "name": "Boot lace run boot-lace-lb11",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-l",
+        "attachment": {
+            "parentSocket": "boot-l-eyelets",
+            "localStart": [
+                0.217,
+                0.1795,
+                0.4131
+            ],
+            "localEnd": [
+                0.161,
+                0.201,
+                0.3594
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-lb11",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-lb11",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_lb11_41.add(mesh_boot_lace_lb11_41);
+    meshes["boot-lace-lb11"] = mesh_boot_lace_lb11_41;
+    colliders["boot-lace-lb11"] = {
+        "type": "box",
+        "offset": [
+            0,
+            0,
+            0
+        ],
+        "scale": [
+            1,
+            1,
+            1
+        ],
+        "isTrigger": false,
+        "notes": "box proxy"
+    };
+    destructionGroups["boot-lace-lb11"] ??= [];
+    destructionGroups["boot-lace-lb11"].push(node_boot_lace_lb11_41);
+    const attachment_boot_lace_lb20_42 = {
+        "parentSocket": "boot-l-eyelets",
+        "localStart": [
+            0.161,
+            0.201,
+            0.3594
+        ],
+        "localEnd": [
+            0.217,
+            0.2225,
+            0.3646
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+            "boots-zone"
+        ]
+    };
+    const endpoint_boot_lace_lb20_42 = makeAttachmentEndpoint(attachment_boot_lace_lb20_42);
+    const node_boot_lace_lb20_42 = new THREE.Group();
+    node_boot_lace_lb20_42.name = "Boot lace run boot-lace-lb20__pivot";
+    node_boot_lace_lb20_42.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_lb20_42) {
+        node_boot_lace_lb20_42.position.copy(endpoint_boot_lace_lb20_42.start);
+        node_boot_lace_lb20_42.rotation.set(0.0, 0.0, 0.0);
+    } else {
+        node_boot_lace_lb20_42.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_lb20_42.rotation.set(0.0, 0.0, 0.0);
+    }
+    node_boot_lace_lb20_42.userData.sculptComponent = {
+        "id": "boot-lace-lb20",
+        "name": "Boot lace run boot-lace-lb20",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-l",
+        "attachment": {
+            "parentSocket": "boot-l-eyelets",
+            "localStart": [
+                0.161,
+                0.201,
+                0.3594
+            ],
+            "localEnd": [
+                0.217,
+                0.2225,
+                0.3646
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-lb20",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-lb20",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_lb20_42.userData.actionProfile = {
+        "animationRole": "static",
+        "pivot": {
+            "mode": "center",
+            "localPosition": [
+                0,
+                0,
+                0
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ],
+            "confidence": 0.7
+        },
+        "transformChannels": {
+            "translate": true,
+            "rotate": true,
+            "scale": true,
+            "bend": false,
+            "twist": false,
+            "detach": false,
+            "visibility": true,
+            "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+            "type": "box",
+            "offset": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ],
+            "isTrigger": false,
+            "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+            "breakable": false,
+            "fractureGroup": "boot-lace-lb20",
+            "seamRefs": [],
+            "detachableFragments": [],
+            "breakImpulse": 0.0,
+            "debrisMaterial": "lace"
+        }
+    };
+    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb20_42);
+    nodes["boot-lace-lb20"] = node_boot_lace_lb20_42;
+    const mesh_boot_lace_lb20_42Geometry = endpoint_boot_lace_lb20_42 ? new THREE.CylinderGeometry(endpoint_boot_lace_lb20_42.endRadius, endpoint_boot_lace_lb20_42.baseRadius, endpoint_boot_lace_lb20_42.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_lb20_42) {
+        mesh_boot_lace_lb20_42Geometry.scale(1.0, 1.0, 1.0);
+    }
+    const mesh_boot_lace_lb20_42 = new THREE.Mesh(mesh_boot_lace_lb20_42Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+        color: 0x888888
+    }));
+    mesh_boot_lace_lb20_42.name = "Boot lace run boot-lace-lb20";
+    if (endpoint_boot_lace_lb20_42) {
+        mesh_boot_lace_lb20_42.position.copy(endpoint_boot_lace_lb20_42.midpoint);
+        mesh_boot_lace_lb20_42.quaternion.copy(endpoint_boot_lace_lb20_42.quaternion);
+    }
+    mesh_boot_lace_lb20_42.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_lb20_42.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_lb20_42.userData.sculptComponent = {
+        "id": "boot-lace-lb20",
+        "name": "Boot lace run boot-lace-lb20",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-l",
+        "attachment": {
+            "parentSocket": "boot-l-eyelets",
+            "localStart": [
+                0.161,
+                0.201,
+                0.3594
+            ],
+            "localEnd": [
+                0.217,
+                0.2225,
+                0.3646
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-lb20",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-lb20",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_lb20_42.add(mesh_boot_lace_lb20_42);
+    meshes["boot-lace-lb20"] = mesh_boot_lace_lb20_42;
+    colliders["boot-lace-lb20"] = {
+        "type": "box",
+        "offset": [
+            0,
+            0,
+            0
+        ],
+        "scale": [
+            1,
+            1,
+            1
+        ],
+        "isTrigger": false,
+        "notes": "box proxy"
+    };
+    destructionGroups["boot-lace-lb20"] ??= [];
+    destructionGroups["boot-lace-lb20"].push(node_boot_lace_lb20_42);
+    const attachment_boot_lace_lb21_43 = {
+        "parentSocket": "boot-l-eyelets",
+        "localStart": [
+            0.217,
+            0.2225,
+            0.3646
+        ],
+        "localEnd": [
+            0.273,
+            0.244,
+            0.323
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+            "boots-zone"
+        ]
+    };
+    const endpoint_boot_lace_lb21_43 = makeAttachmentEndpoint(attachment_boot_lace_lb21_43);
+    const node_boot_lace_lb21_43 = new THREE.Group();
+    node_boot_lace_lb21_43.name = "Boot lace run boot-lace-lb21__pivot";
+    node_boot_lace_lb21_43.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_lb21_43) {
+        node_boot_lace_lb21_43.position.copy(endpoint_boot_lace_lb21_43.start);
+        node_boot_lace_lb21_43.rotation.set(0.0, 0.0, 0.0);
+    } else {
+        node_boot_lace_lb21_43.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_lb21_43.rotation.set(0.0, 0.0, 0.0);
+    }
+    node_boot_lace_lb21_43.userData.sculptComponent = {
+        "id": "boot-lace-lb21",
+        "name": "Boot lace run boot-lace-lb21",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-l",
+        "attachment": {
+            "parentSocket": "boot-l-eyelets",
+            "localStart": [
+                0.217,
+                0.2225,
+                0.3646
+            ],
+            "localEnd": [
+                0.273,
+                0.244,
+                0.323
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-lb21",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-lb21",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_lb21_43.userData.actionProfile = {
+        "animationRole": "static",
+        "pivot": {
+            "mode": "center",
+            "localPosition": [
+                0,
+                0,
+                0
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ],
+            "confidence": 0.7
+        },
+        "transformChannels": {
+            "translate": true,
+            "rotate": true,
+            "scale": true,
+            "bend": false,
+            "twist": false,
+            "detach": false,
+            "visibility": true,
+            "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+            "type": "box",
+            "offset": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ],
+            "isTrigger": false,
+            "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+            "breakable": false,
+            "fractureGroup": "boot-lace-lb21",
+            "seamRefs": [],
+            "detachableFragments": [],
+            "breakImpulse": 0.0,
+            "debrisMaterial": "lace"
+        }
+    };
+    (nodes["boot-shell-l"] ?? root).add(node_boot_lace_lb21_43);
+    nodes["boot-lace-lb21"] = node_boot_lace_lb21_43;
+    const mesh_boot_lace_lb21_43Geometry = endpoint_boot_lace_lb21_43 ? new THREE.CylinderGeometry(endpoint_boot_lace_lb21_43.endRadius, endpoint_boot_lace_lb21_43.baseRadius, endpoint_boot_lace_lb21_43.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_lb21_43) {
+        mesh_boot_lace_lb21_43Geometry.scale(1.0, 1.0, 1.0);
+    }
+    const mesh_boot_lace_lb21_43 = new THREE.Mesh(mesh_boot_lace_lb21_43Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+        color: 0x888888
+    }));
+    mesh_boot_lace_lb21_43.name = "Boot lace run boot-lace-lb21";
+    if (endpoint_boot_lace_lb21_43) {
+        mesh_boot_lace_lb21_43.position.copy(endpoint_boot_lace_lb21_43.midpoint);
+        mesh_boot_lace_lb21_43.quaternion.copy(endpoint_boot_lace_lb21_43.quaternion);
+    }
+    mesh_boot_lace_lb21_43.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_lb21_43.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_lb21_43.userData.sculptComponent = {
+        "id": "boot-lace-lb21",
+        "name": "Boot lace run boot-lace-lb21",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-l",
+        "attachment": {
+            "parentSocket": "boot-l-eyelets",
+            "localStart": [
+                0.217,
+                0.2225,
+                0.3646
+            ],
+            "localEnd": [
+                0.273,
+                0.244,
+                0.323
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-lb21",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-lb21",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_lb21_43.add(mesh_boot_lace_lb21_43);
+    meshes["boot-lace-lb21"] = mesh_boot_lace_lb21_43;
+    colliders["boot-lace-lb21"] = {
+        "type": "box",
+        "offset": [
+            0,
+            0,
+            0
+        ],
+        "scale": [
+            1,
+            1,
+            1
+        ],
+        "isTrigger": false,
+        "notes": "box proxy"
+    };
+    destructionGroups["boot-lace-lb21"] ??= [];
+    destructionGroups["boot-lace-lb21"].push(node_boot_lace_lb21_43);
+    const endpoint_boot_shell_r_44 = makeAttachmentEndpoint(null);
+    const node_boot_shell_r_44 = new THREE.Group();
+    node_boot_shell_r_44.name = "Lace-up boot (right)__pivot";
+    node_boot_shell_r_44.scale.set(1, 1, 1);
+    if (endpoint_boot_shell_r_44) {
+        node_boot_shell_r_44.position.copy(endpoint_boot_shell_r_44.start);
+        node_boot_shell_r_44.rotation.set(0.0, 0.0, 0.0);
+    } else {
+        node_boot_shell_r_44.position.set(0.0, 0.0, 0.0);
+        node_boot_shell_r_44.rotation.set(0.0, 0.0, 0.0);
+    }
+    node_boot_shell_r_44.userData.sculptComponent = {
         "id": "boot-shell-r",
         "name": "Lace-up boot (right)",
         "level": "macro",
@@ -29596,7 +30578,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "shaft",
                         "type": "ellipsoid",
                         "center": [
-                            -0.215,
+                            -0.217,
                             0.22,
                             0.04
                         ],
@@ -29610,12 +30592,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "toe",
                         "type": "ellipsoid",
                         "center": [
-                            -0.215,
+                            -0.217,
                             0.1,
                             0.19
                         ],
                         "radii": [
-                            0.185,
+                            0.195,
                             0.115,
                             0.255
                         ]
@@ -29624,7 +30606,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-print",
                         "type": "ellipsoid",
                         "center": [
-                            -0.215,
+                            -0.217,
                             0.03,
                             0.12
                         ],
@@ -29638,8 +30620,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-slab",
                         "type": "box",
                         "center": [
-                            -0.215,
-                            0.03,
+                            -0.217,
+                            0.025,
                             0.12
                         ],
                         "size": [
@@ -29652,8 +30634,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "top",
                         "type": "box",
                         "center": [
-                            -0.215,
-                            0.6699999999999999,
+                            -0.217,
+                            0.59,
                             0.1
                         ],
                         "size": [
@@ -29666,8 +30648,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "under",
                         "type": "box",
                         "center": [
-                            -0.215,
-                            -0.3,
+                            -0.217,
+                            -0.305,
                             0.1
                         ],
                         "size": [
@@ -29680,22 +30662,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar0",
                         "type": "capsule",
                         "center": [
-                            -0.0364,
-                            0.358,
-                            0.0868
+                            -0.0276,
+                            0.278,
+                            0.0907
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                -0.0364,
-                                0.358,
-                                0.0868
+                                -0.0276,
+                                0.278,
+                                0.0907
                             ],
                             "rotation": [
-                                1.5483,
-                                0.1481,
-                                0.1515
+                                1.5492,
+                                0.1452,
+                                0.1484
                             ]
                         }
                     },
@@ -29703,22 +30685,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar1",
                         "type": "capsule",
                         "center": [
-                            -0.0636,
-                            0.358,
-                            0.1733
+                            -0.0564,
+                            0.278,
+                            0.1843
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                -0.0636,
-                                0.358,
-                                0.1733
+                                -0.0564,
+                                0.278,
+                                0.1843
                             ],
                             "rotation": [
-                                1.3455,
-                                0.4151,
-                                0.5169
+                                1.3534,
+                                0.4098,
+                                0.5063
                             ]
                         }
                     },
@@ -29726,22 +30708,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar2",
                         "type": "capsule",
                         "center": [
-                            -0.1138,
-                            0.358,
-                            0.2396
+                            -0.1097,
+                            0.278,
+                            0.256
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                -0.1138,
-                                0.358,
-                                0.2396
+                                -0.1097,
+                                0.278,
+                                0.256
                             ],
                             "rotation": [
-                                0.865,
-                                0.519,
-                                1.0437
+                                0.8796,
+                                0.5203,
+                                1.0297
                             ]
                         }
                     },
@@ -29749,22 +30731,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar3",
                         "type": "capsule",
                         "center": [
-                            -0.1795,
-                            0.358,
-                            0.2754
+                            -0.1793,
+                            0.278,
+                            0.2948
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                -0.1795,
-                                0.358,
-                                0.2754
+                                -0.1793,
+                                0.278,
+                                0.2948
                             ],
                             "rotation": [
-                                0.2647,
-                                0.2478,
-                                1.5044
+                                0.2702,
+                                0.2524,
+                                1.5017
                             ]
                         }
                     },
@@ -29772,22 +30754,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar4",
                         "type": "capsule",
                         "center": [
-                            -0.2505,
-                            0.358,
-                            0.2754
+                            -0.2547,
+                            0.278,
+                            0.2948
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                -0.2505,
-                                0.358,
-                                0.2754
+                                -0.2547,
+                                0.278,
+                                0.2948
                             ],
                             "rotation": [
-                                -0.2647,
-                                -0.2478,
-                                1.5044
+                                -0.2702,
+                                -0.2524,
+                                1.5017
                             ]
                         }
                     },
@@ -29795,22 +30777,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar5",
                         "type": "capsule",
                         "center": [
-                            -0.3162,
-                            0.358,
-                            0.2396
+                            -0.3243,
+                            0.278,
+                            0.256
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                -0.3162,
-                                0.358,
-                                0.2396
+                                -0.3243,
+                                0.278,
+                                0.256
                             ],
                             "rotation": [
-                                -0.865,
-                                -0.519,
-                                1.0437
+                                -0.8796,
+                                -0.5203,
+                                1.0297
                             ]
                         }
                     },
@@ -29818,22 +30800,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar6",
                         "type": "capsule",
                         "center": [
-                            -0.3664,
-                            0.358,
-                            0.1733
+                            -0.3776,
+                            0.278,
+                            0.1843
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                -0.3664,
-                                0.358,
-                                0.1733
+                                -0.3776,
+                                0.278,
+                                0.1843
                             ],
                             "rotation": [
-                                -1.3455,
-                                -0.4151,
-                                0.5169
+                                -1.3534,
+                                -0.4098,
+                                0.5063
                             ]
                         }
                     },
@@ -29841,22 +30823,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar7",
                         "type": "capsule",
                         "center": [
-                            -0.3936,
-                            0.358,
-                            0.0868
+                            -0.4064,
+                            0.278,
+                            0.0907
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                -0.3936,
-                                0.358,
-                                0.0868
+                                -0.4064,
+                                0.278,
+                                0.0907
                             ],
                             "rotation": [
-                                -1.5483,
-                                -0.1481,
-                                0.1515
+                                -1.5492,
+                                -0.1452,
+                                0.1484
                             ]
                         }
                     },
@@ -29864,22 +30846,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar8",
                         "type": "capsule",
                         "center": [
-                            -0.3936,
-                            0.358,
-                            -0.0068
+                            -0.4064,
+                            0.278,
+                            -0.0107
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                -0.3936,
-                                0.358,
-                                -0.0068
+                                -0.4064,
+                                0.278,
+                                -0.0107
                             ],
                             "rotation": [
-                                -1.5483,
-                                0.1481,
-                                -0.1515
+                                -1.5492,
+                                0.1452,
+                                -0.1484
                             ]
                         }
                     },
@@ -29887,22 +30869,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar9",
                         "type": "capsule",
                         "center": [
-                            -0.3664,
-                            0.358,
-                            -0.0933
+                            -0.3776,
+                            0.278,
+                            -0.1043
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                -0.3664,
-                                0.358,
-                                -0.0933
+                                -0.3776,
+                                0.278,
+                                -0.1043
                             ],
                             "rotation": [
-                                -1.3455,
-                                0.4151,
-                                -0.5169
+                                -1.3534,
+                                0.4098,
+                                -0.5063
                             ]
                         }
                     },
@@ -29910,22 +30892,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar10",
                         "type": "capsule",
                         "center": [
-                            -0.3162,
-                            0.358,
-                            -0.1596
+                            -0.3243,
+                            0.278,
+                            -0.176
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                -0.3162,
-                                0.358,
-                                -0.1596
+                                -0.3243,
+                                0.278,
+                                -0.176
                             ],
                             "rotation": [
-                                -0.865,
-                                0.519,
-                                -1.0437
+                                -0.8796,
+                                0.5203,
+                                -1.0297
                             ]
                         }
                     },
@@ -29933,22 +30915,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar11",
                         "type": "capsule",
                         "center": [
-                            -0.2505,
-                            0.358,
-                            -0.1954
+                            -0.2547,
+                            0.278,
+                            -0.2148
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                -0.2505,
-                                0.358,
-                                -0.1954
+                                -0.2547,
+                                0.278,
+                                -0.2148
                             ],
                             "rotation": [
-                                -0.2647,
-                                0.2478,
-                                -1.5044
+                                -0.2702,
+                                0.2524,
+                                -1.5017
                             ]
                         }
                     },
@@ -29956,22 +30938,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar12",
                         "type": "capsule",
                         "center": [
-                            -0.1795,
-                            0.358,
-                            -0.1954
+                            -0.1793,
+                            0.278,
+                            -0.2148
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                -0.1795,
-                                0.358,
-                                -0.1954
+                                -0.1793,
+                                0.278,
+                                -0.2148
                             ],
                             "rotation": [
-                                0.2647,
-                                -0.2478,
-                                -1.5044
+                                0.2702,
+                                -0.2524,
+                                -1.5017
                             ]
                         }
                     },
@@ -29979,22 +30961,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar13",
                         "type": "capsule",
                         "center": [
-                            -0.1138,
-                            0.358,
-                            -0.1596
+                            -0.1097,
+                            0.278,
+                            -0.176
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                -0.1138,
-                                0.358,
-                                -0.1596
+                                -0.1097,
+                                0.278,
+                                -0.176
                             ],
                             "rotation": [
-                                0.865,
-                                -0.519,
-                                -1.0437
+                                0.8796,
+                                -0.5203,
+                                -1.0297
                             ]
                         }
                     },
@@ -30002,22 +30984,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar14",
                         "type": "capsule",
                         "center": [
-                            -0.0636,
-                            0.358,
-                            -0.0933
+                            -0.0564,
+                            0.278,
+                            -0.1043
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                -0.0636,
-                                0.358,
-                                -0.0933
+                                -0.0564,
+                                0.278,
+                                -0.1043
                             ],
                             "rotation": [
-                                1.3455,
-                                -0.4151,
-                                -0.5169
+                                1.3534,
+                                -0.4098,
+                                -0.5063
                             ]
                         }
                     },
@@ -30025,22 +31007,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar15",
                         "type": "capsule",
                         "center": [
-                            -0.0364,
-                            0.358,
-                            -0.0068
+                            -0.0276,
+                            0.278,
+                            -0.0107
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                -0.0364,
-                                0.358,
-                                -0.0068
+                                -0.0276,
+                                0.278,
+                                -0.0107
                             ],
                             "rotation": [
-                                1.5483,
-                                -0.1481,
-                                -0.1515
+                                1.5492,
+                                -0.1452,
+                                -0.1484
                             ]
                         }
                     }
@@ -30193,13 +31175,13 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 ],
                 "bounds": {
                     "min": [
-                        -0.46499999999999997,
-                        -0.01,
+                        -0.46699999999999997,
+                        -0.015,
                         -0.25
                     ],
                     "max": [
-                        0.035,
-                        0.4,
+                        0.033,
+                        0.31999999999999995,
                         0.48
                     ]
                 },
@@ -30327,7 +31309,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_shell_r_42.userData.actionProfile = {
+    node_boot_shell_r_44.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -30379,15 +31361,15 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "boot-leather"
         }
     };
-    (nodes["vest-shell"] ?? root).add(node_boot_shell_r_42);
-    nodes["boot-shell-r"] = node_boot_shell_r_42;
-    const mesh_boot_shell_r_42GeometryDense = polygonizeSdf({
+    (nodes["vest-shell"] ?? root).add(node_boot_shell_r_44);
+    nodes["boot-shell-r"] = node_boot_shell_r_44;
+    const mesh_boot_shell_r_44GeometryDense = polygonizeSdf({
         "primitives": [
             {
                 "id": "shaft",
                 "type": "ellipsoid",
                 "center": [
-                    -0.215,
+                    -0.217,
                     0.22,
                     0.04
                 ],
@@ -30401,12 +31383,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "toe",
                 "type": "ellipsoid",
                 "center": [
-                    -0.215,
+                    -0.217,
                     0.1,
                     0.19
                 ],
                 "radii": [
-                    0.185,
+                    0.195,
                     0.115,
                     0.255
                 ]
@@ -30415,7 +31397,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "sole-print",
                 "type": "ellipsoid",
                 "center": [
-                    -0.215,
+                    -0.217,
                     0.03,
                     0.12
                 ],
@@ -30429,8 +31411,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "sole-slab",
                 "type": "box",
                 "center": [
-                    -0.215,
-                    0.03,
+                    -0.217,
+                    0.025,
                     0.12
                 ],
                 "size": [
@@ -30443,8 +31425,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "top",
                 "type": "box",
                 "center": [
-                    -0.215,
-                    0.6699999999999999,
+                    -0.217,
+                    0.59,
                     0.1
                 ],
                 "size": [
@@ -30457,8 +31439,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "under",
                 "type": "box",
                 "center": [
-                    -0.215,
-                    -0.3,
+                    -0.217,
+                    -0.305,
                     0.1
                 ],
                 "size": [
@@ -30471,22 +31453,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar0",
                 "type": "capsule",
                 "center": [
-                    -0.0364,
-                    0.358,
-                    0.0868
+                    -0.0276,
+                    0.278,
+                    0.0907
                 ],
-                "radius": 0.027,
-                "height": 0.0947,
+                "radius": 0.022,
+                "height": 0.1025,
                 "transform": {
                     "position": [
-                        -0.0364,
-                        0.358,
-                        0.0868
+                        -0.0276,
+                        0.278,
+                        0.0907
                     ],
                     "rotation": [
-                        1.5483,
-                        0.1481,
-                        0.1515
+                        1.5492,
+                        0.1452,
+                        0.1484
                     ]
                 }
             },
@@ -30494,22 +31476,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar1",
                 "type": "capsule",
                 "center": [
-                    -0.0636,
-                    0.358,
-                    0.1733
+                    -0.0564,
+                    0.278,
+                    0.1843
                 ],
-                "radius": 0.027,
-                "height": 0.089,
+                "radius": 0.022,
+                "height": 0.0959,
                 "transform": {
                     "position": [
-                        -0.0636,
-                        0.358,
-                        0.1733
+                        -0.0564,
+                        0.278,
+                        0.1843
                     ],
                     "rotation": [
-                        1.3455,
-                        0.4151,
-                        0.5169
+                        1.3534,
+                        0.4098,
+                        0.5063
                     ]
                 }
             },
@@ -30517,22 +31499,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar2",
                 "type": "capsule",
                 "center": [
-                    -0.1138,
-                    0.358,
-                    0.2396
+                    -0.1097,
+                    0.278,
+                    0.256
                 ],
-                "radius": 0.027,
-                "height": 0.0803,
+                "radius": 0.022,
+                "height": 0.0859,
                 "transform": {
                     "position": [
-                        -0.1138,
-                        0.358,
-                        0.2396
+                        -0.1097,
+                        0.278,
+                        0.256
                     ],
                     "rotation": [
-                        0.865,
-                        0.519,
-                        1.0437
+                        0.8796,
+                        0.5203,
+                        1.0297
                     ]
                 }
             },
@@ -30540,22 +31522,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar3",
                 "type": "capsule",
                 "center": [
-                    -0.1795,
-                    0.358,
-                    0.2754
+                    -0.1793,
+                    0.278,
+                    0.2948
                 ],
-                "radius": 0.027,
-                "height": 0.0735,
+                "radius": 0.022,
+                "height": 0.078,
                 "transform": {
                     "position": [
-                        -0.1795,
-                        0.358,
-                        0.2754
+                        -0.1793,
+                        0.278,
+                        0.2948
                     ],
                     "rotation": [
-                        0.2647,
-                        0.2478,
-                        1.5044
+                        0.2702,
+                        0.2524,
+                        1.5017
                     ]
                 }
             },
@@ -30563,22 +31545,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar4",
                 "type": "capsule",
                 "center": [
-                    -0.2505,
-                    0.358,
-                    0.2754
+                    -0.2547,
+                    0.278,
+                    0.2948
                 ],
-                "radius": 0.027,
-                "height": 0.0735,
+                "radius": 0.022,
+                "height": 0.078,
                 "transform": {
                     "position": [
-                        -0.2505,
-                        0.358,
-                        0.2754
+                        -0.2547,
+                        0.278,
+                        0.2948
                     ],
                     "rotation": [
-                        -0.2647,
-                        -0.2478,
-                        1.5044
+                        -0.2702,
+                        -0.2524,
+                        1.5017
                     ]
                 }
             },
@@ -30586,22 +31568,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar5",
                 "type": "capsule",
                 "center": [
-                    -0.3162,
-                    0.358,
-                    0.2396
+                    -0.3243,
+                    0.278,
+                    0.256
                 ],
-                "radius": 0.027,
-                "height": 0.0803,
+                "radius": 0.022,
+                "height": 0.0859,
                 "transform": {
                     "position": [
-                        -0.3162,
-                        0.358,
-                        0.2396
+                        -0.3243,
+                        0.278,
+                        0.256
                     ],
                     "rotation": [
-                        -0.865,
-                        -0.519,
-                        1.0437
+                        -0.8796,
+                        -0.5203,
+                        1.0297
                     ]
                 }
             },
@@ -30609,22 +31591,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar6",
                 "type": "capsule",
                 "center": [
-                    -0.3664,
-                    0.358,
-                    0.1733
+                    -0.3776,
+                    0.278,
+                    0.1843
                 ],
-                "radius": 0.027,
-                "height": 0.089,
+                "radius": 0.022,
+                "height": 0.0959,
                 "transform": {
                     "position": [
-                        -0.3664,
-                        0.358,
-                        0.1733
+                        -0.3776,
+                        0.278,
+                        0.1843
                     ],
                     "rotation": [
-                        -1.3455,
-                        -0.4151,
-                        0.5169
+                        -1.3534,
+                        -0.4098,
+                        0.5063
                     ]
                 }
             },
@@ -30632,22 +31614,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar7",
                 "type": "capsule",
                 "center": [
-                    -0.3936,
-                    0.358,
-                    0.0868
+                    -0.4064,
+                    0.278,
+                    0.0907
                 ],
-                "radius": 0.027,
-                "height": 0.0947,
+                "radius": 0.022,
+                "height": 0.1025,
                 "transform": {
                     "position": [
-                        -0.3936,
-                        0.358,
-                        0.0868
+                        -0.4064,
+                        0.278,
+                        0.0907
                     ],
                     "rotation": [
-                        -1.5483,
-                        -0.1481,
-                        0.1515
+                        -1.5492,
+                        -0.1452,
+                        0.1484
                     ]
                 }
             },
@@ -30655,22 +31637,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar8",
                 "type": "capsule",
                 "center": [
-                    -0.3936,
-                    0.358,
-                    -0.0068
+                    -0.4064,
+                    0.278,
+                    -0.0107
                 ],
-                "radius": 0.027,
-                "height": 0.0947,
+                "radius": 0.022,
+                "height": 0.1025,
                 "transform": {
                     "position": [
-                        -0.3936,
-                        0.358,
-                        -0.0068
+                        -0.4064,
+                        0.278,
+                        -0.0107
                     ],
                     "rotation": [
-                        -1.5483,
-                        0.1481,
-                        -0.1515
+                        -1.5492,
+                        0.1452,
+                        -0.1484
                     ]
                 }
             },
@@ -30678,22 +31660,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar9",
                 "type": "capsule",
                 "center": [
-                    -0.3664,
-                    0.358,
-                    -0.0933
+                    -0.3776,
+                    0.278,
+                    -0.1043
                 ],
-                "radius": 0.027,
-                "height": 0.089,
+                "radius": 0.022,
+                "height": 0.0959,
                 "transform": {
                     "position": [
-                        -0.3664,
-                        0.358,
-                        -0.0933
+                        -0.3776,
+                        0.278,
+                        -0.1043
                     ],
                     "rotation": [
-                        -1.3455,
-                        0.4151,
-                        -0.5169
+                        -1.3534,
+                        0.4098,
+                        -0.5063
                     ]
                 }
             },
@@ -30701,22 +31683,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar10",
                 "type": "capsule",
                 "center": [
-                    -0.3162,
-                    0.358,
-                    -0.1596
+                    -0.3243,
+                    0.278,
+                    -0.176
                 ],
-                "radius": 0.027,
-                "height": 0.0803,
+                "radius": 0.022,
+                "height": 0.0859,
                 "transform": {
                     "position": [
-                        -0.3162,
-                        0.358,
-                        -0.1596
+                        -0.3243,
+                        0.278,
+                        -0.176
                     ],
                     "rotation": [
-                        -0.865,
-                        0.519,
-                        -1.0437
+                        -0.8796,
+                        0.5203,
+                        -1.0297
                     ]
                 }
             },
@@ -30724,22 +31706,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar11",
                 "type": "capsule",
                 "center": [
-                    -0.2505,
-                    0.358,
-                    -0.1954
+                    -0.2547,
+                    0.278,
+                    -0.2148
                 ],
-                "radius": 0.027,
-                "height": 0.0735,
+                "radius": 0.022,
+                "height": 0.078,
                 "transform": {
                     "position": [
-                        -0.2505,
-                        0.358,
-                        -0.1954
+                        -0.2547,
+                        0.278,
+                        -0.2148
                     ],
                     "rotation": [
-                        -0.2647,
-                        0.2478,
-                        -1.5044
+                        -0.2702,
+                        0.2524,
+                        -1.5017
                     ]
                 }
             },
@@ -30747,22 +31729,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar12",
                 "type": "capsule",
                 "center": [
-                    -0.1795,
-                    0.358,
-                    -0.1954
+                    -0.1793,
+                    0.278,
+                    -0.2148
                 ],
-                "radius": 0.027,
-                "height": 0.0735,
+                "radius": 0.022,
+                "height": 0.078,
                 "transform": {
                     "position": [
-                        -0.1795,
-                        0.358,
-                        -0.1954
+                        -0.1793,
+                        0.278,
+                        -0.2148
                     ],
                     "rotation": [
-                        0.2647,
-                        -0.2478,
-                        -1.5044
+                        0.2702,
+                        -0.2524,
+                        -1.5017
                     ]
                 }
             },
@@ -30770,22 +31752,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar13",
                 "type": "capsule",
                 "center": [
-                    -0.1138,
-                    0.358,
-                    -0.1596
+                    -0.1097,
+                    0.278,
+                    -0.176
                 ],
-                "radius": 0.027,
-                "height": 0.0803,
+                "radius": 0.022,
+                "height": 0.0859,
                 "transform": {
                     "position": [
-                        -0.1138,
-                        0.358,
-                        -0.1596
+                        -0.1097,
+                        0.278,
+                        -0.176
                     ],
                     "rotation": [
-                        0.865,
-                        -0.519,
-                        -1.0437
+                        0.8796,
+                        -0.5203,
+                        -1.0297
                     ]
                 }
             },
@@ -30793,22 +31775,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar14",
                 "type": "capsule",
                 "center": [
-                    -0.0636,
-                    0.358,
-                    -0.0933
+                    -0.0564,
+                    0.278,
+                    -0.1043
                 ],
-                "radius": 0.027,
-                "height": 0.089,
+                "radius": 0.022,
+                "height": 0.0959,
                 "transform": {
                     "position": [
-                        -0.0636,
-                        0.358,
-                        -0.0933
+                        -0.0564,
+                        0.278,
+                        -0.1043
                     ],
                     "rotation": [
-                        1.3455,
-                        -0.4151,
-                        -0.5169
+                        1.3534,
+                        -0.4098,
+                        -0.5063
                     ]
                 }
             },
@@ -30816,22 +31798,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 "id": "collar15",
                 "type": "capsule",
                 "center": [
-                    -0.0364,
-                    0.358,
-                    -0.0068
+                    -0.0276,
+                    0.278,
+                    -0.0107
                 ],
-                "radius": 0.027,
-                "height": 0.0947,
+                "radius": 0.022,
+                "height": 0.1025,
                 "transform": {
                     "position": [
-                        -0.0364,
-                        0.358,
-                        -0.0068
+                        -0.0276,
+                        0.278,
+                        -0.0107
                     ],
                     "rotation": [
-                        1.5483,
-                        -0.1481,
-                        -0.1515
+                        1.5492,
+                        -0.1452,
+                        -0.1484
                     ]
                 }
             }
@@ -30984,23 +31966,23 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         ],
         "bounds": {
             "min": [
-                -0.46499999999999997,
-                -0.01,
+                -0.46699999999999997,
+                -0.015,
                 -0.25
             ],
             "max": [
-                0.035,
-                0.4,
+                0.033,
+                0.31999999999999995,
                 0.48
             ]
         },
         "resolution": 40
     });
-    const mesh_boot_shell_r_42Geometry = decimateGeometry(mesh_boot_shell_r_42GeometryDense, 0.1);
-    if (!endpoint_boot_shell_r_42) {
-        mesh_boot_shell_r_42Geometry.scale(1.0, 1.0, 1.0);
+    const mesh_boot_shell_r_44Geometry = decimateGeometry(mesh_boot_shell_r_44GeometryDense, 0.1);
+    if (!endpoint_boot_shell_r_44) {
+        mesh_boot_shell_r_44Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_shell_r_42 = new THREE.Mesh(mesh_boot_shell_r_42Geometry, createSculptMaterial("boot-leather", {
+    const mesh_boot_shell_r_44 = new THREE.Mesh(mesh_boot_shell_r_44Geometry, createSculptMaterial("boot-leather", {
         "id": "boot-leather",
         "name": "Boot leather",
         "type": "standard",
@@ -31063,14 +32045,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     }, options, true));
-    mesh_boot_shell_r_42.name = "Lace-up boot (right)";
-    if (endpoint_boot_shell_r_42) {
-        mesh_boot_shell_r_42.position.copy(endpoint_boot_shell_r_42.midpoint);
-        mesh_boot_shell_r_42.quaternion.copy(endpoint_boot_shell_r_42.quaternion);
+    mesh_boot_shell_r_44.name = "Lace-up boot (right)";
+    if (endpoint_boot_shell_r_44) {
+        mesh_boot_shell_r_44.position.copy(endpoint_boot_shell_r_44.midpoint);
+        mesh_boot_shell_r_44.quaternion.copy(endpoint_boot_shell_r_44.quaternion);
     }
-    mesh_boot_shell_r_42.castShadow = options.castShadow ?? true;
-    mesh_boot_shell_r_42.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_shell_r_42.userData.sculptComponent = {
+    mesh_boot_shell_r_44.castShadow = options.castShadow ?? true;
+    mesh_boot_shell_r_44.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_shell_r_44.userData.sculptComponent = {
         "id": "boot-shell-r",
         "name": "Lace-up boot (right)",
         "level": "macro",
@@ -31096,7 +32078,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "shaft",
                         "type": "ellipsoid",
                         "center": [
-                            -0.215,
+                            -0.217,
                             0.22,
                             0.04
                         ],
@@ -31110,12 +32092,12 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "toe",
                         "type": "ellipsoid",
                         "center": [
-                            -0.215,
+                            -0.217,
                             0.1,
                             0.19
                         ],
                         "radii": [
-                            0.185,
+                            0.195,
                             0.115,
                             0.255
                         ]
@@ -31124,7 +32106,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-print",
                         "type": "ellipsoid",
                         "center": [
-                            -0.215,
+                            -0.217,
                             0.03,
                             0.12
                         ],
@@ -31138,8 +32120,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "sole-slab",
                         "type": "box",
                         "center": [
-                            -0.215,
-                            0.03,
+                            -0.217,
+                            0.025,
                             0.12
                         ],
                         "size": [
@@ -31152,8 +32134,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "top",
                         "type": "box",
                         "center": [
-                            -0.215,
-                            0.6699999999999999,
+                            -0.217,
+                            0.59,
                             0.1
                         ],
                         "size": [
@@ -31166,8 +32148,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "under",
                         "type": "box",
                         "center": [
-                            -0.215,
-                            -0.3,
+                            -0.217,
+                            -0.305,
                             0.1
                         ],
                         "size": [
@@ -31180,22 +32162,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar0",
                         "type": "capsule",
                         "center": [
-                            -0.0364,
-                            0.358,
-                            0.0868
+                            -0.0276,
+                            0.278,
+                            0.0907
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                -0.0364,
-                                0.358,
-                                0.0868
+                                -0.0276,
+                                0.278,
+                                0.0907
                             ],
                             "rotation": [
-                                1.5483,
-                                0.1481,
-                                0.1515
+                                1.5492,
+                                0.1452,
+                                0.1484
                             ]
                         }
                     },
@@ -31203,22 +32185,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar1",
                         "type": "capsule",
                         "center": [
-                            -0.0636,
-                            0.358,
-                            0.1733
+                            -0.0564,
+                            0.278,
+                            0.1843
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                -0.0636,
-                                0.358,
-                                0.1733
+                                -0.0564,
+                                0.278,
+                                0.1843
                             ],
                             "rotation": [
-                                1.3455,
-                                0.4151,
-                                0.5169
+                                1.3534,
+                                0.4098,
+                                0.5063
                             ]
                         }
                     },
@@ -31226,22 +32208,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar2",
                         "type": "capsule",
                         "center": [
-                            -0.1138,
-                            0.358,
-                            0.2396
+                            -0.1097,
+                            0.278,
+                            0.256
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                -0.1138,
-                                0.358,
-                                0.2396
+                                -0.1097,
+                                0.278,
+                                0.256
                             ],
                             "rotation": [
-                                0.865,
-                                0.519,
-                                1.0437
+                                0.8796,
+                                0.5203,
+                                1.0297
                             ]
                         }
                     },
@@ -31249,22 +32231,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar3",
                         "type": "capsule",
                         "center": [
-                            -0.1795,
-                            0.358,
-                            0.2754
+                            -0.1793,
+                            0.278,
+                            0.2948
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                -0.1795,
-                                0.358,
-                                0.2754
+                                -0.1793,
+                                0.278,
+                                0.2948
                             ],
                             "rotation": [
-                                0.2647,
-                                0.2478,
-                                1.5044
+                                0.2702,
+                                0.2524,
+                                1.5017
                             ]
                         }
                     },
@@ -31272,22 +32254,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar4",
                         "type": "capsule",
                         "center": [
-                            -0.2505,
-                            0.358,
-                            0.2754
+                            -0.2547,
+                            0.278,
+                            0.2948
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                -0.2505,
-                                0.358,
-                                0.2754
+                                -0.2547,
+                                0.278,
+                                0.2948
                             ],
                             "rotation": [
-                                -0.2647,
-                                -0.2478,
-                                1.5044
+                                -0.2702,
+                                -0.2524,
+                                1.5017
                             ]
                         }
                     },
@@ -31295,22 +32277,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar5",
                         "type": "capsule",
                         "center": [
-                            -0.3162,
-                            0.358,
-                            0.2396
+                            -0.3243,
+                            0.278,
+                            0.256
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                -0.3162,
-                                0.358,
-                                0.2396
+                                -0.3243,
+                                0.278,
+                                0.256
                             ],
                             "rotation": [
-                                -0.865,
-                                -0.519,
-                                1.0437
+                                -0.8796,
+                                -0.5203,
+                                1.0297
                             ]
                         }
                     },
@@ -31318,22 +32300,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar6",
                         "type": "capsule",
                         "center": [
-                            -0.3664,
-                            0.358,
-                            0.1733
+                            -0.3776,
+                            0.278,
+                            0.1843
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                -0.3664,
-                                0.358,
-                                0.1733
+                                -0.3776,
+                                0.278,
+                                0.1843
                             ],
                             "rotation": [
-                                -1.3455,
-                                -0.4151,
-                                0.5169
+                                -1.3534,
+                                -0.4098,
+                                0.5063
                             ]
                         }
                     },
@@ -31341,22 +32323,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar7",
                         "type": "capsule",
                         "center": [
-                            -0.3936,
-                            0.358,
-                            0.0868
+                            -0.4064,
+                            0.278,
+                            0.0907
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                -0.3936,
-                                0.358,
-                                0.0868
+                                -0.4064,
+                                0.278,
+                                0.0907
                             ],
                             "rotation": [
-                                -1.5483,
-                                -0.1481,
-                                0.1515
+                                -1.5492,
+                                -0.1452,
+                                0.1484
                             ]
                         }
                     },
@@ -31364,22 +32346,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar8",
                         "type": "capsule",
                         "center": [
-                            -0.3936,
-                            0.358,
-                            -0.0068
+                            -0.4064,
+                            0.278,
+                            -0.0107
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                -0.3936,
-                                0.358,
-                                -0.0068
+                                -0.4064,
+                                0.278,
+                                -0.0107
                             ],
                             "rotation": [
-                                -1.5483,
-                                0.1481,
-                                -0.1515
+                                -1.5492,
+                                0.1452,
+                                -0.1484
                             ]
                         }
                     },
@@ -31387,22 +32369,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar9",
                         "type": "capsule",
                         "center": [
-                            -0.3664,
-                            0.358,
-                            -0.0933
+                            -0.3776,
+                            0.278,
+                            -0.1043
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                -0.3664,
-                                0.358,
-                                -0.0933
+                                -0.3776,
+                                0.278,
+                                -0.1043
                             ],
                             "rotation": [
-                                -1.3455,
-                                0.4151,
-                                -0.5169
+                                -1.3534,
+                                0.4098,
+                                -0.5063
                             ]
                         }
                     },
@@ -31410,22 +32392,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar10",
                         "type": "capsule",
                         "center": [
-                            -0.3162,
-                            0.358,
-                            -0.1596
+                            -0.3243,
+                            0.278,
+                            -0.176
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                -0.3162,
-                                0.358,
-                                -0.1596
+                                -0.3243,
+                                0.278,
+                                -0.176
                             ],
                             "rotation": [
-                                -0.865,
-                                0.519,
-                                -1.0437
+                                -0.8796,
+                                0.5203,
+                                -1.0297
                             ]
                         }
                     },
@@ -31433,22 +32415,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar11",
                         "type": "capsule",
                         "center": [
-                            -0.2505,
-                            0.358,
-                            -0.1954
+                            -0.2547,
+                            0.278,
+                            -0.2148
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                -0.2505,
-                                0.358,
-                                -0.1954
+                                -0.2547,
+                                0.278,
+                                -0.2148
                             ],
                             "rotation": [
-                                -0.2647,
-                                0.2478,
-                                -1.5044
+                                -0.2702,
+                                0.2524,
+                                -1.5017
                             ]
                         }
                     },
@@ -31456,22 +32438,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar12",
                         "type": "capsule",
                         "center": [
-                            -0.1795,
-                            0.358,
-                            -0.1954
+                            -0.1793,
+                            0.278,
+                            -0.2148
                         ],
-                        "radius": 0.027,
-                        "height": 0.0735,
+                        "radius": 0.022,
+                        "height": 0.078,
                         "transform": {
                             "position": [
-                                -0.1795,
-                                0.358,
-                                -0.1954
+                                -0.1793,
+                                0.278,
+                                -0.2148
                             ],
                             "rotation": [
-                                0.2647,
-                                -0.2478,
-                                -1.5044
+                                0.2702,
+                                -0.2524,
+                                -1.5017
                             ]
                         }
                     },
@@ -31479,22 +32461,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar13",
                         "type": "capsule",
                         "center": [
-                            -0.1138,
-                            0.358,
-                            -0.1596
+                            -0.1097,
+                            0.278,
+                            -0.176
                         ],
-                        "radius": 0.027,
-                        "height": 0.0803,
+                        "radius": 0.022,
+                        "height": 0.0859,
                         "transform": {
                             "position": [
-                                -0.1138,
-                                0.358,
-                                -0.1596
+                                -0.1097,
+                                0.278,
+                                -0.176
                             ],
                             "rotation": [
-                                0.865,
-                                -0.519,
-                                -1.0437
+                                0.8796,
+                                -0.5203,
+                                -1.0297
                             ]
                         }
                     },
@@ -31502,22 +32484,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar14",
                         "type": "capsule",
                         "center": [
-                            -0.0636,
-                            0.358,
-                            -0.0933
+                            -0.0564,
+                            0.278,
+                            -0.1043
                         ],
-                        "radius": 0.027,
-                        "height": 0.089,
+                        "radius": 0.022,
+                        "height": 0.0959,
                         "transform": {
                             "position": [
-                                -0.0636,
-                                0.358,
-                                -0.0933
+                                -0.0564,
+                                0.278,
+                                -0.1043
                             ],
                             "rotation": [
-                                1.3455,
-                                -0.4151,
-                                -0.5169
+                                1.3534,
+                                -0.4098,
+                                -0.5063
                             ]
                         }
                     },
@@ -31525,22 +32507,22 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                         "id": "collar15",
                         "type": "capsule",
                         "center": [
-                            -0.0364,
-                            0.358,
-                            -0.0068
+                            -0.0276,
+                            0.278,
+                            -0.0107
                         ],
-                        "radius": 0.027,
-                        "height": 0.0947,
+                        "radius": 0.022,
+                        "height": 0.1025,
                         "transform": {
                             "position": [
-                                -0.0364,
-                                0.358,
-                                -0.0068
+                                -0.0276,
+                                0.278,
+                                -0.0107
                             ],
                             "rotation": [
-                                1.5483,
-                                -0.1481,
-                                -0.1515
+                                1.5492,
+                                -0.1452,
+                                -0.1484
                             ]
                         }
                     }
@@ -31693,13 +32675,13 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 ],
                 "bounds": {
                     "min": [
-                        -0.46499999999999997,
-                        -0.01,
+                        -0.46699999999999997,
+                        -0.015,
                         -0.25
                     ],
                     "max": [
-                        0.035,
-                        0.4,
+                        0.033,
+                        0.31999999999999995,
                         0.48
                     ]
                 },
@@ -31827,8 +32809,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_shell_r_42.add(mesh_boot_shell_r_42);
-    meshes["boot-shell-r"] = mesh_boot_shell_r_42;
+    node_boot_shell_r_44.add(mesh_boot_shell_r_44);
+    meshes["boot-shell-r"] = mesh_boot_shell_r_44;
     colliders["boot-shell-r"] = {
         "type": "box",
         "offset": [
@@ -31845,19 +32827,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["boot-shell-r"] ??= [];
-    destructionGroups["boot-shell-r"].push(node_boot_shell_r_42);
-    const endpoint_boot_eyelet_r0a_43 = makeAttachmentEndpoint(null);
-    const node_boot_eyelet_r0a_43 = new THREE.Group();
-    node_boot_eyelet_r0a_43.name = "Boot eyelet boot-eyelet-r0a__pivot";
-    node_boot_eyelet_r0a_43.scale.set(1, 1, 1);
-    if (endpoint_boot_eyelet_r0a_43) {
-        node_boot_eyelet_r0a_43.position.copy(endpoint_boot_eyelet_r0a_43.start);
-        node_boot_eyelet_r0a_43.rotation.set(0.0, 0.0, 0.0);
+    destructionGroups["boot-shell-r"].push(node_boot_shell_r_44);
+    const endpoint_boot_eyelet_r0a_45 = makeAttachmentEndpoint(null);
+    const node_boot_eyelet_r0a_45 = new THREE.Group();
+    node_boot_eyelet_r0a_45.name = "Boot eyelet boot-eyelet-r0a__pivot";
+    node_boot_eyelet_r0a_45.scale.set(1, 1, 1);
+    if (endpoint_boot_eyelet_r0a_45) {
+        node_boot_eyelet_r0a_45.position.copy(endpoint_boot_eyelet_r0a_45.start);
+        node_boot_eyelet_r0a_45.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r0a_43.position.set(-0.28, 0.17, 0.3793);
-        node_boot_eyelet_r0a_43.rotation.set(0.0, 0.0, 0.0);
+        node_boot_eyelet_r0a_45.position.set(-0.273, 0.115, 0.434);
+        node_boot_eyelet_r0a_45.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_eyelet_r0a_43.userData.sculptComponent = {
+    node_boot_eyelet_r0a_45.userData.sculptComponent = {
         "id": "boot-eyelet-r0a",
         "name": "Boot eyelet boot-eyelet-r0a",
         "level": "micro",
@@ -31884,17 +32866,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.28,
-                0.17,
-                0.3793
+                -0.273,
+                0.115,
+                0.434
             ],
             "rotation": [
                 0,
@@ -31902,9 +32884,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -31999,7 +32981,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r0a_43.userData.actionProfile = {
+    node_boot_eyelet_r0a_45.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -32051,24 +33033,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "brass"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r0a_43);
-    nodes["boot-eyelet-r0a"] = node_boot_eyelet_r0a_43;
-    const mesh_boot_eyelet_r0a_43GeometryDense = endpoint_boot_eyelet_r0a_43 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r0a_43.endRadius, endpoint_boot_eyelet_r0a_43.baseRadius, endpoint_boot_eyelet_r0a_43.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r0a_43Geometry = decimateGeometry(mesh_boot_eyelet_r0a_43GeometryDense, 0.06);
-    if (!endpoint_boot_eyelet_r0a_43) {
-        mesh_boot_eyelet_r0a_43Geometry.scale(0.022, 0.022, 0.014);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r0a_45);
+    nodes["boot-eyelet-r0a"] = node_boot_eyelet_r0a_45;
+    const mesh_boot_eyelet_r0a_45GeometryDense = endpoint_boot_eyelet_r0a_45 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r0a_45.endRadius, endpoint_boot_eyelet_r0a_45.baseRadius, endpoint_boot_eyelet_r0a_45.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
+    const mesh_boot_eyelet_r0a_45Geometry = decimateGeometry(mesh_boot_eyelet_r0a_45GeometryDense, 0.06);
+    if (!endpoint_boot_eyelet_r0a_45) {
+        mesh_boot_eyelet_r0a_45Geometry.scale(0.027, 0.027, 0.015);
     }
-    const mesh_boot_eyelet_r0a_43 = new THREE.Mesh(mesh_boot_eyelet_r0a_43Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_eyelet_r0a_45 = new THREE.Mesh(mesh_boot_eyelet_r0a_45Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_eyelet_r0a_43.name = "Boot eyelet boot-eyelet-r0a";
-    if (endpoint_boot_eyelet_r0a_43) {
-        mesh_boot_eyelet_r0a_43.position.copy(endpoint_boot_eyelet_r0a_43.midpoint);
-        mesh_boot_eyelet_r0a_43.quaternion.copy(endpoint_boot_eyelet_r0a_43.quaternion);
+    mesh_boot_eyelet_r0a_45.name = "Boot eyelet boot-eyelet-r0a";
+    if (endpoint_boot_eyelet_r0a_45) {
+        mesh_boot_eyelet_r0a_45.position.copy(endpoint_boot_eyelet_r0a_45.midpoint);
+        mesh_boot_eyelet_r0a_45.quaternion.copy(endpoint_boot_eyelet_r0a_45.quaternion);
     }
-    mesh_boot_eyelet_r0a_43.castShadow = options.castShadow ?? true;
-    mesh_boot_eyelet_r0a_43.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_eyelet_r0a_43.userData.sculptComponent = {
+    mesh_boot_eyelet_r0a_45.castShadow = options.castShadow ?? true;
+    mesh_boot_eyelet_r0a_45.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_eyelet_r0a_45.userData.sculptComponent = {
         "id": "boot-eyelet-r0a",
         "name": "Boot eyelet boot-eyelet-r0a",
         "level": "micro",
@@ -32095,17 +33077,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.28,
-                0.17,
-                0.3793
+                -0.273,
+                0.115,
+                0.434
             ],
             "rotation": [
                 0,
@@ -32113,9 +33095,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -32210,8 +33192,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r0a_43.add(mesh_boot_eyelet_r0a_43);
-    meshes["boot-eyelet-r0a"] = mesh_boot_eyelet_r0a_43;
+    node_boot_eyelet_r0a_45.add(mesh_boot_eyelet_r0a_45);
+    meshes["boot-eyelet-r0a"] = mesh_boot_eyelet_r0a_45;
     colliders["boot-eyelet-r0a"] = {
         "type": "box",
         "offset": [
@@ -32228,19 +33210,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["boot-eyelet-r0a"] ??= [];
-    destructionGroups["boot-eyelet-r0a"].push(node_boot_eyelet_r0a_43);
-    const endpoint_boot_eyelet_r0b_44 = makeAttachmentEndpoint(null);
-    const node_boot_eyelet_r0b_44 = new THREE.Group();
-    node_boot_eyelet_r0b_44.name = "Boot eyelet boot-eyelet-r0b__pivot";
-    node_boot_eyelet_r0b_44.scale.set(1, 1, 1);
-    if (endpoint_boot_eyelet_r0b_44) {
-        node_boot_eyelet_r0b_44.position.copy(endpoint_boot_eyelet_r0b_44.start);
-        node_boot_eyelet_r0b_44.rotation.set(0.0, 0.0, 0.0);
+    destructionGroups["boot-eyelet-r0a"].push(node_boot_eyelet_r0a_45);
+    const endpoint_boot_eyelet_r0b_46 = makeAttachmentEndpoint(null);
+    const node_boot_eyelet_r0b_46 = new THREE.Group();
+    node_boot_eyelet_r0b_46.name = "Boot eyelet boot-eyelet-r0b__pivot";
+    node_boot_eyelet_r0b_46.scale.set(1, 1, 1);
+    if (endpoint_boot_eyelet_r0b_46) {
+        node_boot_eyelet_r0b_46.position.copy(endpoint_boot_eyelet_r0b_46.start);
+        node_boot_eyelet_r0b_46.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r0b_44.position.set(-0.15, 0.17, 0.3793);
-        node_boot_eyelet_r0b_44.rotation.set(0.0, 0.0, 0.0);
+        node_boot_eyelet_r0b_46.position.set(-0.161, 0.115, 0.434);
+        node_boot_eyelet_r0b_46.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_eyelet_r0b_44.userData.sculptComponent = {
+    node_boot_eyelet_r0b_46.userData.sculptComponent = {
         "id": "boot-eyelet-r0b",
         "name": "Boot eyelet boot-eyelet-r0b",
         "level": "micro",
@@ -32267,17 +33249,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.15,
-                0.17,
-                0.3793
+                -0.161,
+                0.115,
+                0.434
             ],
             "rotation": [
                 0,
@@ -32285,9 +33267,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -32382,7 +33364,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r0b_44.userData.actionProfile = {
+    node_boot_eyelet_r0b_46.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -32434,24 +33416,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "brass"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r0b_44);
-    nodes["boot-eyelet-r0b"] = node_boot_eyelet_r0b_44;
-    const mesh_boot_eyelet_r0b_44GeometryDense = endpoint_boot_eyelet_r0b_44 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r0b_44.endRadius, endpoint_boot_eyelet_r0b_44.baseRadius, endpoint_boot_eyelet_r0b_44.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r0b_44Geometry = decimateGeometry(mesh_boot_eyelet_r0b_44GeometryDense, 0.06);
-    if (!endpoint_boot_eyelet_r0b_44) {
-        mesh_boot_eyelet_r0b_44Geometry.scale(0.022, 0.022, 0.014);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r0b_46);
+    nodes["boot-eyelet-r0b"] = node_boot_eyelet_r0b_46;
+    const mesh_boot_eyelet_r0b_46GeometryDense = endpoint_boot_eyelet_r0b_46 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r0b_46.endRadius, endpoint_boot_eyelet_r0b_46.baseRadius, endpoint_boot_eyelet_r0b_46.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
+    const mesh_boot_eyelet_r0b_46Geometry = decimateGeometry(mesh_boot_eyelet_r0b_46GeometryDense, 0.06);
+    if (!endpoint_boot_eyelet_r0b_46) {
+        mesh_boot_eyelet_r0b_46Geometry.scale(0.027, 0.027, 0.015);
     }
-    const mesh_boot_eyelet_r0b_44 = new THREE.Mesh(mesh_boot_eyelet_r0b_44Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_eyelet_r0b_46 = new THREE.Mesh(mesh_boot_eyelet_r0b_46Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_eyelet_r0b_44.name = "Boot eyelet boot-eyelet-r0b";
-    if (endpoint_boot_eyelet_r0b_44) {
-        mesh_boot_eyelet_r0b_44.position.copy(endpoint_boot_eyelet_r0b_44.midpoint);
-        mesh_boot_eyelet_r0b_44.quaternion.copy(endpoint_boot_eyelet_r0b_44.quaternion);
+    mesh_boot_eyelet_r0b_46.name = "Boot eyelet boot-eyelet-r0b";
+    if (endpoint_boot_eyelet_r0b_46) {
+        mesh_boot_eyelet_r0b_46.position.copy(endpoint_boot_eyelet_r0b_46.midpoint);
+        mesh_boot_eyelet_r0b_46.quaternion.copy(endpoint_boot_eyelet_r0b_46.quaternion);
     }
-    mesh_boot_eyelet_r0b_44.castShadow = options.castShadow ?? true;
-    mesh_boot_eyelet_r0b_44.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_eyelet_r0b_44.userData.sculptComponent = {
+    mesh_boot_eyelet_r0b_46.castShadow = options.castShadow ?? true;
+    mesh_boot_eyelet_r0b_46.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_eyelet_r0b_46.userData.sculptComponent = {
         "id": "boot-eyelet-r0b",
         "name": "Boot eyelet boot-eyelet-r0b",
         "level": "micro",
@@ -32478,17 +33460,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.15,
-                0.17,
-                0.3793
+                -0.161,
+                0.115,
+                0.434
             ],
             "rotation": [
                 0,
@@ -32496,9 +33478,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -32593,8 +33575,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r0b_44.add(mesh_boot_eyelet_r0b_44);
-    meshes["boot-eyelet-r0b"] = mesh_boot_eyelet_r0b_44;
+    node_boot_eyelet_r0b_46.add(mesh_boot_eyelet_r0b_46);
+    meshes["boot-eyelet-r0b"] = mesh_boot_eyelet_r0b_46;
     colliders["boot-eyelet-r0b"] = {
         "type": "box",
         "offset": [
@@ -32611,19 +33593,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["boot-eyelet-r0b"] ??= [];
-    destructionGroups["boot-eyelet-r0b"].push(node_boot_eyelet_r0b_44);
-    const endpoint_boot_eyelet_r1a_45 = makeAttachmentEndpoint(null);
-    const node_boot_eyelet_r1a_45 = new THREE.Group();
-    node_boot_eyelet_r1a_45.name = "Boot eyelet boot-eyelet-r1a__pivot";
-    node_boot_eyelet_r1a_45.scale.set(1, 1, 1);
-    if (endpoint_boot_eyelet_r1a_45) {
-        node_boot_eyelet_r1a_45.position.copy(endpoint_boot_eyelet_r1a_45.start);
-        node_boot_eyelet_r1a_45.rotation.set(0.0, 0.0, 0.0);
+    destructionGroups["boot-eyelet-r0b"].push(node_boot_eyelet_r0b_46);
+    const endpoint_boot_eyelet_r1a_47 = makeAttachmentEndpoint(null);
+    const node_boot_eyelet_r1a_47 = new THREE.Group();
+    node_boot_eyelet_r1a_47.name = "Boot eyelet boot-eyelet-r1a__pivot";
+    node_boot_eyelet_r1a_47.scale.set(1, 1, 1);
+    if (endpoint_boot_eyelet_r1a_47) {
+        node_boot_eyelet_r1a_47.position.copy(endpoint_boot_eyelet_r1a_47.start);
+        node_boot_eyelet_r1a_47.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r1a_45.position.set(-0.28, 0.215, 0.3275);
-        node_boot_eyelet_r1a_45.rotation.set(0.0, 0.0, 0.0);
+        node_boot_eyelet_r1a_47.position.set(-0.273, 0.158, 0.4026);
+        node_boot_eyelet_r1a_47.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_eyelet_r1a_45.userData.sculptComponent = {
+    node_boot_eyelet_r1a_47.userData.sculptComponent = {
         "id": "boot-eyelet-r1a",
         "name": "Boot eyelet boot-eyelet-r1a",
         "level": "micro",
@@ -32650,17 +33632,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.28,
-                0.215,
-                0.3275
+                -0.273,
+                0.158,
+                0.4026
             ],
             "rotation": [
                 0,
@@ -32668,9 +33650,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -32765,7 +33747,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r1a_45.userData.actionProfile = {
+    node_boot_eyelet_r1a_47.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -32817,24 +33799,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "brass"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r1a_45);
-    nodes["boot-eyelet-r1a"] = node_boot_eyelet_r1a_45;
-    const mesh_boot_eyelet_r1a_45GeometryDense = endpoint_boot_eyelet_r1a_45 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r1a_45.endRadius, endpoint_boot_eyelet_r1a_45.baseRadius, endpoint_boot_eyelet_r1a_45.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r1a_45Geometry = decimateGeometry(mesh_boot_eyelet_r1a_45GeometryDense, 0.06);
-    if (!endpoint_boot_eyelet_r1a_45) {
-        mesh_boot_eyelet_r1a_45Geometry.scale(0.022, 0.022, 0.014);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r1a_47);
+    nodes["boot-eyelet-r1a"] = node_boot_eyelet_r1a_47;
+    const mesh_boot_eyelet_r1a_47GeometryDense = endpoint_boot_eyelet_r1a_47 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r1a_47.endRadius, endpoint_boot_eyelet_r1a_47.baseRadius, endpoint_boot_eyelet_r1a_47.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
+    const mesh_boot_eyelet_r1a_47Geometry = decimateGeometry(mesh_boot_eyelet_r1a_47GeometryDense, 0.06);
+    if (!endpoint_boot_eyelet_r1a_47) {
+        mesh_boot_eyelet_r1a_47Geometry.scale(0.027, 0.027, 0.015);
     }
-    const mesh_boot_eyelet_r1a_45 = new THREE.Mesh(mesh_boot_eyelet_r1a_45Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_eyelet_r1a_47 = new THREE.Mesh(mesh_boot_eyelet_r1a_47Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_eyelet_r1a_45.name = "Boot eyelet boot-eyelet-r1a";
-    if (endpoint_boot_eyelet_r1a_45) {
-        mesh_boot_eyelet_r1a_45.position.copy(endpoint_boot_eyelet_r1a_45.midpoint);
-        mesh_boot_eyelet_r1a_45.quaternion.copy(endpoint_boot_eyelet_r1a_45.quaternion);
+    mesh_boot_eyelet_r1a_47.name = "Boot eyelet boot-eyelet-r1a";
+    if (endpoint_boot_eyelet_r1a_47) {
+        mesh_boot_eyelet_r1a_47.position.copy(endpoint_boot_eyelet_r1a_47.midpoint);
+        mesh_boot_eyelet_r1a_47.quaternion.copy(endpoint_boot_eyelet_r1a_47.quaternion);
     }
-    mesh_boot_eyelet_r1a_45.castShadow = options.castShadow ?? true;
-    mesh_boot_eyelet_r1a_45.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_eyelet_r1a_45.userData.sculptComponent = {
+    mesh_boot_eyelet_r1a_47.castShadow = options.castShadow ?? true;
+    mesh_boot_eyelet_r1a_47.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_eyelet_r1a_47.userData.sculptComponent = {
         "id": "boot-eyelet-r1a",
         "name": "Boot eyelet boot-eyelet-r1a",
         "level": "micro",
@@ -32861,17 +33843,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.28,
-                0.215,
-                0.3275
+                -0.273,
+                0.158,
+                0.4026
             ],
             "rotation": [
                 0,
@@ -32879,9 +33861,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -32976,8 +33958,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r1a_45.add(mesh_boot_eyelet_r1a_45);
-    meshes["boot-eyelet-r1a"] = mesh_boot_eyelet_r1a_45;
+    node_boot_eyelet_r1a_47.add(mesh_boot_eyelet_r1a_47);
+    meshes["boot-eyelet-r1a"] = mesh_boot_eyelet_r1a_47;
     colliders["boot-eyelet-r1a"] = {
         "type": "box",
         "offset": [
@@ -32994,19 +33976,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["boot-eyelet-r1a"] ??= [];
-    destructionGroups["boot-eyelet-r1a"].push(node_boot_eyelet_r1a_45);
-    const endpoint_boot_eyelet_r1b_46 = makeAttachmentEndpoint(null);
-    const node_boot_eyelet_r1b_46 = new THREE.Group();
-    node_boot_eyelet_r1b_46.name = "Boot eyelet boot-eyelet-r1b__pivot";
-    node_boot_eyelet_r1b_46.scale.set(1, 1, 1);
-    if (endpoint_boot_eyelet_r1b_46) {
-        node_boot_eyelet_r1b_46.position.copy(endpoint_boot_eyelet_r1b_46.start);
-        node_boot_eyelet_r1b_46.rotation.set(0.0, 0.0, 0.0);
+    destructionGroups["boot-eyelet-r1a"].push(node_boot_eyelet_r1a_47);
+    const endpoint_boot_eyelet_r1b_48 = makeAttachmentEndpoint(null);
+    const node_boot_eyelet_r1b_48 = new THREE.Group();
+    node_boot_eyelet_r1b_48.name = "Boot eyelet boot-eyelet-r1b__pivot";
+    node_boot_eyelet_r1b_48.scale.set(1, 1, 1);
+    if (endpoint_boot_eyelet_r1b_48) {
+        node_boot_eyelet_r1b_48.position.copy(endpoint_boot_eyelet_r1b_48.start);
+        node_boot_eyelet_r1b_48.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r1b_46.position.set(-0.15, 0.215, 0.3275);
-        node_boot_eyelet_r1b_46.rotation.set(0.0, 0.0, 0.0);
+        node_boot_eyelet_r1b_48.position.set(-0.161, 0.158, 0.4026);
+        node_boot_eyelet_r1b_48.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_eyelet_r1b_46.userData.sculptComponent = {
+    node_boot_eyelet_r1b_48.userData.sculptComponent = {
         "id": "boot-eyelet-r1b",
         "name": "Boot eyelet boot-eyelet-r1b",
         "level": "micro",
@@ -33033,17 +34015,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.15,
-                0.215,
-                0.3275
+                -0.161,
+                0.158,
+                0.4026
             ],
             "rotation": [
                 0,
@@ -33051,9 +34033,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -33148,7 +34130,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r1b_46.userData.actionProfile = {
+    node_boot_eyelet_r1b_48.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -33200,24 +34182,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "brass"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r1b_46);
-    nodes["boot-eyelet-r1b"] = node_boot_eyelet_r1b_46;
-    const mesh_boot_eyelet_r1b_46GeometryDense = endpoint_boot_eyelet_r1b_46 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r1b_46.endRadius, endpoint_boot_eyelet_r1b_46.baseRadius, endpoint_boot_eyelet_r1b_46.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r1b_46Geometry = decimateGeometry(mesh_boot_eyelet_r1b_46GeometryDense, 0.06);
-    if (!endpoint_boot_eyelet_r1b_46) {
-        mesh_boot_eyelet_r1b_46Geometry.scale(0.022, 0.022, 0.014);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r1b_48);
+    nodes["boot-eyelet-r1b"] = node_boot_eyelet_r1b_48;
+    const mesh_boot_eyelet_r1b_48GeometryDense = endpoint_boot_eyelet_r1b_48 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r1b_48.endRadius, endpoint_boot_eyelet_r1b_48.baseRadius, endpoint_boot_eyelet_r1b_48.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
+    const mesh_boot_eyelet_r1b_48Geometry = decimateGeometry(mesh_boot_eyelet_r1b_48GeometryDense, 0.06);
+    if (!endpoint_boot_eyelet_r1b_48) {
+        mesh_boot_eyelet_r1b_48Geometry.scale(0.027, 0.027, 0.015);
     }
-    const mesh_boot_eyelet_r1b_46 = new THREE.Mesh(mesh_boot_eyelet_r1b_46Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_eyelet_r1b_48 = new THREE.Mesh(mesh_boot_eyelet_r1b_48Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_eyelet_r1b_46.name = "Boot eyelet boot-eyelet-r1b";
-    if (endpoint_boot_eyelet_r1b_46) {
-        mesh_boot_eyelet_r1b_46.position.copy(endpoint_boot_eyelet_r1b_46.midpoint);
-        mesh_boot_eyelet_r1b_46.quaternion.copy(endpoint_boot_eyelet_r1b_46.quaternion);
+    mesh_boot_eyelet_r1b_48.name = "Boot eyelet boot-eyelet-r1b";
+    if (endpoint_boot_eyelet_r1b_48) {
+        mesh_boot_eyelet_r1b_48.position.copy(endpoint_boot_eyelet_r1b_48.midpoint);
+        mesh_boot_eyelet_r1b_48.quaternion.copy(endpoint_boot_eyelet_r1b_48.quaternion);
     }
-    mesh_boot_eyelet_r1b_46.castShadow = options.castShadow ?? true;
-    mesh_boot_eyelet_r1b_46.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_eyelet_r1b_46.userData.sculptComponent = {
+    mesh_boot_eyelet_r1b_48.castShadow = options.castShadow ?? true;
+    mesh_boot_eyelet_r1b_48.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_eyelet_r1b_48.userData.sculptComponent = {
         "id": "boot-eyelet-r1b",
         "name": "Boot eyelet boot-eyelet-r1b",
         "level": "micro",
@@ -33244,17 +34226,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.15,
-                0.215,
-                0.3275
+                -0.161,
+                0.158,
+                0.4026
             ],
             "rotation": [
                 0,
@@ -33262,9 +34244,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -33359,8 +34341,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r1b_46.add(mesh_boot_eyelet_r1b_46);
-    meshes["boot-eyelet-r1b"] = mesh_boot_eyelet_r1b_46;
+    node_boot_eyelet_r1b_48.add(mesh_boot_eyelet_r1b_48);
+    meshes["boot-eyelet-r1b"] = mesh_boot_eyelet_r1b_48;
     colliders["boot-eyelet-r1b"] = {
         "type": "box",
         "offset": [
@@ -33377,19 +34359,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["boot-eyelet-r1b"] ??= [];
-    destructionGroups["boot-eyelet-r1b"].push(node_boot_eyelet_r1b_46);
-    const endpoint_boot_eyelet_r2a_47 = makeAttachmentEndpoint(null);
-    const node_boot_eyelet_r2a_47 = new THREE.Group();
-    node_boot_eyelet_r2a_47.name = "Boot eyelet boot-eyelet-r2a__pivot";
-    node_boot_eyelet_r2a_47.scale.set(1, 1, 1);
-    if (endpoint_boot_eyelet_r2a_47) {
-        node_boot_eyelet_r2a_47.position.copy(endpoint_boot_eyelet_r2a_47.start);
-        node_boot_eyelet_r2a_47.rotation.set(0.0, 0.0, 0.0);
+    destructionGroups["boot-eyelet-r1b"].push(node_boot_eyelet_r1b_48);
+    const endpoint_boot_eyelet_r2a_49 = makeAttachmentEndpoint(null);
+    const node_boot_eyelet_r2a_49 = new THREE.Group();
+    node_boot_eyelet_r2a_49.name = "Boot eyelet boot-eyelet-r2a__pivot";
+    node_boot_eyelet_r2a_49.scale.set(1, 1, 1);
+    if (endpoint_boot_eyelet_r2a_49) {
+        node_boot_eyelet_r2a_49.position.copy(endpoint_boot_eyelet_r2a_49.start);
+        node_boot_eyelet_r2a_49.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r2a_47.position.set(-0.28, 0.26, 0.295);
-        node_boot_eyelet_r2a_47.rotation.set(0.0, 0.0, 0.0);
+        node_boot_eyelet_r2a_49.position.set(-0.273, 0.201, 0.3514);
+        node_boot_eyelet_r2a_49.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_eyelet_r2a_47.userData.sculptComponent = {
+    node_boot_eyelet_r2a_49.userData.sculptComponent = {
         "id": "boot-eyelet-r2a",
         "name": "Boot eyelet boot-eyelet-r2a",
         "level": "micro",
@@ -33416,17 +34398,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.28,
-                0.26,
-                0.295
+                -0.273,
+                0.201,
+                0.3514
             ],
             "rotation": [
                 0,
@@ -33434,9 +34416,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -33531,7 +34513,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r2a_47.userData.actionProfile = {
+    node_boot_eyelet_r2a_49.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -33583,24 +34565,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "brass"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r2a_47);
-    nodes["boot-eyelet-r2a"] = node_boot_eyelet_r2a_47;
-    const mesh_boot_eyelet_r2a_47GeometryDense = endpoint_boot_eyelet_r2a_47 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r2a_47.endRadius, endpoint_boot_eyelet_r2a_47.baseRadius, endpoint_boot_eyelet_r2a_47.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r2a_47Geometry = decimateGeometry(mesh_boot_eyelet_r2a_47GeometryDense, 0.06);
-    if (!endpoint_boot_eyelet_r2a_47) {
-        mesh_boot_eyelet_r2a_47Geometry.scale(0.022, 0.022, 0.014);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r2a_49);
+    nodes["boot-eyelet-r2a"] = node_boot_eyelet_r2a_49;
+    const mesh_boot_eyelet_r2a_49GeometryDense = endpoint_boot_eyelet_r2a_49 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r2a_49.endRadius, endpoint_boot_eyelet_r2a_49.baseRadius, endpoint_boot_eyelet_r2a_49.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
+    const mesh_boot_eyelet_r2a_49Geometry = decimateGeometry(mesh_boot_eyelet_r2a_49GeometryDense, 0.06);
+    if (!endpoint_boot_eyelet_r2a_49) {
+        mesh_boot_eyelet_r2a_49Geometry.scale(0.027, 0.027, 0.015);
     }
-    const mesh_boot_eyelet_r2a_47 = new THREE.Mesh(mesh_boot_eyelet_r2a_47Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_eyelet_r2a_49 = new THREE.Mesh(mesh_boot_eyelet_r2a_49Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_eyelet_r2a_47.name = "Boot eyelet boot-eyelet-r2a";
-    if (endpoint_boot_eyelet_r2a_47) {
-        mesh_boot_eyelet_r2a_47.position.copy(endpoint_boot_eyelet_r2a_47.midpoint);
-        mesh_boot_eyelet_r2a_47.quaternion.copy(endpoint_boot_eyelet_r2a_47.quaternion);
+    mesh_boot_eyelet_r2a_49.name = "Boot eyelet boot-eyelet-r2a";
+    if (endpoint_boot_eyelet_r2a_49) {
+        mesh_boot_eyelet_r2a_49.position.copy(endpoint_boot_eyelet_r2a_49.midpoint);
+        mesh_boot_eyelet_r2a_49.quaternion.copy(endpoint_boot_eyelet_r2a_49.quaternion);
     }
-    mesh_boot_eyelet_r2a_47.castShadow = options.castShadow ?? true;
-    mesh_boot_eyelet_r2a_47.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_eyelet_r2a_47.userData.sculptComponent = {
+    mesh_boot_eyelet_r2a_49.castShadow = options.castShadow ?? true;
+    mesh_boot_eyelet_r2a_49.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_eyelet_r2a_49.userData.sculptComponent = {
         "id": "boot-eyelet-r2a",
         "name": "Boot eyelet boot-eyelet-r2a",
         "level": "micro",
@@ -33627,17 +34609,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.28,
-                0.26,
-                0.295
+                -0.273,
+                0.201,
+                0.3514
             ],
             "rotation": [
                 0,
@@ -33645,9 +34627,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -33742,8 +34724,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r2a_47.add(mesh_boot_eyelet_r2a_47);
-    meshes["boot-eyelet-r2a"] = mesh_boot_eyelet_r2a_47;
+    node_boot_eyelet_r2a_49.add(mesh_boot_eyelet_r2a_49);
+    meshes["boot-eyelet-r2a"] = mesh_boot_eyelet_r2a_49;
     colliders["boot-eyelet-r2a"] = {
         "type": "box",
         "offset": [
@@ -33760,19 +34742,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["boot-eyelet-r2a"] ??= [];
-    destructionGroups["boot-eyelet-r2a"].push(node_boot_eyelet_r2a_47);
-    const endpoint_boot_eyelet_r2b_48 = makeAttachmentEndpoint(null);
-    const node_boot_eyelet_r2b_48 = new THREE.Group();
-    node_boot_eyelet_r2b_48.name = "Boot eyelet boot-eyelet-r2b__pivot";
-    node_boot_eyelet_r2b_48.scale.set(1, 1, 1);
-    if (endpoint_boot_eyelet_r2b_48) {
-        node_boot_eyelet_r2b_48.position.copy(endpoint_boot_eyelet_r2b_48.start);
-        node_boot_eyelet_r2b_48.rotation.set(0.0, 0.0, 0.0);
+    destructionGroups["boot-eyelet-r2a"].push(node_boot_eyelet_r2a_49);
+    const endpoint_boot_eyelet_r2b_50 = makeAttachmentEndpoint(null);
+    const node_boot_eyelet_r2b_50 = new THREE.Group();
+    node_boot_eyelet_r2b_50.name = "Boot eyelet boot-eyelet-r2b__pivot";
+    node_boot_eyelet_r2b_50.scale.set(1, 1, 1);
+    if (endpoint_boot_eyelet_r2b_50) {
+        node_boot_eyelet_r2b_50.position.copy(endpoint_boot_eyelet_r2b_50.start);
+        node_boot_eyelet_r2b_50.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r2b_48.position.set(-0.15, 0.26, 0.295);
-        node_boot_eyelet_r2b_48.rotation.set(0.0, 0.0, 0.0);
+        node_boot_eyelet_r2b_50.position.set(-0.161, 0.201, 0.3514);
+        node_boot_eyelet_r2b_50.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_eyelet_r2b_48.userData.sculptComponent = {
+    node_boot_eyelet_r2b_50.userData.sculptComponent = {
         "id": "boot-eyelet-r2b",
         "name": "Boot eyelet boot-eyelet-r2b",
         "level": "micro",
@@ -33799,17 +34781,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.15,
-                0.26,
-                0.295
+                -0.161,
+                0.201,
+                0.3514
             ],
             "rotation": [
                 0,
@@ -33817,9 +34799,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -33914,7 +34896,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r2b_48.userData.actionProfile = {
+    node_boot_eyelet_r2b_50.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -33966,24 +34948,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "brass"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r2b_48);
-    nodes["boot-eyelet-r2b"] = node_boot_eyelet_r2b_48;
-    const mesh_boot_eyelet_r2b_48GeometryDense = endpoint_boot_eyelet_r2b_48 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r2b_48.endRadius, endpoint_boot_eyelet_r2b_48.baseRadius, endpoint_boot_eyelet_r2b_48.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r2b_48Geometry = decimateGeometry(mesh_boot_eyelet_r2b_48GeometryDense, 0.06);
-    if (!endpoint_boot_eyelet_r2b_48) {
-        mesh_boot_eyelet_r2b_48Geometry.scale(0.022, 0.022, 0.014);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r2b_50);
+    nodes["boot-eyelet-r2b"] = node_boot_eyelet_r2b_50;
+    const mesh_boot_eyelet_r2b_50GeometryDense = endpoint_boot_eyelet_r2b_50 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r2b_50.endRadius, endpoint_boot_eyelet_r2b_50.baseRadius, endpoint_boot_eyelet_r2b_50.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
+    const mesh_boot_eyelet_r2b_50Geometry = decimateGeometry(mesh_boot_eyelet_r2b_50GeometryDense, 0.06);
+    if (!endpoint_boot_eyelet_r2b_50) {
+        mesh_boot_eyelet_r2b_50Geometry.scale(0.027, 0.027, 0.015);
     }
-    const mesh_boot_eyelet_r2b_48 = new THREE.Mesh(mesh_boot_eyelet_r2b_48Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_eyelet_r2b_50 = new THREE.Mesh(mesh_boot_eyelet_r2b_50Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_eyelet_r2b_48.name = "Boot eyelet boot-eyelet-r2b";
-    if (endpoint_boot_eyelet_r2b_48) {
-        mesh_boot_eyelet_r2b_48.position.copy(endpoint_boot_eyelet_r2b_48.midpoint);
-        mesh_boot_eyelet_r2b_48.quaternion.copy(endpoint_boot_eyelet_r2b_48.quaternion);
+    mesh_boot_eyelet_r2b_50.name = "Boot eyelet boot-eyelet-r2b";
+    if (endpoint_boot_eyelet_r2b_50) {
+        mesh_boot_eyelet_r2b_50.position.copy(endpoint_boot_eyelet_r2b_50.midpoint);
+        mesh_boot_eyelet_r2b_50.quaternion.copy(endpoint_boot_eyelet_r2b_50.quaternion);
     }
-    mesh_boot_eyelet_r2b_48.castShadow = options.castShadow ?? true;
-    mesh_boot_eyelet_r2b_48.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_eyelet_r2b_48.userData.sculptComponent = {
+    mesh_boot_eyelet_r2b_50.castShadow = options.castShadow ?? true;
+    mesh_boot_eyelet_r2b_50.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_eyelet_r2b_50.userData.sculptComponent = {
         "id": "boot-eyelet-r2b",
         "name": "Boot eyelet boot-eyelet-r2b",
         "level": "micro",
@@ -34010,17 +34992,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.15,
-                0.26,
-                0.295
+                -0.161,
+                0.201,
+                0.3514
             ],
             "rotation": [
                 0,
@@ -34028,9 +35010,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -34125,8 +35107,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r2b_48.add(mesh_boot_eyelet_r2b_48);
-    meshes["boot-eyelet-r2b"] = mesh_boot_eyelet_r2b_48;
+    node_boot_eyelet_r2b_50.add(mesh_boot_eyelet_r2b_50);
+    meshes["boot-eyelet-r2b"] = mesh_boot_eyelet_r2b_50;
     colliders["boot-eyelet-r2b"] = {
         "type": "box",
         "offset": [
@@ -34143,19 +35125,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["boot-eyelet-r2b"] ??= [];
-    destructionGroups["boot-eyelet-r2b"].push(node_boot_eyelet_r2b_48);
-    const endpoint_boot_eyelet_r3a_49 = makeAttachmentEndpoint(null);
-    const node_boot_eyelet_r3a_49 = new THREE.Group();
-    node_boot_eyelet_r3a_49.name = "Boot eyelet boot-eyelet-r3a__pivot";
-    node_boot_eyelet_r3a_49.scale.set(1, 1, 1);
-    if (endpoint_boot_eyelet_r3a_49) {
-        node_boot_eyelet_r3a_49.position.copy(endpoint_boot_eyelet_r3a_49.start);
-        node_boot_eyelet_r3a_49.rotation.set(0.0, 0.0, 0.0);
+    destructionGroups["boot-eyelet-r2b"].push(node_boot_eyelet_r2b_50);
+    const endpoint_boot_eyelet_r3a_51 = makeAttachmentEndpoint(null);
+    const node_boot_eyelet_r3a_51 = new THREE.Group();
+    node_boot_eyelet_r3a_51.name = "Boot eyelet boot-eyelet-r3a__pivot";
+    node_boot_eyelet_r3a_51.scale.set(1, 1, 1);
+    if (endpoint_boot_eyelet_r3a_51) {
+        node_boot_eyelet_r3a_51.position.copy(endpoint_boot_eyelet_r3a_51.start);
+        node_boot_eyelet_r3a_51.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r3a_49.position.set(-0.28, 0.305, 0.2792);
-        node_boot_eyelet_r3a_49.rotation.set(0.0, 0.0, 0.0);
+        node_boot_eyelet_r3a_51.position.set(-0.273, 0.244, 0.315);
+        node_boot_eyelet_r3a_51.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_eyelet_r3a_49.userData.sculptComponent = {
+    node_boot_eyelet_r3a_51.userData.sculptComponent = {
         "id": "boot-eyelet-r3a",
         "name": "Boot eyelet boot-eyelet-r3a",
         "level": "micro",
@@ -34182,17 +35164,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.28,
-                0.305,
-                0.2792
+                -0.273,
+                0.244,
+                0.315
             ],
             "rotation": [
                 0,
@@ -34200,9 +35182,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -34297,7 +35279,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r3a_49.userData.actionProfile = {
+    node_boot_eyelet_r3a_51.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -34349,24 +35331,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "brass"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r3a_49);
-    nodes["boot-eyelet-r3a"] = node_boot_eyelet_r3a_49;
-    const mesh_boot_eyelet_r3a_49GeometryDense = endpoint_boot_eyelet_r3a_49 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r3a_49.endRadius, endpoint_boot_eyelet_r3a_49.baseRadius, endpoint_boot_eyelet_r3a_49.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r3a_49Geometry = decimateGeometry(mesh_boot_eyelet_r3a_49GeometryDense, 0.06);
-    if (!endpoint_boot_eyelet_r3a_49) {
-        mesh_boot_eyelet_r3a_49Geometry.scale(0.022, 0.022, 0.014);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r3a_51);
+    nodes["boot-eyelet-r3a"] = node_boot_eyelet_r3a_51;
+    const mesh_boot_eyelet_r3a_51GeometryDense = endpoint_boot_eyelet_r3a_51 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r3a_51.endRadius, endpoint_boot_eyelet_r3a_51.baseRadius, endpoint_boot_eyelet_r3a_51.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
+    const mesh_boot_eyelet_r3a_51Geometry = decimateGeometry(mesh_boot_eyelet_r3a_51GeometryDense, 0.06);
+    if (!endpoint_boot_eyelet_r3a_51) {
+        mesh_boot_eyelet_r3a_51Geometry.scale(0.027, 0.027, 0.015);
     }
-    const mesh_boot_eyelet_r3a_49 = new THREE.Mesh(mesh_boot_eyelet_r3a_49Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_eyelet_r3a_51 = new THREE.Mesh(mesh_boot_eyelet_r3a_51Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_eyelet_r3a_49.name = "Boot eyelet boot-eyelet-r3a";
-    if (endpoint_boot_eyelet_r3a_49) {
-        mesh_boot_eyelet_r3a_49.position.copy(endpoint_boot_eyelet_r3a_49.midpoint);
-        mesh_boot_eyelet_r3a_49.quaternion.copy(endpoint_boot_eyelet_r3a_49.quaternion);
+    mesh_boot_eyelet_r3a_51.name = "Boot eyelet boot-eyelet-r3a";
+    if (endpoint_boot_eyelet_r3a_51) {
+        mesh_boot_eyelet_r3a_51.position.copy(endpoint_boot_eyelet_r3a_51.midpoint);
+        mesh_boot_eyelet_r3a_51.quaternion.copy(endpoint_boot_eyelet_r3a_51.quaternion);
     }
-    mesh_boot_eyelet_r3a_49.castShadow = options.castShadow ?? true;
-    mesh_boot_eyelet_r3a_49.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_eyelet_r3a_49.userData.sculptComponent = {
+    mesh_boot_eyelet_r3a_51.castShadow = options.castShadow ?? true;
+    mesh_boot_eyelet_r3a_51.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_eyelet_r3a_51.userData.sculptComponent = {
         "id": "boot-eyelet-r3a",
         "name": "Boot eyelet boot-eyelet-r3a",
         "level": "micro",
@@ -34393,17 +35375,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.28,
-                0.305,
-                0.2792
+                -0.273,
+                0.244,
+                0.315
             ],
             "rotation": [
                 0,
@@ -34411,9 +35393,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -34508,8 +35490,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r3a_49.add(mesh_boot_eyelet_r3a_49);
-    meshes["boot-eyelet-r3a"] = mesh_boot_eyelet_r3a_49;
+    node_boot_eyelet_r3a_51.add(mesh_boot_eyelet_r3a_51);
+    meshes["boot-eyelet-r3a"] = mesh_boot_eyelet_r3a_51;
     colliders["boot-eyelet-r3a"] = {
         "type": "box",
         "offset": [
@@ -34526,19 +35508,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["boot-eyelet-r3a"] ??= [];
-    destructionGroups["boot-eyelet-r3a"].push(node_boot_eyelet_r3a_49);
-    const endpoint_boot_eyelet_r3b_50 = makeAttachmentEndpoint(null);
-    const node_boot_eyelet_r3b_50 = new THREE.Group();
-    node_boot_eyelet_r3b_50.name = "Boot eyelet boot-eyelet-r3b__pivot";
-    node_boot_eyelet_r3b_50.scale.set(1, 1, 1);
-    if (endpoint_boot_eyelet_r3b_50) {
-        node_boot_eyelet_r3b_50.position.copy(endpoint_boot_eyelet_r3b_50.start);
-        node_boot_eyelet_r3b_50.rotation.set(0.0, 0.0, 0.0);
+    destructionGroups["boot-eyelet-r3a"].push(node_boot_eyelet_r3a_51);
+    const endpoint_boot_eyelet_r3b_52 = makeAttachmentEndpoint(null);
+    const node_boot_eyelet_r3b_52 = new THREE.Group();
+    node_boot_eyelet_r3b_52.name = "Boot eyelet boot-eyelet-r3b__pivot";
+    node_boot_eyelet_r3b_52.scale.set(1, 1, 1);
+    if (endpoint_boot_eyelet_r3b_52) {
+        node_boot_eyelet_r3b_52.position.copy(endpoint_boot_eyelet_r3b_52.start);
+        node_boot_eyelet_r3b_52.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_eyelet_r3b_50.position.set(-0.15, 0.305, 0.2792);
-        node_boot_eyelet_r3b_50.rotation.set(0.0, 0.0, 0.0);
+        node_boot_eyelet_r3b_52.position.set(-0.161, 0.244, 0.315);
+        node_boot_eyelet_r3b_52.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_eyelet_r3b_50.userData.sculptComponent = {
+    node_boot_eyelet_r3b_52.userData.sculptComponent = {
         "id": "boot-eyelet-r3b",
         "name": "Boot eyelet boot-eyelet-r3b",
         "level": "micro",
@@ -34565,17 +35547,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.15,
-                0.305,
-                0.2792
+                -0.161,
+                0.244,
+                0.315
             ],
             "rotation": [
                 0,
@@ -34583,9 +35565,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -34680,7 +35662,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r3b_50.userData.actionProfile = {
+    node_boot_eyelet_r3b_52.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -34732,24 +35714,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "brass"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r3b_50);
-    nodes["boot-eyelet-r3b"] = node_boot_eyelet_r3b_50;
-    const mesh_boot_eyelet_r3b_50GeometryDense = endpoint_boot_eyelet_r3b_50 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r3b_50.endRadius, endpoint_boot_eyelet_r3b_50.baseRadius, endpoint_boot_eyelet_r3b_50.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r3b_50Geometry = decimateGeometry(mesh_boot_eyelet_r3b_50GeometryDense, 0.06);
-    if (!endpoint_boot_eyelet_r3b_50) {
-        mesh_boot_eyelet_r3b_50Geometry.scale(0.022, 0.022, 0.014);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r3b_52);
+    nodes["boot-eyelet-r3b"] = node_boot_eyelet_r3b_52;
+    const mesh_boot_eyelet_r3b_52GeometryDense = endpoint_boot_eyelet_r3b_52 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r3b_52.endRadius, endpoint_boot_eyelet_r3b_52.baseRadius, endpoint_boot_eyelet_r3b_52.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
+    const mesh_boot_eyelet_r3b_52Geometry = decimateGeometry(mesh_boot_eyelet_r3b_52GeometryDense, 0.06);
+    if (!endpoint_boot_eyelet_r3b_52) {
+        mesh_boot_eyelet_r3b_52Geometry.scale(0.027, 0.027, 0.015);
     }
-    const mesh_boot_eyelet_r3b_50 = new THREE.Mesh(mesh_boot_eyelet_r3b_50Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_eyelet_r3b_52 = new THREE.Mesh(mesh_boot_eyelet_r3b_52Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_eyelet_r3b_50.name = "Boot eyelet boot-eyelet-r3b";
-    if (endpoint_boot_eyelet_r3b_50) {
-        mesh_boot_eyelet_r3b_50.position.copy(endpoint_boot_eyelet_r3b_50.midpoint);
-        mesh_boot_eyelet_r3b_50.quaternion.copy(endpoint_boot_eyelet_r3b_50.quaternion);
+    mesh_boot_eyelet_r3b_52.name = "Boot eyelet boot-eyelet-r3b";
+    if (endpoint_boot_eyelet_r3b_52) {
+        mesh_boot_eyelet_r3b_52.position.copy(endpoint_boot_eyelet_r3b_52.midpoint);
+        mesh_boot_eyelet_r3b_52.quaternion.copy(endpoint_boot_eyelet_r3b_52.quaternion);
     }
-    mesh_boot_eyelet_r3b_50.castShadow = options.castShadow ?? true;
-    mesh_boot_eyelet_r3b_50.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_eyelet_r3b_50.userData.sculptComponent = {
+    mesh_boot_eyelet_r3b_52.castShadow = options.castShadow ?? true;
+    mesh_boot_eyelet_r3b_52.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_eyelet_r3b_52.userData.sculptComponent = {
         "id": "boot-eyelet-r3b",
         "name": "Boot eyelet boot-eyelet-r3b",
         "level": "micro",
@@ -34776,17 +35758,17 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "parent": "boot-shell-r",
         "attachment": null,
         "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
+            "width": 0.027,
+            "height": 0.027,
+            "depth": 0.015,
             "units": "relative",
             "confidence": 0.8
         },
         "transform": {
             "position": [
-                -0.15,
-                0.305,
-                0.2792
+                -0.161,
+                0.244,
+                0.315
             ],
             "rotation": [
                 0,
@@ -34794,9 +35776,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
                 0
             ],
             "scale": [
-                0.022,
-                0.022,
-                0.014
+                0.027,
+                0.027,
+                0.015
             ]
         },
         "actionProfile": {
@@ -34891,8 +35873,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_eyelet_r3b_50.add(mesh_boot_eyelet_r3b_50);
-    meshes["boot-eyelet-r3b"] = mesh_boot_eyelet_r3b_50;
+    node_boot_eyelet_r3b_52.add(mesh_boot_eyelet_r3b_52);
+    meshes["boot-eyelet-r3b"] = mesh_boot_eyelet_r3b_52;
     colliders["boot-eyelet-r3b"] = {
         "type": "box",
         "offset": [
@@ -34909,815 +35891,49 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["boot-eyelet-r3b"] ??= [];
-    destructionGroups["boot-eyelet-r3b"].push(node_boot_eyelet_r3b_50);
-    const endpoint_boot_eyelet_r4a_51 = makeAttachmentEndpoint(null);
-    const node_boot_eyelet_r4a_51 = new THREE.Group();
-    node_boot_eyelet_r4a_51.name = "Boot eyelet boot-eyelet-r4a__pivot";
-    node_boot_eyelet_r4a_51.scale.set(1, 1, 1);
-    if (endpoint_boot_eyelet_r4a_51) {
-        node_boot_eyelet_r4a_51.position.copy(endpoint_boot_eyelet_r4a_51.start);
-        node_boot_eyelet_r4a_51.rotation.set(0.0, 0.0, 0.0);
-    } else {
-        node_boot_eyelet_r4a_51.position.set(-0.28, 0.35, 0.2938);
-        node_boot_eyelet_r4a_51.rotation.set(0.0, 0.0, 0.0);
-    }
-    node_boot_eyelet_r4a_51.userData.sculptComponent = {
-        "id": "boot-eyelet-r4a",
-        "name": "Boot eyelet boot-eyelet-r4a",
-        "level": "micro",
-        "role": "body",
-        "importance": 0.4,
-        "confidence": 0.8,
-        "primitive": "sphere",
-        "topologyClass": "assembled-solid",
-        "topologyRationale": "A small brass grommet: a discrete squashed sphere.",
-        "geometryDescriptor": {
-            "topologyIntent": "stylized character part",
-            "edgeTreatment": {
-                "type": "none",
-                "bevelRadius": 0.0,
-                "segments": 1
-            },
-            "deformationStack": [],
-            "uvStrategy": "generated procedural coordinates",
-            "normalStrategy": "smooth vertex normals",
-            "decimate": {
-                "targetRatio": 0.06
-            }
-        },
-        "parent": "boot-shell-r",
-        "attachment": null,
-        "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
-            "units": "relative",
-            "confidence": 0.8
-        },
-        "transform": {
-            "position": [
-                -0.28,
-                0.35,
-                0.2938
-            ],
-            "rotation": [
-                0,
-                0,
-                0
-            ],
-            "scale": [
-                0.022,
-                0.022,
-                0.014
-            ]
-        },
-        "actionProfile": {
-            "animationRole": "static",
-            "pivot": {
-                "mode": "center",
-                "localPosition": [
-                    0,
-                    0,
-                    0
-                ],
-                "axis": [
-                    0,
-                    1,
-                    0
-                ],
-                "confidence": 0.7
-            },
-            "transformChannels": {
-                "translate": true,
-                "rotate": true,
-                "scale": true,
-                "bend": false,
-                "twist": false,
-                "detach": false,
-                "visibility": true,
-                "materialState": false
-            },
-            "sockets": [],
-            "collider": {
-                "type": "box",
-                "offset": [
-                    0,
-                    0,
-                    0
-                ],
-                "scale": [
-                    1,
-                    1,
-                    1
-                ],
-                "isTrigger": false,
-                "notes": "box proxy"
-            },
-            "constraints": [],
-            "destruction": {
-                "breakable": false,
-                "fractureGroup": "boot-eyelet-r4a",
-                "seamRefs": [],
-                "detachableFragments": [],
-                "breakImpulse": 0.0,
-                "debrisMaterial": "brass"
-            }
-        },
-        "material": "brass",
-        "materialLayers": [
-            "brass"
-        ],
-        "deformations": [],
-        "joints": [],
-        "seams": [],
-        "localFeatures": [
-            {
-                "id": "boot-eyelet-r4a-ring",
-                "kind": "fastener",
-                "description": "brass eyelet"
-            }
-        ],
-        "surfaceDetail": {
-            "macroRoughness": 0.0,
-            "microRoughness": 0.0,
-            "bumpAmplitude": 0.0,
-            "normalPattern": "",
-            "displacementPattern": "",
-            "occlusionPattern": "",
-            "edgeWearPattern": "",
-            "notes": ""
-        },
-        "evidenceRefs": [
-            "full-object",
-            "boots-zone"
-        ],
-        "details": [],
-        "fidelityTier": "form",
-        "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(145, 109, 44, 1.0)",
-            "secondaryAlbedo": "rgba(133, 95, 23, 1.0)",
-            "materialClass": "metal",
-            "materialClassConfidence": 0.7,
-            "evidenceRefs": [
-                "material-evidence/brass.png"
-            ]
-        }
-    };
-    node_boot_eyelet_r4a_51.userData.actionProfile = {
-        "animationRole": "static",
-        "pivot": {
-            "mode": "center",
-            "localPosition": [
-                0,
-                0,
-                0
-            ],
-            "axis": [
-                0,
-                1,
-                0
-            ],
-            "confidence": 0.7
-        },
-        "transformChannels": {
-            "translate": true,
-            "rotate": true,
-            "scale": true,
-            "bend": false,
-            "twist": false,
-            "detach": false,
-            "visibility": true,
-            "materialState": false
-        },
-        "sockets": [],
-        "collider": {
-            "type": "box",
-            "offset": [
-                0,
-                0,
-                0
-            ],
-            "scale": [
-                1,
-                1,
-                1
-            ],
-            "isTrigger": false,
-            "notes": "box proxy"
-        },
-        "constraints": [],
-        "destruction": {
-            "breakable": false,
-            "fractureGroup": "boot-eyelet-r4a",
-            "seamRefs": [],
-            "detachableFragments": [],
-            "breakImpulse": 0.0,
-            "debrisMaterial": "brass"
-        }
-    };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r4a_51);
-    nodes["boot-eyelet-r4a"] = node_boot_eyelet_r4a_51;
-    const mesh_boot_eyelet_r4a_51GeometryDense = endpoint_boot_eyelet_r4a_51 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r4a_51.endRadius, endpoint_boot_eyelet_r4a_51.baseRadius, endpoint_boot_eyelet_r4a_51.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r4a_51Geometry = decimateGeometry(mesh_boot_eyelet_r4a_51GeometryDense, 0.06);
-    if (!endpoint_boot_eyelet_r4a_51) {
-        mesh_boot_eyelet_r4a_51Geometry.scale(0.022, 0.022, 0.014);
-    }
-    const mesh_boot_eyelet_r4a_51 = new THREE.Mesh(mesh_boot_eyelet_r4a_51Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
-        color: 0x888888
-    }));
-    mesh_boot_eyelet_r4a_51.name = "Boot eyelet boot-eyelet-r4a";
-    if (endpoint_boot_eyelet_r4a_51) {
-        mesh_boot_eyelet_r4a_51.position.copy(endpoint_boot_eyelet_r4a_51.midpoint);
-        mesh_boot_eyelet_r4a_51.quaternion.copy(endpoint_boot_eyelet_r4a_51.quaternion);
-    }
-    mesh_boot_eyelet_r4a_51.castShadow = options.castShadow ?? true;
-    mesh_boot_eyelet_r4a_51.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_eyelet_r4a_51.userData.sculptComponent = {
-        "id": "boot-eyelet-r4a",
-        "name": "Boot eyelet boot-eyelet-r4a",
-        "level": "micro",
-        "role": "body",
-        "importance": 0.4,
-        "confidence": 0.8,
-        "primitive": "sphere",
-        "topologyClass": "assembled-solid",
-        "topologyRationale": "A small brass grommet: a discrete squashed sphere.",
-        "geometryDescriptor": {
-            "topologyIntent": "stylized character part",
-            "edgeTreatment": {
-                "type": "none",
-                "bevelRadius": 0.0,
-                "segments": 1
-            },
-            "deformationStack": [],
-            "uvStrategy": "generated procedural coordinates",
-            "normalStrategy": "smooth vertex normals",
-            "decimate": {
-                "targetRatio": 0.06
-            }
-        },
-        "parent": "boot-shell-r",
-        "attachment": null,
-        "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
-            "units": "relative",
-            "confidence": 0.8
-        },
-        "transform": {
-            "position": [
-                -0.28,
-                0.35,
-                0.2938
-            ],
-            "rotation": [
-                0,
-                0,
-                0
-            ],
-            "scale": [
-                0.022,
-                0.022,
-                0.014
-            ]
-        },
-        "actionProfile": {
-            "animationRole": "static",
-            "pivot": {
-                "mode": "center",
-                "localPosition": [
-                    0,
-                    0,
-                    0
-                ],
-                "axis": [
-                    0,
-                    1,
-                    0
-                ],
-                "confidence": 0.7
-            },
-            "transformChannels": {
-                "translate": true,
-                "rotate": true,
-                "scale": true,
-                "bend": false,
-                "twist": false,
-                "detach": false,
-                "visibility": true,
-                "materialState": false
-            },
-            "sockets": [],
-            "collider": {
-                "type": "box",
-                "offset": [
-                    0,
-                    0,
-                    0
-                ],
-                "scale": [
-                    1,
-                    1,
-                    1
-                ],
-                "isTrigger": false,
-                "notes": "box proxy"
-            },
-            "constraints": [],
-            "destruction": {
-                "breakable": false,
-                "fractureGroup": "boot-eyelet-r4a",
-                "seamRefs": [],
-                "detachableFragments": [],
-                "breakImpulse": 0.0,
-                "debrisMaterial": "brass"
-            }
-        },
-        "material": "brass",
-        "materialLayers": [
-            "brass"
-        ],
-        "deformations": [],
-        "joints": [],
-        "seams": [],
-        "localFeatures": [
-            {
-                "id": "boot-eyelet-r4a-ring",
-                "kind": "fastener",
-                "description": "brass eyelet"
-            }
-        ],
-        "surfaceDetail": {
-            "macroRoughness": 0.0,
-            "microRoughness": 0.0,
-            "bumpAmplitude": 0.0,
-            "normalPattern": "",
-            "displacementPattern": "",
-            "occlusionPattern": "",
-            "edgeWearPattern": "",
-            "notes": ""
-        },
-        "evidenceRefs": [
-            "full-object",
-            "boots-zone"
-        ],
-        "details": [],
-        "fidelityTier": "form",
-        "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(145, 109, 44, 1.0)",
-            "secondaryAlbedo": "rgba(133, 95, 23, 1.0)",
-            "materialClass": "metal",
-            "materialClassConfidence": 0.7,
-            "evidenceRefs": [
-                "material-evidence/brass.png"
-            ]
-        }
-    };
-    node_boot_eyelet_r4a_51.add(mesh_boot_eyelet_r4a_51);
-    meshes["boot-eyelet-r4a"] = mesh_boot_eyelet_r4a_51;
-    colliders["boot-eyelet-r4a"] = {
-        "type": "box",
-        "offset": [
-            0,
-            0,
-            0
-        ],
-        "scale": [
-            1,
-            1,
-            1
-        ],
-        "isTrigger": false,
-        "notes": "box proxy"
-    };
-    destructionGroups["boot-eyelet-r4a"] ??= [];
-    destructionGroups["boot-eyelet-r4a"].push(node_boot_eyelet_r4a_51);
-    const endpoint_boot_eyelet_r4b_52 = makeAttachmentEndpoint(null);
-    const node_boot_eyelet_r4b_52 = new THREE.Group();
-    node_boot_eyelet_r4b_52.name = "Boot eyelet boot-eyelet-r4b__pivot";
-    node_boot_eyelet_r4b_52.scale.set(1, 1, 1);
-    if (endpoint_boot_eyelet_r4b_52) {
-        node_boot_eyelet_r4b_52.position.copy(endpoint_boot_eyelet_r4b_52.start);
-        node_boot_eyelet_r4b_52.rotation.set(0.0, 0.0, 0.0);
-    } else {
-        node_boot_eyelet_r4b_52.position.set(-0.15, 0.35, 0.2938);
-        node_boot_eyelet_r4b_52.rotation.set(0.0, 0.0, 0.0);
-    }
-    node_boot_eyelet_r4b_52.userData.sculptComponent = {
-        "id": "boot-eyelet-r4b",
-        "name": "Boot eyelet boot-eyelet-r4b",
-        "level": "micro",
-        "role": "body",
-        "importance": 0.4,
-        "confidence": 0.8,
-        "primitive": "sphere",
-        "topologyClass": "assembled-solid",
-        "topologyRationale": "A small brass grommet: a discrete squashed sphere.",
-        "geometryDescriptor": {
-            "topologyIntent": "stylized character part",
-            "edgeTreatment": {
-                "type": "none",
-                "bevelRadius": 0.0,
-                "segments": 1
-            },
-            "deformationStack": [],
-            "uvStrategy": "generated procedural coordinates",
-            "normalStrategy": "smooth vertex normals",
-            "decimate": {
-                "targetRatio": 0.06
-            }
-        },
-        "parent": "boot-shell-r",
-        "attachment": null,
-        "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
-            "units": "relative",
-            "confidence": 0.8
-        },
-        "transform": {
-            "position": [
-                -0.15,
-                0.35,
-                0.2938
-            ],
-            "rotation": [
-                0,
-                0,
-                0
-            ],
-            "scale": [
-                0.022,
-                0.022,
-                0.014
-            ]
-        },
-        "actionProfile": {
-            "animationRole": "static",
-            "pivot": {
-                "mode": "center",
-                "localPosition": [
-                    0,
-                    0,
-                    0
-                ],
-                "axis": [
-                    0,
-                    1,
-                    0
-                ],
-                "confidence": 0.7
-            },
-            "transformChannels": {
-                "translate": true,
-                "rotate": true,
-                "scale": true,
-                "bend": false,
-                "twist": false,
-                "detach": false,
-                "visibility": true,
-                "materialState": false
-            },
-            "sockets": [],
-            "collider": {
-                "type": "box",
-                "offset": [
-                    0,
-                    0,
-                    0
-                ],
-                "scale": [
-                    1,
-                    1,
-                    1
-                ],
-                "isTrigger": false,
-                "notes": "box proxy"
-            },
-            "constraints": [],
-            "destruction": {
-                "breakable": false,
-                "fractureGroup": "boot-eyelet-r4b",
-                "seamRefs": [],
-                "detachableFragments": [],
-                "breakImpulse": 0.0,
-                "debrisMaterial": "brass"
-            }
-        },
-        "material": "brass",
-        "materialLayers": [
-            "brass"
-        ],
-        "deformations": [],
-        "joints": [],
-        "seams": [],
-        "localFeatures": [
-            {
-                "id": "boot-eyelet-r4b-ring",
-                "kind": "fastener",
-                "description": "brass eyelet"
-            }
-        ],
-        "surfaceDetail": {
-            "macroRoughness": 0.0,
-            "microRoughness": 0.0,
-            "bumpAmplitude": 0.0,
-            "normalPattern": "",
-            "displacementPattern": "",
-            "occlusionPattern": "",
-            "edgeWearPattern": "",
-            "notes": ""
-        },
-        "evidenceRefs": [
-            "full-object",
-            "boots-zone"
-        ],
-        "details": [],
-        "fidelityTier": "form",
-        "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(145, 109, 44, 1.0)",
-            "secondaryAlbedo": "rgba(133, 95, 23, 1.0)",
-            "materialClass": "metal",
-            "materialClassConfidence": 0.7,
-            "evidenceRefs": [
-                "material-evidence/brass.png"
-            ]
-        }
-    };
-    node_boot_eyelet_r4b_52.userData.actionProfile = {
-        "animationRole": "static",
-        "pivot": {
-            "mode": "center",
-            "localPosition": [
-                0,
-                0,
-                0
-            ],
-            "axis": [
-                0,
-                1,
-                0
-            ],
-            "confidence": 0.7
-        },
-        "transformChannels": {
-            "translate": true,
-            "rotate": true,
-            "scale": true,
-            "bend": false,
-            "twist": false,
-            "detach": false,
-            "visibility": true,
-            "materialState": false
-        },
-        "sockets": [],
-        "collider": {
-            "type": "box",
-            "offset": [
-                0,
-                0,
-                0
-            ],
-            "scale": [
-                1,
-                1,
-                1
-            ],
-            "isTrigger": false,
-            "notes": "box proxy"
-        },
-        "constraints": [],
-        "destruction": {
-            "breakable": false,
-            "fractureGroup": "boot-eyelet-r4b",
-            "seamRefs": [],
-            "detachableFragments": [],
-            "breakImpulse": 0.0,
-            "debrisMaterial": "brass"
-        }
-    };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_eyelet_r4b_52);
-    nodes["boot-eyelet-r4b"] = node_boot_eyelet_r4b_52;
-    const mesh_boot_eyelet_r4b_52GeometryDense = endpoint_boot_eyelet_r4b_52 ? new THREE.CylinderGeometry(endpoint_boot_eyelet_r4b_52.endRadius, endpoint_boot_eyelet_r4b_52.baseRadius, endpoint_boot_eyelet_r4b_52.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_boot_eyelet_r4b_52Geometry = decimateGeometry(mesh_boot_eyelet_r4b_52GeometryDense, 0.06);
-    if (!endpoint_boot_eyelet_r4b_52) {
-        mesh_boot_eyelet_r4b_52Geometry.scale(0.022, 0.022, 0.014);
-    }
-    const mesh_boot_eyelet_r4b_52 = new THREE.Mesh(mesh_boot_eyelet_r4b_52Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
-        color: 0x888888
-    }));
-    mesh_boot_eyelet_r4b_52.name = "Boot eyelet boot-eyelet-r4b";
-    if (endpoint_boot_eyelet_r4b_52) {
-        mesh_boot_eyelet_r4b_52.position.copy(endpoint_boot_eyelet_r4b_52.midpoint);
-        mesh_boot_eyelet_r4b_52.quaternion.copy(endpoint_boot_eyelet_r4b_52.quaternion);
-    }
-    mesh_boot_eyelet_r4b_52.castShadow = options.castShadow ?? true;
-    mesh_boot_eyelet_r4b_52.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_eyelet_r4b_52.userData.sculptComponent = {
-        "id": "boot-eyelet-r4b",
-        "name": "Boot eyelet boot-eyelet-r4b",
-        "level": "micro",
-        "role": "body",
-        "importance": 0.4,
-        "confidence": 0.8,
-        "primitive": "sphere",
-        "topologyClass": "assembled-solid",
-        "topologyRationale": "A small brass grommet: a discrete squashed sphere.",
-        "geometryDescriptor": {
-            "topologyIntent": "stylized character part",
-            "edgeTreatment": {
-                "type": "none",
-                "bevelRadius": 0.0,
-                "segments": 1
-            },
-            "deformationStack": [],
-            "uvStrategy": "generated procedural coordinates",
-            "normalStrategy": "smooth vertex normals",
-            "decimate": {
-                "targetRatio": 0.06
-            }
-        },
-        "parent": "boot-shell-r",
-        "attachment": null,
-        "dimensions": {
-            "width": 0.022,
-            "height": 0.022,
-            "depth": 0.014,
-            "units": "relative",
-            "confidence": 0.8
-        },
-        "transform": {
-            "position": [
-                -0.15,
-                0.35,
-                0.2938
-            ],
-            "rotation": [
-                0,
-                0,
-                0
-            ],
-            "scale": [
-                0.022,
-                0.022,
-                0.014
-            ]
-        },
-        "actionProfile": {
-            "animationRole": "static",
-            "pivot": {
-                "mode": "center",
-                "localPosition": [
-                    0,
-                    0,
-                    0
-                ],
-                "axis": [
-                    0,
-                    1,
-                    0
-                ],
-                "confidence": 0.7
-            },
-            "transformChannels": {
-                "translate": true,
-                "rotate": true,
-                "scale": true,
-                "bend": false,
-                "twist": false,
-                "detach": false,
-                "visibility": true,
-                "materialState": false
-            },
-            "sockets": [],
-            "collider": {
-                "type": "box",
-                "offset": [
-                    0,
-                    0,
-                    0
-                ],
-                "scale": [
-                    1,
-                    1,
-                    1
-                ],
-                "isTrigger": false,
-                "notes": "box proxy"
-            },
-            "constraints": [],
-            "destruction": {
-                "breakable": false,
-                "fractureGroup": "boot-eyelet-r4b",
-                "seamRefs": [],
-                "detachableFragments": [],
-                "breakImpulse": 0.0,
-                "debrisMaterial": "brass"
-            }
-        },
-        "material": "brass",
-        "materialLayers": [
-            "brass"
-        ],
-        "deformations": [],
-        "joints": [],
-        "seams": [],
-        "localFeatures": [
-            {
-                "id": "boot-eyelet-r4b-ring",
-                "kind": "fastener",
-                "description": "brass eyelet"
-            }
-        ],
-        "surfaceDetail": {
-            "macroRoughness": 0.0,
-            "microRoughness": 0.0,
-            "bumpAmplitude": 0.0,
-            "normalPattern": "",
-            "displacementPattern": "",
-            "occlusionPattern": "",
-            "edgeWearPattern": "",
-            "notes": ""
-        },
-        "evidenceRefs": [
-            "full-object",
-            "boots-zone"
-        ],
-        "details": [],
-        "fidelityTier": "form",
-        "colorMaterialRecipe": {
-            "dominantAlbedo": "rgba(145, 109, 44, 1.0)",
-            "secondaryAlbedo": "rgba(133, 95, 23, 1.0)",
-            "materialClass": "metal",
-            "materialClassConfidence": 0.7,
-            "evidenceRefs": [
-                "material-evidence/brass.png"
-            ]
-        }
-    };
-    node_boot_eyelet_r4b_52.add(mesh_boot_eyelet_r4b_52);
-    meshes["boot-eyelet-r4b"] = mesh_boot_eyelet_r4b_52;
-    colliders["boot-eyelet-r4b"] = {
-        "type": "box",
-        "offset": [
-            0,
-            0,
-            0
-        ],
-        "scale": [
-            1,
-            1,
-            1
-        ],
-        "isTrigger": false,
-        "notes": "box proxy"
-    };
-    destructionGroups["boot-eyelet-r4b"] ??= [];
-    destructionGroups["boot-eyelet-r4b"].push(node_boot_eyelet_r4b_52);
-    const attachment_boot_lace_ra0_53 = {
+    destructionGroups["boot-eyelet-r3b"].push(node_boot_eyelet_r3b_52);
+    const attachment_boot_lace_ra00_53 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.15,
-            0.17,
-            0.3893
+            -0.161,
+            0.115,
+            0.442
         ],
         "localEnd": [
-            -0.28,
-            0.215,
-            0.3375
+            -0.217,
+            0.1365,
+            0.4478
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_ra0_53 = makeAttachmentEndpoint(attachment_boot_lace_ra0_53);
-    const node_boot_lace_ra0_53 = new THREE.Group();
-    node_boot_lace_ra0_53.name = "Boot lace run boot-lace-ra0__pivot";
-    node_boot_lace_ra0_53.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_ra0_53) {
-        node_boot_lace_ra0_53.position.copy(endpoint_boot_lace_ra0_53.start);
-        node_boot_lace_ra0_53.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_ra00_53 = makeAttachmentEndpoint(attachment_boot_lace_ra00_53);
+    const node_boot_lace_ra00_53 = new THREE.Group();
+    node_boot_lace_ra00_53.name = "Boot lace run boot-lace-ra00__pivot";
+    node_boot_lace_ra00_53.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_ra00_53) {
+        node_boot_lace_ra00_53.position.copy(endpoint_boot_lace_ra00_53.start);
+        node_boot_lace_ra00_53.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_ra0_53.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_ra0_53.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_ra00_53.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_ra00_53.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_ra0_53.userData.sculptComponent = {
-        "id": "boot-lace-ra0",
-        "name": "Boot lace run boot-lace-ra0",
+    node_boot_lace_ra00_53.userData.sculptComponent = {
+        "id": "boot-lace-ra00",
+        "name": "Boot lace run boot-lace-ra00",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -35733,18 +35949,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.15,
-                0.17,
-                0.3893
+                -0.161,
+                0.115,
+                0.442
             ],
             "localEnd": [
-                -0.28,
-                0.215,
-                0.3375
+                -0.217,
+                0.1365,
+                0.4478
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -35820,7 +36036,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-ra0",
+                "fractureGroup": "boot-lace-ra00",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -35836,7 +36052,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-ra0",
+                "id": "boot-laces-ra00",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -35867,7 +36083,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_ra0_53.userData.actionProfile = {
+    node_boot_lace_ra00_53.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -35912,39 +36128,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-ra0",
+            "fractureGroup": "boot-lace-ra00",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra0_53);
-    nodes["boot-lace-ra0"] = node_boot_lace_ra0_53;
-    const mesh_boot_lace_ra0_53Geometry = endpoint_boot_lace_ra0_53 ? new THREE.CylinderGeometry(endpoint_boot_lace_ra0_53.endRadius, endpoint_boot_lace_ra0_53.baseRadius, endpoint_boot_lace_ra0_53.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_ra0_53) {
-        mesh_boot_lace_ra0_53Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra00_53);
+    nodes["boot-lace-ra00"] = node_boot_lace_ra00_53;
+    const mesh_boot_lace_ra00_53Geometry = endpoint_boot_lace_ra00_53 ? new THREE.CylinderGeometry(endpoint_boot_lace_ra00_53.endRadius, endpoint_boot_lace_ra00_53.baseRadius, endpoint_boot_lace_ra00_53.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_ra00_53) {
+        mesh_boot_lace_ra00_53Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_ra0_53 = new THREE.Mesh(mesh_boot_lace_ra0_53Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_ra00_53 = new THREE.Mesh(mesh_boot_lace_ra00_53Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_ra0_53.name = "Boot lace run boot-lace-ra0";
-    if (endpoint_boot_lace_ra0_53) {
-        mesh_boot_lace_ra0_53.position.copy(endpoint_boot_lace_ra0_53.midpoint);
-        mesh_boot_lace_ra0_53.quaternion.copy(endpoint_boot_lace_ra0_53.quaternion);
+    mesh_boot_lace_ra00_53.name = "Boot lace run boot-lace-ra00";
+    if (endpoint_boot_lace_ra00_53) {
+        mesh_boot_lace_ra00_53.position.copy(endpoint_boot_lace_ra00_53.midpoint);
+        mesh_boot_lace_ra00_53.quaternion.copy(endpoint_boot_lace_ra00_53.quaternion);
     }
-    mesh_boot_lace_ra0_53.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_ra0_53.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_ra0_53.userData.sculptComponent = {
-        "id": "boot-lace-ra0",
-        "name": "Boot lace run boot-lace-ra0",
+    mesh_boot_lace_ra00_53.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_ra00_53.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_ra00_53.userData.sculptComponent = {
+        "id": "boot-lace-ra00",
+        "name": "Boot lace run boot-lace-ra00",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -35960,18 +36176,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.15,
-                0.17,
-                0.3893
+                -0.161,
+                0.115,
+                0.442
             ],
             "localEnd": [
-                -0.28,
-                0.215,
-                0.3375
+                -0.217,
+                0.1365,
+                0.4478
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -36047,7 +36263,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-ra0",
+                "fractureGroup": "boot-lace-ra00",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -36063,7 +36279,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-ra0",
+                "id": "boot-laces-ra00",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -36094,9 +36310,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_ra0_53.add(mesh_boot_lace_ra0_53);
-    meshes["boot-lace-ra0"] = mesh_boot_lace_ra0_53;
-    colliders["boot-lace-ra0"] = {
+    node_boot_lace_ra00_53.add(mesh_boot_lace_ra00_53);
+    meshes["boot-lace-ra00"] = mesh_boot_lace_ra00_53;
+    colliders["boot-lace-ra00"] = {
         "type": "box",
         "offset": [
             0,
@@ -36111,50 +36327,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-ra0"] ??= [];
-    destructionGroups["boot-lace-ra0"].push(node_boot_lace_ra0_53);
-    const attachment_boot_lace_ra1_54 = {
+    destructionGroups["boot-lace-ra00"] ??= [];
+    destructionGroups["boot-lace-ra00"].push(node_boot_lace_ra00_53);
+    const attachment_boot_lace_ra01_54 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.28,
-            0.215,
-            0.3375
+            -0.217,
+            0.1365,
+            0.4478
         ],
         "localEnd": [
-            -0.15,
-            0.26,
-            0.305
+            -0.273,
+            0.158,
+            0.4106
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_ra1_54 = makeAttachmentEndpoint(attachment_boot_lace_ra1_54);
-    const node_boot_lace_ra1_54 = new THREE.Group();
-    node_boot_lace_ra1_54.name = "Boot lace run boot-lace-ra1__pivot";
-    node_boot_lace_ra1_54.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_ra1_54) {
-        node_boot_lace_ra1_54.position.copy(endpoint_boot_lace_ra1_54.start);
-        node_boot_lace_ra1_54.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_ra01_54 = makeAttachmentEndpoint(attachment_boot_lace_ra01_54);
+    const node_boot_lace_ra01_54 = new THREE.Group();
+    node_boot_lace_ra01_54.name = "Boot lace run boot-lace-ra01__pivot";
+    node_boot_lace_ra01_54.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_ra01_54) {
+        node_boot_lace_ra01_54.position.copy(endpoint_boot_lace_ra01_54.start);
+        node_boot_lace_ra01_54.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_ra1_54.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_ra1_54.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_ra01_54.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_ra01_54.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_ra1_54.userData.sculptComponent = {
-        "id": "boot-lace-ra1",
-        "name": "Boot lace run boot-lace-ra1",
+    node_boot_lace_ra01_54.userData.sculptComponent = {
+        "id": "boot-lace-ra01",
+        "name": "Boot lace run boot-lace-ra01",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -36170,18 +36386,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.28,
-                0.215,
-                0.3375
+                -0.217,
+                0.1365,
+                0.4478
             ],
             "localEnd": [
-                -0.15,
-                0.26,
-                0.305
+                -0.273,
+                0.158,
+                0.4106
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -36257,7 +36473,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-ra1",
+                "fractureGroup": "boot-lace-ra01",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -36273,7 +36489,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-ra1",
+                "id": "boot-laces-ra01",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -36304,7 +36520,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_ra1_54.userData.actionProfile = {
+    node_boot_lace_ra01_54.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -36349,39 +36565,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-ra1",
+            "fractureGroup": "boot-lace-ra01",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra1_54);
-    nodes["boot-lace-ra1"] = node_boot_lace_ra1_54;
-    const mesh_boot_lace_ra1_54Geometry = endpoint_boot_lace_ra1_54 ? new THREE.CylinderGeometry(endpoint_boot_lace_ra1_54.endRadius, endpoint_boot_lace_ra1_54.baseRadius, endpoint_boot_lace_ra1_54.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_ra1_54) {
-        mesh_boot_lace_ra1_54Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra01_54);
+    nodes["boot-lace-ra01"] = node_boot_lace_ra01_54;
+    const mesh_boot_lace_ra01_54Geometry = endpoint_boot_lace_ra01_54 ? new THREE.CylinderGeometry(endpoint_boot_lace_ra01_54.endRadius, endpoint_boot_lace_ra01_54.baseRadius, endpoint_boot_lace_ra01_54.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_ra01_54) {
+        mesh_boot_lace_ra01_54Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_ra1_54 = new THREE.Mesh(mesh_boot_lace_ra1_54Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_ra01_54 = new THREE.Mesh(mesh_boot_lace_ra01_54Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_ra1_54.name = "Boot lace run boot-lace-ra1";
-    if (endpoint_boot_lace_ra1_54) {
-        mesh_boot_lace_ra1_54.position.copy(endpoint_boot_lace_ra1_54.midpoint);
-        mesh_boot_lace_ra1_54.quaternion.copy(endpoint_boot_lace_ra1_54.quaternion);
+    mesh_boot_lace_ra01_54.name = "Boot lace run boot-lace-ra01";
+    if (endpoint_boot_lace_ra01_54) {
+        mesh_boot_lace_ra01_54.position.copy(endpoint_boot_lace_ra01_54.midpoint);
+        mesh_boot_lace_ra01_54.quaternion.copy(endpoint_boot_lace_ra01_54.quaternion);
     }
-    mesh_boot_lace_ra1_54.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_ra1_54.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_ra1_54.userData.sculptComponent = {
-        "id": "boot-lace-ra1",
-        "name": "Boot lace run boot-lace-ra1",
+    mesh_boot_lace_ra01_54.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_ra01_54.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_ra01_54.userData.sculptComponent = {
+        "id": "boot-lace-ra01",
+        "name": "Boot lace run boot-lace-ra01",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -36397,18 +36613,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.28,
-                0.215,
-                0.3375
+                -0.217,
+                0.1365,
+                0.4478
             ],
             "localEnd": [
-                -0.15,
-                0.26,
-                0.305
+                -0.273,
+                0.158,
+                0.4106
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -36484,7 +36700,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-ra1",
+                "fractureGroup": "boot-lace-ra01",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -36500,7 +36716,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-ra1",
+                "id": "boot-laces-ra01",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -36531,9 +36747,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_ra1_54.add(mesh_boot_lace_ra1_54);
-    meshes["boot-lace-ra1"] = mesh_boot_lace_ra1_54;
-    colliders["boot-lace-ra1"] = {
+    node_boot_lace_ra01_54.add(mesh_boot_lace_ra01_54);
+    meshes["boot-lace-ra01"] = mesh_boot_lace_ra01_54;
+    colliders["boot-lace-ra01"] = {
         "type": "box",
         "offset": [
             0,
@@ -36548,50 +36764,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-ra1"] ??= [];
-    destructionGroups["boot-lace-ra1"].push(node_boot_lace_ra1_54);
-    const attachment_boot_lace_ra2_55 = {
+    destructionGroups["boot-lace-ra01"] ??= [];
+    destructionGroups["boot-lace-ra01"].push(node_boot_lace_ra01_54);
+    const attachment_boot_lace_ra10_55 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.15,
-            0.26,
-            0.305
+            -0.273,
+            0.158,
+            0.4106
         ],
         "localEnd": [
-            -0.28,
-            0.305,
-            0.2892
+            -0.217,
+            0.1795,
+            0.4031
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_ra2_55 = makeAttachmentEndpoint(attachment_boot_lace_ra2_55);
-    const node_boot_lace_ra2_55 = new THREE.Group();
-    node_boot_lace_ra2_55.name = "Boot lace run boot-lace-ra2__pivot";
-    node_boot_lace_ra2_55.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_ra2_55) {
-        node_boot_lace_ra2_55.position.copy(endpoint_boot_lace_ra2_55.start);
-        node_boot_lace_ra2_55.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_ra10_55 = makeAttachmentEndpoint(attachment_boot_lace_ra10_55);
+    const node_boot_lace_ra10_55 = new THREE.Group();
+    node_boot_lace_ra10_55.name = "Boot lace run boot-lace-ra10__pivot";
+    node_boot_lace_ra10_55.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_ra10_55) {
+        node_boot_lace_ra10_55.position.copy(endpoint_boot_lace_ra10_55.start);
+        node_boot_lace_ra10_55.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_ra2_55.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_ra2_55.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_ra10_55.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_ra10_55.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_ra2_55.userData.sculptComponent = {
-        "id": "boot-lace-ra2",
-        "name": "Boot lace run boot-lace-ra2",
+    node_boot_lace_ra10_55.userData.sculptComponent = {
+        "id": "boot-lace-ra10",
+        "name": "Boot lace run boot-lace-ra10",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -36607,18 +36823,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.15,
-                0.26,
-                0.305
+                -0.273,
+                0.158,
+                0.4106
             ],
             "localEnd": [
-                -0.28,
-                0.305,
-                0.2892
+                -0.217,
+                0.1795,
+                0.4031
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -36694,7 +36910,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-ra2",
+                "fractureGroup": "boot-lace-ra10",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -36710,7 +36926,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-ra2",
+                "id": "boot-laces-ra10",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -36741,7 +36957,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_ra2_55.userData.actionProfile = {
+    node_boot_lace_ra10_55.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -36786,39 +37002,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-ra2",
+            "fractureGroup": "boot-lace-ra10",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra2_55);
-    nodes["boot-lace-ra2"] = node_boot_lace_ra2_55;
-    const mesh_boot_lace_ra2_55Geometry = endpoint_boot_lace_ra2_55 ? new THREE.CylinderGeometry(endpoint_boot_lace_ra2_55.endRadius, endpoint_boot_lace_ra2_55.baseRadius, endpoint_boot_lace_ra2_55.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_ra2_55) {
-        mesh_boot_lace_ra2_55Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra10_55);
+    nodes["boot-lace-ra10"] = node_boot_lace_ra10_55;
+    const mesh_boot_lace_ra10_55Geometry = endpoint_boot_lace_ra10_55 ? new THREE.CylinderGeometry(endpoint_boot_lace_ra10_55.endRadius, endpoint_boot_lace_ra10_55.baseRadius, endpoint_boot_lace_ra10_55.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_ra10_55) {
+        mesh_boot_lace_ra10_55Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_ra2_55 = new THREE.Mesh(mesh_boot_lace_ra2_55Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_ra10_55 = new THREE.Mesh(mesh_boot_lace_ra10_55Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_ra2_55.name = "Boot lace run boot-lace-ra2";
-    if (endpoint_boot_lace_ra2_55) {
-        mesh_boot_lace_ra2_55.position.copy(endpoint_boot_lace_ra2_55.midpoint);
-        mesh_boot_lace_ra2_55.quaternion.copy(endpoint_boot_lace_ra2_55.quaternion);
+    mesh_boot_lace_ra10_55.name = "Boot lace run boot-lace-ra10";
+    if (endpoint_boot_lace_ra10_55) {
+        mesh_boot_lace_ra10_55.position.copy(endpoint_boot_lace_ra10_55.midpoint);
+        mesh_boot_lace_ra10_55.quaternion.copy(endpoint_boot_lace_ra10_55.quaternion);
     }
-    mesh_boot_lace_ra2_55.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_ra2_55.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_ra2_55.userData.sculptComponent = {
-        "id": "boot-lace-ra2",
-        "name": "Boot lace run boot-lace-ra2",
+    mesh_boot_lace_ra10_55.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_ra10_55.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_ra10_55.userData.sculptComponent = {
+        "id": "boot-lace-ra10",
+        "name": "Boot lace run boot-lace-ra10",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -36834,18 +37050,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.15,
-                0.26,
-                0.305
+                -0.273,
+                0.158,
+                0.4106
             ],
             "localEnd": [
-                -0.28,
-                0.305,
-                0.2892
+                -0.217,
+                0.1795,
+                0.4031
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -36921,7 +37137,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-ra2",
+                "fractureGroup": "boot-lace-ra10",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -36937,7 +37153,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-ra2",
+                "id": "boot-laces-ra10",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -36968,9 +37184,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_ra2_55.add(mesh_boot_lace_ra2_55);
-    meshes["boot-lace-ra2"] = mesh_boot_lace_ra2_55;
-    colliders["boot-lace-ra2"] = {
+    node_boot_lace_ra10_55.add(mesh_boot_lace_ra10_55);
+    meshes["boot-lace-ra10"] = mesh_boot_lace_ra10_55;
+    colliders["boot-lace-ra10"] = {
         "type": "box",
         "offset": [
             0,
@@ -36985,50 +37201,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-ra2"] ??= [];
-    destructionGroups["boot-lace-ra2"].push(node_boot_lace_ra2_55);
-    const attachment_boot_lace_ra3_56 = {
+    destructionGroups["boot-lace-ra10"] ??= [];
+    destructionGroups["boot-lace-ra10"].push(node_boot_lace_ra10_55);
+    const attachment_boot_lace_ra11_56 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.28,
-            0.305,
-            0.2892
+            -0.217,
+            0.1795,
+            0.4031
         ],
         "localEnd": [
-            -0.15,
-            0.35,
-            0.3038
+            -0.161,
+            0.201,
+            0.3594
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_ra3_56 = makeAttachmentEndpoint(attachment_boot_lace_ra3_56);
-    const node_boot_lace_ra3_56 = new THREE.Group();
-    node_boot_lace_ra3_56.name = "Boot lace run boot-lace-ra3__pivot";
-    node_boot_lace_ra3_56.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_ra3_56) {
-        node_boot_lace_ra3_56.position.copy(endpoint_boot_lace_ra3_56.start);
-        node_boot_lace_ra3_56.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_ra11_56 = makeAttachmentEndpoint(attachment_boot_lace_ra11_56);
+    const node_boot_lace_ra11_56 = new THREE.Group();
+    node_boot_lace_ra11_56.name = "Boot lace run boot-lace-ra11__pivot";
+    node_boot_lace_ra11_56.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_ra11_56) {
+        node_boot_lace_ra11_56.position.copy(endpoint_boot_lace_ra11_56.start);
+        node_boot_lace_ra11_56.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_ra3_56.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_ra3_56.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_ra11_56.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_ra11_56.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_ra3_56.userData.sculptComponent = {
-        "id": "boot-lace-ra3",
-        "name": "Boot lace run boot-lace-ra3",
+    node_boot_lace_ra11_56.userData.sculptComponent = {
+        "id": "boot-lace-ra11",
+        "name": "Boot lace run boot-lace-ra11",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -37044,18 +37260,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.28,
-                0.305,
-                0.2892
+                -0.217,
+                0.1795,
+                0.4031
             ],
             "localEnd": [
-                -0.15,
-                0.35,
-                0.3038
+                -0.161,
+                0.201,
+                0.3594
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -37131,7 +37347,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-ra3",
+                "fractureGroup": "boot-lace-ra11",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -37147,7 +37363,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-ra3",
+                "id": "boot-laces-ra11",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -37178,7 +37394,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_ra3_56.userData.actionProfile = {
+    node_boot_lace_ra11_56.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -37223,39 +37439,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-ra3",
+            "fractureGroup": "boot-lace-ra11",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra3_56);
-    nodes["boot-lace-ra3"] = node_boot_lace_ra3_56;
-    const mesh_boot_lace_ra3_56Geometry = endpoint_boot_lace_ra3_56 ? new THREE.CylinderGeometry(endpoint_boot_lace_ra3_56.endRadius, endpoint_boot_lace_ra3_56.baseRadius, endpoint_boot_lace_ra3_56.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_ra3_56) {
-        mesh_boot_lace_ra3_56Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra11_56);
+    nodes["boot-lace-ra11"] = node_boot_lace_ra11_56;
+    const mesh_boot_lace_ra11_56Geometry = endpoint_boot_lace_ra11_56 ? new THREE.CylinderGeometry(endpoint_boot_lace_ra11_56.endRadius, endpoint_boot_lace_ra11_56.baseRadius, endpoint_boot_lace_ra11_56.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_ra11_56) {
+        mesh_boot_lace_ra11_56Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_ra3_56 = new THREE.Mesh(mesh_boot_lace_ra3_56Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_ra11_56 = new THREE.Mesh(mesh_boot_lace_ra11_56Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_ra3_56.name = "Boot lace run boot-lace-ra3";
-    if (endpoint_boot_lace_ra3_56) {
-        mesh_boot_lace_ra3_56.position.copy(endpoint_boot_lace_ra3_56.midpoint);
-        mesh_boot_lace_ra3_56.quaternion.copy(endpoint_boot_lace_ra3_56.quaternion);
+    mesh_boot_lace_ra11_56.name = "Boot lace run boot-lace-ra11";
+    if (endpoint_boot_lace_ra11_56) {
+        mesh_boot_lace_ra11_56.position.copy(endpoint_boot_lace_ra11_56.midpoint);
+        mesh_boot_lace_ra11_56.quaternion.copy(endpoint_boot_lace_ra11_56.quaternion);
     }
-    mesh_boot_lace_ra3_56.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_ra3_56.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_ra3_56.userData.sculptComponent = {
-        "id": "boot-lace-ra3",
-        "name": "Boot lace run boot-lace-ra3",
+    mesh_boot_lace_ra11_56.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_ra11_56.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_ra11_56.userData.sculptComponent = {
+        "id": "boot-lace-ra11",
+        "name": "Boot lace run boot-lace-ra11",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -37271,18 +37487,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.28,
-                0.305,
-                0.2892
+                -0.217,
+                0.1795,
+                0.4031
             ],
             "localEnd": [
-                -0.15,
-                0.35,
-                0.3038
+                -0.161,
+                0.201,
+                0.3594
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -37358,7 +37574,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-ra3",
+                "fractureGroup": "boot-lace-ra11",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -37374,7 +37590,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-ra3",
+                "id": "boot-laces-ra11",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -37405,9 +37621,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_ra3_56.add(mesh_boot_lace_ra3_56);
-    meshes["boot-lace-ra3"] = mesh_boot_lace_ra3_56;
-    colliders["boot-lace-ra3"] = {
+    node_boot_lace_ra11_56.add(mesh_boot_lace_ra11_56);
+    meshes["boot-lace-ra11"] = mesh_boot_lace_ra11_56;
+    colliders["boot-lace-ra11"] = {
         "type": "box",
         "offset": [
             0,
@@ -37422,50 +37638,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-ra3"] ??= [];
-    destructionGroups["boot-lace-ra3"].push(node_boot_lace_ra3_56);
-    const attachment_boot_lace_rb0_57 = {
+    destructionGroups["boot-lace-ra11"] ??= [];
+    destructionGroups["boot-lace-ra11"].push(node_boot_lace_ra11_56);
+    const attachment_boot_lace_ra20_57 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.28,
-            0.17,
-            0.3893
+            -0.161,
+            0.201,
+            0.3594
         ],
         "localEnd": [
-            -0.15,
-            0.215,
-            0.3375
+            -0.217,
+            0.2225,
+            0.3546
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_rb0_57 = makeAttachmentEndpoint(attachment_boot_lace_rb0_57);
-    const node_boot_lace_rb0_57 = new THREE.Group();
-    node_boot_lace_rb0_57.name = "Boot lace run boot-lace-rb0__pivot";
-    node_boot_lace_rb0_57.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_rb0_57) {
-        node_boot_lace_rb0_57.position.copy(endpoint_boot_lace_rb0_57.start);
-        node_boot_lace_rb0_57.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_ra20_57 = makeAttachmentEndpoint(attachment_boot_lace_ra20_57);
+    const node_boot_lace_ra20_57 = new THREE.Group();
+    node_boot_lace_ra20_57.name = "Boot lace run boot-lace-ra20__pivot";
+    node_boot_lace_ra20_57.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_ra20_57) {
+        node_boot_lace_ra20_57.position.copy(endpoint_boot_lace_ra20_57.start);
+        node_boot_lace_ra20_57.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_rb0_57.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_rb0_57.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_ra20_57.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_ra20_57.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_rb0_57.userData.sculptComponent = {
-        "id": "boot-lace-rb0",
-        "name": "Boot lace run boot-lace-rb0",
+    node_boot_lace_ra20_57.userData.sculptComponent = {
+        "id": "boot-lace-ra20",
+        "name": "Boot lace run boot-lace-ra20",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -37481,18 +37697,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.28,
-                0.17,
-                0.3893
+                -0.161,
+                0.201,
+                0.3594
             ],
             "localEnd": [
-                -0.15,
-                0.215,
-                0.3375
+                -0.217,
+                0.2225,
+                0.3546
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -37568,7 +37784,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-rb0",
+                "fractureGroup": "boot-lace-ra20",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -37584,7 +37800,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-rb0",
+                "id": "boot-laces-ra20",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -37615,7 +37831,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_rb0_57.userData.actionProfile = {
+    node_boot_lace_ra20_57.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -37660,39 +37876,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-rb0",
+            "fractureGroup": "boot-lace-ra20",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb0_57);
-    nodes["boot-lace-rb0"] = node_boot_lace_rb0_57;
-    const mesh_boot_lace_rb0_57Geometry = endpoint_boot_lace_rb0_57 ? new THREE.CylinderGeometry(endpoint_boot_lace_rb0_57.endRadius, endpoint_boot_lace_rb0_57.baseRadius, endpoint_boot_lace_rb0_57.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_rb0_57) {
-        mesh_boot_lace_rb0_57Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra20_57);
+    nodes["boot-lace-ra20"] = node_boot_lace_ra20_57;
+    const mesh_boot_lace_ra20_57Geometry = endpoint_boot_lace_ra20_57 ? new THREE.CylinderGeometry(endpoint_boot_lace_ra20_57.endRadius, endpoint_boot_lace_ra20_57.baseRadius, endpoint_boot_lace_ra20_57.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_ra20_57) {
+        mesh_boot_lace_ra20_57Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_rb0_57 = new THREE.Mesh(mesh_boot_lace_rb0_57Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_ra20_57 = new THREE.Mesh(mesh_boot_lace_ra20_57Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_rb0_57.name = "Boot lace run boot-lace-rb0";
-    if (endpoint_boot_lace_rb0_57) {
-        mesh_boot_lace_rb0_57.position.copy(endpoint_boot_lace_rb0_57.midpoint);
-        mesh_boot_lace_rb0_57.quaternion.copy(endpoint_boot_lace_rb0_57.quaternion);
+    mesh_boot_lace_ra20_57.name = "Boot lace run boot-lace-ra20";
+    if (endpoint_boot_lace_ra20_57) {
+        mesh_boot_lace_ra20_57.position.copy(endpoint_boot_lace_ra20_57.midpoint);
+        mesh_boot_lace_ra20_57.quaternion.copy(endpoint_boot_lace_ra20_57.quaternion);
     }
-    mesh_boot_lace_rb0_57.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_rb0_57.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_rb0_57.userData.sculptComponent = {
-        "id": "boot-lace-rb0",
-        "name": "Boot lace run boot-lace-rb0",
+    mesh_boot_lace_ra20_57.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_ra20_57.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_ra20_57.userData.sculptComponent = {
+        "id": "boot-lace-ra20",
+        "name": "Boot lace run boot-lace-ra20",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -37708,18 +37924,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.28,
-                0.17,
-                0.3893
+                -0.161,
+                0.201,
+                0.3594
             ],
             "localEnd": [
-                -0.15,
-                0.215,
-                0.3375
+                -0.217,
+                0.2225,
+                0.3546
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -37795,7 +38011,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-rb0",
+                "fractureGroup": "boot-lace-ra20",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -37811,7 +38027,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-rb0",
+                "id": "boot-laces-ra20",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -37842,9 +38058,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_rb0_57.add(mesh_boot_lace_rb0_57);
-    meshes["boot-lace-rb0"] = mesh_boot_lace_rb0_57;
-    colliders["boot-lace-rb0"] = {
+    node_boot_lace_ra20_57.add(mesh_boot_lace_ra20_57);
+    meshes["boot-lace-ra20"] = mesh_boot_lace_ra20_57;
+    colliders["boot-lace-ra20"] = {
         "type": "box",
         "offset": [
             0,
@@ -37859,50 +38075,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-rb0"] ??= [];
-    destructionGroups["boot-lace-rb0"].push(node_boot_lace_rb0_57);
-    const attachment_boot_lace_rb1_58 = {
+    destructionGroups["boot-lace-ra20"] ??= [];
+    destructionGroups["boot-lace-ra20"].push(node_boot_lace_ra20_57);
+    const attachment_boot_lace_ra21_58 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.15,
-            0.215,
-            0.3375
+            -0.217,
+            0.2225,
+            0.3546
         ],
         "localEnd": [
-            -0.28,
-            0.26,
-            0.305
+            -0.273,
+            0.244,
+            0.323
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_rb1_58 = makeAttachmentEndpoint(attachment_boot_lace_rb1_58);
-    const node_boot_lace_rb1_58 = new THREE.Group();
-    node_boot_lace_rb1_58.name = "Boot lace run boot-lace-rb1__pivot";
-    node_boot_lace_rb1_58.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_rb1_58) {
-        node_boot_lace_rb1_58.position.copy(endpoint_boot_lace_rb1_58.start);
-        node_boot_lace_rb1_58.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_ra21_58 = makeAttachmentEndpoint(attachment_boot_lace_ra21_58);
+    const node_boot_lace_ra21_58 = new THREE.Group();
+    node_boot_lace_ra21_58.name = "Boot lace run boot-lace-ra21__pivot";
+    node_boot_lace_ra21_58.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_ra21_58) {
+        node_boot_lace_ra21_58.position.copy(endpoint_boot_lace_ra21_58.start);
+        node_boot_lace_ra21_58.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_rb1_58.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_rb1_58.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_ra21_58.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_ra21_58.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_rb1_58.userData.sculptComponent = {
-        "id": "boot-lace-rb1",
-        "name": "Boot lace run boot-lace-rb1",
+    node_boot_lace_ra21_58.userData.sculptComponent = {
+        "id": "boot-lace-ra21",
+        "name": "Boot lace run boot-lace-ra21",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -37918,18 +38134,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.15,
-                0.215,
-                0.3375
+                -0.217,
+                0.2225,
+                0.3546
             ],
             "localEnd": [
-                -0.28,
-                0.26,
-                0.305
+                -0.273,
+                0.244,
+                0.323
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -38005,7 +38221,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-rb1",
+                "fractureGroup": "boot-lace-ra21",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -38021,7 +38237,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-rb1",
+                "id": "boot-laces-ra21",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -38052,7 +38268,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_rb1_58.userData.actionProfile = {
+    node_boot_lace_ra21_58.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -38097,39 +38313,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-rb1",
+            "fractureGroup": "boot-lace-ra21",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb1_58);
-    nodes["boot-lace-rb1"] = node_boot_lace_rb1_58;
-    const mesh_boot_lace_rb1_58Geometry = endpoint_boot_lace_rb1_58 ? new THREE.CylinderGeometry(endpoint_boot_lace_rb1_58.endRadius, endpoint_boot_lace_rb1_58.baseRadius, endpoint_boot_lace_rb1_58.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_rb1_58) {
-        mesh_boot_lace_rb1_58Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_ra21_58);
+    nodes["boot-lace-ra21"] = node_boot_lace_ra21_58;
+    const mesh_boot_lace_ra21_58Geometry = endpoint_boot_lace_ra21_58 ? new THREE.CylinderGeometry(endpoint_boot_lace_ra21_58.endRadius, endpoint_boot_lace_ra21_58.baseRadius, endpoint_boot_lace_ra21_58.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_ra21_58) {
+        mesh_boot_lace_ra21_58Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_rb1_58 = new THREE.Mesh(mesh_boot_lace_rb1_58Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_ra21_58 = new THREE.Mesh(mesh_boot_lace_ra21_58Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_rb1_58.name = "Boot lace run boot-lace-rb1";
-    if (endpoint_boot_lace_rb1_58) {
-        mesh_boot_lace_rb1_58.position.copy(endpoint_boot_lace_rb1_58.midpoint);
-        mesh_boot_lace_rb1_58.quaternion.copy(endpoint_boot_lace_rb1_58.quaternion);
+    mesh_boot_lace_ra21_58.name = "Boot lace run boot-lace-ra21";
+    if (endpoint_boot_lace_ra21_58) {
+        mesh_boot_lace_ra21_58.position.copy(endpoint_boot_lace_ra21_58.midpoint);
+        mesh_boot_lace_ra21_58.quaternion.copy(endpoint_boot_lace_ra21_58.quaternion);
     }
-    mesh_boot_lace_rb1_58.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_rb1_58.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_rb1_58.userData.sculptComponent = {
-        "id": "boot-lace-rb1",
-        "name": "Boot lace run boot-lace-rb1",
+    mesh_boot_lace_ra21_58.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_ra21_58.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_ra21_58.userData.sculptComponent = {
+        "id": "boot-lace-ra21",
+        "name": "Boot lace run boot-lace-ra21",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -38145,18 +38361,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.15,
-                0.215,
-                0.3375
+                -0.217,
+                0.2225,
+                0.3546
             ],
             "localEnd": [
-                -0.28,
-                0.26,
-                0.305
+                -0.273,
+                0.244,
+                0.323
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -38232,7 +38448,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-rb1",
+                "fractureGroup": "boot-lace-ra21",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -38248,7 +38464,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-rb1",
+                "id": "boot-laces-ra21",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -38279,9 +38495,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_rb1_58.add(mesh_boot_lace_rb1_58);
-    meshes["boot-lace-rb1"] = mesh_boot_lace_rb1_58;
-    colliders["boot-lace-rb1"] = {
+    node_boot_lace_ra21_58.add(mesh_boot_lace_ra21_58);
+    meshes["boot-lace-ra21"] = mesh_boot_lace_ra21_58;
+    colliders["boot-lace-ra21"] = {
         "type": "box",
         "offset": [
             0,
@@ -38296,50 +38512,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-rb1"] ??= [];
-    destructionGroups["boot-lace-rb1"].push(node_boot_lace_rb1_58);
-    const attachment_boot_lace_rb2_59 = {
+    destructionGroups["boot-lace-ra21"] ??= [];
+    destructionGroups["boot-lace-ra21"].push(node_boot_lace_ra21_58);
+    const attachment_boot_lace_rb00_59 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.28,
-            0.26,
-            0.305
+            -0.273,
+            0.115,
+            0.442
         ],
         "localEnd": [
-            -0.15,
-            0.305,
-            0.2892
+            -0.217,
+            0.1365,
+            0.4578
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_rb2_59 = makeAttachmentEndpoint(attachment_boot_lace_rb2_59);
-    const node_boot_lace_rb2_59 = new THREE.Group();
-    node_boot_lace_rb2_59.name = "Boot lace run boot-lace-rb2__pivot";
-    node_boot_lace_rb2_59.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_rb2_59) {
-        node_boot_lace_rb2_59.position.copy(endpoint_boot_lace_rb2_59.start);
-        node_boot_lace_rb2_59.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_rb00_59 = makeAttachmentEndpoint(attachment_boot_lace_rb00_59);
+    const node_boot_lace_rb00_59 = new THREE.Group();
+    node_boot_lace_rb00_59.name = "Boot lace run boot-lace-rb00__pivot";
+    node_boot_lace_rb00_59.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_rb00_59) {
+        node_boot_lace_rb00_59.position.copy(endpoint_boot_lace_rb00_59.start);
+        node_boot_lace_rb00_59.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_rb2_59.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_rb2_59.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_rb00_59.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_rb00_59.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_rb2_59.userData.sculptComponent = {
-        "id": "boot-lace-rb2",
-        "name": "Boot lace run boot-lace-rb2",
+    node_boot_lace_rb00_59.userData.sculptComponent = {
+        "id": "boot-lace-rb00",
+        "name": "Boot lace run boot-lace-rb00",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -38355,18 +38571,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.28,
-                0.26,
-                0.305
+                -0.273,
+                0.115,
+                0.442
             ],
             "localEnd": [
-                -0.15,
-                0.305,
-                0.2892
+                -0.217,
+                0.1365,
+                0.4578
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -38442,7 +38658,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-rb2",
+                "fractureGroup": "boot-lace-rb00",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -38458,7 +38674,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-rb2",
+                "id": "boot-laces-rb00",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -38489,7 +38705,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_rb2_59.userData.actionProfile = {
+    node_boot_lace_rb00_59.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -38534,39 +38750,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-rb2",
+            "fractureGroup": "boot-lace-rb00",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb2_59);
-    nodes["boot-lace-rb2"] = node_boot_lace_rb2_59;
-    const mesh_boot_lace_rb2_59Geometry = endpoint_boot_lace_rb2_59 ? new THREE.CylinderGeometry(endpoint_boot_lace_rb2_59.endRadius, endpoint_boot_lace_rb2_59.baseRadius, endpoint_boot_lace_rb2_59.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_rb2_59) {
-        mesh_boot_lace_rb2_59Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb00_59);
+    nodes["boot-lace-rb00"] = node_boot_lace_rb00_59;
+    const mesh_boot_lace_rb00_59Geometry = endpoint_boot_lace_rb00_59 ? new THREE.CylinderGeometry(endpoint_boot_lace_rb00_59.endRadius, endpoint_boot_lace_rb00_59.baseRadius, endpoint_boot_lace_rb00_59.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_rb00_59) {
+        mesh_boot_lace_rb00_59Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_rb2_59 = new THREE.Mesh(mesh_boot_lace_rb2_59Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_rb00_59 = new THREE.Mesh(mesh_boot_lace_rb00_59Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_rb2_59.name = "Boot lace run boot-lace-rb2";
-    if (endpoint_boot_lace_rb2_59) {
-        mesh_boot_lace_rb2_59.position.copy(endpoint_boot_lace_rb2_59.midpoint);
-        mesh_boot_lace_rb2_59.quaternion.copy(endpoint_boot_lace_rb2_59.quaternion);
+    mesh_boot_lace_rb00_59.name = "Boot lace run boot-lace-rb00";
+    if (endpoint_boot_lace_rb00_59) {
+        mesh_boot_lace_rb00_59.position.copy(endpoint_boot_lace_rb00_59.midpoint);
+        mesh_boot_lace_rb00_59.quaternion.copy(endpoint_boot_lace_rb00_59.quaternion);
     }
-    mesh_boot_lace_rb2_59.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_rb2_59.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_rb2_59.userData.sculptComponent = {
-        "id": "boot-lace-rb2",
-        "name": "Boot lace run boot-lace-rb2",
+    mesh_boot_lace_rb00_59.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_rb00_59.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_rb00_59.userData.sculptComponent = {
+        "id": "boot-lace-rb00",
+        "name": "Boot lace run boot-lace-rb00",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -38582,18 +38798,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.28,
-                0.26,
-                0.305
+                -0.273,
+                0.115,
+                0.442
             ],
             "localEnd": [
-                -0.15,
-                0.305,
-                0.2892
+                -0.217,
+                0.1365,
+                0.4578
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -38669,7 +38885,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-rb2",
+                "fractureGroup": "boot-lace-rb00",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -38685,7 +38901,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-rb2",
+                "id": "boot-laces-rb00",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -38716,9 +38932,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_rb2_59.add(mesh_boot_lace_rb2_59);
-    meshes["boot-lace-rb2"] = mesh_boot_lace_rb2_59;
-    colliders["boot-lace-rb2"] = {
+    node_boot_lace_rb00_59.add(mesh_boot_lace_rb00_59);
+    meshes["boot-lace-rb00"] = mesh_boot_lace_rb00_59;
+    colliders["boot-lace-rb00"] = {
         "type": "box",
         "offset": [
             0,
@@ -38733,50 +38949,50 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-rb2"] ??= [];
-    destructionGroups["boot-lace-rb2"].push(node_boot_lace_rb2_59);
-    const attachment_boot_lace_rb3_60 = {
+    destructionGroups["boot-lace-rb00"] ??= [];
+    destructionGroups["boot-lace-rb00"].push(node_boot_lace_rb00_59);
+    const attachment_boot_lace_rb01_60 = {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-            -0.15,
-            0.305,
-            0.2892
+            -0.217,
+            0.1365,
+            0.4578
         ],
         "localEnd": [
-            -0.28,
-            0.35,
-            0.3038
+            -0.161,
+            0.158,
+            0.4106
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
             "boots-zone"
         ]
     };
-    const endpoint_boot_lace_rb3_60 = makeAttachmentEndpoint(attachment_boot_lace_rb3_60);
-    const node_boot_lace_rb3_60 = new THREE.Group();
-    node_boot_lace_rb3_60.name = "Boot lace run boot-lace-rb3__pivot";
-    node_boot_lace_rb3_60.scale.set(1, 1, 1);
-    if (endpoint_boot_lace_rb3_60) {
-        node_boot_lace_rb3_60.position.copy(endpoint_boot_lace_rb3_60.start);
-        node_boot_lace_rb3_60.rotation.set(0.0, 0.0, 0.0);
+    const endpoint_boot_lace_rb01_60 = makeAttachmentEndpoint(attachment_boot_lace_rb01_60);
+    const node_boot_lace_rb01_60 = new THREE.Group();
+    node_boot_lace_rb01_60.name = "Boot lace run boot-lace-rb01__pivot";
+    node_boot_lace_rb01_60.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_rb01_60) {
+        node_boot_lace_rb01_60.position.copy(endpoint_boot_lace_rb01_60.start);
+        node_boot_lace_rb01_60.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_boot_lace_rb3_60.position.set(0.0, 0.0, 0.0);
-        node_boot_lace_rb3_60.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_rb01_60.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_rb01_60.rotation.set(0.0, 0.0, 0.0);
     }
-    node_boot_lace_rb3_60.userData.sculptComponent = {
-        "id": "boot-lace-rb3",
-        "name": "Boot lace run boot-lace-rb3",
+    node_boot_lace_rb01_60.userData.sculptComponent = {
+        "id": "boot-lace-rb01",
+        "name": "Boot lace run boot-lace-rb01",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -38792,18 +39008,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.15,
-                0.305,
-                0.2892
+                -0.217,
+                0.1365,
+                0.4578
             ],
             "localEnd": [
-                -0.28,
-                0.35,
-                0.3038
+                -0.161,
+                0.158,
+                0.4106
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -38879,7 +39095,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-rb3",
+                "fractureGroup": "boot-lace-rb01",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -38895,7 +39111,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-rb3",
+                "id": "boot-laces-rb01",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -38926,7 +39142,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_rb3_60.userData.actionProfile = {
+    node_boot_lace_rb01_60.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -38971,39 +39187,39 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "constraints": [],
         "destruction": {
             "breakable": false,
-            "fractureGroup": "boot-lace-rb3",
+            "fractureGroup": "boot-lace-rb01",
             "seamRefs": [],
             "detachableFragments": [],
             "breakImpulse": 0.0,
             "debrisMaterial": "lace"
         }
     };
-    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb3_60);
-    nodes["boot-lace-rb3"] = node_boot_lace_rb3_60;
-    const mesh_boot_lace_rb3_60Geometry = endpoint_boot_lace_rb3_60 ? new THREE.CylinderGeometry(endpoint_boot_lace_rb3_60.endRadius, endpoint_boot_lace_rb3_60.baseRadius, endpoint_boot_lace_rb3_60.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
-    if (!endpoint_boot_lace_rb3_60) {
-        mesh_boot_lace_rb3_60Geometry.scale(1.0, 1.0, 1.0);
+    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb01_60);
+    nodes["boot-lace-rb01"] = node_boot_lace_rb01_60;
+    const mesh_boot_lace_rb01_60Geometry = endpoint_boot_lace_rb01_60 ? new THREE.CylinderGeometry(endpoint_boot_lace_rb01_60.endRadius, endpoint_boot_lace_rb01_60.baseRadius, endpoint_boot_lace_rb01_60.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_rb01_60) {
+        mesh_boot_lace_rb01_60Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_boot_lace_rb3_60 = new THREE.Mesh(mesh_boot_lace_rb3_60Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+    const mesh_boot_lace_rb01_60 = new THREE.Mesh(mesh_boot_lace_rb01_60Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_boot_lace_rb3_60.name = "Boot lace run boot-lace-rb3";
-    if (endpoint_boot_lace_rb3_60) {
-        mesh_boot_lace_rb3_60.position.copy(endpoint_boot_lace_rb3_60.midpoint);
-        mesh_boot_lace_rb3_60.quaternion.copy(endpoint_boot_lace_rb3_60.quaternion);
+    mesh_boot_lace_rb01_60.name = "Boot lace run boot-lace-rb01";
+    if (endpoint_boot_lace_rb01_60) {
+        mesh_boot_lace_rb01_60.position.copy(endpoint_boot_lace_rb01_60.midpoint);
+        mesh_boot_lace_rb01_60.quaternion.copy(endpoint_boot_lace_rb01_60.quaternion);
     }
-    mesh_boot_lace_rb3_60.castShadow = options.castShadow ?? true;
-    mesh_boot_lace_rb3_60.receiveShadow = options.receiveShadow ?? true;
-    mesh_boot_lace_rb3_60.userData.sculptComponent = {
-        "id": "boot-lace-rb3",
-        "name": "Boot lace run boot-lace-rb3",
+    mesh_boot_lace_rb01_60.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_rb01_60.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_rb01_60.userData.sculptComponent = {
+        "id": "boot-lace-rb01",
+        "name": "Boot lace run boot-lace-rb01",
         "level": "micro",
         "role": "body",
         "importance": 0.85,
         "confidence": 0.8,
         "primitive": "cylinder",
         "topologyClass": "fiber-strand",
-        "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
         "geometryDescriptor": {
             "topologyIntent": "stylized character part",
             "edgeTreatment": {
@@ -39019,18 +39235,18 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "attachment": {
             "parentSocket": "boot-r-eyelets",
             "localStart": [
-                -0.15,
-                0.305,
-                0.2892
+                -0.217,
+                0.1365,
+                0.4578
             ],
             "localEnd": [
-                -0.28,
-                0.35,
-                0.3038
+                -0.161,
+                0.158,
+                0.4106
             ],
             "contactType": "threaded-through",
-            "baseRadius": 0.011,
-            "endRadius": 0.011,
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
             "embedDepth": 0.004,
             "gapTolerance": 0.004,
             "evidenceRefs": [
@@ -39106,7 +39322,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "constraints": [],
             "destruction": {
                 "breakable": false,
-                "fractureGroup": "boot-lace-rb3",
+                "fractureGroup": "boot-lace-rb01",
                 "seamRefs": [],
                 "detachableFragments": [],
                 "breakImpulse": 0.0,
@@ -39122,7 +39338,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "seams": [],
         "localFeatures": [
             {
-                "id": "boot-laces-rb3",
+                "id": "boot-laces-rb01",
                 "kind": "stitch",
                 "description": "criss-cross lace run"
             }
@@ -39153,9 +39369,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_boot_lace_rb3_60.add(mesh_boot_lace_rb3_60);
-    meshes["boot-lace-rb3"] = mesh_boot_lace_rb3_60;
-    colliders["boot-lace-rb3"] = {
+    node_boot_lace_rb01_60.add(mesh_boot_lace_rb01_60);
+    meshes["boot-lace-rb01"] = mesh_boot_lace_rb01_60;
+    colliders["boot-lace-rb01"] = {
         "type": "box",
         "offset": [
             0,
@@ -39170,20 +39386,1768 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "isTrigger": false,
         "notes": "box proxy"
     };
-    destructionGroups["boot-lace-rb3"] ??= [];
-    destructionGroups["boot-lace-rb3"].push(node_boot_lace_rb3_60);
-    const endpoint_sheath_body_61 = makeAttachmentEndpoint(null);
-    const node_sheath_body_61 = new THREE.Group();
-    node_sheath_body_61.name = "Knife sheath__pivot";
-    node_sheath_body_61.scale.set(1, 1, 1);
-    if (endpoint_sheath_body_61) {
-        node_sheath_body_61.position.copy(endpoint_sheath_body_61.start);
-        node_sheath_body_61.rotation.set(0.0, 0.0, 0.0);
+    destructionGroups["boot-lace-rb01"] ??= [];
+    destructionGroups["boot-lace-rb01"].push(node_boot_lace_rb01_60);
+    const attachment_boot_lace_rb10_61 = {
+        "parentSocket": "boot-r-eyelets",
+        "localStart": [
+            -0.161,
+            0.158,
+            0.4106
+        ],
+        "localEnd": [
+            -0.217,
+            0.1795,
+            0.4131
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+            "boots-zone"
+        ]
+    };
+    const endpoint_boot_lace_rb10_61 = makeAttachmentEndpoint(attachment_boot_lace_rb10_61);
+    const node_boot_lace_rb10_61 = new THREE.Group();
+    node_boot_lace_rb10_61.name = "Boot lace run boot-lace-rb10__pivot";
+    node_boot_lace_rb10_61.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_rb10_61) {
+        node_boot_lace_rb10_61.position.copy(endpoint_boot_lace_rb10_61.start);
+        node_boot_lace_rb10_61.rotation.set(0.0, 0.0, 0.0);
     } else {
-        node_sheath_body_61.position.set(0.0, 0.0, 0.0);
-        node_sheath_body_61.rotation.set(0.0, 0.0, 0.0);
+        node_boot_lace_rb10_61.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_rb10_61.rotation.set(0.0, 0.0, 0.0);
     }
-    node_sheath_body_61.userData.sculptComponent = {
+    node_boot_lace_rb10_61.userData.sculptComponent = {
+        "id": "boot-lace-rb10",
+        "name": "Boot lace run boot-lace-rb10",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-r",
+        "attachment": {
+            "parentSocket": "boot-r-eyelets",
+            "localStart": [
+                -0.161,
+                0.158,
+                0.4106
+            ],
+            "localEnd": [
+                -0.217,
+                0.1795,
+                0.4131
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-rb10",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-rb10",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_rb10_61.userData.actionProfile = {
+        "animationRole": "static",
+        "pivot": {
+            "mode": "center",
+            "localPosition": [
+                0,
+                0,
+                0
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ],
+            "confidence": 0.7
+        },
+        "transformChannels": {
+            "translate": true,
+            "rotate": true,
+            "scale": true,
+            "bend": false,
+            "twist": false,
+            "detach": false,
+            "visibility": true,
+            "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+            "type": "box",
+            "offset": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ],
+            "isTrigger": false,
+            "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+            "breakable": false,
+            "fractureGroup": "boot-lace-rb10",
+            "seamRefs": [],
+            "detachableFragments": [],
+            "breakImpulse": 0.0,
+            "debrisMaterial": "lace"
+        }
+    };
+    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb10_61);
+    nodes["boot-lace-rb10"] = node_boot_lace_rb10_61;
+    const mesh_boot_lace_rb10_61Geometry = endpoint_boot_lace_rb10_61 ? new THREE.CylinderGeometry(endpoint_boot_lace_rb10_61.endRadius, endpoint_boot_lace_rb10_61.baseRadius, endpoint_boot_lace_rb10_61.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_rb10_61) {
+        mesh_boot_lace_rb10_61Geometry.scale(1.0, 1.0, 1.0);
+    }
+    const mesh_boot_lace_rb10_61 = new THREE.Mesh(mesh_boot_lace_rb10_61Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+        color: 0x888888
+    }));
+    mesh_boot_lace_rb10_61.name = "Boot lace run boot-lace-rb10";
+    if (endpoint_boot_lace_rb10_61) {
+        mesh_boot_lace_rb10_61.position.copy(endpoint_boot_lace_rb10_61.midpoint);
+        mesh_boot_lace_rb10_61.quaternion.copy(endpoint_boot_lace_rb10_61.quaternion);
+    }
+    mesh_boot_lace_rb10_61.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_rb10_61.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_rb10_61.userData.sculptComponent = {
+        "id": "boot-lace-rb10",
+        "name": "Boot lace run boot-lace-rb10",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-r",
+        "attachment": {
+            "parentSocket": "boot-r-eyelets",
+            "localStart": [
+                -0.161,
+                0.158,
+                0.4106
+            ],
+            "localEnd": [
+                -0.217,
+                0.1795,
+                0.4131
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-rb10",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-rb10",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_rb10_61.add(mesh_boot_lace_rb10_61);
+    meshes["boot-lace-rb10"] = mesh_boot_lace_rb10_61;
+    colliders["boot-lace-rb10"] = {
+        "type": "box",
+        "offset": [
+            0,
+            0,
+            0
+        ],
+        "scale": [
+            1,
+            1,
+            1
+        ],
+        "isTrigger": false,
+        "notes": "box proxy"
+    };
+    destructionGroups["boot-lace-rb10"] ??= [];
+    destructionGroups["boot-lace-rb10"].push(node_boot_lace_rb10_61);
+    const attachment_boot_lace_rb11_62 = {
+        "parentSocket": "boot-r-eyelets",
+        "localStart": [
+            -0.217,
+            0.1795,
+            0.4131
+        ],
+        "localEnd": [
+            -0.273,
+            0.201,
+            0.3594
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+            "boots-zone"
+        ]
+    };
+    const endpoint_boot_lace_rb11_62 = makeAttachmentEndpoint(attachment_boot_lace_rb11_62);
+    const node_boot_lace_rb11_62 = new THREE.Group();
+    node_boot_lace_rb11_62.name = "Boot lace run boot-lace-rb11__pivot";
+    node_boot_lace_rb11_62.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_rb11_62) {
+        node_boot_lace_rb11_62.position.copy(endpoint_boot_lace_rb11_62.start);
+        node_boot_lace_rb11_62.rotation.set(0.0, 0.0, 0.0);
+    } else {
+        node_boot_lace_rb11_62.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_rb11_62.rotation.set(0.0, 0.0, 0.0);
+    }
+    node_boot_lace_rb11_62.userData.sculptComponent = {
+        "id": "boot-lace-rb11",
+        "name": "Boot lace run boot-lace-rb11",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-r",
+        "attachment": {
+            "parentSocket": "boot-r-eyelets",
+            "localStart": [
+                -0.217,
+                0.1795,
+                0.4131
+            ],
+            "localEnd": [
+                -0.273,
+                0.201,
+                0.3594
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-rb11",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-rb11",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_rb11_62.userData.actionProfile = {
+        "animationRole": "static",
+        "pivot": {
+            "mode": "center",
+            "localPosition": [
+                0,
+                0,
+                0
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ],
+            "confidence": 0.7
+        },
+        "transformChannels": {
+            "translate": true,
+            "rotate": true,
+            "scale": true,
+            "bend": false,
+            "twist": false,
+            "detach": false,
+            "visibility": true,
+            "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+            "type": "box",
+            "offset": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ],
+            "isTrigger": false,
+            "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+            "breakable": false,
+            "fractureGroup": "boot-lace-rb11",
+            "seamRefs": [],
+            "detachableFragments": [],
+            "breakImpulse": 0.0,
+            "debrisMaterial": "lace"
+        }
+    };
+    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb11_62);
+    nodes["boot-lace-rb11"] = node_boot_lace_rb11_62;
+    const mesh_boot_lace_rb11_62Geometry = endpoint_boot_lace_rb11_62 ? new THREE.CylinderGeometry(endpoint_boot_lace_rb11_62.endRadius, endpoint_boot_lace_rb11_62.baseRadius, endpoint_boot_lace_rb11_62.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_rb11_62) {
+        mesh_boot_lace_rb11_62Geometry.scale(1.0, 1.0, 1.0);
+    }
+    const mesh_boot_lace_rb11_62 = new THREE.Mesh(mesh_boot_lace_rb11_62Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+        color: 0x888888
+    }));
+    mesh_boot_lace_rb11_62.name = "Boot lace run boot-lace-rb11";
+    if (endpoint_boot_lace_rb11_62) {
+        mesh_boot_lace_rb11_62.position.copy(endpoint_boot_lace_rb11_62.midpoint);
+        mesh_boot_lace_rb11_62.quaternion.copy(endpoint_boot_lace_rb11_62.quaternion);
+    }
+    mesh_boot_lace_rb11_62.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_rb11_62.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_rb11_62.userData.sculptComponent = {
+        "id": "boot-lace-rb11",
+        "name": "Boot lace run boot-lace-rb11",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-r",
+        "attachment": {
+            "parentSocket": "boot-r-eyelets",
+            "localStart": [
+                -0.217,
+                0.1795,
+                0.4131
+            ],
+            "localEnd": [
+                -0.273,
+                0.201,
+                0.3594
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-rb11",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-rb11",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_rb11_62.add(mesh_boot_lace_rb11_62);
+    meshes["boot-lace-rb11"] = mesh_boot_lace_rb11_62;
+    colliders["boot-lace-rb11"] = {
+        "type": "box",
+        "offset": [
+            0,
+            0,
+            0
+        ],
+        "scale": [
+            1,
+            1,
+            1
+        ],
+        "isTrigger": false,
+        "notes": "box proxy"
+    };
+    destructionGroups["boot-lace-rb11"] ??= [];
+    destructionGroups["boot-lace-rb11"].push(node_boot_lace_rb11_62);
+    const attachment_boot_lace_rb20_63 = {
+        "parentSocket": "boot-r-eyelets",
+        "localStart": [
+            -0.273,
+            0.201,
+            0.3594
+        ],
+        "localEnd": [
+            -0.217,
+            0.2225,
+            0.3646
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+            "boots-zone"
+        ]
+    };
+    const endpoint_boot_lace_rb20_63 = makeAttachmentEndpoint(attachment_boot_lace_rb20_63);
+    const node_boot_lace_rb20_63 = new THREE.Group();
+    node_boot_lace_rb20_63.name = "Boot lace run boot-lace-rb20__pivot";
+    node_boot_lace_rb20_63.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_rb20_63) {
+        node_boot_lace_rb20_63.position.copy(endpoint_boot_lace_rb20_63.start);
+        node_boot_lace_rb20_63.rotation.set(0.0, 0.0, 0.0);
+    } else {
+        node_boot_lace_rb20_63.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_rb20_63.rotation.set(0.0, 0.0, 0.0);
+    }
+    node_boot_lace_rb20_63.userData.sculptComponent = {
+        "id": "boot-lace-rb20",
+        "name": "Boot lace run boot-lace-rb20",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-r",
+        "attachment": {
+            "parentSocket": "boot-r-eyelets",
+            "localStart": [
+                -0.273,
+                0.201,
+                0.3594
+            ],
+            "localEnd": [
+                -0.217,
+                0.2225,
+                0.3646
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-rb20",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-rb20",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_rb20_63.userData.actionProfile = {
+        "animationRole": "static",
+        "pivot": {
+            "mode": "center",
+            "localPosition": [
+                0,
+                0,
+                0
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ],
+            "confidence": 0.7
+        },
+        "transformChannels": {
+            "translate": true,
+            "rotate": true,
+            "scale": true,
+            "bend": false,
+            "twist": false,
+            "detach": false,
+            "visibility": true,
+            "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+            "type": "box",
+            "offset": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ],
+            "isTrigger": false,
+            "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+            "breakable": false,
+            "fractureGroup": "boot-lace-rb20",
+            "seamRefs": [],
+            "detachableFragments": [],
+            "breakImpulse": 0.0,
+            "debrisMaterial": "lace"
+        }
+    };
+    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb20_63);
+    nodes["boot-lace-rb20"] = node_boot_lace_rb20_63;
+    const mesh_boot_lace_rb20_63Geometry = endpoint_boot_lace_rb20_63 ? new THREE.CylinderGeometry(endpoint_boot_lace_rb20_63.endRadius, endpoint_boot_lace_rb20_63.baseRadius, endpoint_boot_lace_rb20_63.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_rb20_63) {
+        mesh_boot_lace_rb20_63Geometry.scale(1.0, 1.0, 1.0);
+    }
+    const mesh_boot_lace_rb20_63 = new THREE.Mesh(mesh_boot_lace_rb20_63Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+        color: 0x888888
+    }));
+    mesh_boot_lace_rb20_63.name = "Boot lace run boot-lace-rb20";
+    if (endpoint_boot_lace_rb20_63) {
+        mesh_boot_lace_rb20_63.position.copy(endpoint_boot_lace_rb20_63.midpoint);
+        mesh_boot_lace_rb20_63.quaternion.copy(endpoint_boot_lace_rb20_63.quaternion);
+    }
+    mesh_boot_lace_rb20_63.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_rb20_63.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_rb20_63.userData.sculptComponent = {
+        "id": "boot-lace-rb20",
+        "name": "Boot lace run boot-lace-rb20",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-r",
+        "attachment": {
+            "parentSocket": "boot-r-eyelets",
+            "localStart": [
+                -0.273,
+                0.201,
+                0.3594
+            ],
+            "localEnd": [
+                -0.217,
+                0.2225,
+                0.3646
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-rb20",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-rb20",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_rb20_63.add(mesh_boot_lace_rb20_63);
+    meshes["boot-lace-rb20"] = mesh_boot_lace_rb20_63;
+    colliders["boot-lace-rb20"] = {
+        "type": "box",
+        "offset": [
+            0,
+            0,
+            0
+        ],
+        "scale": [
+            1,
+            1,
+            1
+        ],
+        "isTrigger": false,
+        "notes": "box proxy"
+    };
+    destructionGroups["boot-lace-rb20"] ??= [];
+    destructionGroups["boot-lace-rb20"].push(node_boot_lace_rb20_63);
+    const attachment_boot_lace_rb21_64 = {
+        "parentSocket": "boot-r-eyelets",
+        "localStart": [
+            -0.217,
+            0.2225,
+            0.3646
+        ],
+        "localEnd": [
+            -0.161,
+            0.244,
+            0.323
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+            "boots-zone"
+        ]
+    };
+    const endpoint_boot_lace_rb21_64 = makeAttachmentEndpoint(attachment_boot_lace_rb21_64);
+    const node_boot_lace_rb21_64 = new THREE.Group();
+    node_boot_lace_rb21_64.name = "Boot lace run boot-lace-rb21__pivot";
+    node_boot_lace_rb21_64.scale.set(1, 1, 1);
+    if (endpoint_boot_lace_rb21_64) {
+        node_boot_lace_rb21_64.position.copy(endpoint_boot_lace_rb21_64.start);
+        node_boot_lace_rb21_64.rotation.set(0.0, 0.0, 0.0);
+    } else {
+        node_boot_lace_rb21_64.position.set(0.0, 0.0, 0.0);
+        node_boot_lace_rb21_64.rotation.set(0.0, 0.0, 0.0);
+    }
+    node_boot_lace_rb21_64.userData.sculptComponent = {
+        "id": "boot-lace-rb21",
+        "name": "Boot lace run boot-lace-rb21",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-r",
+        "attachment": {
+            "parentSocket": "boot-r-eyelets",
+            "localStart": [
+                -0.217,
+                0.2225,
+                0.3646
+            ],
+            "localEnd": [
+                -0.161,
+                0.244,
+                0.323
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-rb21",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-rb21",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_rb21_64.userData.actionProfile = {
+        "animationRole": "static",
+        "pivot": {
+            "mode": "center",
+            "localPosition": [
+                0,
+                0,
+                0
+            ],
+            "axis": [
+                0,
+                1,
+                0
+            ],
+            "confidence": 0.7
+        },
+        "transformChannels": {
+            "translate": true,
+            "rotate": true,
+            "scale": true,
+            "bend": false,
+            "twist": false,
+            "detach": false,
+            "visibility": true,
+            "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+            "type": "box",
+            "offset": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ],
+            "isTrigger": false,
+            "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+            "breakable": false,
+            "fractureGroup": "boot-lace-rb21",
+            "seamRefs": [],
+            "detachableFragments": [],
+            "breakImpulse": 0.0,
+            "debrisMaterial": "lace"
+        }
+    };
+    (nodes["boot-shell-r"] ?? root).add(node_boot_lace_rb21_64);
+    nodes["boot-lace-rb21"] = node_boot_lace_rb21_64;
+    const mesh_boot_lace_rb21_64Geometry = endpoint_boot_lace_rb21_64 ? new THREE.CylinderGeometry(endpoint_boot_lace_rb21_64.endRadius, endpoint_boot_lace_rb21_64.baseRadius, endpoint_boot_lace_rb21_64.length, 16, 6) : new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 8);
+    if (!endpoint_boot_lace_rb21_64) {
+        mesh_boot_lace_rb21_64Geometry.scale(1.0, 1.0, 1.0);
+    }
+    const mesh_boot_lace_rb21_64 = new THREE.Mesh(mesh_boot_lace_rb21_64Geometry, materialMap["lace"] ?? new THREE.MeshStandardMaterial({
+        color: 0x888888
+    }));
+    mesh_boot_lace_rb21_64.name = "Boot lace run boot-lace-rb21";
+    if (endpoint_boot_lace_rb21_64) {
+        mesh_boot_lace_rb21_64.position.copy(endpoint_boot_lace_rb21_64.midpoint);
+        mesh_boot_lace_rb21_64.quaternion.copy(endpoint_boot_lace_rb21_64.quaternion);
+    }
+    mesh_boot_lace_rb21_64.castShadow = options.castShadow ?? true;
+    mesh_boot_lace_rb21_64.receiveShadow = options.receiveShadow ?? true;
+    mesh_boot_lace_rb21_64.userData.sculptComponent = {
+        "id": "boot-lace-rb21",
+        "name": "Boot lace run boot-lace-rb21",
+        "level": "micro",
+        "role": "body",
+        "importance": 0.85,
+        "confidence": 0.8,
+        "primitive": "cylinder",
+        "topologyClass": "fiber-strand",
+        "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+        "geometryDescriptor": {
+            "topologyIntent": "stylized character part",
+            "edgeTreatment": {
+                "type": "none",
+                "bevelRadius": 0.0,
+                "segments": 1
+            },
+            "deformationStack": [],
+            "uvStrategy": "generated procedural coordinates",
+            "normalStrategy": "smooth vertex normals"
+        },
+        "parent": "boot-shell-r",
+        "attachment": {
+            "parentSocket": "boot-r-eyelets",
+            "localStart": [
+                -0.217,
+                0.2225,
+                0.3646
+            ],
+            "localEnd": [
+                -0.161,
+                0.244,
+                0.323
+            ],
+            "contactType": "threaded-through",
+            "baseRadius": 0.014,
+            "endRadius": 0.014,
+            "embedDepth": 0.004,
+            "gapTolerance": 0.004,
+            "evidenceRefs": [
+                "boots-zone"
+            ]
+        },
+        "dimensions": {
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "units": "relative",
+            "confidence": 0.8
+        },
+        "transform": {
+            "position": [
+                0,
+                0,
+                0
+            ],
+            "rotation": [
+                0,
+                0,
+                0
+            ],
+            "scale": [
+                1,
+                1,
+                1
+            ]
+        },
+        "actionProfile": {
+            "animationRole": "static",
+            "pivot": {
+                "mode": "center",
+                "localPosition": [
+                    0,
+                    0,
+                    0
+                ],
+                "axis": [
+                    0,
+                    1,
+                    0
+                ],
+                "confidence": 0.7
+            },
+            "transformChannels": {
+                "translate": true,
+                "rotate": true,
+                "scale": true,
+                "bend": false,
+                "twist": false,
+                "detach": false,
+                "visibility": true,
+                "materialState": false
+            },
+            "sockets": [],
+            "collider": {
+                "type": "box",
+                "offset": [
+                    0,
+                    0,
+                    0
+                ],
+                "scale": [
+                    1,
+                    1,
+                    1
+                ],
+                "isTrigger": false,
+                "notes": "box proxy"
+            },
+            "constraints": [],
+            "destruction": {
+                "breakable": false,
+                "fractureGroup": "boot-lace-rb21",
+                "seamRefs": [],
+                "detachableFragments": [],
+                "breakImpulse": 0.0,
+                "debrisMaterial": "lace"
+            }
+        },
+        "material": "lace",
+        "materialLayers": [
+            "lace"
+        ],
+        "deformations": [],
+        "joints": [],
+        "seams": [],
+        "localFeatures": [
+            {
+                "id": "boot-laces-rb21",
+                "kind": "stitch",
+                "description": "criss-cross lace run"
+            }
+        ],
+        "surfaceDetail": {
+            "macroRoughness": 0.0,
+            "microRoughness": 0.0,
+            "bumpAmplitude": 0.0,
+            "normalPattern": "",
+            "displacementPattern": "",
+            "occlusionPattern": "",
+            "edgeWearPattern": "",
+            "notes": ""
+        },
+        "evidenceRefs": [
+            "full-object",
+            "boots-zone"
+        ],
+        "details": [],
+        "fidelityTier": "form",
+        "colorMaterialRecipe": {
+            "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+            "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+            "materialClass": "fabric",
+            "materialClassConfidence": 0.7,
+            "evidenceRefs": [
+                "material-evidence/lace.png"
+            ]
+        }
+    };
+    node_boot_lace_rb21_64.add(mesh_boot_lace_rb21_64);
+    meshes["boot-lace-rb21"] = mesh_boot_lace_rb21_64;
+    colliders["boot-lace-rb21"] = {
+        "type": "box",
+        "offset": [
+            0,
+            0,
+            0
+        ],
+        "scale": [
+            1,
+            1,
+            1
+        ],
+        "isTrigger": false,
+        "notes": "box proxy"
+    };
+    destructionGroups["boot-lace-rb21"] ??= [];
+    destructionGroups["boot-lace-rb21"].push(node_boot_lace_rb21_64);
+    const endpoint_sheath_body_65 = makeAttachmentEndpoint(null);
+    const node_sheath_body_65 = new THREE.Group();
+    node_sheath_body_65.name = "Knife sheath__pivot";
+    node_sheath_body_65.scale.set(1, 1, 1);
+    if (endpoint_sheath_body_65) {
+        node_sheath_body_65.position.copy(endpoint_sheath_body_65.start);
+        node_sheath_body_65.rotation.set(0.0, 0.0, 0.0);
+    } else {
+        node_sheath_body_65.position.set(0.0, 0.0, 0.0);
+        node_sheath_body_65.rotation.set(0.0, 0.0, 0.0);
+    }
+    node_sheath_body_65.userData.sculptComponent = {
         "id": "sheath-body",
         "name": "Knife sheath",
         "level": "macro",
@@ -39634,7 +41598,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sheath_body_61.userData.actionProfile = {
+    node_sheath_body_65.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -39686,9 +41650,9 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "sheath-leather"
         }
     };
-    (nodes["vest-shell"] ?? root).add(node_sheath_body_61);
-    nodes["sheath-body"] = node_sheath_body_61;
-    const mesh_sheath_body_61GeometryDense = polygonizeSdf({
+    (nodes["vest-shell"] ?? root).add(node_sheath_body_65);
+    nodes["sheath-body"] = node_sheath_body_65;
+    const mesh_sheath_body_65GeometryDense = polygonizeSdf({
         "primitives": [
             {
                 "id": "sh0",
@@ -39997,11 +41961,11 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     });
-    const mesh_sheath_body_61Geometry = decimateGeometry(mesh_sheath_body_61GeometryDense, 0.25);
-    if (!endpoint_sheath_body_61) {
-        mesh_sheath_body_61Geometry.scale(1.0, 1.0, 1.0);
+    const mesh_sheath_body_65Geometry = decimateGeometry(mesh_sheath_body_65GeometryDense, 0.25);
+    if (!endpoint_sheath_body_65) {
+        mesh_sheath_body_65Geometry.scale(1.0, 1.0, 1.0);
     }
-    const mesh_sheath_body_61 = new THREE.Mesh(mesh_sheath_body_61Geometry, createSculptMaterial("sheath-leather", {
+    const mesh_sheath_body_65 = new THREE.Mesh(mesh_sheath_body_65Geometry, createSculptMaterial("sheath-leather", {
         "id": "sheath-leather",
         "name": "Sheath leather",
         "type": "standard",
@@ -40064,14 +42028,14 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     }, options, true));
-    mesh_sheath_body_61.name = "Knife sheath";
-    if (endpoint_sheath_body_61) {
-        mesh_sheath_body_61.position.copy(endpoint_sheath_body_61.midpoint);
-        mesh_sheath_body_61.quaternion.copy(endpoint_sheath_body_61.quaternion);
+    mesh_sheath_body_65.name = "Knife sheath";
+    if (endpoint_sheath_body_65) {
+        mesh_sheath_body_65.position.copy(endpoint_sheath_body_65.midpoint);
+        mesh_sheath_body_65.quaternion.copy(endpoint_sheath_body_65.quaternion);
     }
-    mesh_sheath_body_61.castShadow = options.castShadow ?? true;
-    mesh_sheath_body_61.receiveShadow = options.receiveShadow ?? true;
-    mesh_sheath_body_61.userData.sculptComponent = {
+    mesh_sheath_body_65.castShadow = options.castShadow ?? true;
+    mesh_sheath_body_65.receiveShadow = options.receiveShadow ?? true;
+    mesh_sheath_body_65.userData.sculptComponent = {
         "id": "sheath-body",
         "name": "Knife sheath",
         "level": "macro",
@@ -40522,8 +42486,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sheath_body_61.add(mesh_sheath_body_61);
-    meshes["sheath-body"] = mesh_sheath_body_61;
+    node_sheath_body_65.add(mesh_sheath_body_65);
+    meshes["sheath-body"] = mesh_sheath_body_65;
     colliders["sheath-body"] = {
         "type": "box",
         "offset": [
@@ -40540,19 +42504,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["sheath-body"] ??= [];
-    destructionGroups["sheath-body"].push(node_sheath_body_61);
-    const endpoint_sheath_strap_62 = makeAttachmentEndpoint(null);
-    const node_sheath_strap_62 = new THREE.Group();
-    node_sheath_strap_62.name = "Sheath belt strap__pivot";
-    node_sheath_strap_62.scale.set(1, 1, 1);
-    if (endpoint_sheath_strap_62) {
-        node_sheath_strap_62.position.copy(endpoint_sheath_strap_62.start);
-        node_sheath_strap_62.rotation.set(0.0, -0.96, 0.15);
+    destructionGroups["sheath-body"].push(node_sheath_body_65);
+    const endpoint_sheath_strap_66 = makeAttachmentEndpoint(null);
+    const node_sheath_strap_66 = new THREE.Group();
+    node_sheath_strap_66.name = "Sheath belt strap__pivot";
+    node_sheath_strap_66.scale.set(1, 1, 1);
+    if (endpoint_sheath_strap_66) {
+        node_sheath_strap_66.position.copy(endpoint_sheath_strap_66.start);
+        node_sheath_strap_66.rotation.set(0.0, -0.96, 0.15);
     } else {
-        node_sheath_strap_62.position.set(-0.4178636205735449, 0.6, 0.33580839937326057);
-        node_sheath_strap_62.rotation.set(0.0, -0.96, 0.15);
+        node_sheath_strap_66.position.set(-0.4178636205735449, 0.6, 0.33580839937326057);
+        node_sheath_strap_66.rotation.set(0.0, -0.96, 0.15);
     }
-    node_sheath_strap_62.userData.sculptComponent = {
+    node_sheath_strap_66.userData.sculptComponent = {
         "id": "sheath-strap",
         "name": "Sheath belt strap",
         "level": "meso",
@@ -40691,7 +42655,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sheath_strap_62.userData.actionProfile = {
+    node_sheath_strap_66.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -40743,23 +42707,23 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "sheath-leather"
         }
     };
-    (nodes["sheath-body"] ?? root).add(node_sheath_strap_62);
-    nodes["sheath-strap"] = node_sheath_strap_62;
-    const mesh_sheath_strap_62Geometry = endpoint_sheath_strap_62 ? new THREE.CylinderGeometry(endpoint_sheath_strap_62.endRadius, endpoint_sheath_strap_62.baseRadius, endpoint_sheath_strap_62.length, 16, 6) : new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
-    if (!endpoint_sheath_strap_62) {
-        mesh_sheath_strap_62Geometry.scale(0.07, 0.13, 0.025);
+    (nodes["sheath-body"] ?? root).add(node_sheath_strap_66);
+    nodes["sheath-strap"] = node_sheath_strap_66;
+    const mesh_sheath_strap_66Geometry = endpoint_sheath_strap_66 ? new THREE.CylinderGeometry(endpoint_sheath_strap_66.endRadius, endpoint_sheath_strap_66.baseRadius, endpoint_sheath_strap_66.length, 16, 6) : new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
+    if (!endpoint_sheath_strap_66) {
+        mesh_sheath_strap_66Geometry.scale(0.07, 0.13, 0.025);
     }
-    const mesh_sheath_strap_62 = new THREE.Mesh(mesh_sheath_strap_62Geometry, materialMap["sheath-leather"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sheath_strap_66 = new THREE.Mesh(mesh_sheath_strap_66Geometry, materialMap["sheath-leather"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_sheath_strap_62.name = "Sheath belt strap";
-    if (endpoint_sheath_strap_62) {
-        mesh_sheath_strap_62.position.copy(endpoint_sheath_strap_62.midpoint);
-        mesh_sheath_strap_62.quaternion.copy(endpoint_sheath_strap_62.quaternion);
+    mesh_sheath_strap_66.name = "Sheath belt strap";
+    if (endpoint_sheath_strap_66) {
+        mesh_sheath_strap_66.position.copy(endpoint_sheath_strap_66.midpoint);
+        mesh_sheath_strap_66.quaternion.copy(endpoint_sheath_strap_66.quaternion);
     }
-    mesh_sheath_strap_62.castShadow = options.castShadow ?? true;
-    mesh_sheath_strap_62.receiveShadow = options.receiveShadow ?? true;
-    mesh_sheath_strap_62.userData.sculptComponent = {
+    mesh_sheath_strap_66.castShadow = options.castShadow ?? true;
+    mesh_sheath_strap_66.receiveShadow = options.receiveShadow ?? true;
+    mesh_sheath_strap_66.userData.sculptComponent = {
         "id": "sheath-strap",
         "name": "Sheath belt strap",
         "level": "meso",
@@ -40898,8 +42862,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sheath_strap_62.add(mesh_sheath_strap_62);
-    meshes["sheath-strap"] = mesh_sheath_strap_62;
+    node_sheath_strap_66.add(mesh_sheath_strap_66);
+    meshes["sheath-strap"] = mesh_sheath_strap_66;
     colliders["sheath-strap"] = {
         "type": "box",
         "offset": [
@@ -40916,19 +42880,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["sheath-strap"] ??= [];
-    destructionGroups["sheath-strap"].push(node_sheath_strap_62);
-    const endpoint_sheath_stud_63 = makeAttachmentEndpoint(null);
-    const node_sheath_stud_63 = new THREE.Group();
-    node_sheath_stud_63.name = "Sheath strap stud__pivot";
-    node_sheath_stud_63.scale.set(1, 1, 1);
-    if (endpoint_sheath_stud_63) {
-        node_sheath_stud_63.position.copy(endpoint_sheath_stud_63.start);
-        node_sheath_stud_63.rotation.set(0.2103, 0.94414, -0.25766);
+    destructionGroups["sheath-strap"].push(node_sheath_strap_66);
+    const endpoint_sheath_stud_67 = makeAttachmentEndpoint(null);
+    const node_sheath_stud_67 = new THREE.Group();
+    node_sheath_stud_67.name = "Sheath strap stud__pivot";
+    node_sheath_stud_67.scale.set(1, 1, 1);
+    if (endpoint_sheath_stud_67) {
+        node_sheath_stud_67.position.copy(endpoint_sheath_stud_67.start);
+        node_sheath_stud_67.rotation.set(0.2103, 0.94414, -0.25766);
     } else {
-        node_sheath_stud_63.position.set(-0.00299, -0.01978, 0.015);
-        node_sheath_stud_63.rotation.set(0.2103, 0.94414, -0.25766);
+        node_sheath_stud_67.position.set(-0.00299, -0.01978, 0.015);
+        node_sheath_stud_67.rotation.set(0.2103, 0.94414, -0.25766);
     }
-    node_sheath_stud_63.userData.sculptComponent = {
+    node_sheath_stud_67.userData.sculptComponent = {
         "id": "sheath-stud",
         "name": "Sheath strap stud",
         "level": "micro",
@@ -41070,7 +43034,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sheath_stud_63.userData.actionProfile = {
+    node_sheath_stud_67.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -41122,24 +43086,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "brass"
         }
     };
-    (nodes["sheath-strap"] ?? root).add(node_sheath_stud_63);
-    nodes["sheath-stud"] = node_sheath_stud_63;
-    const mesh_sheath_stud_63GeometryDense = endpoint_sheath_stud_63 ? new THREE.CylinderGeometry(endpoint_sheath_stud_63.endRadius, endpoint_sheath_stud_63.baseRadius, endpoint_sheath_stud_63.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_sheath_stud_63Geometry = decimateGeometry(mesh_sheath_stud_63GeometryDense, 0.06);
-    if (!endpoint_sheath_stud_63) {
-        mesh_sheath_stud_63Geometry.scale(0.025, 0.025, 0.025);
+    (nodes["sheath-strap"] ?? root).add(node_sheath_stud_67);
+    nodes["sheath-stud"] = node_sheath_stud_67;
+    const mesh_sheath_stud_67GeometryDense = endpoint_sheath_stud_67 ? new THREE.CylinderGeometry(endpoint_sheath_stud_67.endRadius, endpoint_sheath_stud_67.baseRadius, endpoint_sheath_stud_67.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
+    const mesh_sheath_stud_67Geometry = decimateGeometry(mesh_sheath_stud_67GeometryDense, 0.06);
+    if (!endpoint_sheath_stud_67) {
+        mesh_sheath_stud_67Geometry.scale(0.025, 0.025, 0.025);
     }
-    const mesh_sheath_stud_63 = new THREE.Mesh(mesh_sheath_stud_63Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sheath_stud_67 = new THREE.Mesh(mesh_sheath_stud_67Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_sheath_stud_63.name = "Sheath strap stud";
-    if (endpoint_sheath_stud_63) {
-        mesh_sheath_stud_63.position.copy(endpoint_sheath_stud_63.midpoint);
-        mesh_sheath_stud_63.quaternion.copy(endpoint_sheath_stud_63.quaternion);
+    mesh_sheath_stud_67.name = "Sheath strap stud";
+    if (endpoint_sheath_stud_67) {
+        mesh_sheath_stud_67.position.copy(endpoint_sheath_stud_67.midpoint);
+        mesh_sheath_stud_67.quaternion.copy(endpoint_sheath_stud_67.quaternion);
     }
-    mesh_sheath_stud_63.castShadow = options.castShadow ?? true;
-    mesh_sheath_stud_63.receiveShadow = options.receiveShadow ?? true;
-    mesh_sheath_stud_63.userData.sculptComponent = {
+    mesh_sheath_stud_67.castShadow = options.castShadow ?? true;
+    mesh_sheath_stud_67.receiveShadow = options.receiveShadow ?? true;
+    mesh_sheath_stud_67.userData.sculptComponent = {
         "id": "sheath-stud",
         "name": "Sheath strap stud",
         "level": "micro",
@@ -41281,8 +43245,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sheath_stud_63.add(mesh_sheath_stud_63);
-    meshes["sheath-stud"] = mesh_sheath_stud_63;
+    node_sheath_stud_67.add(mesh_sheath_stud_67);
+    meshes["sheath-stud"] = mesh_sheath_stud_67;
     colliders["sheath-stud"] = {
         "type": "box",
         "offset": [
@@ -41299,19 +43263,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["sheath-stud"] ??= [];
-    destructionGroups["sheath-stud"].push(node_sheath_stud_63);
-    const endpoint_sleeve_cuff_l_64 = makeAttachmentEndpoint(null);
-    const node_sleeve_cuff_l_64 = new THREE.Group();
-    node_sleeve_cuff_l_64.name = "Rolled sleeve cuff (l)__pivot";
-    node_sleeve_cuff_l_64.scale.set(1, 1, 1);
-    if (endpoint_sleeve_cuff_l_64) {
-        node_sleeve_cuff_l_64.position.copy(endpoint_sleeve_cuff_l_64.start);
-        node_sleeve_cuff_l_64.rotation.set(0.0, 1.5708, 0.0);
+    destructionGroups["sheath-stud"].push(node_sheath_stud_67);
+    const endpoint_sleeve_cuff_l_68 = makeAttachmentEndpoint(null);
+    const node_sleeve_cuff_l_68 = new THREE.Group();
+    node_sleeve_cuff_l_68.name = "Rolled sleeve cuff (l)__pivot";
+    node_sleeve_cuff_l_68.scale.set(1, 1, 1);
+    if (endpoint_sleeve_cuff_l_68) {
+        node_sleeve_cuff_l_68.position.copy(endpoint_sleeve_cuff_l_68.start);
+        node_sleeve_cuff_l_68.rotation.set(0.0, 1.5708, 0.0);
     } else {
-        node_sleeve_cuff_l_64.position.set(0.63, 1.17, -0.015);
-        node_sleeve_cuff_l_64.rotation.set(0.0, 1.5708, 0.0);
+        node_sleeve_cuff_l_68.position.set(0.63, 1.17, -0.015);
+        node_sleeve_cuff_l_68.rotation.set(0.0, 1.5708, 0.0);
     }
-    node_sleeve_cuff_l_64.userData.sculptComponent = {
+    node_sleeve_cuff_l_68.userData.sculptComponent = {
         "id": "sleeve-cuff-l",
         "name": "Rolled sleeve cuff (l)",
         "level": "meso",
@@ -41454,7 +43418,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sleeve_cuff_l_64.userData.actionProfile = {
+    node_sleeve_cuff_l_68.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -41506,24 +43470,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "cuff"
         }
     };
-    (nodes["vest-shell"] ?? root).add(node_sleeve_cuff_l_64);
-    nodes["sleeve-cuff-l"] = node_sleeve_cuff_l_64;
-    const mesh_sleeve_cuff_l_64GeometryDense = endpoint_sleeve_cuff_l_64 ? new THREE.CylinderGeometry(endpoint_sleeve_cuff_l_64.endRadius, endpoint_sleeve_cuff_l_64.baseRadius, endpoint_sleeve_cuff_l_64.length, 16, 6) : new THREE.TorusGeometry(0.45, 0.09, 12, 48);
-    const mesh_sleeve_cuff_l_64Geometry = decimateGeometry(mesh_sleeve_cuff_l_64GeometryDense, 0.3);
-    if (!endpoint_sleeve_cuff_l_64) {
-        mesh_sleeve_cuff_l_64Geometry.scale(0.37, 0.37, 0.5);
+    (nodes["vest-shell"] ?? root).add(node_sleeve_cuff_l_68);
+    nodes["sleeve-cuff-l"] = node_sleeve_cuff_l_68;
+    const mesh_sleeve_cuff_l_68GeometryDense = endpoint_sleeve_cuff_l_68 ? new THREE.CylinderGeometry(endpoint_sleeve_cuff_l_68.endRadius, endpoint_sleeve_cuff_l_68.baseRadius, endpoint_sleeve_cuff_l_68.length, 16, 6) : new THREE.TorusGeometry(0.45, 0.09, 12, 48);
+    const mesh_sleeve_cuff_l_68Geometry = decimateGeometry(mesh_sleeve_cuff_l_68GeometryDense, 0.3);
+    if (!endpoint_sleeve_cuff_l_68) {
+        mesh_sleeve_cuff_l_68Geometry.scale(0.37, 0.37, 0.5);
     }
-    const mesh_sleeve_cuff_l_64 = new THREE.Mesh(mesh_sleeve_cuff_l_64Geometry, materialMap["cuff"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sleeve_cuff_l_68 = new THREE.Mesh(mesh_sleeve_cuff_l_68Geometry, materialMap["cuff"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_sleeve_cuff_l_64.name = "Rolled sleeve cuff (l)";
-    if (endpoint_sleeve_cuff_l_64) {
-        mesh_sleeve_cuff_l_64.position.copy(endpoint_sleeve_cuff_l_64.midpoint);
-        mesh_sleeve_cuff_l_64.quaternion.copy(endpoint_sleeve_cuff_l_64.quaternion);
+    mesh_sleeve_cuff_l_68.name = "Rolled sleeve cuff (l)";
+    if (endpoint_sleeve_cuff_l_68) {
+        mesh_sleeve_cuff_l_68.position.copy(endpoint_sleeve_cuff_l_68.midpoint);
+        mesh_sleeve_cuff_l_68.quaternion.copy(endpoint_sleeve_cuff_l_68.quaternion);
     }
-    mesh_sleeve_cuff_l_64.castShadow = options.castShadow ?? true;
-    mesh_sleeve_cuff_l_64.receiveShadow = options.receiveShadow ?? true;
-    mesh_sleeve_cuff_l_64.userData.sculptComponent = {
+    mesh_sleeve_cuff_l_68.castShadow = options.castShadow ?? true;
+    mesh_sleeve_cuff_l_68.receiveShadow = options.receiveShadow ?? true;
+    mesh_sleeve_cuff_l_68.userData.sculptComponent = {
         "id": "sleeve-cuff-l",
         "name": "Rolled sleeve cuff (l)",
         "level": "meso",
@@ -41666,8 +43630,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sleeve_cuff_l_64.add(mesh_sleeve_cuff_l_64);
-    meshes["sleeve-cuff-l"] = mesh_sleeve_cuff_l_64;
+    node_sleeve_cuff_l_68.add(mesh_sleeve_cuff_l_68);
+    meshes["sleeve-cuff-l"] = mesh_sleeve_cuff_l_68;
     colliders["sleeve-cuff-l"] = {
         "type": "box",
         "offset": [
@@ -41684,19 +43648,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["sleeve-cuff-l"] ??= [];
-    destructionGroups["sleeve-cuff-l"].push(node_sleeve_cuff_l_64);
-    const endpoint_sleeve_tab_l_65 = makeAttachmentEndpoint(null);
-    const node_sleeve_tab_l_65 = new THREE.Group();
-    node_sleeve_tab_l_65.name = "Sleeve strap tab (l)__pivot";
-    node_sleeve_tab_l_65.scale.set(1, 1, 1);
-    if (endpoint_sleeve_tab_l_65) {
-        node_sleeve_tab_l_65.position.copy(endpoint_sleeve_tab_l_65.start);
-        node_sleeve_tab_l_65.rotation.set(0.0, -1.57079, 0.0);
+    destructionGroups["sleeve-cuff-l"].push(node_sleeve_cuff_l_68);
+    const endpoint_sleeve_tab_l_69 = makeAttachmentEndpoint(null);
+    const node_sleeve_tab_l_69 = new THREE.Group();
+    node_sleeve_tab_l_69.name = "Sleeve strap tab (l)__pivot";
+    node_sleeve_tab_l_69.scale.set(1, 1, 1);
+    if (endpoint_sleeve_tab_l_69) {
+        node_sleeve_tab_l_69.position.copy(endpoint_sleeve_tab_l_69.start);
+        node_sleeve_tab_l_69.rotation.set(0.0, -1.57079, 0.0);
     } else {
-        node_sleeve_tab_l_65.position.set(-0.005, 0.158, -0.065);
-        node_sleeve_tab_l_65.rotation.set(0.0, -1.57079, 0.0);
+        node_sleeve_tab_l_69.position.set(-0.005, 0.158, -0.065);
+        node_sleeve_tab_l_69.rotation.set(0.0, -1.57079, 0.0);
     }
-    node_sleeve_tab_l_65.userData.sculptComponent = {
+    node_sleeve_tab_l_69.userData.sculptComponent = {
         "id": "sleeve-tab-l",
         "name": "Sleeve strap tab (l)",
         "level": "meso",
@@ -41835,7 +43799,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sleeve_tab_l_65.userData.actionProfile = {
+    node_sleeve_tab_l_69.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -41887,23 +43851,23 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "cuff"
         }
     };
-    (nodes["sleeve-cuff-l"] ?? root).add(node_sleeve_tab_l_65);
-    nodes["sleeve-tab-l"] = node_sleeve_tab_l_65;
-    const mesh_sleeve_tab_l_65Geometry = endpoint_sleeve_tab_l_65 ? new THREE.CylinderGeometry(endpoint_sleeve_tab_l_65.endRadius, endpoint_sleeve_tab_l_65.baseRadius, endpoint_sleeve_tab_l_65.length, 16, 6) : new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
-    if (!endpoint_sleeve_tab_l_65) {
-        mesh_sleeve_tab_l_65Geometry.scale(0.1, 0.018, 0.055);
+    (nodes["sleeve-cuff-l"] ?? root).add(node_sleeve_tab_l_69);
+    nodes["sleeve-tab-l"] = node_sleeve_tab_l_69;
+    const mesh_sleeve_tab_l_69Geometry = endpoint_sleeve_tab_l_69 ? new THREE.CylinderGeometry(endpoint_sleeve_tab_l_69.endRadius, endpoint_sleeve_tab_l_69.baseRadius, endpoint_sleeve_tab_l_69.length, 16, 6) : new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
+    if (!endpoint_sleeve_tab_l_69) {
+        mesh_sleeve_tab_l_69Geometry.scale(0.1, 0.018, 0.055);
     }
-    const mesh_sleeve_tab_l_65 = new THREE.Mesh(mesh_sleeve_tab_l_65Geometry, materialMap["cuff"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sleeve_tab_l_69 = new THREE.Mesh(mesh_sleeve_tab_l_69Geometry, materialMap["cuff"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_sleeve_tab_l_65.name = "Sleeve strap tab (l)";
-    if (endpoint_sleeve_tab_l_65) {
-        mesh_sleeve_tab_l_65.position.copy(endpoint_sleeve_tab_l_65.midpoint);
-        mesh_sleeve_tab_l_65.quaternion.copy(endpoint_sleeve_tab_l_65.quaternion);
+    mesh_sleeve_tab_l_69.name = "Sleeve strap tab (l)";
+    if (endpoint_sleeve_tab_l_69) {
+        mesh_sleeve_tab_l_69.position.copy(endpoint_sleeve_tab_l_69.midpoint);
+        mesh_sleeve_tab_l_69.quaternion.copy(endpoint_sleeve_tab_l_69.quaternion);
     }
-    mesh_sleeve_tab_l_65.castShadow = options.castShadow ?? true;
-    mesh_sleeve_tab_l_65.receiveShadow = options.receiveShadow ?? true;
-    mesh_sleeve_tab_l_65.userData.sculptComponent = {
+    mesh_sleeve_tab_l_69.castShadow = options.castShadow ?? true;
+    mesh_sleeve_tab_l_69.receiveShadow = options.receiveShadow ?? true;
+    mesh_sleeve_tab_l_69.userData.sculptComponent = {
         "id": "sleeve-tab-l",
         "name": "Sleeve strap tab (l)",
         "level": "meso",
@@ -42042,8 +44006,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sleeve_tab_l_65.add(mesh_sleeve_tab_l_65);
-    meshes["sleeve-tab-l"] = mesh_sleeve_tab_l_65;
+    node_sleeve_tab_l_69.add(mesh_sleeve_tab_l_69);
+    meshes["sleeve-tab-l"] = mesh_sleeve_tab_l_69;
     colliders["sleeve-tab-l"] = {
         "type": "box",
         "offset": [
@@ -42060,19 +44024,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["sleeve-tab-l"] ??= [];
-    destructionGroups["sleeve-tab-l"].push(node_sleeve_tab_l_65);
-    const endpoint_sleeve_button_l_66 = makeAttachmentEndpoint(null);
-    const node_sleeve_button_l_66 = new THREE.Group();
-    node_sleeve_button_l_66.name = "Sleeve tab button (l)__pivot";
-    node_sleeve_button_l_66.scale.set(1, 1, 1);
-    if (endpoint_sleeve_button_l_66) {
-        node_sleeve_button_l_66.position.copy(endpoint_sleeve_button_l_66.start);
-        node_sleeve_button_l_66.rotation.set(-0.0, 0.0, -0.0);
+    destructionGroups["sleeve-tab-l"].push(node_sleeve_tab_l_69);
+    const endpoint_sleeve_button_l_70 = makeAttachmentEndpoint(null);
+    const node_sleeve_button_l_70 = new THREE.Group();
+    node_sleeve_button_l_70.name = "Sleeve tab button (l)__pivot";
+    node_sleeve_button_l_70.scale.set(1, 1, 1);
+    if (endpoint_sleeve_button_l_70) {
+        node_sleeve_button_l_70.position.copy(endpoint_sleeve_button_l_70.start);
+        node_sleeve_button_l_70.rotation.set(-0.0, 0.0, -0.0);
     } else {
-        node_sleeve_button_l_66.position.set(-0.025, 0.014, 0.0);
-        node_sleeve_button_l_66.rotation.set(-0.0, 0.0, -0.0);
+        node_sleeve_button_l_70.position.set(-0.025, 0.014, 0.0);
+        node_sleeve_button_l_70.rotation.set(-0.0, 0.0, -0.0);
     }
-    node_sleeve_button_l_66.userData.sculptComponent = {
+    node_sleeve_button_l_70.userData.sculptComponent = {
         "id": "sleeve-button-l",
         "name": "Sleeve tab button (l)",
         "level": "micro",
@@ -42214,7 +44178,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sleeve_button_l_66.userData.actionProfile = {
+    node_sleeve_button_l_70.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -42266,24 +44230,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "brass"
         }
     };
-    (nodes["sleeve-tab-l"] ?? root).add(node_sleeve_button_l_66);
-    nodes["sleeve-button-l"] = node_sleeve_button_l_66;
-    const mesh_sleeve_button_l_66GeometryDense = endpoint_sleeve_button_l_66 ? new THREE.CylinderGeometry(endpoint_sleeve_button_l_66.endRadius, endpoint_sleeve_button_l_66.baseRadius, endpoint_sleeve_button_l_66.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_sleeve_button_l_66Geometry = decimateGeometry(mesh_sleeve_button_l_66GeometryDense, 0.06);
-    if (!endpoint_sleeve_button_l_66) {
-        mesh_sleeve_button_l_66Geometry.scale(0.03, 0.018, 0.03);
+    (nodes["sleeve-tab-l"] ?? root).add(node_sleeve_button_l_70);
+    nodes["sleeve-button-l"] = node_sleeve_button_l_70;
+    const mesh_sleeve_button_l_70GeometryDense = endpoint_sleeve_button_l_70 ? new THREE.CylinderGeometry(endpoint_sleeve_button_l_70.endRadius, endpoint_sleeve_button_l_70.baseRadius, endpoint_sleeve_button_l_70.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
+    const mesh_sleeve_button_l_70Geometry = decimateGeometry(mesh_sleeve_button_l_70GeometryDense, 0.06);
+    if (!endpoint_sleeve_button_l_70) {
+        mesh_sleeve_button_l_70Geometry.scale(0.03, 0.018, 0.03);
     }
-    const mesh_sleeve_button_l_66 = new THREE.Mesh(mesh_sleeve_button_l_66Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sleeve_button_l_70 = new THREE.Mesh(mesh_sleeve_button_l_70Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_sleeve_button_l_66.name = "Sleeve tab button (l)";
-    if (endpoint_sleeve_button_l_66) {
-        mesh_sleeve_button_l_66.position.copy(endpoint_sleeve_button_l_66.midpoint);
-        mesh_sleeve_button_l_66.quaternion.copy(endpoint_sleeve_button_l_66.quaternion);
+    mesh_sleeve_button_l_70.name = "Sleeve tab button (l)";
+    if (endpoint_sleeve_button_l_70) {
+        mesh_sleeve_button_l_70.position.copy(endpoint_sleeve_button_l_70.midpoint);
+        mesh_sleeve_button_l_70.quaternion.copy(endpoint_sleeve_button_l_70.quaternion);
     }
-    mesh_sleeve_button_l_66.castShadow = options.castShadow ?? true;
-    mesh_sleeve_button_l_66.receiveShadow = options.receiveShadow ?? true;
-    mesh_sleeve_button_l_66.userData.sculptComponent = {
+    mesh_sleeve_button_l_70.castShadow = options.castShadow ?? true;
+    mesh_sleeve_button_l_70.receiveShadow = options.receiveShadow ?? true;
+    mesh_sleeve_button_l_70.userData.sculptComponent = {
         "id": "sleeve-button-l",
         "name": "Sleeve tab button (l)",
         "level": "micro",
@@ -42425,8 +44389,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sleeve_button_l_66.add(mesh_sleeve_button_l_66);
-    meshes["sleeve-button-l"] = mesh_sleeve_button_l_66;
+    node_sleeve_button_l_70.add(mesh_sleeve_button_l_70);
+    meshes["sleeve-button-l"] = mesh_sleeve_button_l_70;
     colliders["sleeve-button-l"] = {
         "type": "box",
         "offset": [
@@ -42443,19 +44407,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["sleeve-button-l"] ??= [];
-    destructionGroups["sleeve-button-l"].push(node_sleeve_button_l_66);
-    const endpoint_sleeve_cuff_r_67 = makeAttachmentEndpoint(null);
-    const node_sleeve_cuff_r_67 = new THREE.Group();
-    node_sleeve_cuff_r_67.name = "Rolled sleeve cuff (r)__pivot";
-    node_sleeve_cuff_r_67.scale.set(1, 1, 1);
-    if (endpoint_sleeve_cuff_r_67) {
-        node_sleeve_cuff_r_67.position.copy(endpoint_sleeve_cuff_r_67.start);
-        node_sleeve_cuff_r_67.rotation.set(0.0, -1.5708, 0.0);
+    destructionGroups["sleeve-button-l"].push(node_sleeve_button_l_70);
+    const endpoint_sleeve_cuff_r_71 = makeAttachmentEndpoint(null);
+    const node_sleeve_cuff_r_71 = new THREE.Group();
+    node_sleeve_cuff_r_71.name = "Rolled sleeve cuff (r)__pivot";
+    node_sleeve_cuff_r_71.scale.set(1, 1, 1);
+    if (endpoint_sleeve_cuff_r_71) {
+        node_sleeve_cuff_r_71.position.copy(endpoint_sleeve_cuff_r_71.start);
+        node_sleeve_cuff_r_71.rotation.set(0.0, -1.5708, 0.0);
     } else {
-        node_sleeve_cuff_r_67.position.set(-0.63, 1.17, -0.015);
-        node_sleeve_cuff_r_67.rotation.set(0.0, -1.5708, 0.0);
+        node_sleeve_cuff_r_71.position.set(-0.63, 1.17, -0.015);
+        node_sleeve_cuff_r_71.rotation.set(0.0, -1.5708, 0.0);
     }
-    node_sleeve_cuff_r_67.userData.sculptComponent = {
+    node_sleeve_cuff_r_71.userData.sculptComponent = {
         "id": "sleeve-cuff-r",
         "name": "Rolled sleeve cuff (r)",
         "level": "meso",
@@ -42598,7 +44562,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sleeve_cuff_r_67.userData.actionProfile = {
+    node_sleeve_cuff_r_71.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -42650,24 +44614,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "cuff"
         }
     };
-    (nodes["vest-shell"] ?? root).add(node_sleeve_cuff_r_67);
-    nodes["sleeve-cuff-r"] = node_sleeve_cuff_r_67;
-    const mesh_sleeve_cuff_r_67GeometryDense = endpoint_sleeve_cuff_r_67 ? new THREE.CylinderGeometry(endpoint_sleeve_cuff_r_67.endRadius, endpoint_sleeve_cuff_r_67.baseRadius, endpoint_sleeve_cuff_r_67.length, 16, 6) : new THREE.TorusGeometry(0.45, 0.09, 12, 48);
-    const mesh_sleeve_cuff_r_67Geometry = decimateGeometry(mesh_sleeve_cuff_r_67GeometryDense, 0.3);
-    if (!endpoint_sleeve_cuff_r_67) {
-        mesh_sleeve_cuff_r_67Geometry.scale(0.37, 0.37, 0.5);
+    (nodes["vest-shell"] ?? root).add(node_sleeve_cuff_r_71);
+    nodes["sleeve-cuff-r"] = node_sleeve_cuff_r_71;
+    const mesh_sleeve_cuff_r_71GeometryDense = endpoint_sleeve_cuff_r_71 ? new THREE.CylinderGeometry(endpoint_sleeve_cuff_r_71.endRadius, endpoint_sleeve_cuff_r_71.baseRadius, endpoint_sleeve_cuff_r_71.length, 16, 6) : new THREE.TorusGeometry(0.45, 0.09, 12, 48);
+    const mesh_sleeve_cuff_r_71Geometry = decimateGeometry(mesh_sleeve_cuff_r_71GeometryDense, 0.3);
+    if (!endpoint_sleeve_cuff_r_71) {
+        mesh_sleeve_cuff_r_71Geometry.scale(0.37, 0.37, 0.5);
     }
-    const mesh_sleeve_cuff_r_67 = new THREE.Mesh(mesh_sleeve_cuff_r_67Geometry, materialMap["cuff"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sleeve_cuff_r_71 = new THREE.Mesh(mesh_sleeve_cuff_r_71Geometry, materialMap["cuff"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_sleeve_cuff_r_67.name = "Rolled sleeve cuff (r)";
-    if (endpoint_sleeve_cuff_r_67) {
-        mesh_sleeve_cuff_r_67.position.copy(endpoint_sleeve_cuff_r_67.midpoint);
-        mesh_sleeve_cuff_r_67.quaternion.copy(endpoint_sleeve_cuff_r_67.quaternion);
+    mesh_sleeve_cuff_r_71.name = "Rolled sleeve cuff (r)";
+    if (endpoint_sleeve_cuff_r_71) {
+        mesh_sleeve_cuff_r_71.position.copy(endpoint_sleeve_cuff_r_71.midpoint);
+        mesh_sleeve_cuff_r_71.quaternion.copy(endpoint_sleeve_cuff_r_71.quaternion);
     }
-    mesh_sleeve_cuff_r_67.castShadow = options.castShadow ?? true;
-    mesh_sleeve_cuff_r_67.receiveShadow = options.receiveShadow ?? true;
-    mesh_sleeve_cuff_r_67.userData.sculptComponent = {
+    mesh_sleeve_cuff_r_71.castShadow = options.castShadow ?? true;
+    mesh_sleeve_cuff_r_71.receiveShadow = options.receiveShadow ?? true;
+    mesh_sleeve_cuff_r_71.userData.sculptComponent = {
         "id": "sleeve-cuff-r",
         "name": "Rolled sleeve cuff (r)",
         "level": "meso",
@@ -42810,8 +44774,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sleeve_cuff_r_67.add(mesh_sleeve_cuff_r_67);
-    meshes["sleeve-cuff-r"] = mesh_sleeve_cuff_r_67;
+    node_sleeve_cuff_r_71.add(mesh_sleeve_cuff_r_71);
+    meshes["sleeve-cuff-r"] = mesh_sleeve_cuff_r_71;
     colliders["sleeve-cuff-r"] = {
         "type": "box",
         "offset": [
@@ -42828,19 +44792,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["sleeve-cuff-r"] ??= [];
-    destructionGroups["sleeve-cuff-r"].push(node_sleeve_cuff_r_67);
-    const endpoint_sleeve_tab_r_68 = makeAttachmentEndpoint(null);
-    const node_sleeve_tab_r_68 = new THREE.Group();
-    node_sleeve_tab_r_68.name = "Sleeve strap tab (r)__pivot";
-    node_sleeve_tab_r_68.scale.set(1, 1, 1);
-    if (endpoint_sleeve_tab_r_68) {
-        node_sleeve_tab_r_68.position.copy(endpoint_sleeve_tab_r_68.start);
-        node_sleeve_tab_r_68.rotation.set(0.0, 1.57079, 0.0);
+    destructionGroups["sleeve-cuff-r"].push(node_sleeve_cuff_r_71);
+    const endpoint_sleeve_tab_r_72 = makeAttachmentEndpoint(null);
+    const node_sleeve_tab_r_72 = new THREE.Group();
+    node_sleeve_tab_r_72.name = "Sleeve strap tab (r)__pivot";
+    node_sleeve_tab_r_72.scale.set(1, 1, 1);
+    if (endpoint_sleeve_tab_r_72) {
+        node_sleeve_tab_r_72.position.copy(endpoint_sleeve_tab_r_72.start);
+        node_sleeve_tab_r_72.rotation.set(0.0, 1.57079, 0.0);
     } else {
-        node_sleeve_tab_r_68.position.set(0.005, 0.158, -0.065);
-        node_sleeve_tab_r_68.rotation.set(0.0, 1.57079, 0.0);
+        node_sleeve_tab_r_72.position.set(0.005, 0.158, -0.065);
+        node_sleeve_tab_r_72.rotation.set(0.0, 1.57079, 0.0);
     }
-    node_sleeve_tab_r_68.userData.sculptComponent = {
+    node_sleeve_tab_r_72.userData.sculptComponent = {
         "id": "sleeve-tab-r",
         "name": "Sleeve strap tab (r)",
         "level": "meso",
@@ -42979,7 +44943,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sleeve_tab_r_68.userData.actionProfile = {
+    node_sleeve_tab_r_72.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -43031,23 +44995,23 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "cuff"
         }
     };
-    (nodes["sleeve-cuff-r"] ?? root).add(node_sleeve_tab_r_68);
-    nodes["sleeve-tab-r"] = node_sleeve_tab_r_68;
-    const mesh_sleeve_tab_r_68Geometry = endpoint_sleeve_tab_r_68 ? new THREE.CylinderGeometry(endpoint_sleeve_tab_r_68.endRadius, endpoint_sleeve_tab_r_68.baseRadius, endpoint_sleeve_tab_r_68.length, 16, 6) : new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
-    if (!endpoint_sleeve_tab_r_68) {
-        mesh_sleeve_tab_r_68Geometry.scale(0.1, 0.018, 0.055);
+    (nodes["sleeve-cuff-r"] ?? root).add(node_sleeve_tab_r_72);
+    nodes["sleeve-tab-r"] = node_sleeve_tab_r_72;
+    const mesh_sleeve_tab_r_72Geometry = endpoint_sleeve_tab_r_72 ? new THREE.CylinderGeometry(endpoint_sleeve_tab_r_72.endRadius, endpoint_sleeve_tab_r_72.baseRadius, endpoint_sleeve_tab_r_72.length, 16, 6) : new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
+    if (!endpoint_sleeve_tab_r_72) {
+        mesh_sleeve_tab_r_72Geometry.scale(0.1, 0.018, 0.055);
     }
-    const mesh_sleeve_tab_r_68 = new THREE.Mesh(mesh_sleeve_tab_r_68Geometry, materialMap["cuff"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sleeve_tab_r_72 = new THREE.Mesh(mesh_sleeve_tab_r_72Geometry, materialMap["cuff"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_sleeve_tab_r_68.name = "Sleeve strap tab (r)";
-    if (endpoint_sleeve_tab_r_68) {
-        mesh_sleeve_tab_r_68.position.copy(endpoint_sleeve_tab_r_68.midpoint);
-        mesh_sleeve_tab_r_68.quaternion.copy(endpoint_sleeve_tab_r_68.quaternion);
+    mesh_sleeve_tab_r_72.name = "Sleeve strap tab (r)";
+    if (endpoint_sleeve_tab_r_72) {
+        mesh_sleeve_tab_r_72.position.copy(endpoint_sleeve_tab_r_72.midpoint);
+        mesh_sleeve_tab_r_72.quaternion.copy(endpoint_sleeve_tab_r_72.quaternion);
     }
-    mesh_sleeve_tab_r_68.castShadow = options.castShadow ?? true;
-    mesh_sleeve_tab_r_68.receiveShadow = options.receiveShadow ?? true;
-    mesh_sleeve_tab_r_68.userData.sculptComponent = {
+    mesh_sleeve_tab_r_72.castShadow = options.castShadow ?? true;
+    mesh_sleeve_tab_r_72.receiveShadow = options.receiveShadow ?? true;
+    mesh_sleeve_tab_r_72.userData.sculptComponent = {
         "id": "sleeve-tab-r",
         "name": "Sleeve strap tab (r)",
         "level": "meso",
@@ -43186,8 +45150,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sleeve_tab_r_68.add(mesh_sleeve_tab_r_68);
-    meshes["sleeve-tab-r"] = mesh_sleeve_tab_r_68;
+    node_sleeve_tab_r_72.add(mesh_sleeve_tab_r_72);
+    meshes["sleeve-tab-r"] = mesh_sleeve_tab_r_72;
     colliders["sleeve-tab-r"] = {
         "type": "box",
         "offset": [
@@ -43204,19 +45168,19 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["sleeve-tab-r"] ??= [];
-    destructionGroups["sleeve-tab-r"].push(node_sleeve_tab_r_68);
-    const endpoint_sleeve_button_r_69 = makeAttachmentEndpoint(null);
-    const node_sleeve_button_r_69 = new THREE.Group();
-    node_sleeve_button_r_69.name = "Sleeve tab button (r)__pivot";
-    node_sleeve_button_r_69.scale.set(1, 1, 1);
-    if (endpoint_sleeve_button_r_69) {
-        node_sleeve_button_r_69.position.copy(endpoint_sleeve_button_r_69.start);
-        node_sleeve_button_r_69.rotation.set(-0.0, 0.0, -0.0);
+    destructionGroups["sleeve-tab-r"].push(node_sleeve_tab_r_72);
+    const endpoint_sleeve_button_r_73 = makeAttachmentEndpoint(null);
+    const node_sleeve_button_r_73 = new THREE.Group();
+    node_sleeve_button_r_73.name = "Sleeve tab button (r)__pivot";
+    node_sleeve_button_r_73.scale.set(1, 1, 1);
+    if (endpoint_sleeve_button_r_73) {
+        node_sleeve_button_r_73.position.copy(endpoint_sleeve_button_r_73.start);
+        node_sleeve_button_r_73.rotation.set(-0.0, 0.0, -0.0);
     } else {
-        node_sleeve_button_r_69.position.set(0.025, 0.014, 0.0);
-        node_sleeve_button_r_69.rotation.set(-0.0, 0.0, -0.0);
+        node_sleeve_button_r_73.position.set(0.025, 0.014, 0.0);
+        node_sleeve_button_r_73.rotation.set(-0.0, 0.0, -0.0);
     }
-    node_sleeve_button_r_69.userData.sculptComponent = {
+    node_sleeve_button_r_73.userData.sculptComponent = {
         "id": "sleeve-button-r",
         "name": "Sleeve tab button (r)",
         "level": "micro",
@@ -43358,7 +45322,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sleeve_button_r_69.userData.actionProfile = {
+    node_sleeve_button_r_73.userData.actionProfile = {
         "animationRole": "static",
         "pivot": {
             "mode": "center",
@@ -43410,24 +45374,24 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             "debrisMaterial": "brass"
         }
     };
-    (nodes["sleeve-tab-r"] ?? root).add(node_sleeve_button_r_69);
-    nodes["sleeve-button-r"] = node_sleeve_button_r_69;
-    const mesh_sleeve_button_r_69GeometryDense = endpoint_sleeve_button_r_69 ? new THREE.CylinderGeometry(endpoint_sleeve_button_r_69.endRadius, endpoint_sleeve_button_r_69.baseRadius, endpoint_sleeve_button_r_69.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
-    const mesh_sleeve_button_r_69Geometry = decimateGeometry(mesh_sleeve_button_r_69GeometryDense, 0.06);
-    if (!endpoint_sleeve_button_r_69) {
-        mesh_sleeve_button_r_69Geometry.scale(0.03, 0.018, 0.03);
+    (nodes["sleeve-tab-r"] ?? root).add(node_sleeve_button_r_73);
+    nodes["sleeve-button-r"] = node_sleeve_button_r_73;
+    const mesh_sleeve_button_r_73GeometryDense = endpoint_sleeve_button_r_73 ? new THREE.CylinderGeometry(endpoint_sleeve_button_r_73.endRadius, endpoint_sleeve_button_r_73.baseRadius, endpoint_sleeve_button_r_73.length, 16, 6) : new THREE.SphereGeometry(0.5, 32, 20);
+    const mesh_sleeve_button_r_73Geometry = decimateGeometry(mesh_sleeve_button_r_73GeometryDense, 0.06);
+    if (!endpoint_sleeve_button_r_73) {
+        mesh_sleeve_button_r_73Geometry.scale(0.03, 0.018, 0.03);
     }
-    const mesh_sleeve_button_r_69 = new THREE.Mesh(mesh_sleeve_button_r_69Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
+    const mesh_sleeve_button_r_73 = new THREE.Mesh(mesh_sleeve_button_r_73Geometry, materialMap["brass"] ?? new THREE.MeshStandardMaterial({
         color: 0x888888
     }));
-    mesh_sleeve_button_r_69.name = "Sleeve tab button (r)";
-    if (endpoint_sleeve_button_r_69) {
-        mesh_sleeve_button_r_69.position.copy(endpoint_sleeve_button_r_69.midpoint);
-        mesh_sleeve_button_r_69.quaternion.copy(endpoint_sleeve_button_r_69.quaternion);
+    mesh_sleeve_button_r_73.name = "Sleeve tab button (r)";
+    if (endpoint_sleeve_button_r_73) {
+        mesh_sleeve_button_r_73.position.copy(endpoint_sleeve_button_r_73.midpoint);
+        mesh_sleeve_button_r_73.quaternion.copy(endpoint_sleeve_button_r_73.quaternion);
     }
-    mesh_sleeve_button_r_69.castShadow = options.castShadow ?? true;
-    mesh_sleeve_button_r_69.receiveShadow = options.receiveShadow ?? true;
-    mesh_sleeve_button_r_69.userData.sculptComponent = {
+    mesh_sleeve_button_r_73.castShadow = options.castShadow ?? true;
+    mesh_sleeve_button_r_73.receiveShadow = options.receiveShadow ?? true;
+    mesh_sleeve_button_r_73.userData.sculptComponent = {
         "id": "sleeve-button-r",
         "name": "Sleeve tab button (r)",
         "level": "micro",
@@ -43569,8 +45533,8 @@ export function createPeterAdventurerOutfitModel(options = {}) {
             ]
         }
     };
-    node_sleeve_button_r_69.add(mesh_sleeve_button_r_69);
-    meshes["sleeve-button-r"] = mesh_sleeve_button_r_69;
+    node_sleeve_button_r_73.add(mesh_sleeve_button_r_73);
+    meshes["sleeve-button-r"] = mesh_sleeve_button_r_73;
     colliders["sleeve-button-r"] = {
         "type": "box",
         "offset": [
@@ -43587,7 +45551,7 @@ export function createPeterAdventurerOutfitModel(options = {}) {
         "notes": "box proxy"
     };
     destructionGroups["sleeve-button-r"] ??= [];
-    destructionGroups["sleeve-button-r"].push(node_sleeve_button_r_69);
+    destructionGroups["sleeve-button-r"].push(node_sleeve_button_r_73);
     root.userData.sculptRuntime = {
         nodes,
         meshes,

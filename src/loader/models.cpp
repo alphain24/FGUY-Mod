@@ -10,6 +10,9 @@
 // normal as TEXCOORD1, uv as TEXCOORD0), our textures on stage 1; their character's other pieces aren't drawn.
 // A pack worn over the character (model.json "over": true - outfit pieces: a hat, a vest...) is drawn as well as it:
 // their pieces and ink lines stay, ours is drawn with their biggest piece. A skin pack can carry one (cosmetics.cpp).
+// Its "hide" (the Skin Studio's): their own triangles under it - by piece (its vertex and index counts) and number -
+// left out of their draws (a copy of that piece's index buffer, those triangles collapsed), so the body never shows
+// through a boot or a hat as both move.
 // Test pipe: "modelload <slot> <file.fgmodel | ''>".
 #include "common.h"
 
@@ -24,9 +27,11 @@ namespace {
 
 struct Vert { float pos[3], nrm[3], uv[2]; unsigned char bone[4], weight[4]; };
 struct Part { unsigned first, count, texture; };
+struct Hide { unsigned verts = 0, indices = 0; std::vector<unsigned> tris; };   // (tris: first, count, first, count...)
 struct Model {
     std::wstring name;
     bool over = false;                     // (worn over the character, not instead of it)
+    std::vector<Hide> hide;                // (their triangles under it)
     int skel = 0;                          // its skeleton's bones (the game's pose has one more: the root)
     std::vector<int> parent;
     std::vector<float> invBind;            // skel x 12
@@ -50,13 +55,20 @@ IDirect3DVertexDeclaration9* g_decl = nullptr;
 unsigned g_frame = 1;
 // A player's character's pieces, by their index buffers: their model entity ([[player +0x38] +0x1d4], a
 // World::ModelPrototypeEntity) points to its World::SkinGeometryEntity pieces (vtable 0x9fb30c; [model +0xa4..] +0x12c),
-// each with its index buffer at +0xac and its vertex count at +0xc0. Every pass draws them (the outline's too, whose
-// constants don't say whose it is): ours is drawn at their biggest piece, once a pass; the others are skipped.
+// each with its index buffer at +0xac and its index count at +0xc0 (+0xb8, +0xbc: its triangles). Every pass draws
+// them (the outline's too, whose constants don't say whose it is): ours is drawn at their biggest piece, once a pass;
+// the others are skipped.
 struct Pieces {
     unsigned char* model = nullptr;
     std::vector<IDirect3DIndexBuffer9*> ibs;
     IDirect3DIndexBuffer9* anchor = nullptr;
+    std::vector<std::pair<IDirect3DIndexBuffer9*, const Hide*>> hideOf;            // (a piece with triangles to leave out)
+    std::vector<std::pair<IDirect3DIndexBuffer9*, IDirect3DIndexBuffer9*>> hidden;   // (its copy without them - or null)
 };
+void FreePieces(Pieces& pc) {
+    for (auto& h : pc.hidden) if (h.second) h.second->Release();
+    pc = Pieces();
+}
 Pieces g_pieces[4];
 
 void Free(Model* m) {
@@ -104,6 +116,35 @@ Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
     std::string js(json.begin(), json.end());   // its textures: "textures": ["textures/0.png", ...]
     size_t ov = js.find("\"over\"");   // ("over": true - worn over the character)
     m->over = ov != std::string::npos && js.find("true", ov) == js.find_first_not_of(" \t\r\n:", ov + 6);
+    size_t hd = js.find("\"hide\"");   // ("hide": [{"verts": V, "indices": I, "tris": [first, count, ...]}, ...])
+    if (hd != std::string::npos) {
+        size_t h0 = js.find('[', hd);
+        while (h0 != std::string::npos) {   // (each object: no braces inside - its keys before its closing one)
+            h0 = js.find_first_not_of(" \t\r\n,", h0 + 1);
+            if (h0 == std::string::npos || js[h0] != '{') break;   // (the list's end)
+            size_t close = js.find('}', h0);
+            if (close == std::string::npos) break;
+            auto num = [&](const char* key) -> unsigned {
+                size_t k = js.find(key, h0);
+                return k == std::string::npos || k > close ? 0 : (unsigned)strtoul(js.c_str() + js.find(':', k) + 1, nullptr, 10);
+            };
+            Hide h;
+            h.verts = num("\"verts\"");
+            h.indices = num("\"indices\"");
+            size_t t = js.find("\"tris\"", h0), b = t < close ? js.find('[', t) : std::string::npos;
+            size_t e = b == std::string::npos ? b : js.find(']', b);
+            if (e != std::string::npos && e < close)
+                for (const char* c = js.c_str() + b + 1; c < js.c_str() + e; ) {
+                    char* next = nullptr;
+                    unsigned long v = strtoul(c, &next, 10);
+                    if (next == c) { ++c; continue; }
+                    h.tris.push_back((unsigned)v);
+                    c = next;
+                }
+            if (h.verts && h.indices && h.tris.size() >= 2) m->hide.push_back(std::move(h));
+            h0 = close;
+        }
+    }
     size_t at = js.find("\"textures\"");
     if (at != std::string::npos)
         for (size_t q1 = js.find('"', js.find('[', at) + 1); q1 != std::string::npos && q1 < js.find(']', at); ) {
@@ -148,8 +189,9 @@ void Make(IDirect3DDevice9* dev, Model* m) {
             D3DDECL_END()};
         dev->CreateVertexDeclaration(el, &g_decl);
     }
-    Log(L"Models: %s - %zu vertices, %zu triangles, %zu parts, %zu textures, %d bones%s", m->name.c_str(), m->verts.size(),
-        m->idx.size() / 3, m->parts.size(), m->tex.size(), m->skel, m->over ? L" - worn over the character" : L"");
+    Log(L"Models: %s - %zu vertices, %zu triangles, %zu parts, %zu textures, %d bones%s (%zu of their pieces partly under it)",
+        m->name.c_str(), m->verts.size(), m->idx.size() / 3, m->parts.size(), m->tex.size(), m->skel,
+        m->over ? L" - worn over the character" : L"", m->hide.size());
 }
 
 // 3x4 row-major: a = b * c
@@ -265,13 +307,18 @@ void ModelsFrame(IDirect3DDevice9* dev) {
                     auto q = *reinterpret_cast<unsigned char* const*>(p + at);
                     if (reinterpret_cast<uintptr_t>(q) < 0x10000 || IsBadReadPtr(q, 0xc4) || *reinterpret_cast<DWORD*>(q) != 0x9fb30c) continue;
                     auto ib = *reinterpret_cast<IDirect3DIndexBuffer9* const*>(q + 0xac);
-                    UINT verts = *reinterpret_cast<const UINT*>(q + 0xc0);
+                    // (+0xc0 its index count - the biggest piece: the anchor - +0xb8 and +0xbc its triangles)
+                    UINT verts = *reinterpret_cast<const UINT*>(q + 0xc0), tris = *reinterpret_cast<const UINT*>(q + 0xb8);
                     if (!ib || std::find(pc.ibs.begin(), pc.ibs.end(), ib) != pc.ibs.end()) continue;
                     pc.ibs.push_back(ib);
+                    for (const Hide& h : g_worn[s]->hide)   // (the same piece: its index and triangle counts)
+                        if (h.indices == verts && h.indices == tris * 3) pc.hideOf.push_back({ib, &h});
                     if (verts > most) { most = verts; pc.anchor = ib; }
                 }
             }
-            Log(L"Models: player %d's character has %zu pieces", s, pc.ibs.size());
+            Log(L"Models: player %d's character has %zu pieces, %zu with triangles under the model", s, pc.ibs.size(),
+                pc.hideOf.size());
+            FreePieces(g_pieces[s]);
             g_pieces[s] = pc;
         }
     }
@@ -292,7 +339,7 @@ void ModelsFrame(IDirect3DDevice9* dev) {
     for (Pending& p : pending) {
         Free(g_worn[p.slot]);
         g_worn[p.slot] = p.pack.empty() ? nullptr : Parse(p.pack, p.name);
-        g_pieces[p.slot] = Pieces();
+        FreePieces(g_pieces[p.slot]);
         if (!p.pack.empty() && !g_worn[p.slot]) Log(L"Models: %s isn't a model pack this version can use", p.name.c_str());
         if (g_worn[p.slot]) Make(dev, g_worn[p.slot]);
         Log(L"Models: player %d wears %s", p.slot, g_worn[p.slot] ? p.name.c_str() : L"their own character");
@@ -301,7 +348,43 @@ void ModelsFrame(IDirect3DDevice9* dev) {
 
 // cosmetics.cpp's DrawIndexedPrimitive: a worn model's player's skinned character - ours instead (true: done, hr set),
 // or, worn over it, ours and then theirs (false: the game's draw goes ahead)
-bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT* hr) {
+namespace {
+// a piece's index buffer without the triangles under the model (made once, from the game's own - read back): or null
+IDirect3DIndexBuffer9* HiddenCopy(IDirect3DDevice9* dev, Pieces& pc, IDirect3DIndexBuffer9* ib) {
+    for (auto& h : pc.hidden) if (h.first == ib) return h.second;
+    const Hide* hide = nullptr;
+    for (auto& h : pc.hideOf) if (h.first == ib) hide = h.second;
+    if (!hide) return nullptr;
+    IDirect3DIndexBuffer9* copy = nullptr;
+    D3DINDEXBUFFER_DESC d{};
+    void* src = nullptr;
+    if (SUCCEEDED(ib->GetDesc(&d)) && d.Format == D3DFMT_INDEX16 && d.Size >= hide->indices * 2 &&
+        SUCCEEDED(ib->Lock(0, 0, &src, D3DLOCK_READONLY))) {
+        std::vector<unsigned short> idx(d.Size / 2);
+        memcpy(idx.data(), src, idx.size() * 2);
+        ib->Unlock();
+        unsigned left = 0;
+        for (size_t r = 0; r + 1 < hide->tris.size(); r += 2)
+            for (unsigned t = hide->tris[r]; t < hide->tris[r] + hide->tris[r + 1] && t * 3 + 2 < idx.size(); ++t) {
+                idx[t * 3 + 1] = idx[t * 3 + 2] = idx[t * 3];   // (collapsed: drawn as nothing)
+                ++left;
+            }
+        void* dst = nullptr;
+        if (SUCCEEDED(dev->CreateIndexBuffer(d.Size, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_MANAGED, &copy, nullptr)) &&
+            SUCCEEDED(copy->Lock(0, 0, &dst, 0))) {
+            memcpy(dst, idx.data(), idx.size() * 2);
+            copy->Unlock();
+            Log(L"Models: a piece of theirs drawn without its %u triangles under the model", left);
+        } else if (copy) { copy->Release(); copy = nullptr; }
+    }
+    if (!copy) Log(L"Models: a piece's index buffer can't be read back (format %u, pool %u) - drawn whole", (unsigned)d.Format,
+                   (unsigned)d.Pool);
+    pc.hidden.push_back({ib, copy});
+    return copy;
+}
+}  // namespace
+
+bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT* hr, IDirect3DIndexBuffer9** putBack) {
     if (!g_decl) return false;
     IDirect3DIndexBuffer9* ib = nullptr;
     if (FAILED(dev->GetIndices(&ib)) || !ib) return false;
@@ -329,17 +412,22 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
         return true;
     }
     if (m->failed) return false;
+    auto theirs = [&]() {   // (worn over them: their own draw goes ahead - without the triangles under ours, when it
+        IDirect3DIndexBuffer9* copy = HiddenCopy(dev, g_pieces[player], ib);   //  has some: that copy in its place, the
+        if (copy) { dev->SetIndices(copy); *putBack = ib; }                     //  caller putting theirs back after)
+        return false;
+    };
     if (ib != g_pieces[player].anchor) {   // (another piece of theirs: ours has it all - or, over it, theirs)
-        if (m->over) return false;
+        if (m->over) return theirs();
         *hr = D3D_OK;
         return true;
     }
     *hr = D3D_OK;
     static int hide = -1;   // (test knob FGUYMOD_TEST_MODELHIDE=1: nothing drawn for them - research)
     if (hide < 0) { wchar_t v[4] = L""; GetEnvironmentVariableW(L"FGUYMOD_TEST_MODELHIDE", v, 4); hide = v[0] == L'1'; }
-    if (hide) return !m->over;
+    if (hide) return m->over ? theirs() : true;
     if (m->frame != g_frame) {
-        if (!Skin(player, m)) return false;   // (no pose: their own character, this frame)
+        if (!Skin(player, m)) return m->over ? theirs() : false;   // (no pose: their own character, this frame)
         m->frame = g_frame;
     }
     IDirect3DVertexDeclaration9* oldDecl = nullptr;
@@ -375,7 +463,7 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     if (oldIb) oldIb->Release();
     if (oldTex) oldTex->Release();
     if (oldTex2) oldTex2->Release();
-    return !m->over;
+    return m->over ? theirs() : true;
 }
 
 // research ("modelpieces <slot>"): the player's model entity ([[player +0x38] +0x1d4]) - the SkinGeometryEntity objects

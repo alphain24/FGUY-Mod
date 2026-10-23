@@ -669,8 +669,8 @@ ematch_<lobby pid>.txt`), whose lobby then
   there turn it black). Each piece is drawn twice at the player's position (c4..c6 .w) and once in a pass whose
   constants hold no position (c4..c6 .w 0, 0.5, 0).
 - A player's pieces: their model entity ([[player +0x38] +0x1d4], World::ModelPrototypeEntity) -> [+0xa4..] +0x12c (and
-  [+0xa4] +0x3c) -> World::SkinGeometryEntity (vtable 0x9fb30c): +0xac its index buffer, +0xb8 triangles, +0xbc
-  indices, +0xc0 vertices. A draw of a worn model's player's piece (its index buffer one of theirs) is ours instead.
+  [+0xa4] +0x3c) -> World::SkinGeometryEntity (vtable 0x9fb30c): +0xac its index buffer, +0xb8 and +0xbc its
+  triangles, +0xc0 its index count (measured: Peter's body 5170 / 5170 / 15510). A draw of a worn model's player's piece (its index buffer one of theirs) is ours instead.
 - The sketch (ink) lines aren't drawn from the pieces' draws: 0x4c6ed0 (cdecl, 9 args; its 2nd a scene node: +4 flags,
   +8 a Graphics::Renderable whose [+0xcc] is its world matrix, 3x4) makes something's lines when its flag 0x4000 is on
   (0x4a4a10: the silhouette test - faces toward / away from the camera). Off for a renderable at a worn model's player's
@@ -683,6 +683,15 @@ ematch_<lobby pid>.txt`), whose lobby then
 - Worn over the character (model.json "over": true): ours is drawn with their biggest piece, then the game's own draw
   goes ahead; their other pieces and their ink lines stay. A skin pack can carry a model pack (model.fgmodel, stored):
   put on and taken off with the skin - online it travels in the same pack. Our pieces get no ink lines.
+- Hiding the body under an outfit: model.json "hide" (the Studio: triangles of the character with two corners inside a
+  solid part of the model - thick 0.12+ every way, 0.006+ from its surface; shells like a vest hide nothing), by
+  piece (index and triangle counts) and number. The game reads the piece's own index buffer back (D3DLOCK_READONLY,
+  INDEX16), collapses those triangles in a copy, and puts the copy in for that piece's draws (the skin's texture swap
+  still applies: cosmetics.cpp draws, then puts theirs back).
+- Copying a character's weights onto clothes: the nearest vertex is wrong for a bulging garment (a boot's front took
+  the shoe's foot bone); the vertex beneath it along the garment's normal is right. Pieces on pieces (laces on a
+  boot) take their host's weights, or they sink into it as it bends. The Studio's recolour must shift saturation, not
+  scale it (a near-white pick made tinted pixels fully saturated).
 - Stage 0 under a character's draw: one 128x128 A8R8G8B8 texture (8 levels) for all their pieces - a shading lookup,
   not an atlas; the colour is stages 1 and 2.
 - The Studio's palette must be sRGB: three.js (GLTFLoader) keeps material and vertex colours linear, and written into

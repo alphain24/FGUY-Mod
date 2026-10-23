@@ -74,6 +74,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
         const m = p.skin ? new THREE.SkinnedMesh(g, mat) : new THREE.Mesh(g, mat);
         if (p.skin) m.bind(ed.rig.skeleton, new THREE.Matrix4());
         m.frustumCulled = false;
+        m.userData.piece = p;   // (its triangles under a model worn over it: hidden - showHidden)
         return m;
       };
       solid.add(make(new THREE.MeshLambertMaterial({map: t ? t.tex : null, side: THREE.DoubleSide, alphaTest: 0.3})));
@@ -272,14 +273,23 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
   }
   // (side: a part all on the character's left (1) or right (-1) takes only that side's vertices - a boot's inside next
   //  to the other leg would otherwise follow that leg, and the feet stick together)
-  function weightsAt(G, p, side = 0) {
+  // (n, the model's normal there - given, the character's vertices "under" it count: one straight beneath it along n is
+  //  nearer than one as far off to the side or outside it - a boot's bulging front takes the shin's weights, not the
+  //  shoe's just below it; a vest's hem its own belly's, not the thighs')
+  function weightsAt(G, p, side = 0, n = null) {
     const cx = Math.floor(p.x / G.cell), cy = Math.floor(p.y / G.cell), cz = Math.floor(p.z / G.cell);
-    for (let r = 1; r <= 8; r++) {   // (rings out until some are found)
+    const dist = v => {
+      const dx = v.x - p.x, dy = v.y - p.y, dz = v.z - p.z;
+      if (!n) return dx * dx + dy * dy + dz * dz;
+      const along = dx * n.x + dy * n.y + dz * n.z, side2 = dx * dx + dy * dy + dz * dz - along * along;
+      return side2 * 4 + along * along * (along > 0 ? 4 : 1);
+    };
+    for (let r = n ? 2 : 1; r <= 8; r++) {   // (rings out until some are found)
       const near = [];
       for (let x = cx - r; x <= cx + r; x++) for (let y = cy - r; y <= cy + r; y++) for (let z = cz - r; z <= cz + r; z++)
         for (const v of G.grid.get(G.key(x, y, z)) || [])
-          if (!side || (v.x - G.cx) * side >= 0) near.push([(v.x - p.x) ** 2 + (v.y - p.y) ** 2 + (v.z - p.z) ** 2, v]);
-      if (near.length < 4 && r < 8) continue;
+          if (!side || (v.x - G.cx) * side >= 0) near.push([dist(v), v]);
+      if (near.length < (n ? 6 : 4) && r < 8) continue;
       near.sort((a, b) => a[0] - b[0]);
       const acc = new Map();
       for (const [d, v] of near.slice(0, 6)) {
@@ -291,12 +301,60 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     return [[0, 1]];
   }
 
+  // Worn over the character, how each piece moves: one sitting on a bigger piece of the model (a lace or an eyelet on
+  // a boot, a button on a pocket, the band on the hat - most of its vertices within RIDE of that piece's) takes that
+  // piece's weights, vertex by vertex - it moves exactly with it, never sinking into it as it bends; one on its own that
+  // mostly follows one bone (RIGID of its weight or more: the hat on the head, the sheath on the hips) follows that bone
+  // alone - not the eyes beside a hat's brim; the rest keep the character's own weights (a boot: the leg's, knee and
+  // all - the leg inside never comes through it), bar the faintest (under 2%).
+  function ride(verts, pieces) {
+    const RIDE = 0.08, RIGID = 0.7;
+    const boxOf = ([a, b]) => { const box = new THREE.Box3(); for (let i = a; i < b; i++) box.expandByPoint(verts[i].pos); return box; };
+    const boxes = pieces.map(boxOf), size = pieces.map(([a, b]) => b - a);
+    const order = pieces.map((_, k) => k).sort((x, y) => size[y] - size[x]);   // (biggest first: hosts before riders)
+    const done = new Set();
+    for (const k of order) {
+      const [a, b] = pieces[k];
+      let host = -1, best = 0;
+      for (const h of order) {   // (a bigger piece, already settled, most of this one's vertices near it)
+        if (h === k || !done.has(h) || size[h] < size[k] * 2) continue;
+        if (!boxes[h].clone().expandByScalar(RIDE).intersectsBox(boxes[k])) continue;
+        let near = 0;
+        for (let i = a; i < b; i++) {
+          for (let j = pieces[h][0]; j < pieces[h][1]; j++) if (verts[i].pos.distanceToSquared(verts[j].pos) < RIDE * RIDE) { near++; break; }
+        }
+        if (near > best) { best = near; host = h; }
+      }
+      if (host >= 0 && best >= (b - a) * 0.5) {
+        for (let i = a; i < b; i++) {   // (each vertex: its nearest host vertex's weights)
+          let nearest = -1, d = Infinity;
+          for (let j = pieces[host][0]; j < pieces[host][1]; j++) {
+            const e = verts[i].pos.distanceToSquared(verts[j].pos);
+            if (e < d) { d = e; nearest = j; }
+          }
+          verts[i].bw = verts[nearest].bw.map(x => x.slice());
+        }
+      } else {
+        const acc = new Map();
+        for (let i = a; i < b; i++) for (const [bone, w] of verts[i].bw) acc.set(bone, (acc.get(bone) || 0) + w);
+        const total = [...acc.values()].reduce((x, w) => x + w, 0), top = [...acc.entries()].sort((x, y) => y[1] - x[1]);
+        for (let i = a; i < b; i++) {
+          if (top.length && top[0][1] >= total * RIGID) { verts[i].bw = [[top[0][0], 1]]; continue; }
+          const bw = verts[i].bw.filter(([bone]) => acc.get(bone) >= total * 0.02);
+          if (bw.length) verts[i].bw = bw;
+        }
+      }
+      done.add(k);
+    }
+  }
+
   // the model as the game will have it: parts with vertices (character space, bones) and their textures
   function prepare() {
     const P = placer(), rigged = ed.src.parts.every(p => p.boneOf);
     const G = rigged ? null : charGrid(charBox().getSize(new THREE.Vector3()).y / 40);
     const verts = [], idx = [], parts = [], textures = [], palette = [];
     const seenGeo = new Map();   // (a geometry's vertices once, its groups each a part)
+    const pieces = [];           // (each geometry's vertices: [from, to])
     for (const sp of ed.src.parts) {
       const a = sp.geo.attributes;
       if (!seenGeo.has(sp.geo)) {
@@ -321,24 +379,12 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
               if (w > 0) bw.push([sp.boneOf[a.skinIndex.getComponent(i, j)], w]);
             }
           } else {
-            bw = weightsAt(G, pos, side);
+            bw = weightsAt(G, pos, side, $('modelOver').checked ? nrm : null);
           }
           const color = colors ? new THREE.Color(colors.getX(i), colors.getY(i), colors.getZ(i)) : null;
           verts.push({pos, nrm, uv, bw, color});
         }
-        // (worn over the character, each piece rides the bones it mostly sits on - those with 15% of its weight or
-        //  more: a hat follows the head alone, not the eyes beside it; a boot its own leg)
-        if (G && $('modelOver').checked) {
-          const acc = new Map();
-          for (let i = base; i < verts.length; i++) for (const [b, w] of verts[i].bw) acc.set(b, (acc.get(b) || 0) + w);
-          const total = [...acc.values()].reduce((s, w) => s + w, 0), top = [...acc.entries()].sort((x, y) => y[1] - x[1]);
-          const keep = new Set(top.filter(([, w]) => w >= total * 0.15).map(([b]) => b));
-          if (!keep.size && top.length) keep.add(top[0][0]);
-          for (let i = base; i < verts.length; i++) {
-            const bw = verts[i].bw.filter(([b]) => keep.has(b));
-            verts[i].bw = bw.length ? bw : [[top[0][0], 1]];
-          }
-        }
+        pieces.push([base, verts.length]);
         seenGeo.set(sp.geo, base);
       }
       const base = seenGeo.get(sp.geo);
@@ -366,6 +412,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
       }
       parts.push({first, count: idx.length - first, tex});
     }
+    if (G && $('modelOver').checked) ride(verts, pieces);
     // (the palette: a color an 8 x 8 cell, 32 a row - the game's 4 x 4 compressed blocks and smaller mip levels keep it)
     if (palette.length > 1024) throw new Error('too many colors (' + palette.length + ') - 1,024 at most without a texture');
     if (palette.length) {
@@ -427,6 +474,84 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     }
     holder.add(view);
     ed.view = view;
+    clearTimeout(ed.hideTimer);   // (the character's covered triangles - after a moment: a slider drag doesn't wait)
+    ed.hideTimer = setTimeout(() => { ed.hidden = $('modelOver').checked ? hiddenUnder(m) : []; showHidden(); }, 300);
+  }
+
+  // ---- the character's own triangles under a model worn over it: not drawn (model.json "hide" - the game leaves them
+  //      out of its draws, models.cpp). Where the model is solid round the body - a boot round the shin and shoe, a
+  //      hat's crown round the top of the head - the body can't show through it as both move. A triangle is under it
+  //      when two of its corners are inside one of the model's solid parts: rays out of the point (three ways, both
+  //      directions) cross that part an odd number of times, none nearer than MARGIN, and it is THICK or more
+  //      through the point every way - a vest's leather or an edge trim, thin one way, hides nothing.
+  function hiddenUnder(m) {
+    const parts = m.parts.map(p => {
+      const t = new Float32Array(p.count * 3), box = new THREE.Box3();
+      for (let k = 0; k < p.count; k++) {
+        const v = m.verts[m.idx[p.first + k]].pos;
+        t.set([v.x, v.y, v.z], k * 3);
+        box.expandByPoint(v);
+      }
+      return {t, box};
+    });
+    const MARGIN = 0.006, THICK = 0.12;
+    const crossings = (t, o, d) => {   // (Moller-Trumbore, both faces: how many, and the nearest)
+      let n = 0, near = Infinity;
+      for (let i = 0; i < t.length; i += 9) {
+        const e1x = t[i + 3] - t[i], e1y = t[i + 4] - t[i + 1], e1z = t[i + 5] - t[i + 2];
+        const e2x = t[i + 6] - t[i], e2y = t[i + 7] - t[i + 1], e2z = t[i + 8] - t[i + 2];
+        const px = d[1] * e2z - d[2] * e2y, py = d[2] * e2x - d[0] * e2z, pz = d[0] * e2y - d[1] * e2x;
+        const det = e1x * px + e1y * py + e1z * pz;
+        if (Math.abs(det) < 1e-12) continue;
+        const sx = o[0] - t[i], sy = o[1] - t[i + 1], sz = o[2] - t[i + 2];
+        const u = (sx * px + sy * py + sz * pz) / det;
+        if (u < 0 || u > 1) continue;
+        const qx = sy * e1z - sz * e1y, qy = sz * e1x - sx * e1z, qz = sx * e1y - sy * e1x;
+        const v = (d[0] * qx + d[1] * qy + d[2] * qz) / det;
+        if (v < 0 || u + v > 1) continue;
+        const dist = (e2x * qx + e2y * qy + e2z * qz) / det;
+        if (dist > 1e-6) { n++; near = Math.min(near, dist); }
+      }
+      return {n, near};
+    };
+    const deepIn = (q, o) => {
+      for (const d of [D1, D2, D3]) {
+        const a = crossings(q.t, o, d), b = crossings(q.t, o, d.map(x => -x));
+        if (a.n % 2 !== 1 || b.n % 2 !== 1 || Math.min(a.near, b.near) < MARGIN || a.near + b.near < THICK) return false;
+      }
+      return true;
+    };
+    const D1 = [1, 0.0131, 0.0071], D2 = [0.0113, 1, 0.0171], D3 = [0.0093, 0.0127, 1];   // (a little off the axes)
+    const out = [], pt = new THREE.Vector3();
+    for (const p of ed.pieces) {
+      const V = p.position.length / 3, inside = new Uint8Array(V);
+      for (let i = 0; i < V; i++) {
+        pt.fromArray(p.position, i * 3);
+        const o = [pt.x, pt.y, pt.z];
+        inside[i] = parts.some(q => q.box.containsPoint(pt) && deepIn(q, o)) ? 1 : 0;
+      }
+      const ranges = [];
+      let hidden = 0;
+      for (let k = 0; k < p.index.length / 3; k++) {
+        if (inside[p.index[k * 3]] + inside[p.index[k * 3 + 1]] + inside[p.index[k * 3 + 2]] < 2) continue;
+        hidden++;
+        const last = ranges[ranges.length - 1];
+        if (last && last[0] + last[1] === k) last[1]++; else ranges.push([k, 1]);
+      }
+      if (hidden) out.push({piece: p, verts: V, indices: p.index.length, ranges, hidden});
+    }
+    return out;
+  }
+  function showHidden() {   // (the preview: the character with those triangles left out)
+    for (const g of [ed.solid, ed.xray]) for (const mesh of g?.children || []) {
+      const p = mesh.userData.piece, h = (ed.hidden || []).find(x => x.piece === p);
+      let index = p.index;
+      if (h) {
+        index = p.index.slice();
+        for (const [s, n] of h.ranges) for (let k = s; k < s + n; k++) index[k * 3 + 1] = index[k * 3 + 2] = index[k * 3];
+      }
+      mesh.geometry.setIndex(new THREE.BufferAttribute(index, 1));
+    }
   }
 
   // a test pose: arms down and out, the head turned - how its bones bend it
@@ -477,6 +602,8 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     const o2 = ed.outfit, name = ($('modelName').value || 'My model').trim();
     const manifest = {format: 1, name, character: o2.character, models: outfitsOf(o2.character).map(x => [x.model.lo, x.model.hi]),
       bones: S + 1, textures: pngs, over: $('modelOver').checked, tool: 'FGUY Skin Studio'};
+    if (manifest.over)   // (the character's triangles under it, by piece - its vertex and index counts - and number)
+      manifest.hide = hiddenUnder(m).map(h => ({verts: h.verts, indices: h.indices, tris: h.ranges.flat()}));
     files['model.json'] = [strToU8(JSON.stringify(manifest)), {level: 0}];
     const file = name.replace(/[^\w\- ]+/g, '').trim().replace(/ +/g, '_') + '.fgmodel', blob = new Blob([zipSync(files)]);
     ed.saved = {file, blob};   // (for checking in the browser's console)

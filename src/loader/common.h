@@ -147,6 +147,7 @@ void CosmeticsFrame(IDirect3DDevice9* dev);   // cosmetics.cpp: skins, on the re
 void CosmeticsTest(bool fill, unsigned lo, unsigned hi, unsigned rgb);   //   test pipe "texinfo" / "texfill"
 void CosmeticsDeviceCreated(IDirect3DDevice9* dev);   //   d3d9.cpp: the game's device
 struct IDirect3DTexture9;
+struct IDirect3DIndexBuffer9;
 bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, const std::vector<unsigned char>& overlay,
                       std::vector<unsigned char>& dds);   // skinbuild.cpp: a skin's texture from the game's own (format 2)
 bool SkinPngToDds(const std::vector<unsigned char>& png, std::vector<unsigned char>& dds);   //   a PNG as a DXT5 DDS, its mips
@@ -160,7 +161,7 @@ bool ModelsWorn();
 void InitModels();                     //   at start: hooks (their ink lines off)
 void ModelsResearch(int slot);         //   test pipe "modelpieces <slot>"
 void ModelsFrame(IDirect3DDevice9* dev);   //   cosmetics.cpp, after each frame
-bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT* hr);   //   a draw of theirs: ours instead
+bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT* hr, IDirect3DIndexBuffer9** putBack);   //   a draw of theirs: ours instead
 void CosmeticsTrace(unsigned lo, unsigned hi);   //   test pipe "texdraws": a frame's draws with that texture
 void InitMotion();                     // characters' poses: read / ours instead              (motion.cpp)
 void MotionFrame();                    //   d3d9.cpp: a frame was drawn

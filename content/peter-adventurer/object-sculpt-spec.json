@@ -359,7 +359,7 @@
           "affects": "albedo+relief",
           "mapsTo": {
             "type": "component",
-            "ref": "boot-lace-la0"
+            "ref": "boot-lace-la00"
           },
           "evidenceRef": "detail-inventory/zone-r2c1.png",
           "confidence": 0.85,
@@ -7387,7 +7387,7 @@
               "id": "shaft",
               "type": "ellipsoid",
               "center": [
-                0.215,
+                0.217,
                 0.22,
                 0.04
               ],
@@ -7401,12 +7401,12 @@
               "id": "toe",
               "type": "ellipsoid",
               "center": [
-                0.215,
+                0.217,
                 0.1,
                 0.19
               ],
               "radii": [
-                0.185,
+                0.195,
                 0.115,
                 0.255
               ]
@@ -7415,7 +7415,7 @@
               "id": "sole-print",
               "type": "ellipsoid",
               "center": [
-                0.215,
+                0.217,
                 0.03,
                 0.12
               ],
@@ -7429,8 +7429,8 @@
               "id": "sole-slab",
               "type": "box",
               "center": [
-                0.215,
-                0.03,
+                0.217,
+                0.025,
                 0.12
               ],
               "size": [
@@ -7443,8 +7443,8 @@
               "id": "top",
               "type": "box",
               "center": [
-                0.215,
-                0.6699999999999999,
+                0.217,
+                0.59,
                 0.1
               ],
               "size": [
@@ -7457,8 +7457,8 @@
               "id": "under",
               "type": "box",
               "center": [
-                0.215,
-                -0.3,
+                0.217,
+                -0.305,
                 0.1
               ],
               "size": [
@@ -7471,22 +7471,22 @@
               "id": "collar0",
               "type": "capsule",
               "center": [
-                0.3936,
-                0.358,
-                0.0868
+                0.4064,
+                0.278,
+                0.0907
               ],
-              "radius": 0.027,
-              "height": 0.0947,
+              "radius": 0.022,
+              "height": 0.1025,
               "transform": {
                 "position": [
-                  0.3936,
-                  0.358,
-                  0.0868
+                  0.4064,
+                  0.278,
+                  0.0907
                 ],
                 "rotation": [
-                  1.5483,
-                  0.1481,
-                  0.1515
+                  1.5492,
+                  0.1452,
+                  0.1484
                 ]
               }
             },
@@ -7494,22 +7494,22 @@
               "id": "collar1",
               "type": "capsule",
               "center": [
-                0.3664,
-                0.358,
-                0.1733
+                0.3776,
+                0.278,
+                0.1843
               ],
-              "radius": 0.027,
-              "height": 0.089,
+              "radius": 0.022,
+              "height": 0.0959,
               "transform": {
                 "position": [
-                  0.3664,
-                  0.358,
-                  0.1733
+                  0.3776,
+                  0.278,
+                  0.1843
                 ],
                 "rotation": [
-                  1.3455,
-                  0.4151,
-                  0.5169
+                  1.3534,
+                  0.4098,
+                  0.5063
                 ]
               }
             },
@@ -7517,22 +7517,22 @@
               "id": "collar2",
               "type": "capsule",
               "center": [
-                0.3162,
-                0.358,
-                0.2396
+                0.3243,
+                0.278,
+                0.256
               ],
-              "radius": 0.027,
-              "height": 0.0803,
+              "radius": 0.022,
+              "height": 0.0859,
               "transform": {
                 "position": [
-                  0.3162,
-                  0.358,
-                  0.2396
+                  0.3243,
+                  0.278,
+                  0.256
                 ],
                 "rotation": [
-                  0.865,
-                  0.519,
-                  1.0437
+                  0.8796,
+                  0.5203,
+                  1.0297
                 ]
               }
             },
@@ -7540,22 +7540,22 @@
               "id": "collar3",
               "type": "capsule",
               "center": [
-                0.2505,
-                0.358,
-                0.2754
+                0.2547,
+                0.278,
+                0.2948
               ],
-              "radius": 0.027,
-              "height": 0.0735,
+              "radius": 0.022,
+              "height": 0.078,
               "transform": {
                 "position": [
-                  0.2505,
-                  0.358,
-                  0.2754
+                  0.2547,
+                  0.278,
+                  0.2948
                 ],
                 "rotation": [
-                  0.2647,
-                  0.2478,
-                  1.5044
+                  0.2702,
+                  0.2524,
+                  1.5017
                 ]
               }
             },
@@ -7563,22 +7563,22 @@
               "id": "collar4",
               "type": "capsule",
               "center": [
-                0.1795,
-                0.358,
-                0.2754
+                0.1793,
+                0.278,
+                0.2948
               ],
-              "radius": 0.027,
-              "height": 0.0735,
+              "radius": 0.022,
+              "height": 0.078,
               "transform": {
                 "position": [
-                  0.1795,
-                  0.358,
-                  0.2754
+                  0.1793,
+                  0.278,
+                  0.2948
                 ],
                 "rotation": [
-                  -0.2647,
-                  -0.2478,
-                  1.5044
+                  -0.2702,
+                  -0.2524,
+                  1.5017
                 ]
               }
             },
@@ -7586,22 +7586,22 @@
               "id": "collar5",
               "type": "capsule",
               "center": [
-                0.1138,
-                0.358,
-                0.2396
+                0.1097,
+                0.278,
+                0.256
               ],
-              "radius": 0.027,
-              "height": 0.0803,
+              "radius": 0.022,
+              "height": 0.0859,
               "transform": {
                 "position": [
-                  0.1138,
-                  0.358,
-                  0.2396
+                  0.1097,
+                  0.278,
+                  0.256
                 ],
                 "rotation": [
-                  -0.865,
-                  -0.519,
-                  1.0437
+                  -0.8796,
+                  -0.5203,
+                  1.0297
                 ]
               }
             },
@@ -7609,22 +7609,22 @@
               "id": "collar6",
               "type": "capsule",
               "center": [
-                0.0636,
-                0.358,
-                0.1733
+                0.0564,
+                0.278,
+                0.1843
               ],
-              "radius": 0.027,
-              "height": 0.089,
+              "radius": 0.022,
+              "height": 0.0959,
               "transform": {
                 "position": [
-                  0.0636,
-                  0.358,
-                  0.1733
+                  0.0564,
+                  0.278,
+                  0.1843
                 ],
                 "rotation": [
-                  -1.3455,
-                  -0.4151,
-                  0.5169
+                  -1.3534,
+                  -0.4098,
+                  0.5063
                 ]
               }
             },
@@ -7632,22 +7632,22 @@
               "id": "collar7",
               "type": "capsule",
               "center": [
-                0.0364,
-                0.358,
-                0.0868
+                0.0276,
+                0.278,
+                0.0907
               ],
-              "radius": 0.027,
-              "height": 0.0947,
+              "radius": 0.022,
+              "height": 0.1025,
               "transform": {
                 "position": [
-                  0.0364,
-                  0.358,
-                  0.0868
+                  0.0276,
+                  0.278,
+                  0.0907
                 ],
                 "rotation": [
-                  -1.5483,
-                  -0.1481,
-                  0.1515
+                  -1.5492,
+                  -0.1452,
+                  0.1484
                 ]
               }
             },
@@ -7655,22 +7655,22 @@
               "id": "collar8",
               "type": "capsule",
               "center": [
-                0.0364,
-                0.358,
-                -0.0068
+                0.0276,
+                0.278,
+                -0.0107
               ],
-              "radius": 0.027,
-              "height": 0.0947,
+              "radius": 0.022,
+              "height": 0.1025,
               "transform": {
                 "position": [
-                  0.0364,
-                  0.358,
-                  -0.0068
+                  0.0276,
+                  0.278,
+                  -0.0107
                 ],
                 "rotation": [
-                  -1.5483,
-                  0.1481,
-                  -0.1515
+                  -1.5492,
+                  0.1452,
+                  -0.1484
                 ]
               }
             },
@@ -7678,22 +7678,22 @@
               "id": "collar9",
               "type": "capsule",
               "center": [
-                0.0636,
-                0.358,
-                -0.0933
+                0.0564,
+                0.278,
+                -0.1043
               ],
-              "radius": 0.027,
-              "height": 0.089,
+              "radius": 0.022,
+              "height": 0.0959,
               "transform": {
                 "position": [
-                  0.0636,
-                  0.358,
-                  -0.0933
+                  0.0564,
+                  0.278,
+                  -0.1043
                 ],
                 "rotation": [
-                  -1.3455,
-                  0.4151,
-                  -0.5169
+                  -1.3534,
+                  0.4098,
+                  -0.5063
                 ]
               }
             },
@@ -7701,22 +7701,22 @@
               "id": "collar10",
               "type": "capsule",
               "center": [
-                0.1138,
-                0.358,
-                -0.1596
+                0.1097,
+                0.278,
+                -0.176
               ],
-              "radius": 0.027,
-              "height": 0.0803,
+              "radius": 0.022,
+              "height": 0.0859,
               "transform": {
                 "position": [
-                  0.1138,
-                  0.358,
-                  -0.1596
+                  0.1097,
+                  0.278,
+                  -0.176
                 ],
                 "rotation": [
-                  -0.865,
-                  0.519,
-                  -1.0437
+                  -0.8796,
+                  0.5203,
+                  -1.0297
                 ]
               }
             },
@@ -7724,22 +7724,22 @@
               "id": "collar11",
               "type": "capsule",
               "center": [
-                0.1795,
-                0.358,
-                -0.1954
+                0.1793,
+                0.278,
+                -0.2148
               ],
-              "radius": 0.027,
-              "height": 0.0735,
+              "radius": 0.022,
+              "height": 0.078,
               "transform": {
                 "position": [
-                  0.1795,
-                  0.358,
-                  -0.1954
+                  0.1793,
+                  0.278,
+                  -0.2148
                 ],
                 "rotation": [
-                  -0.2647,
-                  0.2478,
-                  -1.5044
+                  -0.2702,
+                  0.2524,
+                  -1.5017
                 ]
               }
             },
@@ -7747,22 +7747,22 @@
               "id": "collar12",
               "type": "capsule",
               "center": [
-                0.2505,
-                0.358,
-                -0.1954
+                0.2547,
+                0.278,
+                -0.2148
               ],
-              "radius": 0.027,
-              "height": 0.0735,
+              "radius": 0.022,
+              "height": 0.078,
               "transform": {
                 "position": [
-                  0.2505,
-                  0.358,
-                  -0.1954
+                  0.2547,
+                  0.278,
+                  -0.2148
                 ],
                 "rotation": [
-                  0.2647,
-                  -0.2478,
-                  -1.5044
+                  0.2702,
+                  -0.2524,
+                  -1.5017
                 ]
               }
             },
@@ -7770,22 +7770,22 @@
               "id": "collar13",
               "type": "capsule",
               "center": [
-                0.3162,
-                0.358,
-                -0.1596
+                0.3243,
+                0.278,
+                -0.176
               ],
-              "radius": 0.027,
-              "height": 0.0803,
+              "radius": 0.022,
+              "height": 0.0859,
               "transform": {
                 "position": [
-                  0.3162,
-                  0.358,
-                  -0.1596
+                  0.3243,
+                  0.278,
+                  -0.176
                 ],
                 "rotation": [
-                  0.865,
-                  -0.519,
-                  -1.0437
+                  0.8796,
+                  -0.5203,
+                  -1.0297
                 ]
               }
             },
@@ -7793,22 +7793,22 @@
               "id": "collar14",
               "type": "capsule",
               "center": [
-                0.3664,
-                0.358,
-                -0.0933
+                0.3776,
+                0.278,
+                -0.1043
               ],
-              "radius": 0.027,
-              "height": 0.089,
+              "radius": 0.022,
+              "height": 0.0959,
               "transform": {
                 "position": [
-                  0.3664,
-                  0.358,
-                  -0.0933
+                  0.3776,
+                  0.278,
+                  -0.1043
                 ],
                 "rotation": [
-                  1.3455,
-                  -0.4151,
-                  -0.5169
+                  1.3534,
+                  -0.4098,
+                  -0.5063
                 ]
               }
             },
@@ -7816,22 +7816,22 @@
               "id": "collar15",
               "type": "capsule",
               "center": [
-                0.3936,
-                0.358,
-                -0.0068
+                0.4064,
+                0.278,
+                -0.0107
               ],
-              "radius": 0.027,
-              "height": 0.0947,
+              "radius": 0.022,
+              "height": 0.1025,
               "transform": {
                 "position": [
-                  0.3936,
-                  0.358,
-                  -0.0068
+                  0.4064,
+                  0.278,
+                  -0.0107
                 ],
                 "rotation": [
-                  1.5483,
-                  -0.1481,
-                  -0.1515
+                  1.5492,
+                  -0.1452,
+                  -0.1484
                 ]
               }
             }
@@ -7984,13 +7984,13 @@
           ],
           "bounds": {
             "min": [
-              -0.035,
-              -0.01,
+              -0.033,
+              -0.015,
               -0.25
             ],
             "max": [
-              0.46499999999999997,
-              0.4,
+              0.46699999999999997,
+              0.31999999999999995,
               0.48
             ]
           },
@@ -8145,17 +8145,17 @@
       "parent": "boot-shell-l",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          0.15,
-          0.17,
-          0.3793
+          0.161,
+          0.115,
+          0.434
         ],
         "rotation": [
           0,
@@ -8163,9 +8163,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -8287,17 +8287,17 @@
       "parent": "boot-shell-l",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          0.28,
-          0.17,
-          0.3793
+          0.273,
+          0.115,
+          0.434
         ],
         "rotation": [
           0,
@@ -8305,9 +8305,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -8429,17 +8429,17 @@
       "parent": "boot-shell-l",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          0.15,
-          0.215,
-          0.3275
+          0.161,
+          0.158,
+          0.4026
         ],
         "rotation": [
           0,
@@ -8447,9 +8447,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -8571,17 +8571,17 @@
       "parent": "boot-shell-l",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          0.28,
-          0.215,
-          0.3275
+          0.273,
+          0.158,
+          0.4026
         ],
         "rotation": [
           0,
@@ -8589,9 +8589,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -8713,17 +8713,17 @@
       "parent": "boot-shell-l",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          0.15,
-          0.26,
-          0.295
+          0.161,
+          0.201,
+          0.3514
         ],
         "rotation": [
           0,
@@ -8731,9 +8731,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -8855,17 +8855,17 @@
       "parent": "boot-shell-l",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          0.28,
-          0.26,
-          0.295
+          0.273,
+          0.201,
+          0.3514
         ],
         "rotation": [
           0,
@@ -8873,9 +8873,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -8997,17 +8997,17 @@
       "parent": "boot-shell-l",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          0.15,
-          0.305,
-          0.2792
+          0.161,
+          0.244,
+          0.315
         ],
         "rotation": [
           0,
@@ -9015,9 +9015,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -9139,17 +9139,17 @@
       "parent": "boot-shell-l",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          0.28,
-          0.305,
-          0.2792
+          0.273,
+          0.244,
+          0.315
         ],
         "rotation": [
           0,
@@ -9157,9 +9157,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -9255,291 +9255,7 @@
       }
     },
     {
-      "id": "boot-eyelet-l4a",
-      "name": "Boot eyelet boot-eyelet-l4a",
-      "level": "micro",
-      "role": "body",
-      "importance": 0.4,
-      "confidence": 0.8,
-      "primitive": "sphere",
-      "topologyClass": "assembled-solid",
-      "topologyRationale": "A small brass grommet: a discrete squashed sphere.",
-      "geometryDescriptor": {
-        "topologyIntent": "stylized character part",
-        "edgeTreatment": {
-          "type": "none",
-          "bevelRadius": 0.0,
-          "segments": 1
-        },
-        "deformationStack": [],
-        "uvStrategy": "generated procedural coordinates",
-        "normalStrategy": "smooth vertex normals",
-        "decimate": {
-          "targetRatio": 0.06
-        }
-      },
-      "parent": "boot-shell-l",
-      "attachment": null,
-      "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
-        "units": "relative",
-        "confidence": 0.8
-      },
-      "transform": {
-        "position": [
-          0.15,
-          0.35,
-          0.2938
-        ],
-        "rotation": [
-          0,
-          0,
-          0
-        ],
-        "scale": [
-          0.022,
-          0.022,
-          0.014
-        ]
-      },
-      "actionProfile": {
-        "animationRole": "static",
-        "pivot": {
-          "mode": "center",
-          "localPosition": [
-            0,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "confidence": 0.7
-        },
-        "transformChannels": {
-          "translate": true,
-          "rotate": true,
-          "scale": true,
-          "bend": false,
-          "twist": false,
-          "detach": false,
-          "visibility": true,
-          "materialState": false
-        },
-        "sockets": [],
-        "collider": {
-          "type": "box",
-          "offset": [
-            0,
-            0,
-            0
-          ],
-          "scale": [
-            1,
-            1,
-            1
-          ],
-          "isTrigger": false,
-          "notes": "box proxy"
-        },
-        "constraints": [],
-        "destruction": {
-          "breakable": false,
-          "fractureGroup": "boot-eyelet-l4a",
-          "seamRefs": [],
-          "detachableFragments": [],
-          "breakImpulse": 0.0,
-          "debrisMaterial": "brass"
-        }
-      },
-      "material": "brass",
-      "materialLayers": [
-        "brass"
-      ],
-      "deformations": [],
-      "joints": [],
-      "seams": [],
-      "localFeatures": [
-        {
-          "id": "boot-eyelet-l4a-ring",
-          "kind": "fastener",
-          "description": "brass eyelet"
-        }
-      ],
-      "surfaceDetail": {
-        "macroRoughness": 0.0,
-        "microRoughness": 0.0,
-        "bumpAmplitude": 0.0,
-        "normalPattern": "",
-        "displacementPattern": "",
-        "occlusionPattern": "",
-        "edgeWearPattern": "",
-        "notes": ""
-      },
-      "evidenceRefs": [
-        "full-object",
-        "boots-zone"
-      ],
-      "details": [],
-      "fidelityTier": "form",
-      "colorMaterialRecipe": {
-        "dominantAlbedo": "rgba(145, 109, 44, 1.0)",
-        "secondaryAlbedo": "rgba(133, 95, 23, 1.0)",
-        "materialClass": "metal",
-        "materialClassConfidence": 0.7,
-        "evidenceRefs": [
-          "material-evidence/brass.png"
-        ]
-      }
-    },
-    {
-      "id": "boot-eyelet-l4b",
-      "name": "Boot eyelet boot-eyelet-l4b",
-      "level": "micro",
-      "role": "body",
-      "importance": 0.4,
-      "confidence": 0.8,
-      "primitive": "sphere",
-      "topologyClass": "assembled-solid",
-      "topologyRationale": "A small brass grommet: a discrete squashed sphere.",
-      "geometryDescriptor": {
-        "topologyIntent": "stylized character part",
-        "edgeTreatment": {
-          "type": "none",
-          "bevelRadius": 0.0,
-          "segments": 1
-        },
-        "deformationStack": [],
-        "uvStrategy": "generated procedural coordinates",
-        "normalStrategy": "smooth vertex normals",
-        "decimate": {
-          "targetRatio": 0.06
-        }
-      },
-      "parent": "boot-shell-l",
-      "attachment": null,
-      "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
-        "units": "relative",
-        "confidence": 0.8
-      },
-      "transform": {
-        "position": [
-          0.28,
-          0.35,
-          0.2938
-        ],
-        "rotation": [
-          0,
-          0,
-          0
-        ],
-        "scale": [
-          0.022,
-          0.022,
-          0.014
-        ]
-      },
-      "actionProfile": {
-        "animationRole": "static",
-        "pivot": {
-          "mode": "center",
-          "localPosition": [
-            0,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "confidence": 0.7
-        },
-        "transformChannels": {
-          "translate": true,
-          "rotate": true,
-          "scale": true,
-          "bend": false,
-          "twist": false,
-          "detach": false,
-          "visibility": true,
-          "materialState": false
-        },
-        "sockets": [],
-        "collider": {
-          "type": "box",
-          "offset": [
-            0,
-            0,
-            0
-          ],
-          "scale": [
-            1,
-            1,
-            1
-          ],
-          "isTrigger": false,
-          "notes": "box proxy"
-        },
-        "constraints": [],
-        "destruction": {
-          "breakable": false,
-          "fractureGroup": "boot-eyelet-l4b",
-          "seamRefs": [],
-          "detachableFragments": [],
-          "breakImpulse": 0.0,
-          "debrisMaterial": "brass"
-        }
-      },
-      "material": "brass",
-      "materialLayers": [
-        "brass"
-      ],
-      "deformations": [],
-      "joints": [],
-      "seams": [],
-      "localFeatures": [
-        {
-          "id": "boot-eyelet-l4b-ring",
-          "kind": "fastener",
-          "description": "brass eyelet"
-        }
-      ],
-      "surfaceDetail": {
-        "macroRoughness": 0.0,
-        "microRoughness": 0.0,
-        "bumpAmplitude": 0.0,
-        "normalPattern": "",
-        "displacementPattern": "",
-        "occlusionPattern": "",
-        "edgeWearPattern": "",
-        "notes": ""
-      },
-      "evidenceRefs": [
-        "full-object",
-        "boots-zone"
-      ],
-      "details": [],
-      "fidelityTier": "form",
-      "colorMaterialRecipe": {
-        "dominantAlbedo": "rgba(145, 109, 44, 1.0)",
-        "secondaryAlbedo": "rgba(133, 95, 23, 1.0)",
-        "materialClass": "metal",
-        "materialClassConfidence": 0.7,
-        "evidenceRefs": [
-          "material-evidence/brass.png"
-        ]
-      }
-    },
-    {
-      "id": "boot-lace-la0",
+      "id": "boot-lace-la00",
       "name": "Boot lace run",
       "level": "micro",
       "role": "body",
@@ -9547,7 +9263,7 @@
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -9563,18 +9279,18 @@
       "attachment": {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-          0.28,
-          0.17,
-          0.3893
+          0.273,
+          0.115,
+          0.442
         ],
         "localEnd": [
-          0.15,
-          0.215,
-          0.3375
+          0.217,
+          0.1365,
+          0.4478
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -9650,7 +9366,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-la0",
+          "fractureGroup": "boot-lace-la00",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -9666,7 +9382,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-la0",
+          "id": "boot-laces-la00",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -9698,15 +9414,15 @@
       }
     },
     {
-      "id": "boot-lace-la1",
-      "name": "Boot lace run boot-lace-la1",
+      "id": "boot-lace-la01",
+      "name": "Boot lace run boot-lace-la01",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -9722,18 +9438,18 @@
       "attachment": {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-          0.15,
-          0.215,
-          0.3375
+          0.217,
+          0.1365,
+          0.4478
         ],
         "localEnd": [
-          0.28,
-          0.26,
-          0.305
+          0.161,
+          0.158,
+          0.4106
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -9809,7 +9525,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-la1",
+          "fractureGroup": "boot-lace-la01",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -9825,7 +9541,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-la1",
+          "id": "boot-laces-la01",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -9857,15 +9573,15 @@
       }
     },
     {
-      "id": "boot-lace-la2",
-      "name": "Boot lace run boot-lace-la2",
+      "id": "boot-lace-la10",
+      "name": "Boot lace run boot-lace-la10",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -9881,18 +9597,18 @@
       "attachment": {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-          0.28,
-          0.26,
-          0.305
+          0.161,
+          0.158,
+          0.4106
         ],
         "localEnd": [
-          0.15,
-          0.305,
-          0.2892
+          0.217,
+          0.1795,
+          0.4031
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -9968,7 +9684,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-la2",
+          "fractureGroup": "boot-lace-la10",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -9984,7 +9700,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-la2",
+          "id": "boot-laces-la10",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -10016,15 +9732,15 @@
       }
     },
     {
-      "id": "boot-lace-la3",
-      "name": "Boot lace run boot-lace-la3",
+      "id": "boot-lace-la11",
+      "name": "Boot lace run boot-lace-la11",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -10040,18 +9756,18 @@
       "attachment": {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-          0.15,
-          0.305,
-          0.2892
+          0.217,
+          0.1795,
+          0.4031
         ],
         "localEnd": [
-          0.28,
-          0.35,
-          0.3038
+          0.273,
+          0.201,
+          0.3594
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -10127,7 +9843,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-la3",
+          "fractureGroup": "boot-lace-la11",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -10143,7 +9859,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-la3",
+          "id": "boot-laces-la11",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -10175,15 +9891,15 @@
       }
     },
     {
-      "id": "boot-lace-lb0",
-      "name": "Boot lace run boot-lace-lb0",
+      "id": "boot-lace-la20",
+      "name": "Boot lace run boot-lace-la20",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -10199,18 +9915,18 @@
       "attachment": {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-          0.15,
-          0.17,
-          0.3893
+          0.273,
+          0.201,
+          0.3594
         ],
         "localEnd": [
-          0.28,
-          0.215,
-          0.3375
+          0.217,
+          0.2225,
+          0.3546
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -10286,7 +10002,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-lb0",
+          "fractureGroup": "boot-lace-la20",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -10302,7 +10018,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-lb0",
+          "id": "boot-laces-la20",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -10334,15 +10050,15 @@
       }
     },
     {
-      "id": "boot-lace-lb1",
-      "name": "Boot lace run boot-lace-lb1",
+      "id": "boot-lace-la21",
+      "name": "Boot lace run boot-lace-la21",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -10358,18 +10074,18 @@
       "attachment": {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-          0.28,
-          0.215,
-          0.3375
+          0.217,
+          0.2225,
+          0.3546
         ],
         "localEnd": [
-          0.15,
-          0.26,
-          0.305
+          0.161,
+          0.244,
+          0.323
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -10445,7 +10161,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-lb1",
+          "fractureGroup": "boot-lace-la21",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -10461,7 +10177,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-lb1",
+          "id": "boot-laces-la21",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -10493,15 +10209,15 @@
       }
     },
     {
-      "id": "boot-lace-lb2",
-      "name": "Boot lace run boot-lace-lb2",
+      "id": "boot-lace-lb00",
+      "name": "Boot lace run boot-lace-lb00",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -10517,18 +10233,18 @@
       "attachment": {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-          0.15,
-          0.26,
-          0.305
+          0.161,
+          0.115,
+          0.442
         ],
         "localEnd": [
-          0.28,
-          0.305,
-          0.2892
+          0.217,
+          0.1365,
+          0.4578
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -10604,7 +10320,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-lb2",
+          "fractureGroup": "boot-lace-lb00",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -10620,7 +10336,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-lb2",
+          "id": "boot-laces-lb00",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -10652,15 +10368,15 @@
       }
     },
     {
-      "id": "boot-lace-lb3",
-      "name": "Boot lace run boot-lace-lb3",
+      "id": "boot-lace-lb01",
+      "name": "Boot lace run boot-lace-lb01",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -10676,18 +10392,18 @@
       "attachment": {
         "parentSocket": "boot-l-eyelets",
         "localStart": [
-          0.28,
-          0.305,
-          0.2892
+          0.217,
+          0.1365,
+          0.4578
         ],
         "localEnd": [
-          0.15,
-          0.35,
-          0.3038
+          0.273,
+          0.158,
+          0.4106
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -10763,7 +10479,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-lb3",
+          "fractureGroup": "boot-lace-lb01",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -10779,7 +10495,643 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-lb3",
+          "id": "boot-laces-lb01",
+          "kind": "stitch",
+          "description": "criss-cross lace run"
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.0,
+        "microRoughness": 0.0,
+        "bumpAmplitude": 0.0,
+        "normalPattern": "",
+        "displacementPattern": "",
+        "occlusionPattern": "",
+        "edgeWearPattern": "",
+        "notes": ""
+      },
+      "evidenceRefs": [
+        "full-object",
+        "boots-zone"
+      ],
+      "details": [],
+      "fidelityTier": "form",
+      "colorMaterialRecipe": {
+        "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+        "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+        "materialClass": "fabric",
+        "materialClassConfidence": 0.7,
+        "evidenceRefs": [
+          "material-evidence/lace.png"
+        ]
+      }
+    },
+    {
+      "id": "boot-lace-lb10",
+      "name": "Boot lace run boot-lace-lb10",
+      "level": "micro",
+      "role": "body",
+      "importance": 0.85,
+      "confidence": 0.8,
+      "primitive": "cylinder",
+      "topologyClass": "fiber-strand",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+      "geometryDescriptor": {
+        "topologyIntent": "stylized character part",
+        "edgeTreatment": {
+          "type": "none",
+          "bevelRadius": 0.0,
+          "segments": 1
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "smooth vertex normals"
+      },
+      "parent": "boot-shell-l",
+      "attachment": {
+        "parentSocket": "boot-l-eyelets",
+        "localStart": [
+          0.273,
+          0.158,
+          0.4106
+        ],
+        "localEnd": [
+          0.217,
+          0.1795,
+          0.4131
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+          "boots-zone"
+        ]
+      },
+      "dimensions": {
+        "width": 1.0,
+        "height": 1.0,
+        "depth": 1.0,
+        "units": "relative",
+        "confidence": 0.8
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "static",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.7
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "boot-lace-lb10",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "lace"
+        }
+      },
+      "material": "lace",
+      "materialLayers": [
+        "lace"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "boot-laces-lb10",
+          "kind": "stitch",
+          "description": "criss-cross lace run"
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.0,
+        "microRoughness": 0.0,
+        "bumpAmplitude": 0.0,
+        "normalPattern": "",
+        "displacementPattern": "",
+        "occlusionPattern": "",
+        "edgeWearPattern": "",
+        "notes": ""
+      },
+      "evidenceRefs": [
+        "full-object",
+        "boots-zone"
+      ],
+      "details": [],
+      "fidelityTier": "form",
+      "colorMaterialRecipe": {
+        "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+        "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+        "materialClass": "fabric",
+        "materialClassConfidence": 0.7,
+        "evidenceRefs": [
+          "material-evidence/lace.png"
+        ]
+      }
+    },
+    {
+      "id": "boot-lace-lb11",
+      "name": "Boot lace run boot-lace-lb11",
+      "level": "micro",
+      "role": "body",
+      "importance": 0.85,
+      "confidence": 0.8,
+      "primitive": "cylinder",
+      "topologyClass": "fiber-strand",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+      "geometryDescriptor": {
+        "topologyIntent": "stylized character part",
+        "edgeTreatment": {
+          "type": "none",
+          "bevelRadius": 0.0,
+          "segments": 1
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "smooth vertex normals"
+      },
+      "parent": "boot-shell-l",
+      "attachment": {
+        "parentSocket": "boot-l-eyelets",
+        "localStart": [
+          0.217,
+          0.1795,
+          0.4131
+        ],
+        "localEnd": [
+          0.161,
+          0.201,
+          0.3594
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+          "boots-zone"
+        ]
+      },
+      "dimensions": {
+        "width": 1.0,
+        "height": 1.0,
+        "depth": 1.0,
+        "units": "relative",
+        "confidence": 0.8
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "static",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.7
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "boot-lace-lb11",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "lace"
+        }
+      },
+      "material": "lace",
+      "materialLayers": [
+        "lace"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "boot-laces-lb11",
+          "kind": "stitch",
+          "description": "criss-cross lace run"
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.0,
+        "microRoughness": 0.0,
+        "bumpAmplitude": 0.0,
+        "normalPattern": "",
+        "displacementPattern": "",
+        "occlusionPattern": "",
+        "edgeWearPattern": "",
+        "notes": ""
+      },
+      "evidenceRefs": [
+        "full-object",
+        "boots-zone"
+      ],
+      "details": [],
+      "fidelityTier": "form",
+      "colorMaterialRecipe": {
+        "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+        "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+        "materialClass": "fabric",
+        "materialClassConfidence": 0.7,
+        "evidenceRefs": [
+          "material-evidence/lace.png"
+        ]
+      }
+    },
+    {
+      "id": "boot-lace-lb20",
+      "name": "Boot lace run boot-lace-lb20",
+      "level": "micro",
+      "role": "body",
+      "importance": 0.85,
+      "confidence": 0.8,
+      "primitive": "cylinder",
+      "topologyClass": "fiber-strand",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+      "geometryDescriptor": {
+        "topologyIntent": "stylized character part",
+        "edgeTreatment": {
+          "type": "none",
+          "bevelRadius": 0.0,
+          "segments": 1
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "smooth vertex normals"
+      },
+      "parent": "boot-shell-l",
+      "attachment": {
+        "parentSocket": "boot-l-eyelets",
+        "localStart": [
+          0.161,
+          0.201,
+          0.3594
+        ],
+        "localEnd": [
+          0.217,
+          0.2225,
+          0.3646
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+          "boots-zone"
+        ]
+      },
+      "dimensions": {
+        "width": 1.0,
+        "height": 1.0,
+        "depth": 1.0,
+        "units": "relative",
+        "confidence": 0.8
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "static",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.7
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "boot-lace-lb20",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "lace"
+        }
+      },
+      "material": "lace",
+      "materialLayers": [
+        "lace"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "boot-laces-lb20",
+          "kind": "stitch",
+          "description": "criss-cross lace run"
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.0,
+        "microRoughness": 0.0,
+        "bumpAmplitude": 0.0,
+        "normalPattern": "",
+        "displacementPattern": "",
+        "occlusionPattern": "",
+        "edgeWearPattern": "",
+        "notes": ""
+      },
+      "evidenceRefs": [
+        "full-object",
+        "boots-zone"
+      ],
+      "details": [],
+      "fidelityTier": "form",
+      "colorMaterialRecipe": {
+        "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+        "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+        "materialClass": "fabric",
+        "materialClassConfidence": 0.7,
+        "evidenceRefs": [
+          "material-evidence/lace.png"
+        ]
+      }
+    },
+    {
+      "id": "boot-lace-lb21",
+      "name": "Boot lace run boot-lace-lb21",
+      "level": "micro",
+      "role": "body",
+      "importance": 0.85,
+      "confidence": 0.8,
+      "primitive": "cylinder",
+      "topologyClass": "fiber-strand",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+      "geometryDescriptor": {
+        "topologyIntent": "stylized character part",
+        "edgeTreatment": {
+          "type": "none",
+          "bevelRadius": 0.0,
+          "segments": 1
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "smooth vertex normals"
+      },
+      "parent": "boot-shell-l",
+      "attachment": {
+        "parentSocket": "boot-l-eyelets",
+        "localStart": [
+          0.217,
+          0.2225,
+          0.3646
+        ],
+        "localEnd": [
+          0.273,
+          0.244,
+          0.323
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+          "boots-zone"
+        ]
+      },
+      "dimensions": {
+        "width": 1.0,
+        "height": 1.0,
+        "depth": 1.0,
+        "units": "relative",
+        "confidence": 0.8
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "static",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.7
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "boot-lace-lb21",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "lace"
+        }
+      },
+      "material": "lace",
+      "materialLayers": [
+        "lace"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "boot-laces-lb21",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -10836,7 +11188,7 @@
               "id": "shaft",
               "type": "ellipsoid",
               "center": [
-                -0.215,
+                -0.217,
                 0.22,
                 0.04
               ],
@@ -10850,12 +11202,12 @@
               "id": "toe",
               "type": "ellipsoid",
               "center": [
-                -0.215,
+                -0.217,
                 0.1,
                 0.19
               ],
               "radii": [
-                0.185,
+                0.195,
                 0.115,
                 0.255
               ]
@@ -10864,7 +11216,7 @@
               "id": "sole-print",
               "type": "ellipsoid",
               "center": [
-                -0.215,
+                -0.217,
                 0.03,
                 0.12
               ],
@@ -10878,8 +11230,8 @@
               "id": "sole-slab",
               "type": "box",
               "center": [
-                -0.215,
-                0.03,
+                -0.217,
+                0.025,
                 0.12
               ],
               "size": [
@@ -10892,8 +11244,8 @@
               "id": "top",
               "type": "box",
               "center": [
-                -0.215,
-                0.6699999999999999,
+                -0.217,
+                0.59,
                 0.1
               ],
               "size": [
@@ -10906,8 +11258,8 @@
               "id": "under",
               "type": "box",
               "center": [
-                -0.215,
-                -0.3,
+                -0.217,
+                -0.305,
                 0.1
               ],
               "size": [
@@ -10920,22 +11272,22 @@
               "id": "collar0",
               "type": "capsule",
               "center": [
-                -0.0364,
-                0.358,
-                0.0868
+                -0.0276,
+                0.278,
+                0.0907
               ],
-              "radius": 0.027,
-              "height": 0.0947,
+              "radius": 0.022,
+              "height": 0.1025,
               "transform": {
                 "position": [
-                  -0.0364,
-                  0.358,
-                  0.0868
+                  -0.0276,
+                  0.278,
+                  0.0907
                 ],
                 "rotation": [
-                  1.5483,
-                  0.1481,
-                  0.1515
+                  1.5492,
+                  0.1452,
+                  0.1484
                 ]
               }
             },
@@ -10943,22 +11295,22 @@
               "id": "collar1",
               "type": "capsule",
               "center": [
-                -0.0636,
-                0.358,
-                0.1733
+                -0.0564,
+                0.278,
+                0.1843
               ],
-              "radius": 0.027,
-              "height": 0.089,
+              "radius": 0.022,
+              "height": 0.0959,
               "transform": {
                 "position": [
-                  -0.0636,
-                  0.358,
-                  0.1733
+                  -0.0564,
+                  0.278,
+                  0.1843
                 ],
                 "rotation": [
-                  1.3455,
-                  0.4151,
-                  0.5169
+                  1.3534,
+                  0.4098,
+                  0.5063
                 ]
               }
             },
@@ -10966,22 +11318,22 @@
               "id": "collar2",
               "type": "capsule",
               "center": [
-                -0.1138,
-                0.358,
-                0.2396
+                -0.1097,
+                0.278,
+                0.256
               ],
-              "radius": 0.027,
-              "height": 0.0803,
+              "radius": 0.022,
+              "height": 0.0859,
               "transform": {
                 "position": [
-                  -0.1138,
-                  0.358,
-                  0.2396
+                  -0.1097,
+                  0.278,
+                  0.256
                 ],
                 "rotation": [
-                  0.865,
-                  0.519,
-                  1.0437
+                  0.8796,
+                  0.5203,
+                  1.0297
                 ]
               }
             },
@@ -10989,22 +11341,22 @@
               "id": "collar3",
               "type": "capsule",
               "center": [
-                -0.1795,
-                0.358,
-                0.2754
+                -0.1793,
+                0.278,
+                0.2948
               ],
-              "radius": 0.027,
-              "height": 0.0735,
+              "radius": 0.022,
+              "height": 0.078,
               "transform": {
                 "position": [
-                  -0.1795,
-                  0.358,
-                  0.2754
+                  -0.1793,
+                  0.278,
+                  0.2948
                 ],
                 "rotation": [
-                  0.2647,
-                  0.2478,
-                  1.5044
+                  0.2702,
+                  0.2524,
+                  1.5017
                 ]
               }
             },
@@ -11012,22 +11364,22 @@
               "id": "collar4",
               "type": "capsule",
               "center": [
-                -0.2505,
-                0.358,
-                0.2754
+                -0.2547,
+                0.278,
+                0.2948
               ],
-              "radius": 0.027,
-              "height": 0.0735,
+              "radius": 0.022,
+              "height": 0.078,
               "transform": {
                 "position": [
-                  -0.2505,
-                  0.358,
-                  0.2754
+                  -0.2547,
+                  0.278,
+                  0.2948
                 ],
                 "rotation": [
-                  -0.2647,
-                  -0.2478,
-                  1.5044
+                  -0.2702,
+                  -0.2524,
+                  1.5017
                 ]
               }
             },
@@ -11035,22 +11387,22 @@
               "id": "collar5",
               "type": "capsule",
               "center": [
-                -0.3162,
-                0.358,
-                0.2396
+                -0.3243,
+                0.278,
+                0.256
               ],
-              "radius": 0.027,
-              "height": 0.0803,
+              "radius": 0.022,
+              "height": 0.0859,
               "transform": {
                 "position": [
-                  -0.3162,
-                  0.358,
-                  0.2396
+                  -0.3243,
+                  0.278,
+                  0.256
                 ],
                 "rotation": [
-                  -0.865,
-                  -0.519,
-                  1.0437
+                  -0.8796,
+                  -0.5203,
+                  1.0297
                 ]
               }
             },
@@ -11058,22 +11410,22 @@
               "id": "collar6",
               "type": "capsule",
               "center": [
-                -0.3664,
-                0.358,
-                0.1733
+                -0.3776,
+                0.278,
+                0.1843
               ],
-              "radius": 0.027,
-              "height": 0.089,
+              "radius": 0.022,
+              "height": 0.0959,
               "transform": {
                 "position": [
-                  -0.3664,
-                  0.358,
-                  0.1733
+                  -0.3776,
+                  0.278,
+                  0.1843
                 ],
                 "rotation": [
-                  -1.3455,
-                  -0.4151,
-                  0.5169
+                  -1.3534,
+                  -0.4098,
+                  0.5063
                 ]
               }
             },
@@ -11081,22 +11433,22 @@
               "id": "collar7",
               "type": "capsule",
               "center": [
-                -0.3936,
-                0.358,
-                0.0868
+                -0.4064,
+                0.278,
+                0.0907
               ],
-              "radius": 0.027,
-              "height": 0.0947,
+              "radius": 0.022,
+              "height": 0.1025,
               "transform": {
                 "position": [
-                  -0.3936,
-                  0.358,
-                  0.0868
+                  -0.4064,
+                  0.278,
+                  0.0907
                 ],
                 "rotation": [
-                  -1.5483,
-                  -0.1481,
-                  0.1515
+                  -1.5492,
+                  -0.1452,
+                  0.1484
                 ]
               }
             },
@@ -11104,22 +11456,22 @@
               "id": "collar8",
               "type": "capsule",
               "center": [
-                -0.3936,
-                0.358,
-                -0.0068
+                -0.4064,
+                0.278,
+                -0.0107
               ],
-              "radius": 0.027,
-              "height": 0.0947,
+              "radius": 0.022,
+              "height": 0.1025,
               "transform": {
                 "position": [
-                  -0.3936,
-                  0.358,
-                  -0.0068
+                  -0.4064,
+                  0.278,
+                  -0.0107
                 ],
                 "rotation": [
-                  -1.5483,
-                  0.1481,
-                  -0.1515
+                  -1.5492,
+                  0.1452,
+                  -0.1484
                 ]
               }
             },
@@ -11127,22 +11479,22 @@
               "id": "collar9",
               "type": "capsule",
               "center": [
-                -0.3664,
-                0.358,
-                -0.0933
+                -0.3776,
+                0.278,
+                -0.1043
               ],
-              "radius": 0.027,
-              "height": 0.089,
+              "radius": 0.022,
+              "height": 0.0959,
               "transform": {
                 "position": [
-                  -0.3664,
-                  0.358,
-                  -0.0933
+                  -0.3776,
+                  0.278,
+                  -0.1043
                 ],
                 "rotation": [
-                  -1.3455,
-                  0.4151,
-                  -0.5169
+                  -1.3534,
+                  0.4098,
+                  -0.5063
                 ]
               }
             },
@@ -11150,22 +11502,22 @@
               "id": "collar10",
               "type": "capsule",
               "center": [
-                -0.3162,
-                0.358,
-                -0.1596
+                -0.3243,
+                0.278,
+                -0.176
               ],
-              "radius": 0.027,
-              "height": 0.0803,
+              "radius": 0.022,
+              "height": 0.0859,
               "transform": {
                 "position": [
-                  -0.3162,
-                  0.358,
-                  -0.1596
+                  -0.3243,
+                  0.278,
+                  -0.176
                 ],
                 "rotation": [
-                  -0.865,
-                  0.519,
-                  -1.0437
+                  -0.8796,
+                  0.5203,
+                  -1.0297
                 ]
               }
             },
@@ -11173,22 +11525,22 @@
               "id": "collar11",
               "type": "capsule",
               "center": [
-                -0.2505,
-                0.358,
-                -0.1954
+                -0.2547,
+                0.278,
+                -0.2148
               ],
-              "radius": 0.027,
-              "height": 0.0735,
+              "radius": 0.022,
+              "height": 0.078,
               "transform": {
                 "position": [
-                  -0.2505,
-                  0.358,
-                  -0.1954
+                  -0.2547,
+                  0.278,
+                  -0.2148
                 ],
                 "rotation": [
-                  -0.2647,
-                  0.2478,
-                  -1.5044
+                  -0.2702,
+                  0.2524,
+                  -1.5017
                 ]
               }
             },
@@ -11196,22 +11548,22 @@
               "id": "collar12",
               "type": "capsule",
               "center": [
-                -0.1795,
-                0.358,
-                -0.1954
+                -0.1793,
+                0.278,
+                -0.2148
               ],
-              "radius": 0.027,
-              "height": 0.0735,
+              "radius": 0.022,
+              "height": 0.078,
               "transform": {
                 "position": [
-                  -0.1795,
-                  0.358,
-                  -0.1954
+                  -0.1793,
+                  0.278,
+                  -0.2148
                 ],
                 "rotation": [
-                  0.2647,
-                  -0.2478,
-                  -1.5044
+                  0.2702,
+                  -0.2524,
+                  -1.5017
                 ]
               }
             },
@@ -11219,22 +11571,22 @@
               "id": "collar13",
               "type": "capsule",
               "center": [
-                -0.1138,
-                0.358,
-                -0.1596
+                -0.1097,
+                0.278,
+                -0.176
               ],
-              "radius": 0.027,
-              "height": 0.0803,
+              "radius": 0.022,
+              "height": 0.0859,
               "transform": {
                 "position": [
-                  -0.1138,
-                  0.358,
-                  -0.1596
+                  -0.1097,
+                  0.278,
+                  -0.176
                 ],
                 "rotation": [
-                  0.865,
-                  -0.519,
-                  -1.0437
+                  0.8796,
+                  -0.5203,
+                  -1.0297
                 ]
               }
             },
@@ -11242,22 +11594,22 @@
               "id": "collar14",
               "type": "capsule",
               "center": [
-                -0.0636,
-                0.358,
-                -0.0933
+                -0.0564,
+                0.278,
+                -0.1043
               ],
-              "radius": 0.027,
-              "height": 0.089,
+              "radius": 0.022,
+              "height": 0.0959,
               "transform": {
                 "position": [
-                  -0.0636,
-                  0.358,
-                  -0.0933
+                  -0.0564,
+                  0.278,
+                  -0.1043
                 ],
                 "rotation": [
-                  1.3455,
-                  -0.4151,
-                  -0.5169
+                  1.3534,
+                  -0.4098,
+                  -0.5063
                 ]
               }
             },
@@ -11265,22 +11617,22 @@
               "id": "collar15",
               "type": "capsule",
               "center": [
-                -0.0364,
-                0.358,
-                -0.0068
+                -0.0276,
+                0.278,
+                -0.0107
               ],
-              "radius": 0.027,
-              "height": 0.0947,
+              "radius": 0.022,
+              "height": 0.1025,
               "transform": {
                 "position": [
-                  -0.0364,
-                  0.358,
-                  -0.0068
+                  -0.0276,
+                  0.278,
+                  -0.0107
                 ],
                 "rotation": [
-                  1.5483,
-                  -0.1481,
-                  -0.1515
+                  1.5492,
+                  -0.1452,
+                  -0.1484
                 ]
               }
             }
@@ -11433,13 +11785,13 @@
           ],
           "bounds": {
             "min": [
-              -0.46499999999999997,
-              -0.01,
+              -0.46699999999999997,
+              -0.015,
               -0.25
             ],
             "max": [
-              0.035,
-              0.4,
+              0.033,
+              0.31999999999999995,
               0.48
             ]
           },
@@ -11594,17 +11946,17 @@
       "parent": "boot-shell-r",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          -0.28,
-          0.17,
-          0.3793
+          -0.273,
+          0.115,
+          0.434
         ],
         "rotation": [
           0,
@@ -11612,9 +11964,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -11736,17 +12088,17 @@
       "parent": "boot-shell-r",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          -0.15,
-          0.17,
-          0.3793
+          -0.161,
+          0.115,
+          0.434
         ],
         "rotation": [
           0,
@@ -11754,9 +12106,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -11878,17 +12230,17 @@
       "parent": "boot-shell-r",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          -0.28,
-          0.215,
-          0.3275
+          -0.273,
+          0.158,
+          0.4026
         ],
         "rotation": [
           0,
@@ -11896,9 +12248,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -12020,17 +12372,17 @@
       "parent": "boot-shell-r",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          -0.15,
-          0.215,
-          0.3275
+          -0.161,
+          0.158,
+          0.4026
         ],
         "rotation": [
           0,
@@ -12038,9 +12390,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -12162,17 +12514,17 @@
       "parent": "boot-shell-r",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          -0.28,
-          0.26,
-          0.295
+          -0.273,
+          0.201,
+          0.3514
         ],
         "rotation": [
           0,
@@ -12180,9 +12532,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -12304,17 +12656,17 @@
       "parent": "boot-shell-r",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          -0.15,
-          0.26,
-          0.295
+          -0.161,
+          0.201,
+          0.3514
         ],
         "rotation": [
           0,
@@ -12322,9 +12674,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -12446,17 +12798,17 @@
       "parent": "boot-shell-r",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          -0.28,
-          0.305,
-          0.2792
+          -0.273,
+          0.244,
+          0.315
         ],
         "rotation": [
           0,
@@ -12464,9 +12816,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -12588,17 +12940,17 @@
       "parent": "boot-shell-r",
       "attachment": null,
       "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
+        "width": 0.027,
+        "height": 0.027,
+        "depth": 0.015,
         "units": "relative",
         "confidence": 0.8
       },
       "transform": {
         "position": [
-          -0.15,
-          0.305,
-          0.2792
+          -0.161,
+          0.244,
+          0.315
         ],
         "rotation": [
           0,
@@ -12606,9 +12958,9 @@
           0
         ],
         "scale": [
-          0.022,
-          0.022,
-          0.014
+          0.027,
+          0.027,
+          0.015
         ]
       },
       "actionProfile": {
@@ -12704,299 +13056,15 @@
       }
     },
     {
-      "id": "boot-eyelet-r4a",
-      "name": "Boot eyelet boot-eyelet-r4a",
-      "level": "micro",
-      "role": "body",
-      "importance": 0.4,
-      "confidence": 0.8,
-      "primitive": "sphere",
-      "topologyClass": "assembled-solid",
-      "topologyRationale": "A small brass grommet: a discrete squashed sphere.",
-      "geometryDescriptor": {
-        "topologyIntent": "stylized character part",
-        "edgeTreatment": {
-          "type": "none",
-          "bevelRadius": 0.0,
-          "segments": 1
-        },
-        "deformationStack": [],
-        "uvStrategy": "generated procedural coordinates",
-        "normalStrategy": "smooth vertex normals",
-        "decimate": {
-          "targetRatio": 0.06
-        }
-      },
-      "parent": "boot-shell-r",
-      "attachment": null,
-      "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
-        "units": "relative",
-        "confidence": 0.8
-      },
-      "transform": {
-        "position": [
-          -0.28,
-          0.35,
-          0.2938
-        ],
-        "rotation": [
-          0,
-          0,
-          0
-        ],
-        "scale": [
-          0.022,
-          0.022,
-          0.014
-        ]
-      },
-      "actionProfile": {
-        "animationRole": "static",
-        "pivot": {
-          "mode": "center",
-          "localPosition": [
-            0,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "confidence": 0.7
-        },
-        "transformChannels": {
-          "translate": true,
-          "rotate": true,
-          "scale": true,
-          "bend": false,
-          "twist": false,
-          "detach": false,
-          "visibility": true,
-          "materialState": false
-        },
-        "sockets": [],
-        "collider": {
-          "type": "box",
-          "offset": [
-            0,
-            0,
-            0
-          ],
-          "scale": [
-            1,
-            1,
-            1
-          ],
-          "isTrigger": false,
-          "notes": "box proxy"
-        },
-        "constraints": [],
-        "destruction": {
-          "breakable": false,
-          "fractureGroup": "boot-eyelet-r4a",
-          "seamRefs": [],
-          "detachableFragments": [],
-          "breakImpulse": 0.0,
-          "debrisMaterial": "brass"
-        }
-      },
-      "material": "brass",
-      "materialLayers": [
-        "brass"
-      ],
-      "deformations": [],
-      "joints": [],
-      "seams": [],
-      "localFeatures": [
-        {
-          "id": "boot-eyelet-r4a-ring",
-          "kind": "fastener",
-          "description": "brass eyelet"
-        }
-      ],
-      "surfaceDetail": {
-        "macroRoughness": 0.0,
-        "microRoughness": 0.0,
-        "bumpAmplitude": 0.0,
-        "normalPattern": "",
-        "displacementPattern": "",
-        "occlusionPattern": "",
-        "edgeWearPattern": "",
-        "notes": ""
-      },
-      "evidenceRefs": [
-        "full-object",
-        "boots-zone"
-      ],
-      "details": [],
-      "fidelityTier": "form",
-      "colorMaterialRecipe": {
-        "dominantAlbedo": "rgba(145, 109, 44, 1.0)",
-        "secondaryAlbedo": "rgba(133, 95, 23, 1.0)",
-        "materialClass": "metal",
-        "materialClassConfidence": 0.7,
-        "evidenceRefs": [
-          "material-evidence/brass.png"
-        ]
-      }
-    },
-    {
-      "id": "boot-eyelet-r4b",
-      "name": "Boot eyelet boot-eyelet-r4b",
-      "level": "micro",
-      "role": "body",
-      "importance": 0.4,
-      "confidence": 0.8,
-      "primitive": "sphere",
-      "topologyClass": "assembled-solid",
-      "topologyRationale": "A small brass grommet: a discrete squashed sphere.",
-      "geometryDescriptor": {
-        "topologyIntent": "stylized character part",
-        "edgeTreatment": {
-          "type": "none",
-          "bevelRadius": 0.0,
-          "segments": 1
-        },
-        "deformationStack": [],
-        "uvStrategy": "generated procedural coordinates",
-        "normalStrategy": "smooth vertex normals",
-        "decimate": {
-          "targetRatio": 0.06
-        }
-      },
-      "parent": "boot-shell-r",
-      "attachment": null,
-      "dimensions": {
-        "width": 0.022,
-        "height": 0.022,
-        "depth": 0.014,
-        "units": "relative",
-        "confidence": 0.8
-      },
-      "transform": {
-        "position": [
-          -0.15,
-          0.35,
-          0.2938
-        ],
-        "rotation": [
-          0,
-          0,
-          0
-        ],
-        "scale": [
-          0.022,
-          0.022,
-          0.014
-        ]
-      },
-      "actionProfile": {
-        "animationRole": "static",
-        "pivot": {
-          "mode": "center",
-          "localPosition": [
-            0,
-            0,
-            0
-          ],
-          "axis": [
-            0,
-            1,
-            0
-          ],
-          "confidence": 0.7
-        },
-        "transformChannels": {
-          "translate": true,
-          "rotate": true,
-          "scale": true,
-          "bend": false,
-          "twist": false,
-          "detach": false,
-          "visibility": true,
-          "materialState": false
-        },
-        "sockets": [],
-        "collider": {
-          "type": "box",
-          "offset": [
-            0,
-            0,
-            0
-          ],
-          "scale": [
-            1,
-            1,
-            1
-          ],
-          "isTrigger": false,
-          "notes": "box proxy"
-        },
-        "constraints": [],
-        "destruction": {
-          "breakable": false,
-          "fractureGroup": "boot-eyelet-r4b",
-          "seamRefs": [],
-          "detachableFragments": [],
-          "breakImpulse": 0.0,
-          "debrisMaterial": "brass"
-        }
-      },
-      "material": "brass",
-      "materialLayers": [
-        "brass"
-      ],
-      "deformations": [],
-      "joints": [],
-      "seams": [],
-      "localFeatures": [
-        {
-          "id": "boot-eyelet-r4b-ring",
-          "kind": "fastener",
-          "description": "brass eyelet"
-        }
-      ],
-      "surfaceDetail": {
-        "macroRoughness": 0.0,
-        "microRoughness": 0.0,
-        "bumpAmplitude": 0.0,
-        "normalPattern": "",
-        "displacementPattern": "",
-        "occlusionPattern": "",
-        "edgeWearPattern": "",
-        "notes": ""
-      },
-      "evidenceRefs": [
-        "full-object",
-        "boots-zone"
-      ],
-      "details": [],
-      "fidelityTier": "form",
-      "colorMaterialRecipe": {
-        "dominantAlbedo": "rgba(145, 109, 44, 1.0)",
-        "secondaryAlbedo": "rgba(133, 95, 23, 1.0)",
-        "materialClass": "metal",
-        "materialClassConfidence": 0.7,
-        "evidenceRefs": [
-          "material-evidence/brass.png"
-        ]
-      }
-    },
-    {
-      "id": "boot-lace-ra0",
-      "name": "Boot lace run boot-lace-ra0",
+      "id": "boot-lace-ra00",
+      "name": "Boot lace run boot-lace-ra00",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -13012,18 +13080,18 @@
       "attachment": {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-          -0.15,
-          0.17,
-          0.3893
+          -0.161,
+          0.115,
+          0.442
         ],
         "localEnd": [
-          -0.28,
-          0.215,
-          0.3375
+          -0.217,
+          0.1365,
+          0.4478
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -13099,7 +13167,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-ra0",
+          "fractureGroup": "boot-lace-ra00",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -13115,7 +13183,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-ra0",
+          "id": "boot-laces-ra00",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -13147,15 +13215,15 @@
       }
     },
     {
-      "id": "boot-lace-ra1",
-      "name": "Boot lace run boot-lace-ra1",
+      "id": "boot-lace-ra01",
+      "name": "Boot lace run boot-lace-ra01",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -13171,18 +13239,18 @@
       "attachment": {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-          -0.28,
-          0.215,
-          0.3375
+          -0.217,
+          0.1365,
+          0.4478
         ],
         "localEnd": [
-          -0.15,
-          0.26,
-          0.305
+          -0.273,
+          0.158,
+          0.4106
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -13258,7 +13326,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-ra1",
+          "fractureGroup": "boot-lace-ra01",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -13274,7 +13342,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-ra1",
+          "id": "boot-laces-ra01",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -13306,15 +13374,15 @@
       }
     },
     {
-      "id": "boot-lace-ra2",
-      "name": "Boot lace run boot-lace-ra2",
+      "id": "boot-lace-ra10",
+      "name": "Boot lace run boot-lace-ra10",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -13330,18 +13398,18 @@
       "attachment": {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-          -0.15,
-          0.26,
-          0.305
+          -0.273,
+          0.158,
+          0.4106
         ],
         "localEnd": [
-          -0.28,
-          0.305,
-          0.2892
+          -0.217,
+          0.1795,
+          0.4031
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -13417,7 +13485,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-ra2",
+          "fractureGroup": "boot-lace-ra10",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -13433,7 +13501,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-ra2",
+          "id": "boot-laces-ra10",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -13465,15 +13533,15 @@
       }
     },
     {
-      "id": "boot-lace-ra3",
-      "name": "Boot lace run boot-lace-ra3",
+      "id": "boot-lace-ra11",
+      "name": "Boot lace run boot-lace-ra11",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -13489,18 +13557,18 @@
       "attachment": {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-          -0.28,
-          0.305,
-          0.2892
+          -0.217,
+          0.1795,
+          0.4031
         ],
         "localEnd": [
-          -0.15,
-          0.35,
-          0.3038
+          -0.161,
+          0.201,
+          0.3594
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -13576,7 +13644,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-ra3",
+          "fractureGroup": "boot-lace-ra11",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -13592,7 +13660,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-ra3",
+          "id": "boot-laces-ra11",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -13624,15 +13692,15 @@
       }
     },
     {
-      "id": "boot-lace-rb0",
-      "name": "Boot lace run boot-lace-rb0",
+      "id": "boot-lace-ra20",
+      "name": "Boot lace run boot-lace-ra20",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -13648,18 +13716,18 @@
       "attachment": {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-          -0.28,
-          0.17,
-          0.3893
+          -0.161,
+          0.201,
+          0.3594
         ],
         "localEnd": [
-          -0.15,
-          0.215,
-          0.3375
+          -0.217,
+          0.2225,
+          0.3546
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -13735,7 +13803,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-rb0",
+          "fractureGroup": "boot-lace-ra20",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -13751,7 +13819,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-rb0",
+          "id": "boot-laces-ra20",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -13783,15 +13851,15 @@
       }
     },
     {
-      "id": "boot-lace-rb1",
-      "name": "Boot lace run boot-lace-rb1",
+      "id": "boot-lace-ra21",
+      "name": "Boot lace run boot-lace-ra21",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -13807,18 +13875,18 @@
       "attachment": {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-          -0.15,
-          0.215,
-          0.3375
+          -0.217,
+          0.2225,
+          0.3546
         ],
         "localEnd": [
-          -0.28,
-          0.26,
-          0.305
+          -0.273,
+          0.244,
+          0.323
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -13894,7 +13962,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-rb1",
+          "fractureGroup": "boot-lace-ra21",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -13910,7 +13978,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-rb1",
+          "id": "boot-laces-ra21",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -13942,15 +14010,15 @@
       }
     },
     {
-      "id": "boot-lace-rb2",
-      "name": "Boot lace run boot-lace-rb2",
+      "id": "boot-lace-rb00",
+      "name": "Boot lace run boot-lace-rb00",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -13966,18 +14034,18 @@
       "attachment": {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-          -0.28,
-          0.26,
-          0.305
+          -0.273,
+          0.115,
+          0.442
         ],
         "localEnd": [
-          -0.15,
-          0.305,
-          0.2892
+          -0.217,
+          0.1365,
+          0.4578
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -14053,7 +14121,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-rb2",
+          "fractureGroup": "boot-lace-rb00",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -14069,7 +14137,7 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-rb2",
+          "id": "boot-laces-rb00",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -14101,15 +14169,15 @@
       }
     },
     {
-      "id": "boot-lace-rb3",
-      "name": "Boot lace run boot-lace-rb3",
+      "id": "boot-lace-rb01",
+      "name": "Boot lace run boot-lace-rb01",
       "level": "micro",
       "role": "body",
       "importance": 0.85,
       "confidence": 0.8,
       "primitive": "cylinder",
       "topologyClass": "fiber-strand",
-      "topologyRationale": "A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning them; the runs of the two laces cross into Xs.",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
       "geometryDescriptor": {
         "topologyIntent": "stylized character part",
         "edgeTreatment": {
@@ -14125,18 +14193,18 @@
       "attachment": {
         "parentSocket": "boot-r-eyelets",
         "localStart": [
-          -0.15,
-          0.305,
-          0.2892
+          -0.217,
+          0.1365,
+          0.4578
         ],
         "localEnd": [
-          -0.28,
-          0.35,
-          0.3038
+          -0.161,
+          0.158,
+          0.4106
         ],
         "contactType": "threaded-through",
-        "baseRadius": 0.011,
-        "endRadius": 0.011,
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
         "embedDepth": 0.004,
         "gapTolerance": 0.004,
         "evidenceRefs": [
@@ -14212,7 +14280,7 @@
         "constraints": [],
         "destruction": {
           "breakable": false,
-          "fractureGroup": "boot-lace-rb3",
+          "fractureGroup": "boot-lace-rb01",
           "seamRefs": [],
           "detachableFragments": [],
           "breakImpulse": 0.0,
@@ -14228,7 +14296,643 @@
       "seams": [],
       "localFeatures": [
         {
-          "id": "boot-laces-rb3",
+          "id": "boot-laces-rb01",
+          "kind": "stitch",
+          "description": "criss-cross lace run"
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.0,
+        "microRoughness": 0.0,
+        "bumpAmplitude": 0.0,
+        "normalPattern": "",
+        "displacementPattern": "",
+        "occlusionPattern": "",
+        "edgeWearPattern": "",
+        "notes": ""
+      },
+      "evidenceRefs": [
+        "full-object",
+        "boots-zone"
+      ],
+      "details": [],
+      "fidelityTier": "form",
+      "colorMaterialRecipe": {
+        "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+        "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+        "materialClass": "fabric",
+        "materialClassConfidence": 0.7,
+        "evidenceRefs": [
+          "material-evidence/lace.png"
+        ]
+      }
+    },
+    {
+      "id": "boot-lace-rb10",
+      "name": "Boot lace run boot-lace-rb10",
+      "level": "micro",
+      "role": "body",
+      "importance": 0.85,
+      "confidence": 0.8,
+      "primitive": "cylinder",
+      "topologyClass": "fiber-strand",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+      "geometryDescriptor": {
+        "topologyIntent": "stylized character part",
+        "edgeTreatment": {
+          "type": "none",
+          "bevelRadius": 0.0,
+          "segments": 1
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "smooth vertex normals"
+      },
+      "parent": "boot-shell-r",
+      "attachment": {
+        "parentSocket": "boot-r-eyelets",
+        "localStart": [
+          -0.161,
+          0.158,
+          0.4106
+        ],
+        "localEnd": [
+          -0.217,
+          0.1795,
+          0.4131
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+          "boots-zone"
+        ]
+      },
+      "dimensions": {
+        "width": 1.0,
+        "height": 1.0,
+        "depth": 1.0,
+        "units": "relative",
+        "confidence": 0.8
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "static",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.7
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "boot-lace-rb10",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "lace"
+        }
+      },
+      "material": "lace",
+      "materialLayers": [
+        "lace"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "boot-laces-rb10",
+          "kind": "stitch",
+          "description": "criss-cross lace run"
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.0,
+        "microRoughness": 0.0,
+        "bumpAmplitude": 0.0,
+        "normalPattern": "",
+        "displacementPattern": "",
+        "occlusionPattern": "",
+        "edgeWearPattern": "",
+        "notes": ""
+      },
+      "evidenceRefs": [
+        "full-object",
+        "boots-zone"
+      ],
+      "details": [],
+      "fidelityTier": "form",
+      "colorMaterialRecipe": {
+        "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+        "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+        "materialClass": "fabric",
+        "materialClassConfidence": 0.7,
+        "evidenceRefs": [
+          "material-evidence/lace.png"
+        ]
+      }
+    },
+    {
+      "id": "boot-lace-rb11",
+      "name": "Boot lace run boot-lace-rb11",
+      "level": "micro",
+      "role": "body",
+      "importance": 0.85,
+      "confidence": 0.8,
+      "primitive": "cylinder",
+      "topologyClass": "fiber-strand",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+      "geometryDescriptor": {
+        "topologyIntent": "stylized character part",
+        "edgeTreatment": {
+          "type": "none",
+          "bevelRadius": 0.0,
+          "segments": 1
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "smooth vertex normals"
+      },
+      "parent": "boot-shell-r",
+      "attachment": {
+        "parentSocket": "boot-r-eyelets",
+        "localStart": [
+          -0.217,
+          0.1795,
+          0.4131
+        ],
+        "localEnd": [
+          -0.273,
+          0.201,
+          0.3594
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+          "boots-zone"
+        ]
+      },
+      "dimensions": {
+        "width": 1.0,
+        "height": 1.0,
+        "depth": 1.0,
+        "units": "relative",
+        "confidence": 0.8
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "static",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.7
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "boot-lace-rb11",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "lace"
+        }
+      },
+      "material": "lace",
+      "materialLayers": [
+        "lace"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "boot-laces-rb11",
+          "kind": "stitch",
+          "description": "criss-cross lace run"
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.0,
+        "microRoughness": 0.0,
+        "bumpAmplitude": 0.0,
+        "normalPattern": "",
+        "displacementPattern": "",
+        "occlusionPattern": "",
+        "edgeWearPattern": "",
+        "notes": ""
+      },
+      "evidenceRefs": [
+        "full-object",
+        "boots-zone"
+      ],
+      "details": [],
+      "fidelityTier": "form",
+      "colorMaterialRecipe": {
+        "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+        "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+        "materialClass": "fabric",
+        "materialClassConfidence": 0.7,
+        "evidenceRefs": [
+          "material-evidence/lace.png"
+        ]
+      }
+    },
+    {
+      "id": "boot-lace-rb20",
+      "name": "Boot lace run boot-lace-rb20",
+      "level": "micro",
+      "role": "body",
+      "importance": 0.85,
+      "confidence": 0.8,
+      "primitive": "cylinder",
+      "topologyClass": "fiber-strand",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+      "geometryDescriptor": {
+        "topologyIntent": "stylized character part",
+        "edgeTreatment": {
+          "type": "none",
+          "bevelRadius": 0.0,
+          "segments": 1
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "smooth vertex normals"
+      },
+      "parent": "boot-shell-r",
+      "attachment": {
+        "parentSocket": "boot-r-eyelets",
+        "localStart": [
+          -0.273,
+          0.201,
+          0.3594
+        ],
+        "localEnd": [
+          -0.217,
+          0.2225,
+          0.3646
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+          "boots-zone"
+        ]
+      },
+      "dimensions": {
+        "width": 1.0,
+        "height": 1.0,
+        "depth": 1.0,
+        "units": "relative",
+        "confidence": 0.8
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "static",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.7
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "boot-lace-rb20",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "lace"
+        }
+      },
+      "material": "lace",
+      "materialLayers": [
+        "lace"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "boot-laces-rb20",
+          "kind": "stitch",
+          "description": "criss-cross lace run"
+        }
+      ],
+      "surfaceDetail": {
+        "macroRoughness": 0.0,
+        "microRoughness": 0.0,
+        "bumpAmplitude": 0.0,
+        "normalPattern": "",
+        "displacementPattern": "",
+        "occlusionPattern": "",
+        "edgeWearPattern": "",
+        "notes": ""
+      },
+      "evidenceRefs": [
+        "full-object",
+        "boots-zone"
+      ],
+      "details": [],
+      "fidelityTier": "form",
+      "colorMaterialRecipe": {
+        "dominantAlbedo": "rgba(24, 18, 18, 1.0)",
+        "secondaryAlbedo": "rgba(2, 2, 1, 1.0)",
+        "materialClass": "fabric",
+        "materialClassConfidence": 0.7,
+        "evidenceRefs": [
+          "material-evidence/lace.png"
+        ]
+      }
+    },
+    {
+      "id": "boot-lace-rb21",
+      "name": "Boot lace run boot-lace-rb21",
+      "level": "micro",
+      "role": "body",
+      "importance": 0.85,
+      "confidence": 0.8,
+      "primitive": "cylinder",
+      "topologyClass": "fiber-strand",
+      "topologyRationale": "A lace run is a thin cord pulled straight from an eyelet to where it crosses the other lace: a cylinder spanning them, lifted off the leather at the crossing.",
+      "geometryDescriptor": {
+        "topologyIntent": "stylized character part",
+        "edgeTreatment": {
+          "type": "none",
+          "bevelRadius": 0.0,
+          "segments": 1
+        },
+        "deformationStack": [],
+        "uvStrategy": "generated procedural coordinates",
+        "normalStrategy": "smooth vertex normals"
+      },
+      "parent": "boot-shell-r",
+      "attachment": {
+        "parentSocket": "boot-r-eyelets",
+        "localStart": [
+          -0.217,
+          0.2225,
+          0.3646
+        ],
+        "localEnd": [
+          -0.161,
+          0.244,
+          0.323
+        ],
+        "contactType": "threaded-through",
+        "baseRadius": 0.014,
+        "endRadius": 0.014,
+        "embedDepth": 0.004,
+        "gapTolerance": 0.004,
+        "evidenceRefs": [
+          "boots-zone"
+        ]
+      },
+      "dimensions": {
+        "width": 1.0,
+        "height": 1.0,
+        "depth": 1.0,
+        "units": "relative",
+        "confidence": 0.8
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "actionProfile": {
+        "animationRole": "static",
+        "pivot": {
+          "mode": "center",
+          "localPosition": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "confidence": 0.7
+        },
+        "transformChannels": {
+          "translate": true,
+          "rotate": true,
+          "scale": true,
+          "bend": false,
+          "twist": false,
+          "detach": false,
+          "visibility": true,
+          "materialState": false
+        },
+        "sockets": [],
+        "collider": {
+          "type": "box",
+          "offset": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ],
+          "isTrigger": false,
+          "notes": "box proxy"
+        },
+        "constraints": [],
+        "destruction": {
+          "breakable": false,
+          "fractureGroup": "boot-lace-rb21",
+          "seamRefs": [],
+          "detachableFragments": [],
+          "breakImpulse": 0.0,
+          "debrisMaterial": "lace"
+        }
+      },
+      "material": "lace",
+      "materialLayers": [
+        "lace"
+      ],
+      "deformations": [],
+      "joints": [],
+      "seams": [],
+      "localFeatures": [
+        {
+          "id": "boot-laces-rb21",
           "kind": "stitch",
           "description": "criss-cross lace run"
         }
@@ -16511,7 +17215,7 @@
       "parent": "vest-shell",
       "primitive": "sphere",
       "material": "brass",
-      "count": 20,
+      "count": 16,
       "elementComponentIds": [
         "boot-eyelet-l0a",
         "boot-eyelet-l0b",
@@ -16521,8 +17225,6 @@
         "boot-eyelet-l2b",
         "boot-eyelet-l3a",
         "boot-eyelet-l3b",
-        "boot-eyelet-l4a",
-        "boot-eyelet-l4b",
         "boot-eyelet-r0a",
         "boot-eyelet-r0b",
         "boot-eyelet-r1a",
@@ -16530,13 +17232,11 @@
         "boot-eyelet-r2a",
         "boot-eyelet-r2b",
         "boot-eyelet-r3a",
-        "boot-eyelet-r3b",
-        "boot-eyelet-r4a",
-        "boot-eyelet-r4b"
+        "boot-eyelet-r3b"
       ],
       "placement": {
         "mode": "authored",
-        "notes": "two columns of 5 per boot"
+        "notes": "two columns of 4 per boot"
       }
     },
     {
@@ -16641,16 +17341,18 @@
         "boot-eyelet-l2b",
         "boot-eyelet-l3a",
         "boot-eyelet-l3b",
-        "boot-eyelet-l4a",
-        "boot-eyelet-l4b",
-        "boot-lace-la0",
-        "boot-lace-la1",
-        "boot-lace-la2",
-        "boot-lace-la3",
-        "boot-lace-lb0",
-        "boot-lace-lb1",
-        "boot-lace-lb2",
-        "boot-lace-lb3",
+        "boot-lace-la00",
+        "boot-lace-la01",
+        "boot-lace-la10",
+        "boot-lace-la11",
+        "boot-lace-la20",
+        "boot-lace-la21",
+        "boot-lace-lb00",
+        "boot-lace-lb01",
+        "boot-lace-lb10",
+        "boot-lace-lb11",
+        "boot-lace-lb20",
+        "boot-lace-lb21",
         "boot-shell-r",
         "boot-eyelet-r0a",
         "boot-eyelet-r0b",
@@ -16660,16 +17362,18 @@
         "boot-eyelet-r2b",
         "boot-eyelet-r3a",
         "boot-eyelet-r3b",
-        "boot-eyelet-r4a",
-        "boot-eyelet-r4b",
-        "boot-lace-ra0",
-        "boot-lace-ra1",
-        "boot-lace-ra2",
-        "boot-lace-ra3",
-        "boot-lace-rb0",
-        "boot-lace-rb1",
-        "boot-lace-rb2",
-        "boot-lace-rb3",
+        "boot-lace-ra00",
+        "boot-lace-ra01",
+        "boot-lace-ra10",
+        "boot-lace-ra11",
+        "boot-lace-ra20",
+        "boot-lace-ra21",
+        "boot-lace-rb00",
+        "boot-lace-rb01",
+        "boot-lace-rb10",
+        "boot-lace-rb11",
+        "boot-lace-rb20",
+        "boot-lace-rb21",
         "sheath-body",
         "sheath-strap",
         "sheath-stud",
@@ -16722,16 +17426,18 @@
         "boot-eyelet-l2b",
         "boot-eyelet-l3a",
         "boot-eyelet-l3b",
-        "boot-eyelet-l4a",
-        "boot-eyelet-l4b",
-        "boot-lace-la0",
-        "boot-lace-la1",
-        "boot-lace-la2",
-        "boot-lace-la3",
-        "boot-lace-lb0",
-        "boot-lace-lb1",
-        "boot-lace-lb2",
-        "boot-lace-lb3",
+        "boot-lace-la00",
+        "boot-lace-la01",
+        "boot-lace-la10",
+        "boot-lace-la11",
+        "boot-lace-la20",
+        "boot-lace-la21",
+        "boot-lace-lb00",
+        "boot-lace-lb01",
+        "boot-lace-lb10",
+        "boot-lace-lb11",
+        "boot-lace-lb20",
+        "boot-lace-lb21",
         "boot-shell-r",
         "boot-eyelet-r0a",
         "boot-eyelet-r0b",
@@ -16741,16 +17447,18 @@
         "boot-eyelet-r2b",
         "boot-eyelet-r3a",
         "boot-eyelet-r3b",
-        "boot-eyelet-r4a",
-        "boot-eyelet-r4b",
-        "boot-lace-ra0",
-        "boot-lace-ra1",
-        "boot-lace-ra2",
-        "boot-lace-ra3",
-        "boot-lace-rb0",
-        "boot-lace-rb1",
-        "boot-lace-rb2",
-        "boot-lace-rb3",
+        "boot-lace-ra00",
+        "boot-lace-ra01",
+        "boot-lace-ra10",
+        "boot-lace-ra11",
+        "boot-lace-ra20",
+        "boot-lace-ra21",
+        "boot-lace-rb00",
+        "boot-lace-rb01",
+        "boot-lace-rb10",
+        "boot-lace-rb11",
+        "boot-lace-rb20",
+        "boot-lace-rb21",
         "sheath-body",
         "sheath-strap",
         "sheath-stud",
@@ -16809,16 +17517,18 @@
         "boot-eyelet-l2b",
         "boot-eyelet-l3a",
         "boot-eyelet-l3b",
-        "boot-eyelet-l4a",
-        "boot-eyelet-l4b",
-        "boot-lace-la0",
-        "boot-lace-la1",
-        "boot-lace-la2",
-        "boot-lace-la3",
-        "boot-lace-lb0",
-        "boot-lace-lb1",
-        "boot-lace-lb2",
-        "boot-lace-lb3",
+        "boot-lace-la00",
+        "boot-lace-la01",
+        "boot-lace-la10",
+        "boot-lace-la11",
+        "boot-lace-la20",
+        "boot-lace-la21",
+        "boot-lace-lb00",
+        "boot-lace-lb01",
+        "boot-lace-lb10",
+        "boot-lace-lb11",
+        "boot-lace-lb20",
+        "boot-lace-lb21",
         "boot-shell-r",
         "boot-eyelet-r0a",
         "boot-eyelet-r0b",
@@ -16828,16 +17538,18 @@
         "boot-eyelet-r2b",
         "boot-eyelet-r3a",
         "boot-eyelet-r3b",
-        "boot-eyelet-r4a",
-        "boot-eyelet-r4b",
-        "boot-lace-ra0",
-        "boot-lace-ra1",
-        "boot-lace-ra2",
-        "boot-lace-ra3",
-        "boot-lace-rb0",
-        "boot-lace-rb1",
-        "boot-lace-rb2",
-        "boot-lace-rb3",
+        "boot-lace-ra00",
+        "boot-lace-ra01",
+        "boot-lace-ra10",
+        "boot-lace-ra11",
+        "boot-lace-ra20",
+        "boot-lace-ra21",
+        "boot-lace-rb00",
+        "boot-lace-rb01",
+        "boot-lace-rb10",
+        "boot-lace-rb11",
+        "boot-lace-rb20",
+        "boot-lace-rb21",
         "sheath-body",
         "sheath-strap",
         "sheath-stud",
@@ -16890,16 +17602,18 @@
         "boot-eyelet-l2b",
         "boot-eyelet-l3a",
         "boot-eyelet-l3b",
-        "boot-eyelet-l4a",
-        "boot-eyelet-l4b",
-        "boot-lace-la0",
-        "boot-lace-la1",
-        "boot-lace-la2",
-        "boot-lace-la3",
-        "boot-lace-lb0",
-        "boot-lace-lb1",
-        "boot-lace-lb2",
-        "boot-lace-lb3",
+        "boot-lace-la00",
+        "boot-lace-la01",
+        "boot-lace-la10",
+        "boot-lace-la11",
+        "boot-lace-la20",
+        "boot-lace-la21",
+        "boot-lace-lb00",
+        "boot-lace-lb01",
+        "boot-lace-lb10",
+        "boot-lace-lb11",
+        "boot-lace-lb20",
+        "boot-lace-lb21",
         "boot-shell-r",
         "boot-eyelet-r0a",
         "boot-eyelet-r0b",
@@ -16909,16 +17623,18 @@
         "boot-eyelet-r2b",
         "boot-eyelet-r3a",
         "boot-eyelet-r3b",
-        "boot-eyelet-r4a",
-        "boot-eyelet-r4b",
-        "boot-lace-ra0",
-        "boot-lace-ra1",
-        "boot-lace-ra2",
-        "boot-lace-ra3",
-        "boot-lace-rb0",
-        "boot-lace-rb1",
-        "boot-lace-rb2",
-        "boot-lace-rb3",
+        "boot-lace-ra00",
+        "boot-lace-ra01",
+        "boot-lace-ra10",
+        "boot-lace-ra11",
+        "boot-lace-ra20",
+        "boot-lace-ra21",
+        "boot-lace-rb00",
+        "boot-lace-rb01",
+        "boot-lace-rb10",
+        "boot-lace-rb11",
+        "boot-lace-rb20",
+        "boot-lace-rb21",
         "sheath-body",
         "sheath-strap",
         "sheath-stud",
@@ -16973,16 +17689,18 @@
         "boot-eyelet-l2b",
         "boot-eyelet-l3a",
         "boot-eyelet-l3b",
-        "boot-eyelet-l4a",
-        "boot-eyelet-l4b",
-        "boot-lace-la0",
-        "boot-lace-la1",
-        "boot-lace-la2",
-        "boot-lace-la3",
-        "boot-lace-lb0",
-        "boot-lace-lb1",
-        "boot-lace-lb2",
-        "boot-lace-lb3",
+        "boot-lace-la00",
+        "boot-lace-la01",
+        "boot-lace-la10",
+        "boot-lace-la11",
+        "boot-lace-la20",
+        "boot-lace-la21",
+        "boot-lace-lb00",
+        "boot-lace-lb01",
+        "boot-lace-lb10",
+        "boot-lace-lb11",
+        "boot-lace-lb20",
+        "boot-lace-lb21",
         "boot-shell-r",
         "boot-eyelet-r0a",
         "boot-eyelet-r0b",
@@ -16992,16 +17710,18 @@
         "boot-eyelet-r2b",
         "boot-eyelet-r3a",
         "boot-eyelet-r3b",
-        "boot-eyelet-r4a",
-        "boot-eyelet-r4b",
-        "boot-lace-ra0",
-        "boot-lace-ra1",
-        "boot-lace-ra2",
-        "boot-lace-ra3",
-        "boot-lace-rb0",
-        "boot-lace-rb1",
-        "boot-lace-rb2",
-        "boot-lace-rb3",
+        "boot-lace-ra00",
+        "boot-lace-ra01",
+        "boot-lace-ra10",
+        "boot-lace-ra11",
+        "boot-lace-ra20",
+        "boot-lace-ra21",
+        "boot-lace-rb00",
+        "boot-lace-rb01",
+        "boot-lace-rb10",
+        "boot-lace-rb11",
+        "boot-lace-rb20",
+        "boot-lace-rb21",
         "sheath-body",
         "sheath-strap",
         "sheath-stud",
@@ -17054,16 +17774,18 @@
         "boot-eyelet-l2b",
         "boot-eyelet-l3a",
         "boot-eyelet-l3b",
-        "boot-eyelet-l4a",
-        "boot-eyelet-l4b",
-        "boot-lace-la0",
-        "boot-lace-la1",
-        "boot-lace-la2",
-        "boot-lace-la3",
-        "boot-lace-lb0",
-        "boot-lace-lb1",
-        "boot-lace-lb2",
-        "boot-lace-lb3",
+        "boot-lace-la00",
+        "boot-lace-la01",
+        "boot-lace-la10",
+        "boot-lace-la11",
+        "boot-lace-la20",
+        "boot-lace-la21",
+        "boot-lace-lb00",
+        "boot-lace-lb01",
+        "boot-lace-lb10",
+        "boot-lace-lb11",
+        "boot-lace-lb20",
+        "boot-lace-lb21",
         "boot-shell-r",
         "boot-eyelet-r0a",
         "boot-eyelet-r0b",
@@ -17073,16 +17795,18 @@
         "boot-eyelet-r2b",
         "boot-eyelet-r3a",
         "boot-eyelet-r3b",
-        "boot-eyelet-r4a",
-        "boot-eyelet-r4b",
-        "boot-lace-ra0",
-        "boot-lace-ra1",
-        "boot-lace-ra2",
-        "boot-lace-ra3",
-        "boot-lace-rb0",
-        "boot-lace-rb1",
-        "boot-lace-rb2",
-        "boot-lace-rb3",
+        "boot-lace-ra00",
+        "boot-lace-ra01",
+        "boot-lace-ra10",
+        "boot-lace-ra11",
+        "boot-lace-ra20",
+        "boot-lace-ra21",
+        "boot-lace-rb00",
+        "boot-lace-rb01",
+        "boot-lace-rb10",
+        "boot-lace-rb11",
+        "boot-lace-rb20",
+        "boot-lace-rb21",
         "sheath-body",
         "sheath-strap",
         "sheath-stud",

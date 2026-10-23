@@ -459,23 +459,24 @@ node('hat-band', 'Hat band', 'torus', 'hat-crown', 'hat-band', importance=0.9, p
      feats=[feat('hat-band-ring', 'ridge', 'blue band ring')])
 
 # ---- boots: per leg (leg centre x +-.19, z .05; half x .17, half z .21; shoe toe z .376, heel z -.156)
-BOOT_TOP = 0.37
+BOOT_TOP = 0.29   # (below his knee - at 0.32: a boot over the knee lets the trousers bulge out of it as it bends)
 for side, sx in (('l', 1), ('r', -1)):
     # shaft a touch wider than his trouser leg (half x .17, half z .21 at y .35) so the leg never shows through
-    cx, SHAFT_R = sx * 0.215, (0.2, 0.33, 0.265)   # (centres apart: the two boots never meet in the middle)
+    cx, SHAFT_R = sx * 0.217, (0.2, 0.33, 0.265)   # (each covers its leg - inner side x .02, the collar the rest - never meeting)
     kk = math.sqrt(1 - ((BOOT_TOP - 0.012 - 0.22) / SHAFT_R[1]) ** 2)
-    collar = capsule_chain('collar', [(cx + (SHAFT_R[0] * kk + 0.004) * math.cos(2 * math.pi * k / 16), BOOT_TOP - 0.012,
+    collar = capsule_chain('collar', [(cx + SHAFT_R[0] * kk * math.cos(2 * math.pi * k / 16), BOOT_TOP - 0.012,
                                        0.04 + (SHAFT_R[2] * kk + 0.004) * math.sin(2 * math.pi * k / 16))
-                                      for k in range(16)], 0.027, closed=True)
+                                      for k in range(16)], 0.022, closed=True)
     sdf = {
         'primitives': [
             {'id': 'shaft', 'type': 'ellipsoid', 'center': [cx, 0.22, 0.04], 'radii': list(SHAFT_R)},
-            {'id': 'toe', 'type': 'ellipsoid', 'center': [cx, 0.1, 0.19], 'radii': [0.185, 0.115, 0.255]},
+            {'id': 'toe', 'type': 'ellipsoid', 'center': [cx, 0.1, 0.19], 'radii': [0.195, 0.115, 0.255]},
+            # (the sole 5 mm below the ground line: the character's own soles, at -0.0015, never show under it)
             # sole: the boot's own footprint (an oval a touch wider than the foot) cut to a 0.06 slab
             {'id': 'sole-print', 'type': 'ellipsoid', 'center': [cx, 0.03, 0.12], 'radii': [0.185, 0.6, 0.31]},
-            {'id': 'sole-slab', 'type': 'box', 'center': [cx, 0.03, 0.12], 'size': [1.0, 0.06, 1.0]},
+            {'id': 'sole-slab', 'type': 'box', 'center': [cx, 0.025, 0.12], 'size': [1.0, 0.06, 1.0]},
             {'id': 'top', 'type': 'box', 'center': [cx, BOOT_TOP + 0.3, 0.1], 'size': [0.8, 0.6, 1.2]},
-            {'id': 'under', 'type': 'box', 'center': [cx, -0.3, 0.1], 'size': [0.8, 0.6, 1.2]},
+            {'id': 'under', 'type': 'box', 'center': [cx, -0.305, 0.1], 'size': [0.8, 0.6, 1.2]},
         ] + collar,
         'operations': [
             {'id': 'foot', 'type': 'smooth-union', 'left': 'shaft', 'right': 'toe', 'radius': 0.1},
@@ -484,7 +485,7 @@ for side, sx in (('l', 1), ('r', -1)):
             {'id': 'cut', 'type': 'subtract', 'left': 'soled', 'right': 'top'},
             {'id': 'boot-cut', 'type': 'subtract', 'left': 'cut', 'right': 'under'},
         ] + chain_ops('boot-cut', collar, 0.03, 'boot'),
-        'bounds': {'min': [cx - 0.25, -0.01, -0.25], 'max': [cx + 0.25, BOOT_TOP + 0.03, 0.48]},
+        'bounds': {'min': [cx - 0.25, -0.015, -0.25], 'max': [cx + 0.25, BOOT_TOP + 0.03, 0.48]},
         'resolution': 64,
     }
     node(f'boot-shell-{side}', f'Lace-up boot ({"left" if sx > 0 else "right"})', 'ellipsoid', 'vest-shell',
@@ -499,29 +500,35 @@ for side, sx in (('l', 1), ('r', -1)):
         """z of the boot's built front surface (fillets included) at height y, dx off its centre line."""
         return sdf_eval.surface(BOOT_F, [cx + dx, y, 0.04], [0, 0, 1])[2]
 
-    ys = [0.17, 0.215, 0.26, 0.305, 0.35]
+    # four rows of eyelets (the reference's three bold Xs), the laces riding over the curved front: each run from an
+    # eyelet up to the middle of the front is lifted off the leather there, lace b crossing over lace a
+    ys, LDX = [0.115, 0.158, 0.201, 0.244], 0.056
     for k, y in enumerate(ys):
-        for col, dx in (('a', -0.065), ('b', 0.065)):
+        for col, dx in (('a', -LDX), ('b', LDX)):
             node(f'boot-eyelet-{side}{k}{col}', 'Boot eyelet', 'sphere', f'boot-shell-{side}', 'brass',
-                 level='micro', importance=0.4, pos=(cx + dx, y, round(boot_front(y, dx) - 0.002, 4)), scale=(0.022, 0.022, 0.014),
+                 level='micro', importance=0.4, pos=(cx + dx, y, round(boot_front(y, dx) + 0.002, 4)),
+                 scale=(0.027, 0.027, 0.015),
                  rationale='A small brass grommet: a discrete squashed sphere.',
                  feats=[feat(f'boot-eyelet-{side}{k}{col}-ring', 'fastener', 'brass eyelet')])
-    for li, flip in (('a', 1), ('b', -1)):
-        pts = []
-        for k, y in enumerate(ys):
-            dx = 0.065 * flip * (1 if k % 2 == 0 else -1)
-            pts.append([round(cx + dx, 4), round(y, 4), round(boot_front(y, dx) + 0.008, 4)])
-        for k in range(len(pts) - 1):
-            # one straight lace run between two eyelets: an endpoint cylinder (the attachment builds it)
-            node(f'boot-lace-{side}{li}{k}', 'Boot lace run', 'cylinder', f'boot-shell-{side}', 'lace',
-                 level='micro', importance=0.85, topo='fiber-strand',
-                 rationale='A lace run is a thin cord pulled straight between two eyelets: a cylinder spanning '
-                           'them; the runs of the two laces cross into Xs.',
-                 feats=[feat(f'boot-laces-{side}{li}{k}', 'stitch', 'criss-cross lace run')])
-            C[-1]['attachment'] = {'parentSocket': f'boot-{side}-eyelets', 'localStart': pts[k], 'localEnd': pts[k + 1],
-                                   'contactType': 'threaded-through', 'baseRadius': 0.011, 'endRadius': 0.011,
-                                   'embedDepth': 0.004, 'gapTolerance': 0.004,
-                                   'evidenceRefs': ['boots-zone']}
+    for li, flip, lift in (('a', 1, 0.016), ('b', -1, 0.026)):
+        for k in range(len(ys) - 1):
+            dx0 = LDX * flip * (1 if k % 2 == 0 else -1)
+            y0, y1 = ys[k], ys[k + 1]
+            ym = (y0 + y1) / 2
+            ends = [[round(cx + dx0, 4), y0, round(boot_front(y0, dx0) + 0.01, 4)],
+                    [round(cx - dx0, 4), y1, round(boot_front(y1, -dx0) + 0.01, 4)]]
+            mid = [round(cx, 4), round(ym, 4), round(boot_front(ym, 0.0) + lift, 4)]
+            for h, (a, b) in enumerate(((ends[0], mid), (mid, ends[1]))):
+                # half a lace run: a cord pulled straight from an eyelet to the crossing - an endpoint cylinder
+                node(f'boot-lace-{side}{li}{k}{h}', 'Boot lace run', 'cylinder', f'boot-shell-{side}', 'lace',
+                     level='micro', importance=0.85, topo='fiber-strand',
+                     rationale='A lace run is a thin cord pulled straight from an eyelet to where it crosses the other '
+                               'lace: a cylinder spanning them, lifted off the leather at the crossing.',
+                     feats=[feat(f'boot-laces-{side}{li}{k}{h}', 'stitch', 'criss-cross lace run')])
+                C[-1]['attachment'] = {'parentSocket': f'boot-{side}-eyelets', 'localStart': a, 'localEnd': b,
+                                       'contactType': 'threaded-through', 'baseRadius': 0.014, 'endRadius': 0.014,
+                                       'embedDepth': 0.004, 'gapTolerance': 0.004,
+                                       'evidenceRefs': ['boots-zone']}
 
 # ---- knife sheath on his right hip (-X), hanging off the belt (belt y .55-.65; hip half-width .43 at y .55)
 # its broad face points forward-out (-0.82, 0, 0.57): on the hip's front corner, as the reference shows it
@@ -641,8 +648,8 @@ spec['repetitionSystems'] = [
      'count': len(buttons), 'elementComponentIds': [b[0] for b in buttons],
      'placement': {'mode': 'authored', 'notes': 'one per pocket flap + 3 studs down each front edge'}},
     {'id': 'boot-eyelets', 'level': 'micro', 'parent': 'vest-shell', 'primitive': 'sphere', 'material': 'brass',
-     'count': 20, 'elementComponentIds': [i for i in ids if i.startswith('boot-eyelet-')],
-     'placement': {'mode': 'authored', 'notes': 'two columns of 5 per boot'}},
+     'count': 16, 'elementComponentIds': [i for i in ids if i.startswith('boot-eyelet-')],
+     'placement': {'mode': 'authored', 'notes': 'two columns of 4 per boot'}},
     {'id': 'mirrored-pairs', 'level': 'meso', 'parent': 'vest-shell', 'primitive': 'box', 'material': 'vest-leather',
      'count': 4, 'elementComponentIds': [i for i in ids if 'pocket' in i],
      'placement': {'mode': 'mirror-x', 'notes': 'pockets mirrored left/right'}},
@@ -650,7 +657,7 @@ spec['repetitionSystems'] = [
 
 # detail inventory: map onto real component ids
 REMAP = {'hat-brim': 'hat-crown', 'hat-crown': 'hat-crown', 'vest-chest-pockets': 'vest-chest-pocket-l',
-         'vest-lower-pockets': 'vest-lower-pocket-l', 'vest-studs': 'vest-stud-l0', 'boot-laces': 'boot-lace-la0',
+         'vest-lower-pockets': 'vest-lower-pocket-l', 'vest-studs': 'vest-stud-l0', 'boot-laces': 'boot-lace-la00',
          'boot-eyelets': 'boot-eyelet-l0a', 'boot-shells': 'boot-shell-l', 'sleeve-cuffs': 'sleeve-cuff-l'}
 for d in spec['preSpecAssessment']['detailInventory']['details']:
     r = d['mapsTo']['ref']

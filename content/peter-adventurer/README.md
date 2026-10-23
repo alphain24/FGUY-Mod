@@ -23,8 +23,14 @@ Reconstructed from a reference picture with the img2threejs skill, then skinned 
 5. `review/index.html` (served by `tools/cosmetics/dev_server.py` at `/content/peter-adventurer/review/`): the
    outfit on Peter, arms lowered as in the picture, with a preview of the recolour; `captureAll`, `partsManifest`,
    `exportOutfit` (the GLB the Studio imports). `gate.sh <pass> <prefix>`: the skill's review gates.
-6. Skin Studio: Models tab - import the GLB (kept in place, worn over the character, bones copied from Peter's
-   nearest vertices), save the model pack; Skins tab - the five recolours, "Wear a model with it", save the skin.
+6. Skin Studio - all of it in `studio_build.js` (run in the Studio's page: `(await import('/content/peter-adventurer/
+   studio_build.js')).build()`): Models tab - import the GLB (kept in place, worn over him; each piece's weights from
+   his vertices beneath it, laces / eyelets / buttons riding the piece they sit on, the hat and sheath rigid), the
+   triangles of his deep inside the boots and the crown listed to hide; Skins tab - four recolours (shirt, jeans,
+   buckle), the belt and the glasses' lenses painted as our own pixels, the model added; both saved.
+
+The boots end below his knee (at 0.29; the knee is at 0.32): over the knee his trousers bulged out of them whenever it
+bent. They cover his legs without touching each other (inner edges at x 0.0003).
 
 Passes reviewed: blockout, structural, form refinement (each with a refine-spec round). The staged pipeline was
 stopped at the material pass (recorded in the spec's review history): the colours are checked directly against the

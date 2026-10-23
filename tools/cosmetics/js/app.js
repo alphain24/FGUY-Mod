@@ -186,6 +186,7 @@ async function selectOutfit(o) {
     const m = new THREE.MeshLambertMaterial({map: t ? t.tex : null, side: THREE.DoubleSide, alphaTest: 0.3});
     const mesh = new THREE.Mesh(g, m);
     mesh.userData.texture = t;
+    mesh.userData.piece = p;   // (its triangles under a skin's model: hidden while that shows)
     mesh.userData.damage = /damage|dstr/i.test(p.texture?.name || '');   // (battle damage: shown when hurt in the game)
     mesh.visible = !mesh.userData.damage || $('showDamage').checked;
     holder.add(mesh);
@@ -302,8 +303,8 @@ renderer.domElement.addEventListener('pointerup', e => {
   pick(t, Math.floor(u * t.canvas.width), Math.floor(v * t.canvas.height));
 });
 
-// Recolor: every pixel close to the picked color moves to the new one - its own light and shade kept (hue and
-// saturation taken from the new color, its lightness shifted by as much as the two colors differ)
+// Recolor: every pixel close to the picked color moves to the new one - its own light and shade kept (the new color's
+// hue, its saturation and lightness shifted by as much as the two colors differ)
 function rgb2hsl([r, g, b]) {
   r /= 255; g /= 255; b /= 255;
   const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
@@ -329,7 +330,9 @@ function recolorData(d, P, Q, tol) {
     if (dist > tol) continue;
     const w = dist < tol * 0.6 ? 1 : 1 - (dist - tol * 0.6) / (tol * 0.4);   // (soft edge)
     const hc = rgb2hsl([d[i], d[i + 1], d[i + 2]]);
-    const out = hsl2rgb([hq[0], Math.min(1, hq[1] * (hp[1] > 0.05 ? hc[1] / hp[1] : 1)), Math.max(0, Math.min(1, hc[2] + hq[2] - hp[2]))]);
+    // (saturation and lightness shifted by as much as the two colors differ - a scaled saturation made a near-white
+    //  pick turn every slightly tinted pixel near it fully saturated: lime specks along a recolored white shirt's seams)
+    const out = hsl2rgb([hq[0], Math.max(0, Math.min(1, hc[1] + hq[1] - hp[1])), Math.max(0, Math.min(1, hc[2] + hq[2] - hp[2]))]);
     for (let k = 0; k < 3; k++) d[i + k] = d[i + k] * (1 - w) + out[k] * w;
     count++;
   }
@@ -450,8 +453,21 @@ function overlayOf(t) {   // the pixels that aren't the recolors' doing - or nul
 async function showPackModel3D() {
   for (const c of holder.children.filter(x => x.userData.packModel)) holder.remove(c);
   const m = state.packModel;
-  if (state.mode !== 'skins' || !m || !$('packModelShow').checked || m.character !== state.current?.character) return;
-  if (!m.group) m.group = (await modelPackGroup(m.bytes)).group;
+  const on = state.mode === 'skins' && m && $('packModelShow').checked && m.character === state.current?.character;
+  if (on && !m.group) Object.assign(m, await modelPackGroup(m.bytes));
+  for (const mesh of holder.children) {   // (the character's triangles under it, as the game leaves them out)
+    const p = mesh.userData.piece;
+    if (!p) continue;
+    const h = on && (m.info.hide || []).find(x => x.verts === p.position.length / 3 && x.indices === p.index.length);
+    let index = p.index;
+    if (h) {
+      index = p.index.slice();
+      for (let r = 0; r + 1 < h.tris.length; r += 2)
+        for (let k = h.tris[r]; k < h.tris[r] + h.tris[r + 1]; k++) index[k * 3 + 1] = index[k * 3 + 2] = index[k * 3];
+    }
+    mesh.geometry.setIndex(new THREE.BufferAttribute(index, 1));
+  }
+  if (!on) return;
   m.group.userData.packModel = true;
   holder.add(m.group);
 }

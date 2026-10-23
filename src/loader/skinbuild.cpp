@@ -136,7 +136,9 @@ void Recolor(Rgba& d, const double* P, const double* Q, double tol) {
         double w = dist < tol * 0.6 ? 1 : 1 - (dist - tol * 0.6) / (tol * 0.4);
         double hc[3], out[3];
         ToHsl(d[i], d[i + 1], d[i + 2], hc);
-        double s = fmin(1, hq[1] * (hp[1] > 0.05 ? hc[1] / hp[1] : 1)), l = fmax(0, fmin(1, hc[2] + hq[2] - hp[2]));
+        // (its saturation shifted by as much as the two colors' differ, like its lightness - not scaled: a near-white picked
+        //  color made every slightly tinted pixel near it fully saturated)
+        double s = fmax(0, fmin(1, hc[1] + hq[1] - hp[1])), l = fmax(0, fmin(1, hc[2] + hq[2] - hp[2]));
         FromHsl(hq[0], s, l, out);
         for (int k = 0; k < 3; ++k) d[i + k] = Byte(d[i + k] * (1 - w) + out[k] * w);
     }

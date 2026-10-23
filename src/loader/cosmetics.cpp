@@ -308,12 +308,23 @@ HRESULT STDMETHODCALLTYPE Hook_SetVSConstF(IDirect3DDevice9* self, UINT reg, con
     if (data && reg < 256) memcpy(g_vsConst[reg], data, sizeof(float) * 4 * min(count, 256 - reg));
     return Real_SetVSConstF(self, reg, data, count);
 }
+HRESULT DrawIndexedSkinned(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT base, UINT minIdx, UINT verts, UINT start,
+                           UINT prims);
 HRESULT STDMETHODCALLTYPE Hook_DrawIndexed(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT base, UINT minIdx,
                                            UINT verts, UINT start, UINT prims) {
+    IDirect3DIndexBuffer9* putBack = nullptr;   // (models.cpp put its own index buffer in for this draw: theirs after)
     if (ModelsWorn()) {   // (a player wearing a new character: theirs drawn as ours - models.cpp)
         HRESULT hr = D3D_OK;
-        if (ModelsDraw(self, DrawPlayer(), reinterpret_cast<ModelsRealDraw>(Real_DrawIndexed), &hr)) return hr;
+        if (ModelsDraw(self, DrawPlayer(), reinterpret_cast<ModelsRealDraw>(Real_DrawIndexed), &hr, &putBack)) return hr;
     }
+    HRESULT hr = DrawIndexedSkinned(self, type, base, minIdx, verts, start, prims);
+    if (putBack) self->SetIndices(putBack);
+    return hr;
+}
+
+// the game's draw - a player's skin's textures in place of the game's, for that draw
+HRESULT DrawIndexedSkinned(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT base, UINT minIdx, UINT verts, UINT start,
+                           UINT prims) {
     if (g_tracing) {
         ++g_traceAllDraws;
         for (int st = 0; st < 8; ++st) if (g_stages[st] == g_traceTex) ++g_traceStageHit[st];
