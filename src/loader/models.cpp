@@ -13,6 +13,7 @@
 
 #include <d3d9.h>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -44,8 +45,16 @@ std::vector<Pending> g_pending;
 CRITICAL_SECTION& Cs() { static struct L { L() { InitializeCriticalSection(&c); } CRITICAL_SECTION c; } l; return l.c; }
 IDirect3DVertexDeclaration9* g_decl = nullptr;
 unsigned g_frame = 1;
-UINT g_firstOffset[4];                     // (this frame: the stream offset of the first piece of theirs drawn - its
-unsigned g_firstFrame[4];                  //  next draws, another pass, are ours again; their other pieces skipped)
+// A player's character's pieces, by their index buffers: their model entity ([[player +0x38] +0x1d4], a
+// World::ModelPrototypeEntity) points to its World::SkinGeometryEntity pieces (vtable 0x9fb30c; [model +0xa4..] +0x12c),
+// each with its index buffer at +0xac and its vertex count at +0xc0. Every pass draws them (the outline's too, whose
+// constants don't say whose it is): ours is drawn at their biggest piece, once a pass; the others are skipped.
+struct Pieces {
+    unsigned char* model = nullptr;
+    std::vector<IDirect3DIndexBuffer9*> ibs;
+    IDirect3DIndexBuffer9* anchor = nullptr;
+};
+Pieces g_pieces[4];
 
 void Free(Model* m) {
     if (!m) return;
@@ -221,14 +230,55 @@ void ModelsLoadFile(int slot, const wchar_t* path) {
     ModelsLoad(slot, d, path);
 }
 
+unsigned char* g_noLinesStage[4];
+void PublishNoLines(LONG n);
+
 bool ModelsWorn() {
     for (Model* m : g_worn) if (m) return true;
     return false;
 }
 
-// cosmetics.cpp, after each frame (the render thread): new models in
+// cosmetics.cpp, after each frame (the render thread): new models in, worn models' players' pieces
 void ModelsFrame(IDirect3DDevice9* dev) {
     ++g_frame;
+    if (ModelsWorn()) {
+        unsigned char* players[8];
+        int n = GamePlayers(players, 8);
+        for (int i = 0; i < n; ++i) {
+            int s = *reinterpret_cast<int*>(players[i] + 0xdf8);
+            if (s < 0 || s >= 4 || !g_worn[s]) continue;
+            auto xf = *reinterpret_cast<unsigned char**>(players[i] + 0x38);
+            unsigned char* model = xf && !IsBadReadPtr(xf + 0x1d4, 4) ? *reinterpret_cast<unsigned char**>(xf + 0x1d4) : nullptr;
+            if (!model || model == g_pieces[s].model) continue;
+            Pieces pc;
+            pc.model = model;
+            UINT most = 0;
+            for (int o = 0xa0; o < 0x100; o += 4) {   // (its pieces: a pointer each, to an object pointing to the piece)
+                auto p = *reinterpret_cast<unsigned char* const*>(model + o);
+                if (reinterpret_cast<uintptr_t>(p) < 0x10000 || IsBadReadPtr(p, 0x140)) continue;
+                for (int at : {0x12c, 0x3c}) {
+                    auto q = *reinterpret_cast<unsigned char* const*>(p + at);
+                    if (reinterpret_cast<uintptr_t>(q) < 0x10000 || IsBadReadPtr(q, 0xc4) || *reinterpret_cast<DWORD*>(q) != 0x9fb30c) continue;
+                    auto ib = *reinterpret_cast<IDirect3DIndexBuffer9* const*>(q + 0xac);
+                    UINT verts = *reinterpret_cast<const UINT*>(q + 0xc0);
+                    if (!ib || std::find(pc.ibs.begin(), pc.ibs.end(), ib) != pc.ibs.end()) continue;
+                    pc.ibs.push_back(ib);
+                    if (verts > most) { most = verts; pc.anchor = ib; }
+                }
+            }
+            Log(L"Models: player %d's character has %zu pieces", s, pc.ibs.size());
+            g_pieces[s] = pc;
+        }
+    }
+    LONG n = 0;   // (their ink lines: off - Hook_QueuePiece below; where they are)
+    unsigned char* players[8];
+    int np = ModelsWorn() ? GamePlayers(players, 8) : 0;
+    for (int i = 0; i < np && n < 4; ++i) {
+        int s = *reinterpret_cast<int*>(players[i] + 0xdf8);
+        auto xf = *reinterpret_cast<unsigned char**>(players[i] + 0x38);
+        if (s >= 0 && s < 4 && g_worn[s] && xf && !IsBadReadPtr(xf + 0x30, 12)) g_noLinesStage[n++] = xf;   // (their transform)
+    }
+    PublishNoLines(n);
     std::vector<Pending> pending;
     EnterCriticalSection(&Cs());
     pending.swap(g_pending);
@@ -236,6 +286,7 @@ void ModelsFrame(IDirect3DDevice9* dev) {
     for (Pending& p : pending) {
         Free(g_worn[p.slot]);
         g_worn[p.slot] = p.pack.empty() ? nullptr : Parse(p.pack, p.name);
+        g_pieces[p.slot] = Pieces();
         if (!p.pack.empty() && !g_worn[p.slot]) Log(L"Models: %s isn't a model pack this version can use", p.name.c_str());
         if (g_worn[p.slot]) Make(dev, g_worn[p.slot]);
         Log(L"Models: player %d wears %s", p.slot, g_worn[p.slot] ? p.name.c_str() : L"their own character");
@@ -244,18 +295,37 @@ void ModelsFrame(IDirect3DDevice9* dev) {
 
 // cosmetics.cpp's DrawIndexedPrimitive: a worn model's player's skinned character - ours instead. True: done (hr set)
 bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT* hr) {
-    if (player < 0 || player >= 4 || !g_worn[player] || g_worn[player]->failed || !g_decl) return false;
-    Model* m = g_worn[player];
+    if (!g_decl) return false;
+    IDirect3DIndexBuffer9* ib = nullptr;
+    if (FAILED(dev->GetIndices(&ib)) || !ib) return false;
+    ib->Release();   // (still the device's: only looked at)
+    auto has = [](const std::vector<IDirect3DIndexBuffer9*>& v, IDirect3DIndexBuffer9* x) { return std::find(v.begin(), v.end(), x) != v.end(); };
+    int whose = -1;   // (a piece of a worn model's player's - at another player's position: that one's, the same outfit)
+    for (int s = 0; s < 4 && whose < 0; ++s)
+        if (g_worn[s] && has(g_pieces[s].ibs, ib) && (player < 0 || player == s)) whose = s;
+    if (whose < 0) return false;
+    player = whose;
     IDirect3DVertexBuffer9* vb = nullptr;
     UINT off = 0, stride = 0;
-    if (FAILED(dev->GetStreamSource(0, &vb, &off, &stride)) || !vb) return false;
     D3DVERTEXBUFFER_DESC d{};
-    vb->GetDesc(&d);
-    vb->Release();
-    if (stride != 12 || !(d.Usage & D3DUSAGE_DYNAMIC)) return false;   // (not a skinned character's: a weapon, a prop)
-    if (g_firstFrame[player] != g_frame) { g_firstFrame[player] = g_frame; g_firstOffset[player] = off; }
+    if (SUCCEEDED(dev->GetStreamSource(0, &vb, &off, &stride)) && vb) { vb->GetDesc(&d); vb->Release(); }
+    if (stride != 12 || !(d.Usage & D3DUSAGE_DYNAMIC)) {   // (that piece drawn from something else - not ours to draw there)
+        static std::vector<std::pair<UINT, DWORD>> logged;
+        if (std::find(logged.begin(), logged.end(), std::make_pair(stride, d.Usage)) == logged.end() && logged.size() < 8) {
+            logged.push_back({stride, d.Usage});
+            Log(L"Models: a piece of player %d's drawn from stream 0 stride %u (%u bytes, usage %#lx) - not drawn", player, stride,
+                d.Size, d.Usage);
+        }
+        *hr = D3D_OK;
+        return true;
+    }
+    Model* m = g_worn[player];
+    if (m->failed) return false;
     *hr = D3D_OK;
-    if (off != g_firstOffset[player]) return true;   // (another piece of theirs: ours has it all)
+    if (ib != g_pieces[player].anchor) return true;   // (another piece of theirs: ours has it all)
+    static int hide = -1;   // (test knob FGUYMOD_TEST_MODELHIDE=1: nothing drawn for them - research)
+    if (hide < 0) { wchar_t v[4] = L""; GetEnvironmentVariableW(L"FGUYMOD_TEST_MODELHIDE", v, 4); hide = v[0] == L'1'; }
+    if (hide) return true;
     if (m->frame != g_frame) {
         if (!Skin(player, m)) return false;   // (no pose: their own character, this frame)
         m->frame = g_frame;
@@ -264,11 +334,12 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     IDirect3DVertexBuffer9* oldVb[3] = {};
     UINT oldOff[3] = {}, oldStride[3] = {};
     IDirect3DIndexBuffer9* oldIb = nullptr;
-    IDirect3DBaseTexture9* oldTex = nullptr;
+    IDirect3DBaseTexture9* oldTex = nullptr, *oldTex2 = nullptr;
     dev->GetVertexDeclaration(&oldDecl);
     for (UINT s = 0; s < 3; ++s) dev->GetStreamSource(s, &oldVb[s], &oldOff[s], &oldStride[s]);
     dev->GetIndices(&oldIb);
     dev->GetTexture(1, &oldTex);
+    dev->GetTexture(2, &oldTex2);
     UINT V = (UINT)m->verts.size();
     dev->SetVertexDeclaration(g_decl);
     dev->SetStreamSource(0, m->skinned, 0, 12);
@@ -276,16 +347,119 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     dev->SetStreamSource(2, m->uv, 0, 8);
     dev->SetIndices(m->ib);
     for (const Part& p : m->parts) {
-        if (p.texture < m->tex.size() && m->tex[p.texture]) dev->SetTexture(1, m->tex[p.texture]);
+        if (p.texture < m->tex.size() && m->tex[p.texture]) {   // (stage 2 too: the outfit's material has its color
+            dev->SetTexture(1, m->tex[p.texture]);              //  texture there again - read with our uvs, it showed
+            if (oldTex2) dev->SetTexture(2, m->tex[p.texture]); //  through in stripes)
+        }
         *hr = real(dev, (int)D3DPT_TRIANGLELIST, 0, 0, V, p.first, p.count / 3);
     }
     dev->SetVertexDeclaration(oldDecl);
     for (UINT s = 0; s < 3; ++s) dev->SetStreamSource(s, oldVb[s], oldOff[s], oldStride[s]);
     dev->SetIndices(oldIb);
     dev->SetTexture(1, oldTex);
+    dev->SetTexture(2, oldTex2);
     if (oldDecl) oldDecl->Release();
     for (UINT s = 0; s < 3; ++s) if (oldVb[s]) oldVb[s]->Release();
     if (oldIb) oldIb->Release();
     if (oldTex) oldTex->Release();
+    if (oldTex2) oldTex2->Release();
     return true;
+}
+
+// research ("modelpieces <slot>"): the player's model entity ([[player +0x38] +0x1d4]) - the SkinGeometryEntity objects
+// (vtable 0x9fb30c) it points to (two pointers deep), and what they hold at +0xac..+0xd0
+void ModelsResearch(int slot) {
+    unsigned char* players[8];
+    int n = GamePlayers(players, 8);
+    unsigned char* model = nullptr;
+    for (int i = 0; i < n; ++i)
+        if (*reinterpret_cast<int*>(players[i] + 0xdf8) == slot) {
+            auto xf = *reinterpret_cast<unsigned char**>(players[i] + 0x38);
+            if (xf) model = *reinterpret_cast<unsigned char**>(xf + 0x1d4);
+        }
+    if (!model) { Log(L"Models: research - no model for player %d", slot); return; }
+    Log(L"Models: research - player %d's model %p (vtable %08lx)", slot, model, *reinterpret_cast<DWORD*>(model));
+    std::vector<const unsigned char*> seen;
+    auto look = [&](const unsigned char* obj, const wchar_t* path) {
+        if (std::find(seen.begin(), seen.end(), obj) != seen.end()) return;
+        seen.push_back(obj);
+        const DWORD* f = reinterpret_cast<const DWORD*>(obj + 0xac);
+        DWORD c8 = *reinterpret_cast<const DWORD*>(obj + 0xc8);
+        DWORD c8v = c8 >= 0x10000 && !IsBadReadPtr(reinterpret_cast<void*>(c8), 8) ? *reinterpret_cast<const DWORD*>(c8) : 0;
+        Log(L"Models: research - piece %p at %s: +ac %08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx, [+c8] %08lx %08lx", obj, path,
+            f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], c8v, c8v && !IsBadReadPtr(reinterpret_cast<void*>(c8 + 4), 4) ? *reinterpret_cast<const DWORD*>(c8 + 4) : 0);
+    };
+    for (int o = 0; o < 0x400; o += 4) {
+        if (IsBadReadPtr(model + o, 4)) break;
+        auto p = *reinterpret_cast<unsigned char* const*>(model + o);
+        if (reinterpret_cast<uintptr_t>(p) < 0x10000 || IsBadReadPtr(p, 0x100)) continue;
+        wchar_t path[32];
+        if (*reinterpret_cast<DWORD*>(p) == 0x9fb30c) { swprintf_s(path, L"+%#x", o); look(p, path); continue; }
+        for (int o2 = 0; o2 < 0x200; o2 += 4) {   // (an array of them)
+            auto q = *reinterpret_cast<unsigned char* const*>(p + o2);
+            if (reinterpret_cast<uintptr_t>(q) < 0x10000 || IsBadReadPtr(q, 0x100)) continue;
+            if (*reinterpret_cast<DWORD*>(q) == 0x9fb30c) { swprintf_s(path, L"[+%#x]+%#x", o, o2); look(q, path); }
+        }
+    }
+    Log(L"Models: research - %zu pieces", seen.size());
+}
+
+// ---- their ink lines --------------------------------------------------------------------------------------------------
+// The game draws its sketch lines (the characters' ink outlines) from each piece's edges, not from its draws: 0x4c6ed0
+// (cdecl, 9 args - it queues something's drawing; its second, a scene node: +4 its flags, +8 its Graphics::Renderable,
+// whose [+0xcc] is its world matrix) makes its lines when its flag 0x4000 is on. For a worn model's player's (the matrix's
+// translation at their place) the flag is off for that call - ours has no lines of theirs - and on again after.
+namespace {
+const uintptr_t kQueuePiece = 0x4c6ed0;
+const unsigned char kQueueStart[6] = {0x55, 0x8b, 0xec, 0x83, 0xec, 0x70};   // push ebp; mov ebp, esp; sub esp, 0x70
+using QueuePiece_t = void(__cdecl*)(int, unsigned char*, float, int, float*, int, int, unsigned, char);
+QueuePiece_t g_queueOriginal = nullptr;
+unsigned char* g_noLinesAt[4];  // (the worn models' players' transforms - +0x30 where they are; ModelsFrame keeps them)
+volatile LONG g_noLinesCount = 0;
+
+void __cdecl Hook_QueuePiece(int a1, unsigned char* node, float a3, int a4, float* a5, int a6, int a7, unsigned a8, char a9) {
+    bool off = false;
+    if (g_noLinesCount && node && !IsBadReadPtr(node, 12) && (*reinterpret_cast<DWORD*>(node + 4) & 0x4000)) {
+        auto r = *reinterpret_cast<unsigned char* const*>(node + 8);   // (its Renderable: [+0xcc] its world matrix, 3x4)
+        auto m = r && !IsBadReadPtr(r + 0xcc, 4) ? *reinterpret_cast<const float* const*>(r + 0xcc) : nullptr;
+        if (m && !IsBadReadPtr(m, 48))
+            for (LONG i = 0; i < g_noLinesCount && !off; ++i) {
+                const float* at = reinterpret_cast<const float*>(g_noLinesAt[i] + 0x30);
+                float dx = m[3] - at[0], dy = m[7] - at[1], dz = m[11] - at[2];
+                if (dx * dx + dy * dy + dz * dz < 0.01f) {   // (at a worn model's player's place: theirs)
+                    *reinterpret_cast<DWORD*>(node + 4) &= ~0x4000u;
+                    off = true;
+                }
+            }
+    }
+    g_queueOriginal(a1, node, a3, a4, a5, a6, a7, a8, a9);
+    if (off) *reinterpret_cast<DWORD*>(node + 4) |= 0x4000;
+}
+}  // namespace
+
+void PublishNoLines(LONG n) {
+    InterlockedExchange(&g_noLinesCount, 0);
+    memcpy(g_noLinesAt, g_noLinesStage, sizeof(g_noLinesAt[0]) * n);
+    InterlockedExchange(&g_noLinesCount, n);
+}
+
+void InitModels() {
+    auto at = reinterpret_cast<unsigned char*>(kQueuePiece);
+    if (IsBadReadPtr(at, sizeof(kQueueStart)) || memcmp(at, kQueueStart, sizeof(kQueueStart)) != 0) {
+        Log(L"Models: the drawing queue's code isn't what we expect (different game version?) - their lines stay");
+        return;
+    }
+    auto t = static_cast<unsigned char*>(VirtualAlloc(nullptr, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE));
+    if (!t) return;
+    memcpy(t, kQueueStart, sizeof(kQueueStart));
+    t[sizeof(kQueueStart)] = 0xE9;
+    *reinterpret_cast<int*>(t + sizeof(kQueueStart) + 1) =
+        (int)((kQueuePiece + sizeof(kQueueStart)) - (reinterpret_cast<uintptr_t>(t) + sizeof(kQueueStart) + 5));
+    g_queueOriginal = reinterpret_cast<QueuePiece_t>(t);
+    DWORD old;
+    VirtualProtect(at, 6, PAGE_EXECUTE_READWRITE, &old);
+    at[0] = 0xE9;
+    *reinterpret_cast<int*>(at + 1) = (int)(reinterpret_cast<uintptr_t>(&Hook_QueuePiece) - (kQueuePiece + 5));
+    at[5] = 0x90;
+    VirtualProtect(at, 6, old, &old);
 }

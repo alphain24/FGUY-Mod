@@ -8,11 +8,12 @@ import {Ho} from './ho.js';
 import {decodeDds} from './dds.js';
 import {loadModel, loadSkeleton, outfitsOf, CHARACTERS} from './model.js';
 import {createEmoteEditor} from './emotes.js';
+import {createModelEditor} from './models.js';
 
 const $ = id => document.getElementById(id);
 const NICE = {AdamWest: 'Adam West'};
 const state = {ho: null, outfits: [], current: null, textures: new Map(), selected: null, picked: null, mode: 'skins'};
-let emotes = null;   // (the emote editor, made below)
+let emotes = null, models = null;   // (the emote and model editors, made below)
 
 // ---- 3D view ---------------------------------------------------------------------------------------------------
 const view = $('view');
@@ -130,6 +131,14 @@ async function selectOutfit(o) {
   for (const b of document.querySelectorAll('.item')) b.classList.toggle('on', b.dataset.char === o.character);
   setStatus('Loading ' + (NICE[o.character] || o.character) + '...');
   const pieces = await loadModel(state.ho, o.model);
+  if (state.mode === 'models') {   // (the character to fit a new model on)
+    const skel = await loadSkeleton(state.ho, o.model);
+    if (!skel) { setStatus('No skeleton found for this outfit.'); return; }
+    models.build(o, pieces, skel);
+    frame();
+    setStatus('');
+    return;
+  }
   if (state.mode === 'emotes') {   // (the rigged character, to pose)
     const skel = await loadSkeleton(state.ho, o.model);
     if (!skel) { setStatus('No skeleton found for this outfit.'); return; }
@@ -471,9 +480,10 @@ $('openPack').onchange = async e => {
   }
 };
 
-function setStatus(s) { $('status').textContent = s; $('status2').textContent = s; }
+function setStatus(s) { for (const id of ['status', 'status2', 'status3']) $(id).textContent = s; }
 
 // ---- Skins / Emotes --------------------------------------------------------------------------------------------
+models = createModelEditor({holder, $, setStatus, download, outfitsOf: ch => state.outfits.filter(o => o.character === ch)});
 emotes = createEmoteEditor({scene, camera, controls, renderer, holder, $, setStatus, download, textureFor,
   outfitsOf: ch => state.outfits.filter(o => o.character === ch)});
 function setMode(mode) {
@@ -484,14 +494,18 @@ function setMode(mode) {
   $('tabEmotes').classList.toggle('on', mode === 'emotes');
   $('side').hidden = mode !== 'skins';
   $('emoteSide').hidden = mode !== 'emotes';
+  $('modelSide').hidden = mode !== 'models';
+  $('tabModels').classList.toggle('on', mode === 'models');
   $('timeline').hidden = mode !== 'emotes';
   $('damageOpt').hidden = mode !== 'skins';
-  $('hint').textContent = mode === 'emotes' ? 'Drag to turn - scroll to zoom - click a joint to pose it'
+  $('hint').textContent = mode === 'models' ? 'Drag to turn - scroll to zoom'
+    : mode === 'emotes' ? 'Drag to turn - scroll to zoom - click a joint to pose it'
     : 'Drag to turn - scroll to zoom - click the character to pick a color';
   if (state.current) selectOutfit(state.current);
 }
 $('tabSkins').onclick = () => setMode('skins');
 $('tabEmotes').onclick = () => setMode('emotes');
+$('tabModels').onclick = () => setMode('models');
 resize();
 
 // (development only: dev_server.py on this PC hands over the game file - index.html?dev)
@@ -499,4 +513,4 @@ if (new URLSearchParams(location.search).has('dev') && ['127.0.0.1', 'localhost'
   fetch('/game/PLYS.ho').then(r => r.ok ? r.blob() : null).then(b => b && openPackage(new File([b], 'PLYS.ho')));
 }
 window.studio = state;   // (for checking in the browser's console)
-window.studioView = {holder, camera, controls, setMode, emotes, render: () => renderer.render(scene, camera)};
+window.studioView = {holder, camera, controls, setMode, emotes, models, render: () => renderer.render(scene, camera)};

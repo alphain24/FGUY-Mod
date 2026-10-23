@@ -93,6 +93,7 @@ void Init() {
     InitUi();
     InitResearch();
     InitMotion();
+    InitModels();
     InitSplitView();
     InitRngTrace();
     InitLoadSync();

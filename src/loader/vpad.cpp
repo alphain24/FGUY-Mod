@@ -349,6 +349,11 @@ void HandleCommand(char* line) {
         MotionCommand(cmd, a, b);
         return;
     }
+    if (cmd && _stricmp(cmd, "modelpieces") == 0) {   // research: modelpieces <slot> - the model's piece objects
+        char* slot = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (slot) ModelsResearch(atoi(slot));
+        return;
+    }
     if (cmd && _stricmp(cmd, "modelload") == 0) {   // test tools: modelload <slot> <file.fgmodel | ''> - wear a new character
         char* slot = strtok_s(nullptr, " \t\r\n", &ctx);
         char* path = strtok_s(nullptr, "\r\n", &ctx);

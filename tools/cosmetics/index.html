@@ -82,7 +82,7 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
 <div class="app">
   <header>
     <h1>FGUY SKIN STUDIO</h1>
-    <nav class="tabs"><button class="tab on" id="tabSkins">Skins</button><button class="tab" id="tabEmotes">Emotes</button></nav>
+    <nav class="tabs"><button class="tab on" id="tabSkins">Skins</button><button class="tab" id="tabEmotes">Emotes</button><button class="tab" id="tabModels">Models</button></nav>
     <span class="sub">Skins and emotes for Family Guy: Back to the Multiverse - your game's files stay on your PC</span>
     <span style="flex:1"></span>
     <button class="btn primary" id="openFolder">Open game folder</button>
@@ -146,6 +146,32 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
       <label class="btn">Open pack <input type="file" id="openPack" accept=".fgskin,.zip" hidden></label>
     </div>
     <div class="status" id="status"></div>
+  </aside>
+
+  <aside class="panel" id="modelSide" hidden>
+    <h2>New model</h2>
+    <div class="muted">A model of your own (.glb - from Blender, img2threejs, ...) in place of this character. It moves with
+    the character's bones: each part of it bends with the part of the character it's on.</div>
+    <div class="row" style="margin-top:8px">
+      <label class="btn primary">Import .glb <input type="file" id="importModel" accept=".glb,.gltf" hidden></label>
+      <label class="muted"><input type="checkbox" id="modelGhost" checked> Show the character</label>
+    </div>
+    <div class="sep"></div>
+    <h2>Fit it</h2>
+    <div class="row"><span class="muted" style="width:60px">Size</span><input type="range" id="fitScale" min="0.01" max="5" step="0.001" value="1"></div>
+    <div class="row"><span class="muted" style="width:60px">Left</span><input type="range" id="fitX" min="-0.5" max="0.5" step="0.002" value="0"></div>
+    <div class="row"><span class="muted" style="width:60px">Up</span><input type="range" id="fitY" min="-0.5" max="0.5" step="0.002" value="0"></div>
+    <div class="row"><span class="muted" style="width:60px">Forward</span><input type="range" id="fitZ" min="-0.5" max="0.5" step="0.002" value="0"></div>
+    <div class="row"><span class="muted" style="width:60px">Turn</span><input type="range" id="fitTurn" min="-180" max="180" step="1" value="0"></div>
+    <div class="row">
+      <button class="btn" id="fitAuto">Fit automatically</button>
+      <button class="btn" id="modelPose">Try a pose</button>
+    </div>
+    <div class="sep"></div>
+    <h2>Model pack</h2>
+    <div class="row"><input type="text" id="modelName" placeholder="Model name, e.g. Robot Stewie" maxlength="40"></div>
+    <div class="row"><button class="btn primary" id="saveModel" disabled>Save model</button></div>
+    <div class="status" id="status3"></div>
   </aside>
 
   <aside class="panel" id="emoteSide" hidden>

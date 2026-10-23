@@ -661,3 +661,22 @@ ematch_<lobby pid>.txt`), whose lobby then
   glTF animation (three.js plays it: the same pose as in the game).
 - ComboAnimBlob (the animations themselves, e.g. STEWIE_Walk): a compressed format, not decoded; a watchpoint on one in
   the loaded package saw no reads while walking - sampled from a copy, or the data unpacked elsewhere at load.
+
+## New characters: drawing our own model (2026-10-23)
+- A character's draw (DrawIndexedPrimitive): stream 0 its skinned positions (float3, the per-frame dynamic buffer),
+  stream 1 its skinned normals (float3, as TEXCOORD1, the same buffer), stream 2 its uvs (half2, TEXCOORD0, static),
+  16-bit indices; its color texture on stages 1 and 2 (the material names it twice); stage 0 something else (our colors
+  there turn it black). Each piece is drawn twice at the player's position (c4..c6 .w) and once in a pass whose
+  constants hold no position (c4..c6 .w 0, 0.5, 0).
+- A player's pieces: their model entity ([[player +0x38] +0x1d4], World::ModelPrototypeEntity) -> [+0xa4..] +0x12c (and
+  [+0xa4] +0x3c) -> World::SkinGeometryEntity (vtable 0x9fb30c): +0xac its index buffer, +0xb8 triangles, +0xbc
+  indices, +0xc0 vertices. A draw of a worn model's player's piece (its index buffer one of theirs) is ours instead.
+- The sketch (ink) lines aren't drawn from the pieces' draws: 0x4c6ed0 (cdecl, 9 args; its 2nd a scene node: +4 flags,
+  +8 a Graphics::Renderable whose [+0xcc] is its world matrix, 3x4) makes something's lines when its flag 0x4000 is on
+  (0x4a4a10: the silhouette test - faces toward / away from the camera). Off for a renderable at a worn model's player's
+  position: no lines of theirs.
+- src/loader/models.cpp: a .fgmodel (tools/re/glb2fgmodel.py, the Skin Studio's Models tab) skinned on the CPU from the
+  player's pose (motion.cpp) and drawn with the game's shader. Tested: Stewie's own tux model tinted, a box robot from
+  a .glb - stands, walks, emotes, no trace of the original.
+- Skin packs of format 2 (skinbuild.cpp): the recolors and an overlay of the maker's own pixels; the texture made on
+  the player's PC from the GPU's copy of the game's (DXT1 / DXT5 read back, the Studio's recolor, re-encoded).

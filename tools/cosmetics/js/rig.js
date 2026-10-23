@@ -81,3 +81,18 @@ export function vertexBones(vdv, layout) {
   });
   return {index, weight};
 }
+
+// three.js bones for a skeleton (each in its parent's space, from the bind pose) under a group, and the Skeleton that
+// binds meshes to them (their inverse binds the skeleton's own)
+export function makeRig(skel) {
+  const root = new THREE.Group();
+  const bones = skel.local.map((m, i) => {
+    const b = new THREE.Bone();
+    b.name = 'bone' + String(i).padStart(2, '0');
+    m.decompose(b.position, b.quaternion, b.scale);
+    return b;
+  });
+  bones.forEach((b, i) => (skel.parent[i] < 0 ? root : bones[skel.parent[i]]).add(b));
+  root.updateMatrixWorld(true);
+  return {root, bones, skeleton: new THREE.Skeleton(bones, skel.invBind.map(m => m.clone()))};
+}
