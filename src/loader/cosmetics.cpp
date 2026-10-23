@@ -155,6 +155,29 @@ std::vector<std::pair<IDirect3DBaseTexture9*, Swap>> g_swaps;   // (the game's t
 float g_playerPos[4][3];
 bool g_playerHere[4];
 
+// every entry's name (a stored zip), false: not one
+bool ZipNames(const std::vector<unsigned char>& z, std::vector<std::string>& names) {
+    if (z.size() < 22) return false;
+    size_t eocd = std::string::npos;
+    for (size_t i = z.size() - 22; i + 22 + 65535 >= z.size(); --i) {
+        if (*reinterpret_cast<const unsigned*>(&z[i]) == 0x06054b50) { eocd = i; break; }
+        if (i == 0) break;
+    }
+    if (eocd == std::string::npos) return false;
+    unsigned count = *reinterpret_cast<const unsigned short*>(&z[eocd + 10]);
+    size_t cd = *reinterpret_cast<const unsigned*>(&z[eocd + 16]);
+    for (unsigned e = 0; e < count; ++e) {
+        if (cd + 46 > z.size() || *reinterpret_cast<const unsigned*>(&z[cd]) != 0x02014b50) return false;
+        unsigned short nameLen = *reinterpret_cast<const unsigned short*>(&z[cd + 28]);
+        unsigned short extra = *reinterpret_cast<const unsigned short*>(&z[cd + 30]);
+        unsigned short comment = *reinterpret_cast<const unsigned short*>(&z[cd + 32]);
+        if (cd + 46 + nameLen > z.size()) return false;
+        names.emplace_back(reinterpret_cast<const char*>(&z[cd + 46]), nameLen);
+        cd += 46 + nameLen + extra + comment;
+    }
+    return true;
+}
+
 bool ZipEntry(const std::vector<unsigned char>& z, const std::string& want, std::vector<unsigned char>& out) {
     // (stored entries only - the Skin Studio stores what the mod reads)
     if (z.size() < 22) return false;
@@ -505,6 +528,8 @@ void* Patch(void* object, int slot, void* hook) {
 
 
 }  // namespace
+
+bool ZipList(const std::vector<unsigned char>& zip, std::vector<std::string>& names) { return ZipNames(zip, names); }
 
 bool ZipRead(const std::vector<unsigned char>& zip, const std::string& name, std::vector<unsigned char>& out) {
     return ZipEntry(zip, name, out);

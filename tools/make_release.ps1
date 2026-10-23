@@ -20,9 +20,13 @@ Copy-Item $dll $stage
 Copy-Item "$P\dist\FGUYMod\FGUYMod.ini" "$stage\FGUYMod\"
 Copy-Item "$P\dist\FGUYMod\dxvk\*" "$stage\FGUYMod\dxvk\"
 Copy-Item "$P\dist\FGUYMod\ui\*.fgpatch" "$stage\FGUYMod\ui\"
-# (our own mods: FGUY Cosmetics, FGUY Emotes - their content only: skins, emotes...)
-Copy-Item "$P\dist\FGUYMod\mods" "$stage\FGUYMod\mods" -Recurse
-Get-ChildItem "$stage\FGUYMod\mods" -Recurse -Filter ".gitkeep" | Remove-Item
+# (our own mods: FGUY Cosmetics, FGUY Emotes - their content only: skins, emotes... - each one file, <name>.fgmod, made
+#  from its folder in dist\FGUYMod\mods: tools/make_fgmod.py; also next to the release's files, for downloading alone)
+New-Item -ItemType Directory -Force "$stage\FGUYMod\mods" | Out-Null
+foreach ($m in Get-ChildItem "$P\dist\FGUYMod\mods" -Directory) {
+    python "$P\tools\make_fgmod.py" $m.FullName "$stage\FGUYMod\mods\$($m.Name).fgmod"
+    Copy-Item "$stage\FGUYMod\mods\$($m.Name).fgmod" (Join-Path $P "build\release\$($m.Name).fgmod") -Force
+}
 if (Test-Path "$P\dist\FGUYMod\sounds\*.wav") {
     New-Item -ItemType Directory -Force "$stage\FGUYMod\sounds" | Out-Null
     Copy-Item "$P\dist\FGUYMod\sounds\*.wav" "$stage\FGUYMod\sounds\"

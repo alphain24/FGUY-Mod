@@ -15,6 +15,10 @@ YourMod\
   files\...          your own versions of game files (optional)
 ```
 
+To hand it out as **one file**: `python tools\make_fgmod.py YourMod` makes `YourMod.fgmod` (the whole folder in
+it). Players drop that into `FGUYMod\mods\` as it is - the base mod reads it at start, like the folder. (A folder and
+a file of the same name: the file is used.)
+
 ### mod.ini
 
 ```ini

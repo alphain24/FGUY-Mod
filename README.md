@@ -26,10 +26,11 @@ there's a new version, and installs it for you.
   `FGUYMod\reports` to send in.
 
 **Mods** (Main Menu > MODS)
-- Put separate mods in `FGUYMod\mods\` and switch them on and off. Making one: see [`sdk/`](sdk/README.md).
+- Put separate mods in `FGUYMod\mods\` (a mod is one `.fgmod` file, or a folder) and switch them on and off. Making
+  one: see [`sdk/`](sdk/README.md).
 
 **FGUY Cosmetics and FGUY Emotes** (two mods that come with it, on the MODS page; they grow with each update)
-- **Cosmetics**: new skins and outfits for the characters. Online, pick a skin on the lobby's character
+- **Cosmetics** (`FGUYMod\mods\FGUYCosmetics.fgmod`, every skin in that one file): new skins and outfits for the characters. Online, pick a skin on the lobby's character
   screen - everyone sees it; offline, switch one on in MODS. Some skins come with outfit pieces worn over the
   character - the first: **Peter: Adventurer** (hat, leather vest, claw pendant, knife sheath, lace-up boots).
   A skin has its own tile on the character screen, next to the outfit it goes on, and its own head on the HUD.

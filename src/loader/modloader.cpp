@@ -1,4 +1,8 @@
-// Mods: separate mods next to the base mod, each in FGUYMod\mods\<folder>\ (see sdk\fguymod_plugin.h for the format).
+// Mods: separate mods next to the base mod, each in FGUYMod\mods\<folder>\ (see sdk\fguymod_plugin.h for the format) -
+// or the whole mod in one file, FGUYMod\mods\<name>.fgmod (its mod.ini and its folders - skins\, emotes\, ui\, files\...
+// - stored in it, the zip format: tools/make_fgmod.py). At start a file mod is unpacked into FGUYMod\mods\.unpacked\<name>
+// (only when the file changed) and used from there like a folder; a folder of the same name is left out (the file wins:
+// an update brings the file, an older install's folder may still be there).
 //
 // * Which are on: FGUYMod\mods.ini [Enabled] <folder>=1. New mods start off; the MODS page of the main menu switches
 //   them (ModsList / ModsToggle) - it takes a restart (plugins and file replacements load at start).
@@ -85,7 +89,7 @@ void HashTree(unsigned& h, const std::wstring& dir, const std::wstring& rel) {
     if (f == INVALID_HANDLE_VALUE) return;
     std::vector<std::wstring> names;
     do {
-        if (wcscmp(fd.cFileName, L".") && wcscmp(fd.cFileName, L"..")) names.push_back(fd.cFileName);
+        if (fd.cFileName[0] != L'.') names.push_back(fd.cFileName);   // (not ".", "..", a file mod's ".from")
     } while (FindNextFileW(f, &fd));
     FindClose(f);
     std::sort(names.begin(), names.end());   // (the same order on every PC)
@@ -359,6 +363,64 @@ void FillApi(Mod& m) {
     a.Patch = ApiPatch;
 }
 
+// A file mod (<name>.fgmod) into <to>, if it changed since it was last unpacked there (FGUYMod\mods\.unpacked\<name>,
+// its size and time in ".from"). False: not a mod file this version can read.
+void Wipe(const std::wstring& dir) {
+    WIN32_FIND_DATAW fd;
+    HANDLE f = FindFirstFileW((dir + L"\\*").c_str(), &fd);
+    if (f == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+        std::wstring p = dir + L"\\" + fd.cFileName;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) { Wipe(p); RemoveDirectoryW(p.c_str()); }
+        else { SetFileAttributesW(p.c_str(), FILE_ATTRIBUTE_NORMAL); DeleteFileW(p.c_str()); }
+    } while (FindNextFileW(f, &fd));
+    FindClose(f);
+}
+
+bool Unpack(const std::wstring& file, const WIN32_FIND_DATAW& fd, const std::wstring& to) {
+    wchar_t stamp[64];
+    swprintf_s(stamp, L"%lu-%lu-%lu", fd.nFileSizeLow, fd.ftLastWriteTime.dwHighDateTime, fd.ftLastWriteTime.dwLowDateTime);
+    if (FileExists((to + L"\\mod.ini").c_str()) && Ini(to + L"\\.from", L"Mod", L"Stamp") == stamp) return true;
+    std::vector<unsigned char> d;
+    HANDLE h = CreateFileW(file.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    DWORD size = GetFileSize(h, nullptr), got = 0;
+    if (size != INVALID_FILE_SIZE && size < 512u * 1024 * 1024) {
+        d.resize(size);
+        if (!ReadFile(h, d.data(), size, &got, nullptr) || got != size) d.clear();
+    }
+    CloseHandle(h);
+    std::vector<std::string> names;
+    std::vector<unsigned char> ini;
+    if (d.empty() || !ZipList(d, names) || !ZipRead(d, "mod.ini", ini)) return false;
+    CreateDirectoryW((ModsDir() + L"\\.unpacked").c_str(), nullptr);
+    CreateDirectoryW(to.c_str(), nullptr);
+    Wipe(to);
+    int files = 0;
+    for (const std::string& n : names) {
+        if (n.empty() || n.back() == '/' || n.find("..") != std::string::npos || n[0] == '/' || n[0] == '\\' ||
+            n.find(':') != std::string::npos) continue;   // (folders; nothing outside the mod's own)
+        std::vector<unsigned char> bytes;
+        if (!ZipRead(d, n, bytes)) { Log(L"Mods: %s - %S isn't stored (packed?) - left out", file.c_str(), n.c_str()); continue; }
+        std::wstring rel(n.begin(), n.end()), path = to;
+        std::replace(rel.begin(), rel.end(), L'/', L'\\');
+        for (size_t at = rel.find(L'\\'); at != std::wstring::npos; at = rel.find(L'\\', at + 1))
+            CreateDirectoryW((to + L"\\" + rel.substr(0, at)).c_str(), nullptr);
+        path += L"\\" + rel;
+        HANDLE o = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+        DWORD put = 0;
+        if (o != INVALID_HANDLE_VALUE) {
+            WriteFile(o, bytes.data(), (DWORD)bytes.size(), &put, nullptr);
+            CloseHandle(o);
+            ++files;
+        }
+    }
+    WritePrivateProfileStringW(L"Mod", L"Stamp", stamp, (to + L"\\.from").c_str());
+    Log(L"Mods: %s unpacked (%d files)", file.c_str(), files);
+    return true;
+}
+
 }  // namespace
 
 // At start (before the UI's patches and the game's files): the mods there are, and which are on.
@@ -367,13 +429,37 @@ void InitMods() {
     std::wstring dir = ModsDir();
     CreateDirectoryW(dir.c_str(), nullptr);
     WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return;
-    do {
-        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.') continue;
+    std::vector<std::wstring> fileMods;   // (the one-file mods' names: a folder of the same name left out)
+    HANDLE h = FindFirstFileW((dir + L"\\*.fgmod").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            std::wstring name = fd.cFileName;
+            name = name.substr(0, name.size() - 6);
+            std::wstring to = dir + L"\\.unpacked\\" + name;
+            if (Unpack(dir + L"\\" + fd.cFileName, fd, to)) fileMods.push_back(name);
+            else Log(L"Mods: %s isn't a mod file this version can read", fd.cFileName);
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    std::vector<std::pair<std::wstring, std::wstring>> found;   // (name, its folder)
+    for (const auto& n : fileMods) found.push_back({n, dir + L"\\.unpacked\\" + n});
+    h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.') continue;
+            if (std::any_of(fileMods.begin(), fileMods.end(), [&](const std::wstring& n) { return _wcsicmp(n.c_str(), fd.cFileName) == 0; })) {
+                Log(L"Mods: the folder %s left out - %s.fgmod is used", fd.cFileName, fd.cFileName);
+                continue;
+            }
+            found.push_back({fd.cFileName, dir + L"\\" + fd.cFileName});
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    for (const auto& f : found) {
         Mod m;
-        m.folder = fd.cFileName;
-        m.dir = dir + L"\\" + m.folder;
+        m.folder = f.first;
+        m.dir = f.second;
         std::wstring ini = m.dir + L"\\mod.ini";
         if (!FileExists(ini.c_str())) continue;
         m.name = Ini(ini, L"Mod", L"Name", m.folder.c_str());
@@ -387,8 +473,7 @@ void InitMods() {
         wchar_t none[4];   // (test knob: FGUYMOD_TEST_NOMODS=1 - this copy runs with every mod off)
         if (GetEnvironmentVariableW(L"FGUYMOD_TEST_NOMODS", none, 4)) m.enabled = false;
         g_mods.push_back(m);
-    } while (FindNextFileW(h, &fd));
-    FindClose(h);
+    }
     std::sort(g_mods.begin(), g_mods.end(), [](const Mod& a, const Mod& b) { return _wcsicmp(a.folder.c_str(), b.folder.c_str()) < 0; });
     for (auto& m : g_mods) {
         if (m.enabled) {

@@ -190,6 +190,7 @@ bool EmotesLocalPack(unsigned crc, std::vector<unsigned char>& out);   //   netp
 void EmotesRemote(int slot, const std::vector<unsigned char>* pack);   //   netplay.cpp: another player's emote (nullptr: stop)
 void NetplayEmote(const std::vector<unsigned char>* pack);   // netplay.cpp: I play an emote (nullptr: stop) - everyone sees it
 bool ZipRead(const std::vector<unsigned char>& zip, const std::string& name, std::vector<unsigned char>& out);   // cosmetics.cpp: a stored zip entry
+bool ZipList(const std::vector<unsigned char>& zip, std::vector<std::string>& names);   //   its entries' names
 void CosmeticsSetSkin(int slot, const std::vector<unsigned char>& pack, const wchar_t* name);   //   a player wears a skin pack
 void CosmeticsLoadSkinFile(int slot, const wchar_t* path);   //   test pipe "skinload <slot> <file.fgskin>"
 bool CosmeticsPackInfo(const std::vector<unsigned char>& pack, std::string* name, unsigned* lo, unsigned* hi);   //   a pack's name, its outfit
