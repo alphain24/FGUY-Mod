@@ -637,7 +637,8 @@ std::string JsonField(const std::vector<unsigned char>& pack, const char* key) {
     return q2 == std::string::npos ? "" : s.substr(q1 + 1, q2 - q1 - 1);
 }
 struct PackEntry { std::wstring file; std::string name; unsigned lo, hi; FILETIME written; std::string who; std::wstring path, from;
-                   std::string icon, head; };   // (its pictures' movies - icons.cpp: "" none; head "<movie>|l|r|b")
+                   std::string icon, head;   // (its pictures' movies - icons.cpp: "" none; head "<movie>|l|r|b")
+                   std::string pic; };       // (its outfit as the game's skin pickers name it: Costume_<Character><Outfit>.tif)
 std::vector<PackEntry> g_packs;
 
 // skin.json's "headFace": [left, right, bottom] as "|l|r|b" ("" none)
@@ -705,6 +706,8 @@ void ScanPacks() {
                 if (ZipEntry(d, "head.png", png)) e.head = IconsAdd(png) + HeadFace(d);
                 e.who = JsonField(d, "character");   // ("Stewie - Default": the MODS page)
                 std::string outfit = JsonField(d, "outfit");
+                if (!e.who.empty() && !outfit.empty())   // (the game's pictures call Adam West "West")
+                    e.pic = "Costume_" + (e.who == "AdamWest" ? std::string("West") : e.who) + outfit + ".tif";
                 if (!outfit.empty()) e.who += " - " + outfit;
                 out.push_back(e);
             }
@@ -730,13 +733,17 @@ void SetPickFor(unsigned lo, unsigned hi, const std::wstring& file) {
     WritePrivateProfileStringW(L"Skins", key, file.empty() ? nullptr : file.c_str(), IniPath().c_str());
 }
 
-// Offline (no session): every player whose outfit has a skin switched on wears it - the menus' characters too.
-// Looked at once a second (the render thread); a pack read only when what a player should wear changes.
+// Offline (no session): every player whose outfit has a skin switched on wears it - the menus' characters too -
+// unless the game's own skin pickers say otherwise for that player (g_offlineChoice: the join screens' pick, the
+// store's preview - src/ui/costumes.as2js). Looked at a few times a second (the render thread); a pack read only when
+// what a player should wear changes.
 std::wstring g_offlineWorn[4];
+std::mutex g_choiceLock;
+std::wstring g_offlineChoice[4];   // ("" the outfit's own pick, "-" none, else that pack - if it's for their outfit)
 void OfflineSkins() {
     static ULONGLONG last = 0;
     ULONGLONG now = GetTickCount64();
-    if (now - last < 1000) return;
+    if (now - last < 300) return;
     last = now;
     ScanPacks();
     unsigned char* players[8];
@@ -749,7 +756,15 @@ void OfflineSkins() {
         unsigned lo = 0, hi = 0;
         std::wstring want;
         if (CosmeticsPlayerModel(slot, 0, &lo, &hi)) {
-            std::wstring f = PickFor(lo, hi);
+            std::wstring f = PickFor(lo, hi), chosen;
+            {
+                std::lock_guard<std::mutex> l(g_choiceLock);
+                chosen = g_offlineChoice[slot];
+            }
+            if (chosen == L"-") f.clear();
+            else if (!chosen.empty() && std::any_of(g_packs.begin(), g_packs.end(), [&](const PackEntry& e) {
+                         return e.file == chosen && e.lo == lo && e.hi == hi; }))
+                f = chosen;
             if (!f.empty() && std::any_of(g_packs.begin(), g_packs.end(), [&](const PackEntry& e) {
                     return e.file == f && e.lo == lo && e.hi == hi; }))
                 want = f;
@@ -765,6 +780,77 @@ std::string g_listText;
 }  // namespace
 
 void CosmeticsOfflineTick() { OfflineSkins(); }
+
+// ---- the game's own skin pickers, offline (src/ui/costumes.as2js) --------------------------------------------------
+namespace {
+std::wstring Wide(const char* s) {
+    wchar_t w[MAX_PATH] = L"";
+    if (s) MultiByteToWideChar(CP_UTF8, 0, s, -1, w, MAX_PATH);
+    return w;
+}
+std::string Narrow(const std::wstring& w) {
+    char s[MAX_PATH * 3] = "";
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, s, sizeof(s), nullptr, nullptr);
+    return s;
+}
+std::string g_offlineText, g_answer;
+}  // namespace
+
+// FGUYMOD_OfflineSkins: "<outfit's picture>~<file>~<name>~<icon movie>;..." - every skin pack here
+const char* CosmeticsOfflineSkins() {
+    ScanPacks();
+    g_offlineText.clear();
+    for (const PackEntry& e : g_packs) {
+        if (e.pic.empty()) continue;
+        std::string n = e.name;
+        for (char& c : n) if (c == '~' || c == ';') c = ' ';
+        g_offlineText += e.pic + "~" + Narrow(e.file) + "~" + n + "~" + e.icon + ";";
+    }
+    return g_offlineText.c_str();
+}
+
+// FGUYMOD_OfflineSkinPick(player, file | "-" none | "" the outfit's own): what that player wears (a join screen's pick,
+// player 2: the store's preview)
+void CosmeticsOfflineSkinPick(int player, const char* file) {
+    if (player < 0 || player >= 4) return;
+    std::lock_guard<std::mutex> l(g_choiceLock);
+    g_offlineChoice[player] = Wide(file);
+}
+
+// FGUYMOD_OfflineSkinFor(player, outfit's picture): the skin that player wears with that outfit ("" none)
+const char* CosmeticsOfflineSkinFor(int player, const char* pic) {
+    g_answer.clear();
+    std::wstring chosen;
+    {
+        std::lock_guard<std::mutex> l(g_choiceLock);
+        if (player >= 0 && player < 4) chosen = g_offlineChoice[player];
+    }
+    if (chosen == L"-") return g_answer.c_str();
+    for (const PackEntry& e : g_packs)
+        if (e.pic == (pic ? pic : "") && !chosen.empty() && e.file == chosen) return (g_answer = Narrow(e.file)).c_str();
+    for (const PackEntry& e : g_packs)
+        if (e.pic == (pic ? pic : "") && PickFor(e.lo, e.hi) == e.file) return (g_answer = Narrow(e.file)).c_str();
+    return g_answer.c_str();
+}
+
+// FGUYMOD_StoreSkinOf(outfit's picture): the skin that outfit wears (its MODS page ON) - FGUYMOD_StoreSkinPick(that,
+// file | ""): it from now on
+const char* CosmeticsStoreSkinOf(const char* pic) {
+    g_answer.clear();
+    for (const PackEntry& e : g_packs)
+        if (e.pic == (pic ? pic : "") && PickFor(e.lo, e.hi) == e.file) return (g_answer = Narrow(e.file)).c_str();
+    return g_answer.c_str();
+}
+void CosmeticsStoreSkinPick(const char* pic, const char* file) {
+    std::wstring w = Wide(file);
+    for (const PackEntry& e : g_packs) {
+        if (e.pic != (pic ? pic : "")) continue;
+        if (!w.empty() && e.file != w) continue;
+        SetPickFor(e.lo, e.hi, w);
+        Log(L"Cosmetics: the store - %S wears %s", e.pic.c_str(), w.empty() ? L"no skin" : w.c_str());
+        if (!w.empty()) return;
+    }
+}
 
 // FGUYMOD_SkinList (the MODS page): "<file>|<name>|<character - outfit>|<on>\n..."
 const char* CosmeticsSkinList() {

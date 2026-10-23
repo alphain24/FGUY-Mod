@@ -305,6 +305,10 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             }
         }
     }
+    // (the menus' player 2 - the store's preview - put in an outfit again: its skin as that outfit wears it, unless the
+    //  store says otherwise right after - costumes.as2js FGUYStoreRefreshWrap)
+    if (name && strcmp(name, "PLYR_ApplyCostume") == 0 && argc > 0 && (int)ArgNumber(args, argc, 0) == 2 && !NetplayEnabled())
+        CosmeticsOfflineSkinPick(2, "");
     if (name && strncmp(name, "FGUYPLUGIN_", 11) == 0) {   // (a mod's plugin's own menu call - modloader.cpp)
         std::vector<std::string> a;
         for (unsigned i = 0; i < argc && i < 16; ++i) {
@@ -450,6 +454,16 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnBool(movie, ModsToggle(ArgString(args, argc, 0)));
         } else if (strcmp(fn, "SkinList") == 0) {        // (the MODS page: the skin packs - cosmetics.cpp)
             ReturnString(movie, CosmeticsSkinList());
+        } else if (strcmp(fn, "OfflineSkins") == 0) {   // (the game's own skin pickers offline - costumes.as2js)
+            ReturnString(movie, CosmeticsOfflineSkins());
+        } else if (strcmp(fn, "OfflineSkinPick") == 0) {
+            CosmeticsOfflineSkinPick((int)ArgNumber(args, argc, 0), ArgString(args, argc, 1));
+        } else if (strcmp(fn, "OfflineSkinFor") == 0) {
+            ReturnString(movie, CosmeticsOfflineSkinFor((int)ArgNumber(args, argc, 0), ArgString(args, argc, 1)));
+        } else if (strcmp(fn, "StoreSkinOf") == 0) {
+            ReturnString(movie, CosmeticsStoreSkinOf(ArgString(args, argc, 0)));
+        } else if (strcmp(fn, "StoreSkinPick") == 0) {
+            CosmeticsStoreSkinPick(ArgString(args, argc, 0), ArgString(args, argc, 1));
         } else if (strcmp(fn, "SkinToggle") == 0) {
             CosmeticsSkinToggle(ArgString(args, argc, 0));
             ReturnBool(movie, true);

@@ -157,6 +157,11 @@ std::string IconsAdd(const std::vector<unsigned char>& png);   // the movie a me
 const std::vector<unsigned char>* IconsMovie(const char* url);  //   ui.cpp: the movie for a file the game opens (nullptr: not one)
 std::string CosmeticsMySkinKey();               // cosmetics.cpp: the id of my lobby skin's head picture ("" none)
 std::string CosmeticsSkinHead(const std::string& key);   //   that head picture here: "<movie>|l|r|b" ("": no pack of it here)
+const char* CosmeticsOfflineSkins();             // cosmetics.cpp, the game's own skin pickers offline (costumes.as2js)
+void CosmeticsOfflineSkinPick(int player, const char* file);
+const char* CosmeticsOfflineSkinFor(int player, const char* pic);
+const char* CosmeticsStoreSkinOf(const char* pic);
+void CosmeticsStoreSkinPick(const char* pic, const char* file);
 const char* CosmeticsHeadIcon(int player);   // cosmetics.cpp, FGUYMOD_HeadIcon: the HUD head of the skin a player wears ("" none)
 IDirect3DTexture9* CosmeticsTextureFromDds(IDirect3DDevice9* dev, const std::vector<unsigned char>& dds);   // cosmetics.cpp
 int CosmeticsDrawPlayer();             //   which player this draw is of (-1 none)

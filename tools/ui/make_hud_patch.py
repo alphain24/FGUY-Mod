@@ -32,6 +32,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
 PAUSE_SOURCE = os.path.join(HERE, '..', '..', 'src', 'ui', 'pause.as2js')   # the online pause menu
 MENU_DRAW = os.path.join(HERE, '..', '..', 'src', 'ui', 'menudraw.as2js')   #   and its drawing
+COSTUMES = os.path.join(HERE, '..', '..', 'src', 'ui', 'costumes.as2js')    # custom skins in the skin pickers
 
 
 def param_registers(data, o):
@@ -189,7 +190,8 @@ def build(data):
     #  see FGUYHudZoom)
     table = ', '.join(f"'{k}': [{', '.join(str(x) for x in v)}]" for k, v in sorted(layout_table(data).items()))
     tsx, tsy, ttx, tty = root_placement(data, 'Timer')   # (single player's timer: pause.as2js FGUYHudWholeScreen)
-    source = (open(PAUSE_SOURCE, encoding='utf-8').read() + '\n' + open(MENU_DRAW, encoding='utf-8').read()).replace(
+    source = (open(PAUSE_SOURCE, encoding='utf-8').read() + '\n' + open(MENU_DRAW, encoding='utf-8').read() + '\n' +
+              open(COSTUMES, encoding='utf-8').read()).replace(
         'FGUY_HUD_SCALES', '{' + table + '}').replace(
         'FGUY_TIMER_AT', f'[{ttx}, {tty}, {tsx * 100}, {tsy * 100}]')
     p.replace(o, 0, as2c.compile_source(source))
@@ -210,6 +212,15 @@ def build(data):
     try:   # (the other HUD movie, PLYW, has no death menu)
         insert_at_start(p, data, actions, 'OnDeathMenuRefreshText',
                         lambda r: A.Code(A.call('FGUYDeathHints', Reg(r['playerIndex']))))
+    except KeyError:
+        pass
+    # Custom skins in the change character screen's skin picker (src/ui/costumes.as2js): RefreshCostume(playerIndex)
+    # handed to ours (it runs it, then the custom skin's part), the screen's entry starts each player's anew
+    try:   # (the story's HUD has no such screen)
+        insert_at_start(p, data, actions, 'RefreshCostume', lambda r: A.Code(
+            A.Code(A.callv('FGUYHudRefreshWrap', Reg(r['playerIndex'])), A.op('Not')).if_true('go') +
+            A.Code(A.pushes(False), A.op('Return')).label('go')))
+        insert_at_start(p, data, actions, 'OnCharacterSelectScreenEnter', lambda r: A.Code(A.call('FGUYHudEnter')))
     except KeyError:
         pass
     # A skin's head picture in place of the character's head (pause.as2js FGUYHeadIcon: the poll looks again too)

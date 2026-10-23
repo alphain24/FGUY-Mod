@@ -36,6 +36,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
 LOBBY_SOURCE = os.path.join(HERE, '..', '..', 'src', 'ui', 'lobby.as2js')
 SESSION_SOURCE = os.path.join(HERE, '..', '..', 'src', 'ui', 'session.as2js')
+COSTUMES_SOURCE = os.path.join(HERE, '..', '..', 'src', 'ui', 'costumes.as2js')   # custom skins in the game's skin pickers
 MOVIE_SIZE = 290635  # the front-end menu movie inside FGUY/Global_Scenes/MNUS.ho
 
 # Frame Rate choices, in the order the loader expects (d3d9.cpp kFrameRates).
@@ -162,6 +163,7 @@ def build(data):
                               external_call('FGUYMOD_SetFrameRate', Reg(1)) + action('Pop'))
     funcs += as2c.compile_source(open(LOBBY_SOURCE, encoding='utf-8').read())  # the ONLINE screens
     funcs += as2c.compile_source(open(SESSION_SOURCE, encoding='utf-8').read())  # online session autopilot
+    funcs += as2c.compile_source(open(COSTUMES_SOURCE, encoding='utf-8').read())  # custom skins, offline pickers
     funcs += as2c.compile_source(AUDIO_SOURCE)  # Options > Audio > MOVIES & TITLE
     p.replace(o, total, funcs)
 
@@ -312,12 +314,63 @@ def build(data):
     p.fix_top_level_jumps(inner)
     p.replace(size_field, 2, struct.pack('<H', code_end - code_start + p.delta_between(code_start, code_end)))
 
+    # 10. Custom skins in the game's own skin pickers (src/ui/costumes.as2js): Store > Costumes and Multiverse
+    #     Madness' join screen.
+    costume_edits(p, data, actions)
+
     # Fix-ups: top-level jumps across edits, DoAction tag length, file length in the GFX header.
     p.fix_top_level_jumps(actions)
     assert struct.unpack_from('<H', data, tag)[0] & 0x3f == 0x3f, 'expected long DoAction header'
     p.fix_length_u32(tag + 2, start, end)
     p.fix_length_u32(4, 0, len(data))
     return p
+
+
+def param_regs(data, o):
+    """{param name: register} of the DefineFunction2 at `o`."""
+    q = data.index(b'\0', o + 3) + 1
+    nparams = struct.unpack_from('<H', data, q)[0]
+    q += 5
+    regs = {}
+    for _ in range(nparams):
+        reg = data[q]
+        end = data.index(b'\0', q + 1)
+        regs[data[q + 1:end].decode()] = reg
+        q = end + 1
+    return regs
+
+
+def wrapped(fn, *args):
+    """'if (fn(args)) return;' - a function's start handing it over to ours (which runs it, then more)."""
+    return (A.Code(A.callv(fn, *args), A.op('Not')).if_true('go') + A.Code(A.pushes(False), A.op('Return')).label('go')).assemble()
+
+
+def costume_edits(p, data, actions):
+    def at_start(name, code_of):
+        o, _ = function_at(data, actions, name)
+        code_start, code_end, size_field = function2_code(data, o)
+        body = code_of(param_regs(data, o))
+        p.replace(code_start, 0, body)
+        return o, code_start, code_end, size_field
+
+    def resize(code_start, code_end, size_field):
+        p.replace(size_field, 2, struct.pack('<H', code_end - code_start + p.delta_between(code_start, code_end)))
+
+    # the join screen's RefreshCostume(playerIndex): ours runs it, then puts the custom skin on / its picture in
+    resize(*at_start('RefreshCostume', lambda r: wrapped('FGUYPrepRefreshWrap', Reg(r['playerIndex'])))[1:])
+    # EnterCharacterPrep(playerIndex): each player's skin shown again from what they wear
+    resize(*at_start('EnterCharacterPrep', lambda r: A.call('FGUYPrepEnter').assemble())[1:])
+    # SelectCostume(costumeIndex): a custom skin picked is that outfit's skin
+    resize(*at_start('SelectCostume', lambda r: A.call('FGUYStoreSelect', Reg(r['costumeIndex'])).assemble())[1:])
+    # RefreshCostumes(): wrapped - and, right after it fetches costumeInfo (its first SetVariable; r6 the character), the
+    # custom skins put in
+    o, code_start, code_end, size_field = at_start('RefreshCostumes', lambda r: wrapped('FGUYStoreRefreshWrap'))
+    inner = parse_actions(data, code_start, code_end)
+    fetched = next(a for a, code, t in inner if code == 0x1D)
+    assert data[fetched - 1] == 0x52, 'RefreshCostumes not as expected'   # (its CallMethod: STOR_GetCostumesInfo's call)
+    p.replace(fetched + 1, 0, A.call('FGUYStoreAddSkins', Reg(6)).assemble())
+    p.fix_top_level_jumps(inner)
+    resize(code_start, code_end, size_field)
 
 
 def online_functions():

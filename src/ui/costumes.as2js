@@ -1,0 +1,200 @@
+// Custom skins in the game's own skin pickers, offline (compiled into the main menu movie and the HUD: see
+// tools/ui/make_menu_patch.py, make_hud_patch.py). Each custom skin (FGUYMOD_OfflineSkins - the skin packs here, the
+// FGUY Cosmetics mod's too) is a skin of its own there, right after the outfit it goes on, with its own name and
+// picture:
+//   - Store > Costumes (the main menu: costumeInfo, fetched by RefreshCostumes) - the skin that outfit wears, as the
+//     MODS page's ON (FGUYMOD_StoreSkinPick); hovering one shows it on the preview (menu player 2).
+//   - Multiverse Madness' join screen (the main menu: costumesInfo / prepCostume) and the HUD's change character
+//     screen (costumesInfo / costumeInfoIndex) - that player's skin (FGUYMOD_OfflineSkinPick), not the others'.
+// A custom skin's entry is its outfit's (the same CostumeIndex: the game puts that outfit on) and the mod puts the
+// skin on with it (src/loader/cosmetics.cpp OfflineSkins). Online none of this: skins are picked in the lobby.
+
+// an outfit's picture when its entry names none (as the game's RefreshCostume does) - by character index
+function FGUYCostumeDefaultPic(c) {
+    var d = ['', 'Costume_StewieDefault.tif', 'Costume_BrianDefault.tif', 'Costume_PeterDefault.tif', 'Costume_LoisDefault.tif',
+             'Costume_QuagmireDefault.tif', 'Costume_ChrisDefault.tif', 'Costume_ClevelandDefault.tif', 'Costume_WestDefault.tif',
+             'Costume_MegDefault.tif', 'Costume_DeathDefault.tif'];
+    return c >= 0 && c < d.length ? d[c] : '';
+}
+
+// which outfit an entry is (its picture's name: Costume_<Character><Outfit>.tif - the loader names a skin's outfit so)
+function FGUYCostumeKey(entry, c) {
+    if (entry == undefined) return '';
+    var l = entry.LinkageID;
+    return l != undefined && String(l) != '' ? String(l) : FGUYCostumeDefaultPic(c);
+}
+
+// the custom skins here: [{pic, file, name, icon}] (FGUYMOD_OfflineSkins: "pic~file~name~icon;...")
+function FGUYSkinEntries() {
+    var out = [];
+    var s = flash.external.ExternalInterface.call('FGUYMOD_OfflineSkins');
+    if (s == undefined) return out;
+    var e = String(s).split(';');
+    for (var i = 0; i < e.length; i++) {
+        if (e[i] == '') continue;
+        var f = e[i].split('~');
+        if (f.length >= 4) out.push({pic: f[0], file: f[1], name: f[2], icon: f[3]});
+    }
+    return out;
+}
+
+function FGUYSkinsOnline() {
+    return flash.external.ExternalInterface.call('FGUYMOD_OnlineMatch') == true;
+}
+
+// into one character's list of outfits (entries as the game makes them): each custom skin after its outfit - once
+function FGUYAddSkins(list, c, skins) {
+    if (list == undefined || list.fguySkins == true) return;
+    list.fguySkins = true;
+    for (var k = list.length - 1; k >= 0; k--) {   // (from the end: what's inserted doesn't move what's left to do)
+        var base = list[k];
+        if (base.FGUYSkin != undefined || base.IsBought == false) continue;
+        var key = FGUYCostumeKey(base, c), at = k + 1;
+        for (var j = 0; j < skins.length; j++) {
+            if (skins[j].pic != key) continue;
+            list.splice(at, 0, {UIName: skins[j].name, CostumeIndex: base.CostumeIndex, IsBought: true, LinkageID: base.LinkageID,
+                                Price: base.Price, UnlockStr: base.UnlockStr, FGUYSkin: skins[j].file, FGUYIcon: skins[j].icon,
+                                FGUYPic: key});
+            at++;
+        }
+    }
+}
+
+// the join screens' lists (costumesInfo: one per character index)
+function FGUYAddAllSkins() {
+    if (costumesInfo == undefined || costumesInfo.fguySkins == true || FGUYSkinsOnline()) return;
+    costumesInfo.fguySkins = true;
+    var skins = FGUYSkinEntries();
+    for (var c = 0; c < costumesInfo.length; c++) FGUYAddSkins(costumesInfo[c], c, skins);
+}
+
+// A join screen's costume picture (SelectCharacter.container.costumeIcon, the game's bitmap): a custom skin's own
+// picture in its place - the same size (the game's: 95% of a 256-tall picture, standing on y 248), centred
+function FGUYCostumeOverlay(sc, entry) {
+    if (sc == undefined || sc.container == undefined) return;
+    var box = sc.container, icon = box.costumeIcon, mine = box.FGUYCostume;
+    var url = entry != undefined && entry.FGUYIcon != undefined ? String(entry.FGUYIcon) : '';
+    if (url == '') {
+        if (mine != undefined) mine.removeMovieClip();
+        if (icon != undefined) icon._visible = true;
+        return;
+    }
+    if (mine == undefined || mine.url != url) {
+        if (mine != undefined) mine.removeMovieClip();
+        mine = box.createEmptyMovieClip('FGUYCostume', box.getNextHighestDepth());
+        mine.url = url;
+        mine.createEmptyMovieClip('pic', 1).loadMovie(url);
+        mine.onEnterFrame = FGUYCostumeOverlayLoaded;
+    }
+    if (icon != undefined) icon._visible = false;
+}
+
+function FGUYCostumeOverlayLoaded() {
+    var pic = this.pic;
+    if (pic == undefined || !(pic._width > 0)) return;
+    var s = 243 / pic._height;
+    pic._xscale = s * 100;
+    pic._yscale = s * 100;
+    pic._x = -pic._width / 2;
+    pic._y = 248 - pic._height;
+    this.onEnterFrame = undefined;
+}
+
+// That player wears the skin of the entry shown (or none) - and, the first time a join screen shows them their
+// outfit, shows the skin they wear with it (FGUYMOD_OfflineSkinFor): the index into the list to show
+function FGUYJoinSkin(p, list, idx, c) {
+    if (list == undefined || FGUYSkinsOnline()) return idx;
+    if (FGUYJoinSynced == undefined) FGUYJoinSynced = [];
+    if (FGUYJoinSynced[p] != true && list[idx] != undefined) {
+        FGUYJoinSynced[p] = true;
+        var base = idx;
+        while (base > 0 && list[base].FGUYSkin != undefined) base--;
+        var wears = String(flash.external.ExternalInterface.call('FGUYMOD_OfflineSkinFor', p, FGUYCostumeKey(list[base], c)));
+        for (var k = base + 1; k < list.length && list[k].FGUYSkin != undefined; k++) if (list[k].FGUYSkin == wears) idx = k;
+    }
+    var e = list[idx];
+    flash.external.ExternalInterface.call('FGUYMOD_OfflineSkinPick', p, e != undefined && e.FGUYSkin != undefined ? e.FGUYSkin : '-');
+    return idx;
+}
+
+// ---- the main menu ----------------------------------------------------------------------------------------------
+// Multiverse Madness' join screen: its RefreshCostume(player), wrapped (inserted at its start: this runs it, then
+// the custom skin's part - true: done)
+function FGUYPrepRefreshWrap(p) {
+    if (FGUYPrepRefreshing == true) return false;
+    FGUYAddAllSkins();
+    var c = GetCharacterIndex(selectableCharacters[p][prepCharacter[p]]), list = costumesInfo[c];
+    if (list != undefined) prepCostume[p] = FGUYJoinSkin(p, list, prepCostume[p], c);
+    FGUYPrepRefreshing = true;
+    RefreshCostume(p);
+    FGUYPrepRefreshing = false;
+    FGUYCostumeOverlay(GetPrepScreenMovieclip(p).SelectCharacter, list != undefined ? list[prepCostume[p]] : undefined);
+    return true;
+}
+
+function FGUYPrepEnter() {   // (EnterCharacterPrep: the players' skins shown again from what they wear)
+    FGUYJoinSynced = [];
+}
+
+// Store > Costumes: RefreshCostumes just fetched costumeInfo (this, inserted right after): the custom skins in it -
+// as many as its 8 buttons take
+function FGUYStoreAddSkins(c) {
+    if (costumeInfo == undefined || FGUYSkinsOnline()) return;
+    FGUYAddSkins(costumeInfo, c, FGUYSkinEntries());
+    if (costumeInfo.length > 8) costumeInfo.splice(8, costumeInfo.length - 8);
+}
+
+// ...and RefreshCostumes wrapped (inserted at its start): after it, which button is worn - the custom skin the
+// outfit wears, or the outfit itself (the game marks every entry of the outfit) - and the one pointed at on the
+// preview, its custom skin too
+function FGUYStoreRefreshWrap() {
+    if (FGUYStoreRefreshing == true || FGUYSkinsOnline()) return false;
+    FGUYStoreRefreshing = true;
+    RefreshCostumes();
+    FGUYStoreRefreshing = false;
+    if (costumeInfo == undefined) return true;
+    var c = GetDockCharacterIndex(), sel = GetSelectedCostume(c), root = GetCostumesRoot();
+    for (var i = 0; i < costumeInfo.length && i < 8; i++) {
+        var e = costumeInfo[i], b = root['Costume' + i].button;
+        if (b == undefined || e.CostumeIndex != sel) continue;
+        var wears = String(flash.external.ExternalInterface.call('FGUYMOD_StoreSkinOf', e.FGUYPic != undefined ? e.FGUYPic : FGUYCostumeKey(e, c)));
+        var mine = e.FGUYSkin != undefined ? e.FGUYSkin == wears : wears == '';
+        if (!mine) b.status.gotoAndStop('blank');
+        if (i == CurBtn && !mine && IsCostumeBought(c, i)) b.gotoAndStop('up');
+    }
+    var cur = costumeInfo[CurBtn];
+    flash.external.ExternalInterface.call('FGUYMOD_OfflineSkinPick', 2, cur != undefined && cur.FGUYSkin != undefined ? cur.FGUYSkin : '-');
+    return true;
+}
+
+// SelectCostume(index), at its start: picking a custom skin is that outfit's skin from now on (the outfit itself: none)
+function FGUYStoreSelect(i) {
+    if (costumeInfo == undefined || FGUYSkinsOnline()) return;
+    var e = costumeInfo[i], c = GetDockCharacterIndex();
+    if (e == undefined || !IsCostumeBought(c, i)) return;
+    var key = e.FGUYPic != undefined ? e.FGUYPic : FGUYCostumeKey(e, c);
+    flash.external.ExternalInterface.call('FGUYMOD_StoreSkinPick', key, e.FGUYSkin != undefined ? e.FGUYSkin : '');
+}
+
+function FGUYStoreExit() {   // (OnCostumesExit: the preview back to what's picked)
+    flash.external.ExternalInterface.call('FGUYMOD_OfflineSkinPick', 2, '');
+}
+
+// ---- the HUD ----------------------------------------------------------------------------------------------------
+// The change character screen (the death menu): its RefreshCostume(player), wrapped like the join screen's
+function FGUYHudRefreshWrap(p) {
+    if (FGUYHudRefreshing == true) return false;
+    FGUYAddAllSkins();
+    var c = GetDesiredCharacter(p), list = costumesInfo[c];
+    if (list != undefined && costumeInfoIndex[p] != undefined) costumeInfoIndex[p][c] = FGUYJoinSkin(p, list, costumeInfoIndex[p][c], c);
+    FGUYHudRefreshing = true;
+    RefreshCostume(p);
+    FGUYHudRefreshing = false;
+    FGUYCostumeOverlay(GetScreenMovieClip(p).SelectCharacter,
+                       list != undefined && costumeInfoIndex[p] != undefined ? list[costumeInfoIndex[p][c]] : undefined);
+    return true;
+}
+
+function FGUYHudEnter() {   // (OnCharacterSelectScreenEnter)
+    FGUYJoinSynced = [];
+}
