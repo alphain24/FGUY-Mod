@@ -434,6 +434,9 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     for (int s = 0; s < 4 && whose < 0; ++s)
         if (g_worn[s] && has(g_pieces[s].ibs, ib) && (player < 0 || player == s)) whose = s;
     if (whose < 0) return false;
+    // (worn over: only a draw at that player's place is theirs - the same model elsewhere, unplaced, is someone or
+    //  something else's: the main menu's couch Peter shares menu player 2's pieces - it keeps its head)
+    if (g_worn[whose]->over && player != whose) return false;
     player = whose;
     IDirect3DVertexBuffer9* vb = nullptr;
     UINT off = 0, stride = 0;
