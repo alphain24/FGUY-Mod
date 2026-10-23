@@ -85,8 +85,8 @@ The Skin Studio's **Save as mod** makes one from skin and emote packs. A mod fol
 file with `tools/make_fgmod.py` — double-click it and drag the folder into its window, or:
 
 ```bash
-python tools/make_fgmod.py path/to/YourMod            # → path/to/YourMod.fgmod
-python tools/make_fgmod.py path/to/YourMod out.fgmod  # → a name of your choice
+py tools/make_fgmod.py path/to/YourMod            # → path/to/YourMod.fgmod
+py tools/make_fgmod.py path/to/YourMod out.fgmod  # → a name of your choice
 ```
 
 What happens to it:

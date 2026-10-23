@@ -41,6 +41,11 @@ You only need what you'll use:
 | Plugins | **Visual Studio 2022** (the *Desktop development with C++* workload) |
 | Outfits / models | A 3D program that exports `.glb` — **Blender** is free |
 
+> [!NOTE]
+> On Windows, run Python scripts with **`py`** (the commands in this guide do). `python` often isn't set up and
+> says *"Python was not found; run without arguments to install from the Microsoft Store"*, even with Python
+> installed.
+
 Get the project's files: on the [repository page](https://github.com/alphain24/FGUY-Mod) click
 **Code › Download ZIP** (or `git clone` it).
 
@@ -53,7 +58,7 @@ It reads the characters from **your own copy of the game**, right in your browse
 <summary>Running it from the project's files instead</summary>
 
 ```bash
-python tools/cosmetics/dev_server.py "C:/path/to/your/game folder"
+py tools/cosmetics/dev_server.py "C:/path/to/your/game folder"
 ```
 
 Then open **http://127.0.0.1:8766**.

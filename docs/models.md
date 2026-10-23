@@ -174,7 +174,7 @@ Positions are in the character's space (its feet at y = 0, facing +z; Peter is a
 You can also make a pack from a rigged `.glb` from the command line:
 
 ```bash
-python tools/re/glb2fgmodel.py robot.glb Robot.fgmodel --name "Robot Stewie" --character Stewie --models 53,513
+py tools/re/glb2fgmodel.py robot.glb Robot.fgmodel --name "Robot Stewie" --character Stewie --models 53,513
 ```
 
 ---

@@ -33,7 +33,7 @@ Every start of the game writes **`FGUYMod\FGUYMod_<process id>.log`**. It's the 
 
 You can run several copies of the game on one PC, each its own player:
 
-1. Start a lobby server on your PC: `python server/fguy_lobby.py`
+1. Start a lobby server on your PC: `py server/fguy_lobby.py`
 2. Start two copies that go straight to the ONLINE screen:
 
    ```powershell
