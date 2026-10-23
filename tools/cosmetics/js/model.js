@@ -59,6 +59,17 @@ async function materialTexture(ho, mat) {
   return null;
 }
 
+// An outfit's picture in the game's skin pickers (Texture "Costume_<Character><Outfit>.tif" - Adam West is "West"),
+// as materialTexture gives a texture - or null
+export async function pictureFor(ho, character, outfit) {
+  const name = 'Costume_' + (character === 'AdamWest' ? 'West' : character) + outfit + '.tif';
+  const asset = ho.assets.find(a => a.type === T.Texture && a.name === name);
+  if (!asset) return null;
+  const b = await asset.bytes(), dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const blob = ho.get(u32(dv, 0), u32(dv, 4));
+  return blob ? {name: asset.name, texture: asset, blob} : null;
+}
+
 export async function loadModel(ho, model) {
   const pieces = [];
   for (const {asset: g} of ho.refs(await model.bytes())) {

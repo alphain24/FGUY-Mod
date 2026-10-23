@@ -52,6 +52,7 @@ header .sub { color: var(--muted); }
 .tex { border: 2px solid var(--line); border-radius: 8px; overflow: hidden; cursor: pointer; background: #0a1328; aspect-ratio: 1; position: relative; }
 .tex.on { border-color: var(--accent); }
 .tex canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+.tex .pictag { position: absolute; bottom: 3px; left: 3px; background: #2a80c8; color: #fff; font-size: 10px; font-weight: 800; border-radius: 6px; padding: 0 5px; }
 .tex .mod { position: absolute; top: 3px; right: 3px; background: var(--accent); color: #1b1300; font-size: 10px; font-weight: 800; border-radius: 6px; padding: 0 5px; }
 #bigTex { width: 100%; border-radius: 10px; border: 2px solid var(--line); background: repeating-conic-gradient(#1a2a48 0 25%, #12203b 0 50%) 0 0 / 16px 16px; cursor: crosshair; image-rendering: pixelated; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
@@ -154,8 +155,8 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
       <button class="btn" id="packPictureOff" hidden>No picture</button>
       <img id="packPictureShow" alt="" hidden style="height:56px;border-radius:6px;background:#0003">
     </div>
-    <div class="muted" id="packPictureInfo">Its picture in the game's menus (its skin tile, the HUD's head) - a drawing like the game's own,
-      on a transparent background. None: one is drawn from the 3D view.</div>
+    <div class="muted" id="packPictureInfo">Its picture in the game's menus (its skin tile, the HUD's head): a drawing of your own, on a
+      transparent background - or, without one, the outfit's own picture (PICTURE in the textures), with your changes.</div>
     <div class="row">
       <button class="btn primary" id="savePack" disabled>Save skin pack</button>
       <label class="btn">Open pack <input type="file" id="openPack" accept=".fgskin,.zip" hidden></label>

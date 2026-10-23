@@ -329,6 +329,23 @@ bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, c
     return true;
 }
 
+// cosmetics.cpp: a skin's picture made here - the game's texture's pixels (RGBA) with the recolors and the overlay on
+bool SkinBuildRgba(IDirect3DTexture9* game, const std::vector<double>& ops, const std::vector<unsigned char>& overlay,
+                   std::vector<unsigned char>& rgba, unsigned* w, unsigned* h) {
+    unsigned mips = 1;
+    D3DFORMAT fmt = D3DFMT_UNKNOWN;
+    if (!game || !ReadTexture(game, rgba, w, h, &fmt, &mips)) return false;
+    for (size_t i = 0; i + 7 <= ops.size(); i += 7) Recolor(rgba, &ops[i], &ops[i + 3], ops[i + 6]);
+    Rgba ov;
+    if (!overlay.empty() && DecodePng(overlay, *w, *h, ov))
+        for (size_t i = 0; i + 3 < rgba.size(); i += 4) {
+            double a = ov[i + 3] / 255.0;
+            if (a <= 0) continue;
+            for (int k = 0; k < 3; ++k) rgba[i + k] = Byte(ov[i + k] * a + rgba[i + k] * (1 - a));
+        }
+    return true;
+}
+
 // icons.cpp: a PNG's pixels (RGBA)
 bool SkinDecodePng(const std::vector<unsigned char>& png, std::vector<unsigned char>& rgba, unsigned* w, unsigned* h) {
     return DecodePng(png, 0, 0, rgba, w, h);

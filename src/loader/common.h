@@ -152,9 +152,13 @@ bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, c
                       std::vector<unsigned char>& dds);   // skinbuild.cpp: a skin's texture from the game's own (format 2)
 bool SkinPngToDds(const std::vector<unsigned char>& png, std::vector<unsigned char>& dds);   //   a PNG as a DXT5 DDS, its mips
 bool SkinDecodePng(const std::vector<unsigned char>& png, std::vector<unsigned char>& rgba, unsigned* w, unsigned* h);   //   its pixels
+bool SkinBuildRgba(IDirect3DTexture9* game, const std::vector<double>& ops, const std::vector<unsigned char>& overlay,
+                   std::vector<unsigned char>& rgba, unsigned* w, unsigned* h);   //   a skin's picture made here
 // icons.cpp: skin icons in the menus
 std::string IconsAdd(const std::vector<unsigned char>& png);   // the movie a menu loads to show it ("fguyicon_<key>.gfx"; "": not a PNG)
 const std::vector<unsigned char>* IconsMovie(const char* url);  //   ui.cpp: the movie for a file the game opens (nullptr: not one)
+void IconsAddPixels(const std::string& key, const std::vector<unsigned char>& rgba, unsigned w, unsigned h);   //   a picture made here
+bool IconsReady(const std::string& url);   //   its movie can be made
 std::string CosmeticsMySkinKey();               // cosmetics.cpp: the id of my lobby skin's head picture ("" none)
 std::string CosmeticsSkinHead(const std::string& key);   //   that head picture here: "<movie>|l|r|b" ("": no pack of it here)
 const char* CosmeticsOfflineSkins();             // cosmetics.cpp, the game's own skin pickers offline (costumes.as2js)

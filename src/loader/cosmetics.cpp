@@ -241,6 +241,8 @@ Skin* ParsePack(const std::vector<unsigned char>& pack, const std::wstring& name
         size_t at = s.find("\"textures\"");
         while (at != std::string::npos && (at = s.find("\"id\"", at + 1)) != std::string::npos) {
             size_t next = s.find("\"id\"", at + 1), ops = s.find("\"ops\"", at), ov = s.find("\"overlay\"", at);
+            size_t pic = s.find("\"picture\": true", at);
+            if (pic != std::string::npos && pic < next) continue;   // (its picture in the skin menus: not the character's)
             SkinTex t;
             t.recipe = true;
             std::vector<double> id = Numbers(s, s.find('[', at));
@@ -638,8 +640,57 @@ std::string JsonField(const std::vector<unsigned char>& pack, const char* key) {
 }
 struct PackEntry { std::wstring file; std::string name; unsigned lo, hi; FILETIME written; std::string who; std::wstring path, from;
                    std::string icon, head;   // (its pictures' movies - icons.cpp: "" none; head "<movie>|l|r|b")
-                   std::string pic; };       // (its outfit as the game's skin pickers name it: Costume_<Character><Outfit>.tif)
+                   std::string pic;          // (its outfit as the game's skin pickers name it: Costume_<Character><Outfit>.tif)
+                   std::string recipe; };    // (its picture made here from the game's own - Recipe's key: "" none)
 std::vector<PackEntry> g_packs;
+
+// A skin's picture made from the outfit's own in the game (skin.json's texture entry "picture": true - the Skin Studio's
+// PICTURE): its recolors and overlay on the game's texture, made on the render thread once that's loaded (icons.cpp
+// then makes its movie). No game art in the pack - the picture is this PC's own game's, changed.
+struct Recipe { std::string key; unsigned lo = 0, hi = 0; std::vector<double> ops; std::vector<unsigned char> overlay; bool done = false; };
+std::mutex g_recipeLock;
+std::vector<Recipe> g_recipes;
+
+std::string PictureRecipe(const std::vector<unsigned char>& pack) {   // (its key - "" none)
+    std::vector<unsigned char> js;
+    if (!ZipEntry(pack, "skin.json", js)) return "";
+    std::string s(js.begin(), js.end());
+    size_t pic = s.find("\"picture\": true");
+    if (pic == std::string::npos) return "";
+    size_t at = s.rfind("\"id\"", pic);
+    if (at == std::string::npos) return "";
+    std::vector<double> id = Numbers(s, s.find('[', at));
+    if (id.size() != 2) return "";
+    Recipe r;
+    r.lo = (unsigned)id[0];
+    r.hi = (unsigned)id[1];
+    size_t ops = s.find("\"ops\"", at), next = s.find("\"id\"", at + 1);
+    if (ops != std::string::npos && ops < next) r.ops = Numbers(s, s.find('[', ops));
+    size_t ov = s.find("\"overlay\"", at);
+    if (ov != std::string::npos && ov < next) {
+        size_t q1 = s.find('"', s.find(':', ov) + 1), q2 = s.find('"', q1 + 1);
+        if (q1 != std::string::npos && q2 != std::string::npos) ZipEntry(pack, s.substr(q1 + 1, q2 - q1 - 1), r.overlay);
+    }
+    unsigned h = 2166136261u;   // (its key: what it's made of)
+    auto mix = [&](const void* p, size_t n) { for (size_t i = 0; i < n; ++i) h = (h ^ static_cast<const unsigned char*>(p)[i]) * 16777619u; };
+    mix(&r.lo, 4); mix(&r.hi, 4);
+    if (!r.ops.empty()) mix(r.ops.data(), r.ops.size() * sizeof(double));
+    if (!r.overlay.empty()) mix(r.overlay.data(), r.overlay.size());
+    char key[16];
+    sprintf_s(key, "p%08x", h);
+    r.key = key;
+    std::lock_guard<std::mutex> l(g_recipeLock);
+    if (!std::any_of(g_recipes.begin(), g_recipes.end(), [&](const Recipe& x) { return x.key == r.key; })) g_recipes.push_back(r);
+    return r.key;
+}
+
+// a pack's tile picture for the menus: its own (icon.png), else its picture made here once it is ("" none yet)
+std::string IconOf(const PackEntry& e) {
+    if (!e.icon.empty()) return e.icon;
+    if (e.recipe.empty()) return "";
+    std::string url = "fguyicon_" + e.recipe + ".gfx";
+    return IconsReady(url) ? url : "";
+}
 
 // skin.json's "headFace": [left, right, bottom] as "|l|r|b" ("" none)
 std::string HeadFace(const std::vector<unsigned char>& pack) {
@@ -702,6 +753,7 @@ void ScanPacks() {
             if (CosmeticsPackInfo(d, &e.name, &e.lo, &e.hi)) {
                 std::vector<unsigned char> png;
                 if (ZipEntry(d, "icon.png", png)) e.icon = IconsAdd(png);
+                else e.recipe = PictureRecipe(d);
                 png.clear();
                 if (ZipEntry(d, "head.png", png)) e.head = IconsAdd(png) + HeadFace(d);
                 e.who = JsonField(d, "character");   // ("Stewie - Default": the MODS page)
@@ -804,7 +856,7 @@ const char* CosmeticsOfflineSkins() {
         if (e.pic.empty()) continue;
         std::string n = e.name;
         for (char& c : n) if (c == '~' || c == ';') c = ' ';
-        g_offlineText += e.pic + "~" + Narrow(e.file) + "~" + n + "~" + e.icon + ";";
+        g_offlineText += e.pic + "~" + Narrow(e.file) + "~" + n + "~" + IconOf(e) + ";";
     }
     return g_offlineText.c_str();
 }
@@ -916,7 +968,7 @@ const char* CosmeticsSkinOptions() {
         WideCharToMultiByte(CP_UTF8, 0, e.file.c_str(), -1, f, sizeof(f), nullptr, nullptr);
         std::string n = e.name;
         for (char& c : n) if (c == '~' || c == ';' || c == '|') c = ' ';
-        g_optionsText += n + "~" + f + "~" + e.icon + ";";
+        g_optionsText += n + "~" + f + "~" + IconOf(e) + ";";
     }
     return g_optionsText.c_str();
 }
@@ -1011,6 +1063,37 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
         if (!g_tracing) Log(L"Cosmetics: trace - no texture %x:%x here", g_traceLo, g_traceHi);
     }
     ModelsFrame(dev);   // (new characters: models.cpp)
+    static ULONGLONG lastPictures = 0;   // (skins' pictures made from the game's own, once their textures are loaded)
+    if (GetTickCount64() - lastPictures > 1500) {
+        lastPictures = GetTickCount64();
+        std::vector<Recipe*> todo;
+        {
+            std::lock_guard<std::mutex> l(g_recipeLock);
+            for (Recipe& r : g_recipes) if (!r.done) todo.push_back(&r);
+        }
+        for (Recipe* r : todo) {
+            IDirect3DTexture9* tex = TextureOf(r->lo, r->hi);
+            if (!tex) continue;
+            std::vector<unsigned char> rgba;
+            unsigned w = 0, h = 0;
+            r->done = true;
+            if (!SkinBuildRgba(tex, r->ops, r->overlay, rgba, &w, &h)) { Log(L"Cosmetics: a skin's picture couldn't be made"); continue; }
+            while (w > 128 && h > 64 && !(w & 1) && !(h & 1)) {   // (halved: about the menus' size, fewer shapes)
+                std::vector<unsigned char> half((size_t)(w / 2) * (h / 2) * 4);
+                for (unsigned y = 0; y < h / 2; ++y)
+                    for (unsigned x = 0; x < w / 2; ++x)
+                        for (int k = 0; k < 4; ++k) {
+                            const unsigned char* p = &rgba[((size_t)(y * 2) * w + x * 2) * 4 + k];
+                            half[((size_t)y * (w / 2) + x) * 4 + k] = (unsigned char)((p[0] + p[4] + p[w * 4] + p[w * 4 + 4] + 2) / 4);
+                        }
+                rgba.swap(half);
+                w /= 2; h /= 2;
+            }
+            IconsAddPixels(r->key, rgba, w, h);
+            Log(L"Cosmetics: a skin's picture made here from the game's %x:%x (%zu recolors%s), %ux%u", r->lo, r->hi,
+                r->ops.size() / 7, r->overlay.empty() ? L"" : L", own pixels", w, h);
+        }
+    }
     if (!g_lockInit) return;
     std::vector<TestCmd> tests;
     std::vector<PendingSkin> pending;

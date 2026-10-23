@@ -18,6 +18,8 @@ namespace {
 std::mutex g_lock;
 std::map<std::string, std::vector<unsigned char>> g_png;     // (key: the PNG's)
 std::map<std::string, std::vector<unsigned char>> g_movie;   // (made when first asked for - kept: a menu reads from it)
+struct Pixels { std::vector<unsigned char> rgba; unsigned w = 0, h = 0; };
+std::map<std::string, Pixels> g_pixels;   // (pictures made here - a skin's from the game's own: cosmetics.cpp)
 
 struct Bits {
     std::vector<unsigned char> b;
@@ -146,18 +148,37 @@ std::string IconsAdd(const std::vector<unsigned char>& png) {
     return std::string("fguyicon_") + key + ".gfx";
 }
 
+void IconsAddPixels(const std::string& key, const std::vector<unsigned char>& rgba, unsigned w, unsigned h) {
+    std::lock_guard<std::mutex> l(g_lock);
+    g_pixels[key] = {rgba, w, h};
+}
+
+bool IconsReady(const std::string& url) {
+    size_t a = url.find("fguyicon_"), b = url.find(".gfx");
+    if (a == std::string::npos || b == std::string::npos) return false;
+    std::string key = url.substr(a + 9, b - a - 9);
+    std::lock_guard<std::mutex> l(g_lock);
+    return g_png.count(key) || g_pixels.count(key) || g_movie.count(key);
+}
+
 const std::vector<unsigned char>* IconsMovie(const char* name) {
     const char* k = name ? strstr(name, "fguyicon_") : nullptr;
     if (!k) return nullptr;
-    std::string key(k + 9, strnlen(k + 9, 8));
+    const char* dot = strstr(k, ".gfx");
+    std::string key(k + 9, dot ? (size_t)(dot - k - 9) : strnlen(k + 9, 16));
     std::lock_guard<std::mutex> l(g_lock);
     auto made = g_movie.find(key);
     if (made != g_movie.end()) return &made->second;
-    auto png = g_png.find(key);
-    if (png == g_png.end()) return nullptr;
     std::vector<unsigned char> rgba;
     unsigned w = 0, h = 0;
-    if (!SkinDecodePng(png->second, rgba, &w, &h) || !w || !h || w > 1600 || h > 1600) return nullptr;
+    auto px = g_pixels.find(key);
+    if (px != g_pixels.end()) { rgba = px->second.rgba; w = px->second.w; h = px->second.h; }
+    else {
+        auto png = g_png.find(key);
+        if (png == g_png.end()) return nullptr;
+        if (!SkinDecodePng(png->second, rgba, &w, &h)) return nullptr;
+    }
+    if (!w || !h || w > 1600 || h > 1600) return nullptr;
     Log(L"Icons: %S - a %ux%u picture", key.c_str(), w, h);
     std::vector<unsigned char>& m = g_movie[key] = Movie(rgba, w, h);
     wchar_t dump[8];   // (test knob FGUYMOD_TEST_ICONDUMP=1: the movie written to FGUYMod\icon_<key>.swf too)

@@ -169,6 +169,7 @@ Blue_Stewie.fgskin
 | `head` | | Its HUD head picture. |
 | `headFace` | | Where the face is in `head.png`: `[left, right, bottom]`, as fractions of its width / height. |
 | `picture` | | The Skin Studio's note that the pictures came from a drawing. |
+| `textures.*.picture` | | `true`: that entry is the outfit's picture in the game's skin menus (Costume_*.tif), not a texture of the character - the game makes the skin's picture from it when the pack has no `icon.png`. |
 | `tool` | | What made it. |
 
 > [!TIP]
@@ -193,9 +194,14 @@ Two optional pictures make a skin look at home in the game's menus:
 | `icon.png` | 152 × 212 | The skin's tile on the lobby's character screen, on the game's blue. |
 | `head.png` | 128 × 128 | In place of the character's head on the in-game HUD. |
 
-With **Skin picture** in the Studio, both come from one drawing of yours (transparent background): the tile is the
-whole drawing; the head is its top, rounded off under the chin. Without one, the Studio draws them from the 3D view
-in a flat style.
+**Without a drawing, the skin's picture is made automatically:** the Studio shows the outfit's own picture from the
+game's skin menus among the textures (tagged **PICTURE**), and every recolour you make goes to it too, matched to its
+own shades. You can recolour it or paint on it like any texture. The pack keeps only what you changed (`"picture":
+true` on that texture's entry), and each player's game makes the picture from its own copy — so it looks exactly like
+the game's other skin pictures, with your colours.
+
+With **Skin picture** in the Studio, both come from one drawing of yours instead (transparent background): the tile is
+the whole drawing; the head is its top, rounded off under the chin.
 
 For the HUD, `headFace` tells the game where the face is, so it can make your face exactly as wide as the
 character's own drawn head and put it in the same place — a hat then stands up out of it, as it should.

@@ -6,7 +6,7 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {zipSync, unzipSync, strToU8, strFromU8} from 'fflate';
 import {Ho} from './ho.js';
 import {decodeDds} from './dds.js';
-import {loadModel, loadSkeleton, outfitsOf, CHARACTERS} from './model.js';
+import {loadModel, loadSkeleton, outfitsOf, pictureFor, CHARACTERS} from './model.js';
 import {createEmoteEditor} from './emotes.js';
 import {createModelEditor, modelPackGroup} from './models.js';
 
@@ -130,10 +130,18 @@ $('openFile').onchange = e => e.target.files[0] && openPackage(e.target.files[0]
 
 // Our skins (the FGUY Cosmetics mod's - no game art in them): library.json lists them, the packs are the mod's own files
 // (dev_server.py hands out dist/FGUYMod/mods as /mods/). Each shows as a chip beside its character's outfits.
-const library = fetch('library.json').then(r => (r.ok ? r.json() : {skins: []})).catch(() => ({skins: []}));
+// Served some other way (a plain web server on this folder, no dev_server.py), they're fetched from the repository.
+const REPO_RAW = 'https://raw.githubusercontent.com/alphain24/FGUY-Mod/main/';
+const fetchOr = async (local, remote) => {
+  try { const r = await fetch(local); if (r.ok) return r; } catch (e) { /* (not here) */ }
+  return fetch(remote).catch(() => ({ok: false}));
+};
+const library = fetchOr('library.json', REPO_RAW + 'tools/cosmetics/library.json')
+  .then(r => (r.ok ? r.json() : {skins: []})).catch(() => ({skins: []}));
 async function openLibrarySkin(entry) {
   setStatus('Opening "' + entry.name + '"...');
-  const r = await fetch('mods/FGUYCosmetics/skins/' + encodeURIComponent(entry.file));
+  const file = encodeURIComponent(entry.file);
+  const r = await fetchOr('mods/FGUYCosmetics/skins/' + file, REPO_RAW + 'dist/FGUYMod/mods/FGUYCosmetics/skins/' + file);
   if (!r.ok) { setStatus("Couldn't find " + entry.file + '.'); return; }
   await openPackBytes(new Uint8Array(await r.arrayBuffer()), entry.name);
   for (const c of document.querySelectorAll('.chip')) c.classList.toggle('on', c === entry.chip);
@@ -259,6 +267,15 @@ async function selectOutfit(o) {
     mesh.visible = !mesh.userData.damage || $('showDamage').checked;
     holder.add(mesh);
   }
+  // its picture in the game's skin pickers - a texture of its own here: the recolors go to it too, and the pack keeps
+  // what was done to it (the game makes the skin's picture from its own, as it does the textures)
+  const pic = await pictureFor(state.ho, o.character, o.outfit).catch(() => null);
+  if (mine !== selecting) return;
+  if (pic) {
+    const t = await textureFor(pic);
+    t.picture = true;
+    if (!texs.includes(t)) texs.push(t);
+  }
   await showPackModel3D();
   frame();
   o.textures = texs;
@@ -296,6 +313,12 @@ function showTextures(texs) {
     c.width = 96; c.height = 96;
     d.append(c);
     t.thumb = c; t.thumbBox = d;
+    if (t.picture) {   // (the outfit's picture in the game's skin pickers)
+      d.title = t.name + ' - its picture in the game\'s skin menus';
+      const tag = document.createElement('span');
+      tag.className = 'pictag'; tag.textContent = 'PICTURE';
+      d.append(tag);
+    }
     d.onclick = () => selectTexture(t);
     box.append(d);
     drawThumb(t);
@@ -423,6 +446,24 @@ function recolor(t, P, Q, tol) {
 // The outfit's battle damage textures carry their own copy of its colors (torn bits of the clothes, drawn over the
 // character in the game): a recolor goes to them too - or the old color shows through in the game.
 const isDamage = t => /damage|dstr/i.test(t.name);
+// a texture's own color nearest to `rgb` - one of its common ones (over 0.2% of it), within 110 - or null
+function nearestColor(t, rgb) {
+  const d = t.ctx.getImageData(0, 0, t.canvas.width, t.canvas.height).data, buckets = new Map();
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 128) continue;
+    const k = (d[i] >> 3) << 10 | (d[i + 1] >> 3) << 5 | d[i + 2] >> 3, b = buckets.get(k) || [0, 0, 0, 0];
+    b[0] += d[i]; b[1] += d[i + 1]; b[2] += d[i + 2]; b[3]++;
+    buckets.set(k, b);
+  }
+  const min = d.length / 4 * 0.002;
+  let best = null, dist = 110;
+  for (const b of buckets.values()) {
+    if (b[3] < min) continue;
+    const c = [b[0] / b[3], b[1] / b[3], b[2] / b[3]], e = Math.hypot(c[0] - rgb[0], c[1] - rgb[1], c[2] - rgb[2]);
+    if (e < dist) { dist = e; best = c.map(Math.round); }
+  }
+  return best;
+}
 $('apply').onclick = () => {
   const P = state.picked;
   if (!P) return;
@@ -430,10 +471,17 @@ $('apply').onclick = () => {
   const tol = +$('tolerance').value * 2.2;
   const count = recolor(P.t, P.rgb, Q, tol);
   let extra = 0;
-  if (count) for (const t of state.current?.textures || []) if (t !== P.t && isDamage(t)) extra += recolor(t, P.rgb, Q, tol);
+  if (count) for (const t of state.current?.textures || []) {   // (and to its picture in the skin menus - drawn in its
+    if (t === P.t) continue;                                        //  own shades: the nearest of its colors is that one)
+    if (isDamage(t)) extra += recolor(t, P.rgb, Q, tol);
+    else if (t.picture && !P.t.picture) {
+      const near = nearestColor(t, P.rgb);
+      if (near) extra += recolor(t, near, Q, tol);
+    }
+  }
   state.picked = {t: P.t, rgb: Q};
   $('fromColor').style.background = hex;
-  setStatus(count ? `Recolored ${count.toLocaleString()} pixels${extra ? ` (and ${extra.toLocaleString()} in the battle damage)` : ''}.`
+  setStatus(count ? `Recolored ${count.toLocaleString()} pixels${extra ? ` (and ${extra.toLocaleString()} in the battle damage and the picture)` : ''}.`
     : 'Nothing that close - pick again or allow more with "How close".');
 };
 
@@ -781,6 +829,7 @@ async function buildPack() {
   }
   for (const t of edited) {
     const entry = {id: t.id, width: t.canvas.width, height: t.canvas.height, format: t.format, mips: t.mips, ops: t.ops};
+    if (t.picture) entry.picture = true;   // (the skin's picture in the game's menus: made from the game's own there)
     const ov = overlayOf(t);
     if (ov) {
       entry.overlay = 'textures/' + t.name + '.png';
@@ -788,13 +837,18 @@ async function buildPack() {
     }
     manifest.textures[t.name] = entry;
   }
-  const pics = state.packPicture ? await pictureIcons(state.packPicture.img) : await renderIcons();
-  if (state.packPicture) manifest.picture = 'icon.png';   // (made from a picture: opened again, its tile is that)
-  files['icon.png'] = [pics.icon, {level: 0}];   // (stored)
-  files['head.png'] = [pics.head, {level: 0}];
-  manifest.icon = 'icon.png';
-  manifest.head = 'head.png';
-  manifest.headFace = pics.face;   // (the face in it: the game sizes the head by it)
+  // its pictures in the game's menus: a drawing of its own ("Skin picture"); else the outfit's own picture, as changed
+  // here (the game makes it - nothing to store but the changes); else drawn from the view
+  const ownPicture = (o.textures || []).some(t => t.picture);
+  if (state.packPicture || !ownPicture) {
+    const pics = state.packPicture ? await pictureIcons(state.packPicture.img) : await renderIcons();
+    if (state.packPicture) manifest.picture = 'icon.png';   // (made from a picture: opened again, its tile is that)
+    files['icon.png'] = [pics.icon, {level: 0}];   // (stored)
+    files['head.png'] = [pics.head, {level: 0}];
+    manifest.icon = 'icon.png';
+    manifest.head = 'head.png';
+    manifest.headFace = pics.face;   // (the face in it: the game sizes the head by it)
+  }
   files['skin.json'] = [strToU8(JSON.stringify(manifest, null, 2)), {level: 0}];   // (stored: the mod reads it as is)
   return {name, count: edited.length, blob: new Blob([zipSync(files)])};
 }
