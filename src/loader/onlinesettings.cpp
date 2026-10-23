@@ -213,6 +213,7 @@ void OnlineSettingsWriteBack(DWORD lobbyPid) {
 
 // ---- the SETTINGS page --------------------------------------------------------------------------------------
 enum Row {
+    kLooks, kSkin,
     kAudio, kMusic, kEffects, kDialog, kCinematic, kMovies, kSubs,
     kControls, kAim, kInvert, kVibration, kReticles, kInputInfo, kKeysInfo,
     kScreen, kDisplay, kResolution, kFrameRate, kShowPing, kSpectate, kDirect,
@@ -226,6 +227,14 @@ int OnlineSettingsRows(SettingsRow* out, int max) {
     };
     auto pct = [&](float f) { sprintf_s(v, "%d", Percent(f)); return std::string(v); };   // (the HUD adds the %)
     auto onoff = [](bool b) { return std::string(b ? "ON" : "OFF"); };
+    put(kLooks, "LOOKS", "", 'h');
+    std::vector<SkinChoice> skins;
+    std::wstring picked, wearing = NetplayMySkinPath();
+    bool known = CosmeticsSkinChoices(NetplayLocalSlot(), &skins, &picked);
+    std::string skin = "NONE (the outfit's own)";
+    for (const SkinChoice& c : skins) if (c.path == wearing) skin = c.name;
+    if (!known || skins.empty()) put(kSkin, "Custom skin", known ? "None for this outfit" : "-", 'i');
+    else put(kSkin, "Custom skin", skin, 'c');
     put(kAudio, "AUDIO", "", 'h');
     put(kMusic, "Music", pct(AudioGameVolume(0)), 's');
     put(kEffects, "Sound effects", pct(AudioGameVolume(1)), 's');
@@ -266,6 +275,17 @@ void OnlineSettingsChange(int row, int delta) {
         p = p < 0 ? 0 : (p > 100 ? 100 : p);
         return p / 100.0f;
     };
+    if (row == kSkin) {   // (none, then the outfit's skins: left / right - A goes on)
+        std::vector<SkinChoice> skins;
+        std::wstring picked, wearing = NetplayMySkinPath();
+        if (!CosmeticsSkinChoices(NetplayLocalSlot(), &skins, &picked) || skins.empty()) return;
+        int n = (int)skins.size() + 1, at = 0;
+        for (int i = 0; i < (int)skins.size(); ++i) if (skins[i].path == wearing) at = i + 1;
+        at = (at + (delta < 0 ? -1 : 1) + n) % n;
+        CosmeticsRememberSkin(NetplayLocalSlot(), at ? skins[at - 1].file : L"");
+        NetplaySetMySkin(at ? skins[at - 1].path : L"");
+        return;
+    }
     if (row >= kMusic && row <= kCinematic) {
         if (delta) AudioSetGameVolume(row - kMusic, step(AudioGameVolume(row - kMusic)));
     } else if (row == kMovies) {

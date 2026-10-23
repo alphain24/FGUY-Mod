@@ -995,6 +995,24 @@ std::wstring CosmeticsMySkinPath() {
     return PackPath(g_myPick);
 }
 
+// In a match (netplay.cpp, the online pause menu's Skin row): the skins here for the outfit a player wears now, and
+// the one remembered for it (FGUYMod.ini [Skins], as the lobby picks: "" none) - false: their outfit isn't known
+bool CosmeticsSkinChoices(int slot, std::vector<SkinChoice>* out, std::wstring* picked) {
+    unsigned lo = 0, hi = 0;
+    if (!CosmeticsPlayerModel(slot, 0, &lo, &hi)) return false;
+    ScanPacks();
+    out->clear();
+    for (const PackEntry& e : g_packs)
+        if (e.lo == lo && e.hi == hi) out->push_back({e.file, e.path, e.name});
+    std::wstring f = PickFor(lo, hi);
+    *picked = std::any_of(out->begin(), out->end(), [&](const SkinChoice& c) { return c.file == f; }) ? f : L"";
+    return true;
+}
+void CosmeticsRememberSkin(int slot, const std::wstring& file) {   // (that outfit's pick from now on)
+    unsigned lo = 0, hi = 0;
+    if (CosmeticsPlayerModel(slot, 0, &lo, &hi)) SetPickFor(lo, hi, file);
+}
+
 // online.cpp, the lobby: the head picture's id of my skin for the outfit the preview shows ("" none), and a head
 // picture by its id - if a pack here has it ("" not)
 std::string CosmeticsMySkinKey() {

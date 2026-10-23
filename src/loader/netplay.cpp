@@ -1139,7 +1139,8 @@ void SkinNoteIn(int s, const PktSkinNote* p) {
 }
 
 void SkinAskIn(int s, const PktSkinAsk* p) {
-    if (p->to != g_slot || p->crc != g_skinMineCrc || g_skinMine.empty()) return;
+    SkinLock();   // (mine can change mid-match: NetplaySetMySkin)
+    if (p->to != g_slot || p->crc != g_skinMineCrc || g_skinMine.empty()) { LeaveCriticalSection(&g_skinLock); return; }
     unsigned pieces = ((unsigned)g_skinMine.size() + kSkinPiece - 1) / kSkinPiece;
     for (unsigned i = p->first; i < p->first + min((unsigned)p->count, 48u) && i < pieces; ++i) {
         PktSkinPiece u{};
@@ -1152,6 +1153,7 @@ void SkinAskIn(int s, const PktSkinAsk* p) {
         memcpy(u.data, g_skinMine.data() + i * kSkinPiece, u.len);
         SendAll(&u, kPktSkinPieceHead + u.len);
     }
+    LeaveCriticalSection(&g_skinLock);
 }
 
 void SkinPieceIn(int s, const PktSkinPiece* p, int n) {
@@ -1166,6 +1168,66 @@ void SkinPieceIn(int s, const PktSkinPiece* p, int n) {
     LeaveCriticalSection(&g_skinLock);
 }
 
+// Mine from a file ("" none): worn here at once, and the next note (once a second) tells everyone - their PCs see
+// its new CRC and fetch it as at the start (SkinNoteIn). At the start of a match, and mid-match from the online pause
+// menu's Skin row (onlinesettings.cpp) or when I change outfit (SkinFollowOutfit).
+std::wstring g_skinMinePath;
+bool SkinLoadMine(const std::wstring& path) {
+    std::vector<unsigned char> d;
+    if (!path.empty()) {
+        HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (f == INVALID_HANDLE_VALUE) { Log(L"Netplay: my skin pack %s isn't there", path.c_str()); return false; }
+        DWORD size = GetFileSize(f, nullptr), got = 0;
+        d.resize(size);
+        bool ok = size < 16 * 1024 * 1024 && ReadFile(f, d.data(), size, &got, nullptr) && got == size;
+        CloseHandle(f);
+        if (!ok) return false;
+    }
+    SkinLock();
+    g_skinMine.swap(d);
+    g_skinMineCrc = SkinCrc(g_skinMine);
+    g_skinMinePath = path;
+    CosmeticsSetSkin(g_slot, g_skinMine, path.c_str());
+    Log(L"Netplay: my skin pack %s (%u bytes) - everyone gets it", path.empty() ? L"(none)" : path.c_str(),
+        (unsigned)g_skinMine.size());
+    LeaveCriticalSection(&g_skinLock);
+    return true;
+}
+
+// Once a second: a new outfit of mine (the death menu's change character) wears the skin remembered for it, as the
+// lobby would - none if there's none. While the level starts, the model read can be others' for a while (seen for
+// up to 10 s): this starts once my character shows the outfit of the skin from the lobby (no skin: one outfit for
+// 10 s running), and then an outfit counts once it's been worn for 3 s running.
+void SkinFollowOutfit() {
+    static unsigned seenLo = 0, seenHi = 0, candLo = 0, candHi = 0;
+    static int candFor = 0;
+    static bool armed = false;
+    unsigned lo = 0, hi = 0;
+    if (!CosmeticsPlayerModel(g_slot, 0, &lo, &hi)) return;
+    if (lo != candLo || hi != candHi) { candLo = lo; candHi = hi; candFor = 0; }
+    ++candFor;
+    if (!armed) {
+        std::string name;
+        unsigned plo = 0, phi = 0;
+        SkinLock();
+        bool pack = !g_skinMine.empty(), fits = pack && CosmeticsPackInfo(g_skinMine, &name, &plo, &phi) && plo == lo && phi == hi;
+        LeaveCriticalSection(&g_skinLock);
+        if (!(fits || (!pack && candFor >= 10))) return;
+        armed = true;
+        seenLo = lo;
+        seenHi = hi;
+        return;
+    }
+    if (candFor < 3 || (lo == seenLo && hi == seenHi)) return;
+    seenLo = lo;
+    seenHi = hi;
+    std::vector<SkinChoice> choices;
+    std::wstring picked, path;
+    if (!CosmeticsSkinChoices(g_slot, &choices, &picked)) return;
+    for (const SkinChoice& c : choices) if (c.file == picked) path = c.path;
+    if (path != NetplayMySkinPath()) SkinLoadMine(path);
+}
+
 // every frame (the render thread): say mine, ask for the missing pieces, a complete pack worn
 void SkinFrame() {
     if (!g_enabled) return;
@@ -1173,7 +1235,10 @@ void SkinFrame() {
     static ULONGLONG lastNote = 0;
     if (now - lastNote >= 1000) {
         lastNote = now;
+        SkinFollowOutfit();
+        SkinLock();
         PktSkinNote note{{'n', (BYTE)g_slot}, (unsigned)g_skinMine.size(), g_skinMineCrc};
+        LeaveCriticalSection(&g_skinLock);
         SendAll(&note, sizeof(note));
     }
     SkinLock();
@@ -1205,17 +1270,7 @@ void SkinStart() {
     wchar_t path[MAX_PATH];
     DWORD n = GetEnvironmentVariableW(L"FGUYMOD_MY_SKIN", path, MAX_PATH);
     if (!n || n >= MAX_PATH) return;
-    HANDLE f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-    if (f == INVALID_HANDLE_VALUE) { Log(L"Netplay: my skin pack %s isn't there", path); return; }
-    DWORD size = GetFileSize(f, nullptr), got = 0;
-    std::vector<unsigned char> d(size);
-    bool ok = size < 16 * 1024 * 1024 && ReadFile(f, d.data(), size, &got, nullptr) && got == size;
-    CloseHandle(f);
-    if (!ok) return;
-    g_skinMine.swap(d);
-    g_skinMineCrc = SkinCrc(g_skinMine);
-    CosmeticsSetSkin(g_slot, g_skinMine, path);
-    Log(L"Netplay: my skin pack %s (%u bytes) - everyone gets it", path, (unsigned)g_skinMine.size());
+    SkinLoadMine(path);
 }
 
 // ---- emotes: a player's emote, played on every PC (emotes.cpp) ------------------------------------------------------
@@ -5795,6 +5850,16 @@ bool NetplayPad(DWORD pad, XINPUT_STATE* state, DWORD(WINAPI* real)(DWORD, XINPU
     state->Gamepad.sThumbRX = p.rx;
     state->Gamepad.sThumbRY = p.ry;
     return true;
+}
+// The online pause menu's Skin row (onlinesettings.cpp): mine mid-match - everyone sees it once they have it
+void NetplaySetMySkin(const std::wstring& path) {
+    if (g_enabled) SkinLoadMine(path);
+}
+std::wstring NetplayMySkinPath() {
+    SkinLock();
+    std::wstring p = g_skinMinePath;
+    LeaveCriticalSection(&g_skinLock);
+    return p;
 }
 bool NetplayPadConnected(DWORD pad) { return (g_enabled || g_left) && pad < 4 && (int)pad < g_players; }
 

@@ -209,6 +209,11 @@ bool CosmeticsPlayerModel(int which, int nth, unsigned* lo, unsigned* hi);   // 
 const char* CosmeticsSkinOptions();                //   FGUYMOD_SkinOptions: the skins for the lobby preview's outfit
 void CosmeticsSkinPick(const char* file);           //   FGUYMOD_SkinPick: my skin for it
 std::wstring CosmeticsMySkinPath();
+struct SkinChoice { std::wstring file, path; std::string name; };
+bool CosmeticsSkinChoices(int slot, std::vector<SkinChoice>* out, std::wstring* picked);   //   in a match: the skins
+void CosmeticsRememberSkin(int slot, const std::wstring& file);                          //   for my outfit now
+void NetplaySetMySkin(const std::wstring& path);   // netplay.cpp: mid-match, another skin pack of mine ("" none)
+std::wstring NetplayMySkinPath();                  //   the one I wear ("" none)
 const char* CosmeticsSkinList();                   //   FGUYMOD_SkinList: the MODS page's skins
 void CosmeticsSkinToggle(const char* file);         //   FGUYMOD_SkinToggle: on / off for its outfit                 //   online.cpp: my skin pack for the match ("" none)
 std::string ModsOnlineKey();           //   the gameplay mods that are on (the lobby server matches by it)
