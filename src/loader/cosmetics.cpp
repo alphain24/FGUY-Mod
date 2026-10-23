@@ -8,6 +8,7 @@
 #include <d3d9.h>
 #include <intrin.h>
 #include <algorithm>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -146,6 +147,8 @@ struct Skin {
 };
 Skin* g_skins[4] = {};                     // (by player index - the render thread's)
 struct PendingSkin { int slot; std::vector<unsigned char> pack; std::wstring name; };
+std::mutex g_headLock;
+std::string g_head[4];   // (each player's skin's head picture: its movie - "" none)
 std::vector<PendingSkin> g_pending;        // (from any thread, under g_lock)
 struct Swap { IDirect3DTexture9* perSlot[4]; };
 std::vector<std::pair<IDirect3DBaseTexture9*, Swap>> g_swaps;   // (the game's texture -> each player's own)
@@ -608,7 +611,8 @@ std::string JsonField(const std::vector<unsigned char>& pack, const char* key) {
     size_t q1 = s.find('"', s.find(':', at) + 1), q2 = q1 == std::string::npos ? q1 : s.find('"', q1 + 1);
     return q2 == std::string::npos ? "" : s.substr(q1 + 1, q2 - q1 - 1);
 }
-struct PackEntry { std::wstring file; std::string name; unsigned lo, hi; FILETIME written; std::string who; std::wstring path, from; };
+struct PackEntry { std::wstring file; std::string name; unsigned lo, hi; FILETIME written; std::string who; std::wstring path, from;
+                   std::string icon; };   // (its picture's movie - icons.cpp; "" none)
 std::vector<PackEntry> g_packs;
 ULONGLONG g_packsAt = 0;
 std::wstring g_myPick;              // (the file picked for the outfit shown - empty: none)
@@ -652,6 +656,8 @@ void ScanPacks() {
             PackEntry e{fd.cFileName, "", 0, 0, fd.ftLastWriteTime, "", path, folder.second};
             std::vector<unsigned char> d = ReadAll(path);
             if (CosmeticsPackInfo(d, &e.name, &e.lo, &e.hi)) {
+                std::vector<unsigned char> png;
+                if (ZipEntry(d, "icon.png", png)) e.icon = IconsAdd(png);
                 e.who = JsonField(d, "character");   // ("Stewie - Default": the MODS page)
                 std::string outfit = JsonField(d, "outfit");
                 if (!outfit.empty()) e.who += " - " + outfit;
@@ -750,8 +756,8 @@ void CosmeticsSkinToggle(const char* file) {
     }
 }
 
-// FGUYMOD_SkinOptions: "<model lo>_<model hi>|<picked file>|<name>~<file>;..." - the packs for the outfit the lobby's
-// preview shows (none known: "|" only)
+// FGUYMOD_SkinOptions: "<model lo>_<model hi>|<picked file>|<name>~<file>~<icon movie>;..." - the packs for the outfit
+// the lobby's preview shows (none known: "|" only)
 const char* CosmeticsSkinOptions() {
     ScanPacks();
     unsigned lo = 0, hi = 0;
@@ -779,7 +785,7 @@ const char* CosmeticsSkinOptions() {
         WideCharToMultiByte(CP_UTF8, 0, e.file.c_str(), -1, f, sizeof(f), nullptr, nullptr);
         std::string n = e.name;
         for (char& c : n) if (c == '~' || c == ';' || c == '|') c = ' ';
-        g_optionsText += n + "~" + f + ";";
+        g_optionsText += n + "~" + f + "~" + e.icon + ";";
     }
     return g_optionsText.c_str();
 }
@@ -804,6 +810,14 @@ std::wstring CosmeticsMySkinPath() {
     unsigned lo = 0, hi = 0;
     if (g_myPick.empty() || !CosmeticsPlayerModel(2, 0, &lo, &hi) || lo != g_myPickLo || hi != g_myPickHi) return L"";
     return PackPath(g_myPick);
+}
+
+// FGUYMOD_HeadIcon (the HUD's SetHeadIcon - pause.as2js FGUYHeadIcon): the head picture of the skin a player wears
+const char* CosmeticsHeadIcon(int player) {
+    static std::string out;
+    std::lock_guard<std::mutex> l(g_headLock);
+    out = player >= 0 && player < 4 ? g_head[player] : "";
+    return out.c_str();
 }
 
 void CosmeticsTrace(unsigned lo, unsigned hi) {
@@ -861,6 +875,12 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
         }
         // (a skin pack can carry a model pack - "model.fgmodel": outfit pieces worn with it, models.cpp - put on and
         //  taken off with the skin; online it comes along in the same pack)
+        {   // (its head for the HUD - icons.cpp)
+            std::vector<unsigned char> head;
+            std::string icon = !p.pack.empty() && ZipEntry(p.pack, "head.png", head) ? IconsAdd(head) : "";
+            std::lock_guard<std::mutex> l(g_headLock);
+            g_head[p.slot] = icon;
+        }
         static bool skinModel[4] = {};
         std::vector<unsigned char> model;
         if (!p.pack.empty() && ZipEntry(p.pack, "model.fgmodel", model)) {

@@ -150,6 +150,13 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
     <div class="muted" id="packModelInfo">Outfit pieces made in the Models tab (a hat, a vest...) can come with the skin.</div>
     <div class="row" id="packModelShowRow" hidden><label class="muted"><input type="checkbox" id="packModelShow" checked> Show it on the character</label></div>
     <div class="row">
+      <label class="btn">Skin picture <input type="file" id="packPicture" accept="image/png,image/webp,image/jpeg" hidden></label>
+      <button class="btn" id="packPictureOff" hidden>No picture</button>
+      <img id="packPictureShow" alt="" hidden style="height:56px;border-radius:6px;background:#0003">
+    </div>
+    <div class="muted" id="packPictureInfo">Its picture in the game's menus (its skin tile, the HUD's head) - a drawing like the game's own,
+      on a transparent background. None: one is drawn from the 3D view.</div>
+    <div class="row">
       <button class="btn primary" id="savePack" disabled>Save skin pack</button>
       <label class="btn">Open pack <input type="file" id="openPack" accept=".fgskin,.zip" hidden></label>
     </div>

@@ -151,6 +151,11 @@ struct IDirect3DIndexBuffer9;
 bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, const std::vector<unsigned char>& overlay,
                       std::vector<unsigned char>& dds);   // skinbuild.cpp: a skin's texture from the game's own (format 2)
 bool SkinPngToDds(const std::vector<unsigned char>& png, std::vector<unsigned char>& dds);   //   a PNG as a DXT5 DDS, its mips
+bool SkinDecodePng(const std::vector<unsigned char>& png, std::vector<unsigned char>& rgba, unsigned* w, unsigned* h);   //   its pixels
+// icons.cpp: skin icons in the menus
+std::string IconsAdd(const std::vector<unsigned char>& png);   // the movie a menu loads to show it ("fguyicon_<key>.gfx"; "": not a PNG)
+const std::vector<unsigned char>* IconsMovie(const char* url);  //   ui.cpp: the movie for a file the game opens (nullptr: not one)
+const char* CosmeticsHeadIcon(int player);   // cosmetics.cpp, FGUYMOD_HeadIcon: the HUD head of the skin a player wears ("" none)
 IDirect3DTexture9* CosmeticsTextureFromDds(IDirect3DDevice9* dev, const std::vector<unsigned char>& dds);   // cosmetics.cpp
 int CosmeticsDrawPlayer();             //   which player this draw is of (-1 none)
 // models.cpp: new characters (the FGUY Cosmetics mod's models)

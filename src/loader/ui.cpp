@@ -168,11 +168,42 @@ OpenFile_t Real_OpenFile;
 std::set<std::string> g_seenFiles;
 std::mutex g_openLock;  // movies can be opened by the game's loading threads too
 
+std::vector<std::string> g_carriers;   // (movies the game opened from its packages - small first: icons.cpp's ride in one)
+
+// A skin icon's movie (icons.cpp: "fguyicon_<key>.gfx", which no package has): one of the game's own small movies,
+// opened again, pointed at it - as a patch is (the file holds no data of its own).
+void* IconFile(void* self, const char* url, int flags, int mode) {
+    const std::vector<unsigned char>* movie = IconsMovie(url);
+    if (!movie) return nullptr;
+    std::vector<std::string> carriers;
+    {
+        std::lock_guard<std::mutex> lock(g_openLock);
+        carriers = g_carriers;
+    }
+    for (const std::string& c : carriers) {
+        void* file = Real_OpenFile(self, c.c_str(), flags, mode);
+        if (!file) continue;
+        auto bytes = reinterpret_cast<unsigned char*>(file);
+        if (*reinterpret_cast<uintptr_t*>(file) != kMemoryFileVtable) { Log(L"UI: %S isn't a memory file - not a carrier", c.c_str()); continue; }
+        *reinterpret_cast<const unsigned char**>(bytes + kMemFileData) = movie->data();
+        *reinterpret_cast<int*>(bytes + kMemFileLen) = (int)movie->size();
+        *reinterpret_cast<int*>(bytes + kMemFilePos) = 0;
+        Log(L"UI: %S carried by %S (%zu bytes)", url, c.c_str(), movie->size());
+        return file;
+    }
+    Log(L"UI: no movie to carry %S", url);
+    return nullptr;
+}
+
 void* __fastcall Hook_OpenFile(void* self, void*, const char* url, int flags, int mode) {
+    if (url && strstr(url, "fguyicon_")) return IconFile(self, url, flags, mode);
     void* file = Real_OpenFile(self, url, flags, mode);
     if (!file || !url) return file;
     auto bytes = reinterpret_cast<unsigned char*>(file);
     std::lock_guard<std::mutex> lock(g_openLock);
+    if (*reinterpret_cast<uintptr_t*>(file) == kMemoryFileVtable && *reinterpret_cast<int*>(bytes + kMemFileLen) < 4096 &&
+        std::find(g_carriers.begin(), g_carriers.end(), url) == g_carriers.end() && g_carriers.size() < 4)
+        g_carriers.push_back(url);
     if (g_seenFiles.insert(url).second || NetplayEnabled())
         Log(L"UI: game opens \"%S\" (file type %#x, %d bytes) - tick %u, thread %lu%s", url,
             *reinterpret_cast<unsigned*>(file), *reinterpret_cast<int*>(bytes + kMemFileLen), NetplayTick(),
@@ -368,6 +399,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnString(movie, OnlineMenuMouse(ArgString(args, argc, 0), ArgString(args, argc, 1)));
         } else if (strcmp(fn, "SkinOptions") == 0) {   // (the lobby: custom skins for the preview's outfit - cosmetics.cpp)
             ReturnString(movie, CosmeticsSkinOptions());
+        } else if (strcmp(fn, "HeadIcon") == 0) {   // (the HUD: the head of a player's skin - cosmetics.cpp, icons.cpp)
+            ReturnString(movie, CosmeticsHeadIcon((int)ArgNumber(args, argc, 0)));
         } else if (strcmp(fn, "SkinPick") == 0) {
             CosmeticsSkinPick(ArgString(args, argc, 0));
         } else if (strcmp(fn, "Rematch") == 0) {   // (the end of the match's menu: the rematch vote)

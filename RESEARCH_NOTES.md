@@ -696,5 +696,21 @@ ematch_<lobby pid>.txt`), whose lobby then
   not an atlas; the colour is stages 1 and 2.
 - The Studio's palette must be sRGB: three.js (GLTFLoader) keeps material and vertex colours linear, and written into
   the palette PNG as they were, every colour came out about squared (a vest of 98, 63, 59 drawn 26, 11, 8).
+- Ink outlines: the game makes its sketch lines on the CPU from its own pieces (0x4c6ed0), so a model's get none.
+  models.cpp draws each model again pushed out 0.009 along its normals, the other faces culled, a black texture on
+  stages 1 / 2, the game's shaders (so depth / shadow passes just see it slightly bigger); parts under 0.07 across
+  (laces, eyelets) left out - all outline, they were black blots.
+- Our own pictures in the game's Scaleform menus (icons.cpp): a movie script's MovieClip.loadMovie(url) goes through
+  the FileOpener; a url no package has (ours: "fguyicon_<key>.gfx") is served by opening one of the game's small
+  movies again (noSpaceError.gfx, 496 bytes) and pointing its memory file at our bytes. This Scaleform only takes
+  movies with GFX_ExporterInfo (tag 1000; the game's: version 0x36f, flags 0, bitmap format 13) - without it, "FWS"
+  or "GFX", nothing loads. It draws no bitmaps of a movie's own (DefineBitsLossless2 shows nothing: the game's
+  pictures are DefineExternalImage2 names its texture system resolves, never files), so a picture is one
+  DefineShape2: flat colours, each border between two colours one edge carrying both fills (no seams).
+- The HUD's head: Icon_Lifebar<GetObjectPath(viewport, player)>.PlayerHead, a frame per character
+  (SetHeadIcon(playerIndex, character)). Our head is a clip laid over it, PlayerHead hidden.
+- The lobby's character screen (lobby.as2js): a skin's tile follows its outfit's; its picture loaded the same way.
+- The Studio's rest pose has the characters' eyelids shut (the game animates them open): the triangles the "Face"
+  bones move are left out of its pictures.
 - First outfit made with img2threejs: content/peter-adventurer (its README) - fitted on Peter's measured bind mesh,
   16,720 triangles (Peter: 8,680). Tested in solo Multiverse Madness at 1920x1080 (tools/test_solo_mp.ps1 -God).

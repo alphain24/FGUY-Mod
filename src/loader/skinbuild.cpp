@@ -329,6 +329,11 @@ bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, c
     return true;
 }
 
+// icons.cpp: a PNG's pixels (RGBA)
+bool SkinDecodePng(const std::vector<unsigned char>& png, std::vector<unsigned char>& rgba, unsigned* w, unsigned* h) {
+    return DecodePng(png, 0, 0, rgba, w, h);
+}
+
 // models.cpp: a model's texture (a PNG, its own art) as a DXT5 DDS with all its mip levels
 bool SkinPngToDds(const std::vector<unsigned char>& png, std::vector<unsigned char>& dds) {
     Rgba px;

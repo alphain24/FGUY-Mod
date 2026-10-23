@@ -118,6 +118,31 @@ function FGUYPicture(mc, linkage, x, y, w, h, r, fy, zoom) {
     return holder;
 }
 
+// A skin's own picture (a Skin Studio pack's icon: src/loader/icons.cpp makes the movie the url loads) covering a box
+// like FGUYPicture - scaled once it has loaded.
+function FGUYIconPicture(mc, url, x, y, w, h, r) {
+    FGUYTextN = FGUYTextN + 1;
+    var holder = mc.createEmptyMovieClip('p' + FGUYTextN, mc.getNextHighestDepth());
+    holder.createEmptyMovieClip('pic', 1).loadMovie(url);
+    holder.box = [x, y, w, h];
+    holder.onEnterFrame = FGUYIconLoaded;
+    var mask = mc.createEmptyMovieClip('m' + FGUYTextN, mc.getNextHighestDepth());
+    FGUYRect(mask, x, y, w, h, r, 0xFFFFFF, 100, 0, 0, 0);
+    holder.setMask(mask);
+    return holder;
+}
+
+function FGUYIconLoaded() {
+    var pic = this.pic;
+    if (pic == undefined || !(pic._width > 0)) return;
+    var b = this.box, s = Math.max(b[2] / pic._width, b[3] / pic._height);
+    pic._xscale = s * 100;
+    pic._yscale = s * 100;
+    pic._x = b[0] + (b[2] - pic._width) / 2;
+    pic._y = b[1] + (b[3] - pic._height) / 2;
+    this.onEnterFrame = undefined;
+}
+
 // A small picture (button glyph) fitted whole into a box, centred.
 function FGUYIcon(mc, linkage, x, y, w, h) {
     var bmp = FGUYBitmap(linkage);
@@ -784,7 +809,7 @@ function FGUYMakeHits(ui) {
         c.fgIndex = hit.index;
         c.onRollOver = FGUYHitOver;
         c.onRelease = FGUYHitPress;
-        if (hit.kind == 'charCard' || hit.kind == 'skin') c.onRollOut = FGUYHitOut;
+        if (hit.kind == 'charCard' || hit.kind == 'skin' || hit.kind == 'customTile') c.onRollOut = FGUYHitOut;
     }
 }
 
@@ -826,6 +851,7 @@ function FGUYHitOver() {
 function FGUYHitOut() {   // (the character screen's highlight: off the card again)
     if (this.fgKind == 'charCard' && FGUYCharHover == this.fgIndex) { FGUYCharHover = -1; FGUYDraw(); }
     else if (this.fgKind == 'skin' && FGUYSkinHover == this.fgIndex) { FGUYSkinHover = -1; FGUYDraw(); }
+    else if (this.fgKind == 'customTile' && FGUYSkinHover == 100 + this.fgIndex) { FGUYSkinHover = -1; FGUYDraw(); }
 }
 
 function FGUYHitPress() {
@@ -849,6 +875,7 @@ function FGUYMouseHover(kind, i) {
              kind == 'setRow' || kind == 'setRowLeft' || kind == 'setRowRight') FGUYFocus = i;
     else if (kind == 'charCard') FGUYCharHover = i;   // (the character screen: hovering only shows it - a click picks,
     else if (kind == 'skin') FGUYSkinHover = i;       //  so going over to the skins doesn't change the character)
+    else if (kind == 'customTile') FGUYSkinHover = 100 + i;
     else if (kind == 'modRow') FGUYModsSel = i;
     var now = FGUYScreen + FGUYHubPanel + ',' + FGUYFocus + ',' + FGUYFind + ',' + FGUYCharSel + ',' + FGUYCostumeSel + ',' +
               FGUYCharHover + ',' + FGUYSkinHover;
@@ -873,7 +900,15 @@ function FGUYMouseClick(kind, i) {
     else if (kind == 'charCard') {   // a click picks the character; again (the one picked): that's it
         if (FGUYCharSel != i) { FGUYCharSel = i; FGUYCostumeSel = 0; FGUYSound('nav'); }
         else FGUYInputChar(13);
-    } else if (kind == 'skin') { FGUYCostumeSel = i; FGUYSound('change'); }
+    } else if (kind == 'skin') {   // (the outfit picked again, its custom skin on: the outfit as it is)
+        if (FGUYCostumeSel == i && FGUYCustomSkins().pick != '') flash.external.ExternalInterface.call('FGUYMOD_SkinPick', '');
+        FGUYCostumeSel = i;
+        FGUYSound('change');
+    } else if (kind == 'customTile') {
+        var cl = FGUYCustomSkins().list;
+        if (i < cl.length) flash.external.ExternalInterface.call('FGUYMOD_SkinPick', cl[i].file);
+        FGUYSound('change');
+    }
     else if (kind == 'customSkin') FGUYCycleCustomSkin(1);
     else if (kind == 'team') { FGUYPickTeam = i; FGUYSound('change'); }
     else if (kind == 'key') FGUYScreenKey(i);   // a footer button hint: its button
@@ -1343,13 +1378,15 @@ function FGUYRulesParts(short) {
 }
 
 // ---- custom skins (Skin Studio packs in FGUYMod\skins - the mod's cosmetics.cpp) ------------------------------------
-// FGUYMOD_SkinOptions: "<model>|<picked file>|<name>~<file>;..." - the packs for the outfit the 3D preview shows.
+// FGUYMOD_SkinOptions: "<model>|<picked file>|<name>~<file>~<icon>;..." - the packs for the outfit the 3D preview shows
+// (icon: the movie of its picture, '' none).
 function FGUYCustomSkins() {
     var s = String(flash.external.ExternalInterface.call('FGUYMOD_SkinOptions'));
     var f = s.split('|'), o = {model: f[0], pick: f.length > 1 ? f[1] : '', list: []};
     if (f.length > 2 && f[2] != '') {
         var e = f[2].split(';');
-        for (var i = 0; i < e.length; i++) if (e[i] != '') { var p = e[i].split('~'); o.list.push({name: p[0], file: p[1]}); }
+        for (var i = 0; i < e.length; i++)
+            if (e[i] != '') { var p = e[i].split('~'); o.list.push({name: p[0], file: p[1], icon: p.length > 2 ? p[2] : ''}); }
     }
     return o;
 }
@@ -1409,14 +1446,40 @@ function FGUYDrawChar(ui) {
     FGUYPanel(ui, px, 578, pw, 242, 24, FGUYC.panel, FGUYC.glow);
     FGUYTitle(ui, px + 26, 588, pw - 52, 56, FGUYCharName(c2), 42, FGUYC.yellow, 'left');
     var skinName = costumes.length > 0 ? FGUYCostumeName(c2, costumes[FGUYCostumeSel].CostumeIndex) : 'Classic';
-    FGUYText(ui, px + 26, 646, pw - 52, 30, 'Skin: ' + skinName + '   (' + (FGUYCostumeSel + 1) + ' / ' + Math.max(1, costumes.length) + ')', false, 20, FGUYC.white, 'left');
-    var first = Math.max(0, Math.min(FGUYCostumeSel - 2, costumes.length - 5));
-    for (var k = first; k < costumes.length && k < first + 5; k++) {
-        var tx = px + 26 + (k - first) * 92, on = k == FGUYCostumeSel, skinOver = FGUYSkinHover == k && !on;
-        FGUYRect(ui, tx, 690, 82, 112, 12, FGUYC.panel2, 100, on ? FGUYC.yellow : (skinOver ? FGUYC.white : FGUYC.rowLine), 100,
-                 on || skinOver ? 3 : 2);
-        FGUYHit(tx, 690, 82, 112, 'skin', k);
-        FGUYPicture(ui, FGUYEntryPic(c2, costumes[k]), tx + 3, 693, 76, 106, 9, 0.05);
+    var customName = FGUYCustomSkinName(cs);
+    FGUYText(ui, px + 26, 646, pw - 52, 30, 'Skin: ' + skinName + (customName != 'None' ? ' + ' + customName : '') + '   (' +
+             (FGUYCostumeSel + 1) + ' / ' + Math.max(1, costumes.length) + ')', false, 20, FGUYC.white, 'left');
+    // the tiles: the outfits, the one picked followed by its custom skins (their own pictures)
+    var row = [], at = 0;
+    for (var k = 0; k < costumes.length; k++) {
+        if (k == FGUYCostumeSel) at = row.length;
+        row.push({kind: 'skin', i: k});
+        if (k == FGUYCostumeSel)
+            for (var j = 0; j < cs.list.length; j++) {
+                if (cs.list[j].file == cs.pick) at = row.length;
+                row.push({kind: 'customTile', i: j});
+            }
+    }
+    var first = Math.max(0, Math.min(at - 2, row.length - 5));
+    for (var t = first; t < row.length && t < first + 5; t++) {
+        var tile = row[t], tx = px + 26 + (t - first) * 92, custom = tile.kind == 'customTile';
+        var mine = custom ? cs.list[tile.i] : null;
+        var on = custom ? mine.file == cs.pick : tile.i == FGUYCostumeSel && customName == 'None';
+        var base = !custom && tile.i == FGUYCostumeSel && !on;   // (the outfit under the custom skin worn)
+        var skinOver = FGUYSkinHover == (custom ? 100 + tile.i : tile.i) && !on;
+        FGUYRect(ui, tx, 690, 82, 112, 12, FGUYC.panel2, 100, on ? FGUYC.yellow : (skinOver || base ? FGUYC.white : FGUYC.rowLine),
+                 100, on || skinOver ? 3 : 2);
+        FGUYHit(tx, 690, 82, 112, tile.kind, tile.i);
+        if (!custom) FGUYPicture(ui, FGUYEntryPic(c2, costumes[tile.i]), tx + 3, 693, 76, 106, 9, 0.05);
+        else {
+            if (mine.icon != '') {   // (on the game's tiles' blue)
+                FGUYRect(ui, tx + 3, 693, 76, 106, 9, 0x2a80c8, 100, 0, 0, 0);
+                FGUYIconPicture(ui, mine.icon, tx + 3, 693, 76, 106, 9);
+            }
+            else FGUYPicture(ui, FGUYEntryPic(c2, costumes[FGUYCostumeSel]), tx + 3, 693, 76, 106, 9, 0.05);
+            FGUYRect(ui, tx + 3, 775, 76, 24, 0, FGUYC.ink, 75, 0, 0, 0);   // (its name along the bottom)
+            FGUYText(ui, tx + 3, 777, 76, 22, mine.name, false, 13, on ? FGUYC.yellow : FGUYC.white, 'center');
+        }
     }
     FGUYFooter(ui, ['A', 'Confirm', 'B', 'Back', 'LB', 'Skin', 'RB', 'Skin', 'Y', 'Custom skin'],
                'Click a character, then a skin - click the character again to confirm - drag or Q / E to turn');

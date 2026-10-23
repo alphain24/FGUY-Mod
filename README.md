@@ -32,6 +32,7 @@ there's a new version, and installs it for you.
 - **Cosmetics**: new skins and outfits for the characters. Online, pick a skin on the lobby's character
   screen - everyone sees it; offline, switch one on in MODS. Some skins come with outfit pieces worn over the
   character - the first: **Peter: Adventurer** (hat, leather vest, claw pendant, knife sheath, lace-up boots).
+  A skin has its own tile on the character screen, next to the outfit it goes on, and its own head on the HUD.
 - **Emotes**: in a level, **hold BACK** (controller) or **B** (keyboard) for the emote wheel, point at an emote with
   the left stick or the mouse (LB / RB or the mouse wheel: more), let go to play it. Only the joints an emote moves
   leave the game's own animation, so a wave works while walking. Online, everyone sees it.

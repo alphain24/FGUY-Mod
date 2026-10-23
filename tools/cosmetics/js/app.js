@@ -40,10 +40,11 @@ function resize() {
 }
 new ResizeObserver(resize).observe(view);
 const clock = new THREE.Clock();
-// ---- the in-game look (the view's toggle): the game draws characters cel-shaded, with black ink outlines - but none
-// round a model's pieces (ours get no lines there). So: toon shading in three flat tones on everything, an outline (the
-// back faces, pushed out along the normals) on the character's own pieces only; their triangles a worn model hides
-// stay hidden. Kept in step every frame - views are rebuilt as you work.
+// ---- the in-game look (the view's toggle): the game draws characters cel-shaded, with black ink outlines - its own
+// round the character's pieces, ours (models.cpp) round a model's parts bar the smallest (laces, rivets: under 0.07
+// across). So: toon shading in three flat tones on everything, an outline (the back faces, pushed out along the
+// normals) on the same; their triangles a worn model hides stay hidden. Kept in step every frame - views are rebuilt
+// as you work.
 const look = {on: false};
 look.ramp = new THREE.DataTexture(new Uint8Array([95, 95, 95, 255, 175, 175, 175, 255, 255, 255, 255, 255]), 3, 1);
 look.ramp.minFilter = look.ramp.magFilter = THREE.NearestFilter;
@@ -57,6 +58,12 @@ look.line.onBeforeCompile = sh => {
     transformed += normalize(normal) * 0.007;
   #endif`);
 };
+function partSize(o) {   // (a part's size across: the vertices its triangles use - its geometry holds the model's all)
+  if (o.userData.lookSize !== undefined) return o.userData.lookSize;
+  const p = o.geometry.attributes.position, idx = o.geometry.index, box = new THREE.Box3(), v = new THREE.Vector3();
+  if (idx) for (let k = 0; k < idx.count; k++) box.expandByPoint(v.fromBufferAttribute(p, idx.getX(k)));
+  return (o.userData.lookSize = idx && idx.count ? box.getSize(v).length() : 0);
+}
 function syncLook() {
   const on = $('gameLook').checked;
   holder.traverse(o => {
@@ -65,7 +72,7 @@ function syncLook() {
     if (on && m.isMeshLambertMaterial) {
       o.userData.lookPlain = m;
       o.material = new THREE.MeshToonMaterial({map: m.map, gradientMap: look.ramp, side: m.side, alphaTest: m.alphaTest});
-      if (o.userData.piece || o.userData.texture) {   // (the character's own: outlined)
+      if (o.userData.piece || o.userData.texture || partSize(o) >= 0.07) {   // (outlined)
         const line = o.isSkinnedMesh ? new THREE.SkinnedMesh(o.geometry, look.line) : new THREE.Mesh(o.geometry, look.line);
         if (o.isSkinnedMesh) line.bind(o.skeleton, o.bindMatrix);
         line.userData.lookLine = true;
@@ -147,6 +154,8 @@ function leavePack() {
   }
   state.packModel = null;
   showPackModel();
+  state.packPicture = null;
+  showPackPicture();
   $('packName').value = '';
 }
 
@@ -562,6 +571,180 @@ $('packModel').onchange = async e => {
 };
 $('packModelOff').onclick = () => { state.packModel = null; showPackModel(); };
 
+// The pack's pictures (the game's menus show them - its loader's icons.cpp): icon.png, its tile on the character screen
+// (head to belt), and head.png, the HUD's head - drawn flat like the game's own 2D HUD art: each part its plain colors
+// (no light or shade), a bold black outline, a palette of a few colors (kept small: the game draws the picture as a
+// shape, a border per color change), turned a little, transparent around. Its eyes open: the view is the rest pose,
+// whose lids are shut (the game opens them) - what its face bones move (lids, brows) is left out of the pictures.
+const ICON_LINE = new THREE.MeshBasicMaterial({color: 0x141414, side: THREE.BackSide});
+ICON_LINE.onBeforeCompile = sh => {
+  sh.vertexShader = sh.vertexShader.replace('#include <skinning_vertex>', `#include <skinning_vertex>
+  #ifdef USE_SKINNING
+    transformed += normalize(objectNormal) * 0.008;
+  #else
+    transformed += normalize(normal) * 0.008;
+  #endif`);
+};
+function sticker(c, r) {   // (a white border r pixels wide round the picture's shape - the game's HUD heads have one)
+  const ctx = c.getContext('2d'), img = ctx.getImageData(0, 0, c.width, c.height), d = img.data, W = c.width, H = c.height;
+  const solid = (x, y) => x >= 0 && y >= 0 && x < W && y < H && d[(y * W + x) * 4 + 3] > 0;
+  const add = [];
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      if (solid(x, y)) continue;
+      let near = false;
+      for (let dy = -r; dy <= r && !near; dy++) for (let dx = -r; dx <= r && !near; dx++) near = dx * dx + dy * dy <= r * r && solid(x + dx, y + dy);
+      if (near) add.push((y * W + x) * 4);
+    }
+  for (const i of add) d.set([255, 255, 255, 255], i);
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+function flatColors(c, n = 28) {   // (the picture in n colors - the most used, near ones merged - and no half-transparency)
+  const ctx = c.getContext('2d'), img = ctx.getImageData(0, 0, c.width, c.height), d = img.data, buckets = new Map();
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 128) continue;
+    const k = (d[i] >> 4) << 8 | (d[i + 1] >> 4) << 4 | d[i + 2] >> 4, b = buckets.get(k) || [0, 0, 0, 0];
+    b[0] += d[i]; b[1] += d[i + 1]; b[2] += d[i + 2]; b[3]++;
+    buckets.set(k, b);
+  }
+  const pal = [[255, 255, 255], [20, 20, 20]].concat(   // (white and black always: eyes, glasses, lines)
+    [...buckets.values()].sort((x, y) => y[3] - x[3]).slice(0, n).map(b => [b[0] / b[3], b[1] / b[3], b[2] / b[3]]));
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 128) { d[i + 3] = 0; continue; }
+    let best = 0, dist = Infinity;
+    pal.forEach((q, j) => { const e = (d[i] - q[0]) ** 2 + (d[i + 1] - q[1]) ** 2 + (d[i + 2] - q[2]) ** 2; if (e < dist) { dist = e; best = j; } });
+    d[i] = pal[best][0]; d[i + 1] = pal[best][1]; d[i + 2] = pal[best][2]; d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+async function renderIcons(scale = 1) {   // (scale: bigger, to look at)
+  const was = {look: $('gameLook').checked, model: $('packModelShow').checked};
+  $('gameLook').checked = false;   // (its own materials back first)
+  syncLook();
+  if (state.packModel) { $('packModelShow').checked = true; await showPackModel3D(); }
+  const hidden = holder.children.filter(m => m.userData.damage && m.visible);
+  for (const m of hidden) m.visible = false;
+  const skel = state.current ? await loadSkeleton(state.ho, state.current.model).catch(() => null) : null;
+  const face = new Set((skel?.names || []).map((n, i) => /^Face /.test(n) ? i : -1).filter(i => i >= 0));
+  const opened = [];
+  for (const o of holder.children) {   // (the face bones' triangles collapsed for now)
+    const p = o.userData.piece;
+    if (!p?.skin || !face.size || !o.geometry.index) continue;
+    const idx = o.geometry.index.array, was = idx.slice(), w = p.skin.weight, b = p.skin.index;
+    const moved = v => [0, 1, 2, 3].some(k => w[v * 4 + k] > 0.3 && face.has(b[v * 4 + k]));
+    for (let t = 0; t + 2 < idx.length; t += 3) if (moved(idx[t]) || moved(idx[t + 1]) || moved(idx[t + 2])) idx[t + 1] = idx[t + 2] = idx[t];
+    o.geometry.index.needsUpdate = true;
+    opened.push([o, was]);
+  }
+  const swapped = [], lines = [];
+  holder.traverse(o => {
+    if (!o.isMesh || !o.visible) return;
+    const m = o.material;
+    swapped.push([o, m]);
+    o.material = new THREE.MeshBasicMaterial({map: m.map, color: m.color, side: m.side, alphaTest: m.alphaTest});
+    if (o.userData.piece || partSize(o) >= 0.07) lines.push(o);
+  });
+  for (const o of lines) {
+    const line = o.isSkinnedMesh ? new THREE.SkinnedMesh(o.geometry, ICON_LINE) : new THREE.Mesh(o.geometry, ICON_LINE);
+    if (o.isSkinnedMesh) line.bind(o.skeleton, o.bindMatrix);
+    line.userData.lookLine = line.userData.iconLine = true;
+    line.frustumCulled = false;
+    o.add(line);
+  }
+  holder.updateMatrixWorld(true);
+  const all = new THREE.Box3(), body = new THREE.Box3();
+  holder.traverse(o => {
+    if (!o.isMesh || o.userData.lookLine || !o.visible) return;
+    all.expandByObject(o);
+    if (o.userData.piece) body.expandByObject(o);
+  });
+  const H = body.max.y - body.min.y, cx = (body.min.x + body.max.x) / 2, cz = (body.min.z + body.max.z) / 2;
+  const top = Math.max(all.max.y, body.max.y) + H * 0.02;
+  const ratio = renderer.getPixelRatio();
+  renderer.setPixelRatio(1);
+  const shoot = (w, h, y0, cut) => {   // (from y0 up to the top, w x h pixels - from a little below: the eyes under a
+    const half = (top - y0) / 2, cy = (top + y0) / 2, turn = THREE.MathUtils.degToRad(-16), up = THREE.MathUtils.degToRad(-11);
+    const cam = new THREE.OrthographicCamera(-half * w / h, half * w / h, half, -half, 0.01, 50);
+    cam.position.set(cx + Math.sin(turn) * Math.cos(up) * 10, cy + Math.sin(up) * 10, cz + Math.cos(turn) * Math.cos(up) * 10);
+    cam.lookAt(cx, cy, cz);
+    renderer.setSize(w, h, false);   //  brim; cut: nothing below that)
+    renderer.clippingPlanes = cut === undefined ? [] : [new THREE.Plane(new THREE.Vector3(0, 1, 0), -cut)];
+    renderer.render(scene, cam);
+    renderer.clippingPlanes = [];
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(renderer.domElement, 0, 0, w, h);
+    return flatColors(c);
+  };
+  // (the head: cut under the chin, a white border round it; the tile: head to belt, edge to edge)
+  const head = sticker(shoot(128 * scale, 128 * scale, body.max.y - H * 0.33, body.max.y - H * 0.3), 3 * scale);
+  const icon = shoot(152 * scale, 212 * scale, body.max.y - H * 0.6);
+  renderer.setPixelRatio(ratio);
+  for (const o of lines) for (const c of o.children.filter(c => c.userData.iconLine)) o.remove(c);
+  for (const [o, m] of swapped) { o.material.dispose(); o.material = m; }
+  for (const m of hidden) m.visible = true;
+  for (const [o, idx] of opened) { o.geometry.index.array.set(idx); o.geometry.index.needsUpdate = true; }
+  $('gameLook').checked = was.look;
+  $('packModelShow').checked = was.model;
+  if (state.packModel) await showPackModel3D();
+  syncLook();
+  resize();
+  const png = async c => new Uint8Array(await (await pngOfCanvas(c)).arrayBuffer());
+  return {icon: await png(icon), head: await png(head)};
+}
+
+// The skin's own picture (Skins tab "Skin picture": a 2D drawing, like the game's skin art): its tile in the menus is
+// the whole picture, fitted (head to toe, transparent round it); the HUD's head the top of it - as wide as the widest
+// part of its top 30% (a hat's brim) deep, all of those rows across, a white border round it like the game's heads. Both in a few flat colors
+// (the game draws a picture as a shape: a border per color change).
+async function pictureIcons(img) {
+  const W = img.width, H = img.height, src = document.createElement('canvas');
+  src.width = W; src.height = H;
+  const sx = src.getContext('2d');
+  sx.drawImage(img, 0, 0);
+  const d = sx.getImageData(0, 0, W, H).data, solid = (x, y) => d[(y * W + x) * 4 + 3] > 64;
+  let top = 0, bottom = H - 1, x0 = W, x1 = -1;
+  while (top < H - 1 && ![...Array(W).keys()].some(x => solid(x, top))) top++;
+  while (bottom > top && ![...Array(W).keys()].some(x => solid(x, bottom))) bottom--;
+  const band = top + Math.round((bottom - top) * 0.3);
+  for (let y = top; y <= band; y++) for (let x = 0; x < W; x++) if (solid(x, y)) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
+  const icon = document.createElement('canvas');   // (152 x 212, the picture contained, centred)
+  icon.width = 152; icon.height = 212;
+  const s = Math.min(152 / W, 212 / (bottom - top + 1));
+  icon.getContext('2d').drawImage(src, 0, top, W, bottom - top + 1, (152 - W * s) / 2, (212 - (bottom - top + 1) * s) / 2, W * s, (bottom - top + 1) * s);
+  const side = Math.min(Math.max(8, x1 - x0 + 1), bottom - top + 1), head = document.createElement('canvas'), pad = 5;
+  for (let y = top; y < top + side; y++) for (let x = 0; x < W; x++) if (solid(x, y)) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
+  const cw = x1 - x0 + 1, k = Math.min((128 - 2 * pad) / cw, (128 - 2 * pad) / side);   // (all of those rows, fitted)
+  head.width = head.height = 128;
+  head.getContext('2d').drawImage(src, x0, top, cw, side, (128 - cw * k) / 2, 128 - pad - side * k, cw * k, side * k);
+  flatColors(icon, 40);
+  sticker(flatColors(head, 40), 3);
+  const png = async c => new Uint8Array(await (await pngOfCanvas(c)).arrayBuffer());
+  return {icon: await png(icon), head: await png(head)};
+}
+function showPackPicture() {
+  const p = state.packPicture;
+  $('packPictureShow').hidden = !p;
+  if (p) $('packPictureShow').src = p.url;
+  $('packPictureOff').hidden = !p;
+}
+$('packPicture').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    const img = await createImageBitmap(f);
+    state.packPicture = {img, url: URL.createObjectURL(f)};
+    showPackPicture();
+    setStatus(`"${f.name}" is this skin's picture in the game's menus.`);
+  } catch (err) {
+    setStatus("Couldn't use that picture: " + err.message);
+  }
+};
+$('packPictureOff').onclick = () => { state.packPicture = null; showPackPicture(); };
+
 async function buildPack() {
   const o = state.current;
   const edited = (o?.textures || []).filter(t => t.modified);
@@ -583,10 +766,17 @@ async function buildPack() {
     }
     manifest.textures[t.name] = entry;
   }
+  const pics = state.packPicture ? await pictureIcons(state.packPicture.img) : await renderIcons();
+  if (state.packPicture) manifest.picture = 'icon.png';   // (made from a picture: opened again, its tile is that)
+  files['icon.png'] = [pics.icon, {level: 0}];   // (stored)
+  files['head.png'] = [pics.head, {level: 0}];
+  manifest.icon = 'icon.png';
+  manifest.head = 'head.png';
   files['skin.json'] = [strToU8(JSON.stringify(manifest, null, 2)), {level: 0}];   // (stored: the mod reads it as is)
   return {name, count: edited.length, blob: new Blob([zipSync(files)])};
 }
 state.buildPack = buildPack;
+state.renderIcons = renderIcons;
 $('savePack').onclick = async () => {
   const p = await buildPack();
   if (!p) { setStatus('Change something first - nothing to save yet.'); return; }
@@ -628,6 +818,12 @@ async function openPackBytes(bytes, label) {
     state.packModel = files['model.fgmodel'] ? {name: m.withModel || modelPackInfo(files['model.fgmodel']).name,
       bytes: files['model.fgmodel'], character: o.character} : null;
     showPackModel();
+    state.packPicture = null;
+    if (m.picture && files[m.picture]) {
+      const blob = new Blob([files[m.picture]], {type: 'image/png'});
+      state.packPicture = {img: await createImageBitmap(blob), url: URL.createObjectURL(blob)};
+    }
+    showPackPicture();
     state.fromPack = true;
     setStatus('Opened "' + (m.name || label) + '"' + (state.packModel ? ', with its model' : '') + '.');
   } catch (err) {

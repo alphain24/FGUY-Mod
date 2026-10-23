@@ -212,6 +212,8 @@ def build(data):
                         lambda r: A.Code(A.call('FGUYDeathHints', Reg(r['playerIndex']))))
     except KeyError:
         pass
+    # A skin's head picture in place of the character's head (pause.as2js FGUYHeadIcon: the poll looks again too)
+    insert_at_start(p, data, actions, 'SetHeadIcon', lambda r: A.Code(A.call('FGUYHeadIcon', Reg(r['playerIndex']))))
     #     (and on the change character / change weapons screens: FGUYNavHints)
     for name, which in (('OnCharacterSelectRefreshText', 0), ('OnCharacterCustomizeRefreshText', 1)):
         try:

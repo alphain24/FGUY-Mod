@@ -381,9 +381,10 @@ function FGUYPausePoll() {
     FGUYHudDump();
     FGUYHudZoom();
     FGUYKeyWrap();
-    if (++FGUYFitCount >= 15) {   // (twice a second: the HUD may have moved the damage frame again)
-        FGUYFitCount = 0;
+    if (++FGUYFitCount >= 15) {   // (twice a second: the HUD may have moved the damage frame again - and a skin worn
+        FGUYFitCount = 0;         //  may have come since: its head)
         FGUYFitDamageFx();
+        for (var hp = 0; hp < 4; hp++) FGUYHeadIcon(hp);
     }
     var s = flash.external.ExternalInterface.call('FGUYMOD_PauseMenu');
     if (s == undefined) return;   // not the loader we know (or offline): nothing to do
@@ -409,6 +410,40 @@ function FGUYPausePoll() {
         ui.pointer._y = r.y + Number(c[1]) / 10000 * r.h;
     }
     FGUYDeathMouse();
+}
+
+// The HUD's head (its SetHeadIcon - and twice a second, from the poll): a player wearing a skin that has a head picture
+// (FGUYMOD_HeadIcon - src/loader/icons.cpp makes the movie it loads) shows that in place of the character's drawn head,
+// as big and where it was. A skin without one, or none: the game's own again.
+function FGUYHeadIcon(p) {
+    var v = PlayerViewportMapping != undefined ? PlayerViewportMapping[p] : undefined;
+    if (v == undefined) return;
+    var bar = _root['Icon_Lifebar' + GetObjectPath(v, p)];
+    if (bar == undefined || bar.PlayerHead == undefined) return;
+    var url = String(flash.external.ExternalInterface.call('FGUYMOD_HeadIcon', p));
+    var head = bar.PlayerHead, mine = bar.FGUYHead;
+    if (url == '' || url == 'undefined' || url == 'null') {
+        if (mine != undefined) mine.removeMovieClip();
+        head._visible = true;
+        return;
+    }
+    if (mine == undefined || mine.url != url) {
+        if (mine != undefined) mine.removeMovieClip();
+        head._visible = true;   // (its place and size: while it shows)
+        var b = head.getBounds(bar);
+        mine = bar.createEmptyMovieClip('FGUYHead', bar.getNextHighestDepth());
+        mine.url = url;
+        mine.box = [b.xMin, b.yMin, b.xMax - b.xMin, b.yMax - b.yMin];
+        mine.createEmptyMovieClip('pic', 1).loadMovie(url);
+    }
+    var pic = mine.pic, box = mine.box;   // (the picture: once loaded, about the head's size, on its box's bottom - a hat
+    if (pic == undefined || !(pic._width > 0)) return;   //  stands up out of it)
+    var s = Math.min(box[2] / (pic._width / pic._xscale * 100), box[3] / (pic._height / pic._yscale * 100)) * 1.2;
+    pic._xscale = s * 100;
+    pic._yscale = s * 100;
+    pic._x = box[0] + (box[2] - pic._width) / 2;
+    pic._y = box[1] + box[3] - pic._height;
+    head._visible = false;
 }
 
 // The emote wheel (src/loader/emotes.cpp: held BACK / B), over the HUD - what FGUYMOD_EmoteWheel says, drawn again
