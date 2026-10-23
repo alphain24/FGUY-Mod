@@ -248,6 +248,15 @@ function FGUYStage(mc, x, y, w, h) {
 }
 
 // A round portrait: the top of a costume picture inside a circle.
+// Where the head is in each outfit's picture (the game's Costume_*.tif - full-body art on blue): its centre x, centre y
+// and a square round it, as fractions of the picture's width / height / width - measured from the pictures (each
+// character stands differently in them; a hat, a hood beside a scythe...). A round portrait shows that square.
+function FGUYFace(linkage) {
+    if (FGUYFaces == undefined)
+        FGUYFaces = {'Costume_BrianCokedOut.tif': [0.441, 0.475, 0.904], 'Costume_BrianDefault.tif': [0.441, 0.473, 0.914], 'Costume_BrianGold.tif': [0.461, 0.25, 0.538], 'Costume_BrianPink.tif': [0.441, 0.477, 0.914], 'Costume_BrianSnoopy.tif': [0.457, 0.471, 0.924], 'Costume_BrianSwat.tif': [0.406, 0.368, 0.691], 'Costume_BrianTuxedo.tif': [0.441, 0.471, 0.904], 'Costume_ChrisChristobel.tif': [0.459, 0.214, 0.315], 'Costume_ChrisDefault.tif': [0.467, 0.235, 0.335], 'Costume_ChrisGold.tif': [0.449, 0.132, 0.315], 'Costume_ChrisGoth.tif': [0.467, 0.221, 0.452], 'Costume_ChrisSwat.tif': [0.467, 0.202, 0.361], 'Costume_ChrisTribal.tif': [0.467, 0.235, 0.335], 'Costume_Cleveland80s.tif': [0.445, 0.195, 0.741], 'Costume_ClevelandDance.tif': [0.445, 0.139, 0.569], 'Costume_ClevelandDefault.tif': [0.441, 0.201, 0.528], 'Costume_ClevelandSwat.tif': [0.441, 0.199, 0.63], 'Costume_ClevelandWild.tif': [0.453, 0.224, 0.731], 'Costume_DeathBoxing.tif': [0.402, 0.247, 0.508], 'Costume_DeathDefault.tif': [0.398, 0.228, 0.508], 'Costume_DeathHippy.tif': [0.398, 0.228, 0.508], 'Costume_DeathSkeleton.tif': [0.398, 0.228, 0.508], 'Costume_DeathSwat.tif': [0.398, 0.222, 0.498], 'Costume_LoisDefault.tif': [0.469, 0.245, 0.589], 'Costume_LoisGold.tif': [0.453, 0.117, 0.559], 'Costume_LoisRambo.tif': [0.469, 0.245, 0.589], 'Costume_LoisSchoolgirl.tif': [0.469, 0.245, 0.589], 'Costume_LoisSwat.tif': [0.457, 0.217, 0.589], 'Costume_LoisUnderwear.tif': [0.469, 0.245, 0.589], 'Costume_MegCat.tif': [0.406, 0.236, 0.752], 'Costume_MegDefault.tif': [0.426, 0.255, 0.731], 'Costume_MegGold.tif': [0.426, 0.255, 0.731], 'Costume_MegPajamas.tif': [0.422, 0.283, 0.752], 'Costume_MegPrison.tif': [0.422, 0.255, 0.731], 'Costume_MegSwat.tif': [0.418, 0.242, 0.741], 'Costume_PeterDaisyDukes.tif': [0.516, 0.282, 0.355], 'Costume_PeterDefault.tif': [0.516, 0.282, 0.355], 'Costume_PeterGold.tif': [0.521, 0.128, 0.305], 'Costume_PeterLongJohn.tif': [0.514, 0.238, 0.427], 'Costume_PeterMoustache.tif': [0.516, 0.282, 0.355], 'Costume_PeterSwat.tif': [0.512, 0.227, 0.345], 'Costume_QuagmireBaby.tif': [0.406, 0.175, 0.63], 'Costume_QuagmireDefault.tif': [0.414, 0.184, 0.559], 'Costume_QuagmirePilot.tif': [0.398, 0.128, 0.609], 'Costume_QuagmireSwat.tif': [0.406, 0.167, 0.63], 'Costume_QuagmireWild.tif': [0.406, 0.153, 0.711], 'Costume_StewieAssassin.tif': [0.477, 0.653, 1.005], 'Costume_StewieDefault.tif': [0.48, 0.652, 0.985], 'Costume_StewieDiaper.tif': [0.484, 0.646, 0.975], 'Costume_StewieEvil.tif': [0.48, 0.65, 0.975], 'Costume_StewieGold.tif': [0.47, 0.55, 0.78], 'Costume_StewieSailor.tif': [0.477, 0.476, 0.609], 'Costume_StewieSwat.tif': [0.488, 0.602, 1.046], 'Costume_StewieTuxedo.tif': [0.48, 0.65, 0.975], 'Costume_WestBoxers.tif': [0.395, 0.158, 0.569], 'Costume_WestDefault.tif': [0.395, 0.158, 0.569], 'Costume_WestEvil.tif': [0.395, 0.16, 0.559], 'Costume_WestPajamas.tif': [0.395, 0.158, 0.569], 'Costume_WestSwat.tif': [0.391, 0.143, 0.68], 'Costume_WestTuxedo.tif': [0.395, 0.158, 0.569]};
+    return FGUYFaces[linkage];
+}
+
 function FGUYPortrait(mc, linkage, cx, cy, r) {
     FGUYCircle(mc, cx, cy, r, 0x2A6AA6, 100, FGUYC.glow, 0);
     var bmp = FGUYBitmap(linkage);
@@ -255,11 +264,12 @@ function FGUYPortrait(mc, linkage, cx, cy, r) {
     if (bmp) {
         var holder = mc.createEmptyMovieClip('p' + FGUYTextN, mc.getNextHighestDepth());
         holder.attachBitmap(bmp, 1, 'auto', true);
-        var s = (r * 2.6) / bmp.width;
+        var face = FGUYFace(linkage), s = (r * 2.6) / bmp.width;
+        if (face != undefined) s = (r * 2) / (face[2] * bmp.width);
         holder._xscale = s * 100;
         holder._yscale = s * 100;
-        holder._x = cx - bmp.width * s / 2;
-        holder._y = cy - r * 0.9;
+        holder._x = face != undefined ? cx - face[0] * bmp.width * s : cx - bmp.width * s / 2;
+        holder._y = face != undefined ? cy - face[1] * bmp.height * s : cy - r * 0.9;
         var mask = mc.createEmptyMovieClip('m' + FGUYTextN, mc.getNextHighestDepth());
         FGUYCircle(mask, cx, cy, r, 0xFFFFFF, 100, 0, 0);
         holder.setMask(mask);
