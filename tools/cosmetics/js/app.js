@@ -585,19 +585,41 @@ ICON_LINE.onBeforeCompile = sh => {
     transformed += normalize(normal) * 0.008;
   #endif`);
 };
-function sticker(c, r) {   // (a white border r pixels wide round the picture's shape - the game's HUD heads have one)
-  const ctx = c.getContext('2d'), img = ctx.getImageData(0, 0, c.width, c.height), d = img.data, W = c.width, H = c.height;
-  const solid = (x, y) => x >= 0 && y >= 0 && x < W && y < H && d[(y * W + x) * 4 + 3] > 0;
-  const add = [];
-  for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) {
-      if (solid(x, y)) continue;
-      let near = false;
-      for (let dy = -r; dy <= r && !near; dy++) for (let dx = -r; dx <= r && !near; dx++) near = dx * dx + dy * dy <= r * r && solid(x + dx, y + dy);
-      if (near) add.push((y * W + x) * 4);
-    }
-  for (const i of add) d.set([255, 255, 255, 255], i);
-  ctx.putImageData(img, 0, 0);
+// Where the face is in a head picture (fractions of it: its left and right at the cheeks - 62% down - and its bottom):
+// the game sizes it so the face is as wide as its own character's head, the hat standing out of it.
+function faceOf(c) {
+  const W = c.width, H = c.height, d = c.getContext('2d').getImageData(0, 0, W, H).data, a = (x, y) => d[(y * W + x) * 4 + 3] > 0;
+  let bottom = H - 1;
+  while (bottom > 0 && ![...Array(W).keys()].some(x => a(x, bottom))) bottom--;
+  let top = 0;
+  while (top < bottom && ![...Array(W).keys()].some(x => a(x, top))) top++;
+  const y = Math.round(top + (bottom - top) * 0.62);
+  let l = 0, r = W - 1;
+  while (l < r && !a(l, y)) l++;
+  while (r > l && !a(r, y)) r--;
+  return [+(l / W).toFixed(4), +((r + 1) / W).toFixed(4), +((bottom + 1) / H).toFixed(4)];
+}
+// A head picture rounded off under its face, as the game's heads are (not a cut through the shoulders): below the
+// cheeks only what's within a half-ellipse as wide as the face, a black line along that edge.
+function chin(c) {
+  const [l, r, b] = faceOf(c), W = c.width, H = c.height, ctx = c.getContext('2d');
+  const d = ctx.getImageData(0, 0, W, H).data;
+  let top = 0;
+  while (top < H - 1 && ![...Array(W).keys()].some(x => d[(top * W + x) * 4 + 3] > 0)) top++;
+  const y0 = top + (b * H - top) * 0.62, cx = (l + r) / 2 * W, ax = (r - l) / 2 * W * 1.03, ay = (b * H - y0) * 1.02;
+  const edge = () => { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(W, 0); ctx.lineTo(W, y0); ctx.lineTo(cx + ax, y0);
+    ctx.ellipse(cx, y0, ax, ay, 0, 0, Math.PI); ctx.lineTo(0, y0); ctx.closePath(); };
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-in';
+  edge();
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-atop';
+  ctx.beginPath();
+  ctx.ellipse(cx, y0, ax - 1, ay - 1, 0, 0, Math.PI);
+  ctx.strokeStyle = '#141414';
+  ctx.lineWidth = Math.max(2, W / 50);
+  ctx.stroke();
+  ctx.restore();
   return c;
 }
 function flatColors(c, n = 28) {   // (the picture in n colors - the most used, near ones merged - and no half-transparency)
@@ -678,8 +700,8 @@ async function renderIcons(scale = 1) {   // (scale: bigger, to look at)
     c.getContext('2d').drawImage(renderer.domElement, 0, 0, w, h);
     return flatColors(c);
   };
-  // (the head: cut under the chin, a white border round it; the tile: head to belt, edge to edge)
-  const head = sticker(shoot(128 * scale, 128 * scale, body.max.y - H * 0.33, body.max.y - H * 0.3), 3 * scale);
+  // (the head: cut under the chin; the tile: head to belt, edge to edge)
+  const head = chin(shoot(128 * scale, 128 * scale, body.max.y - H * 0.33, body.max.y - H * 0.3));
   const icon = shoot(152 * scale, 212 * scale, body.max.y - H * 0.6);
   renderer.setPixelRatio(ratio);
   for (const o of lines) for (const c of o.children.filter(c => c.userData.iconLine)) o.remove(c);
@@ -692,12 +714,12 @@ async function renderIcons(scale = 1) {   // (scale: bigger, to look at)
   syncLook();
   resize();
   const png = async c => new Uint8Array(await (await pngOfCanvas(c)).arrayBuffer());
-  return {icon: await png(icon), head: await png(head)};
+  return {icon: await png(icon), head: await png(head), face: faceOf(head)};
 }
 
 // The skin's own picture (Skins tab "Skin picture": a 2D drawing, like the game's skin art): its tile in the menus is
 // the whole picture, fitted (head to toe, transparent round it); the HUD's head the top of it - as wide as the widest
-// part of its top 30% (a hat's brim) deep, all of those rows across, a white border round it like the game's heads. Both in a few flat colors
+// part of its top 30% (a hat's brim) deep, all of those rows across. Both in a few flat colors
 // (the game draws a picture as a shape: a border per color change).
 async function pictureIcons(img) {
   const W = img.width, H = img.height, src = document.createElement('canvas');
@@ -720,9 +742,9 @@ async function pictureIcons(img) {
   head.width = head.height = 128;
   head.getContext('2d').drawImage(src, x0, top, cw, side, (128 - cw * k) / 2, 128 - pad - side * k, cw * k, side * k);
   flatColors(icon, 40);
-  sticker(flatColors(head, 40), 3);
+  chin(flatColors(head, 40));
   const png = async c => new Uint8Array(await (await pngOfCanvas(c)).arrayBuffer());
-  return {icon: await png(icon), head: await png(head)};
+  return {icon: await png(icon), head: await png(head), face: faceOf(head)};
 }
 function showPackPicture() {
   const p = state.packPicture;
@@ -772,6 +794,7 @@ async function buildPack() {
   files['head.png'] = [pics.head, {level: 0}];
   manifest.icon = 'icon.png';
   manifest.head = 'head.png';
+  manifest.headFace = pics.face;   // (the face in it: the game sizes the head by it)
   files['skin.json'] = [strToU8(JSON.stringify(manifest, null, 2)), {level: 0}];   // (stored: the mod reads it as is)
   return {name, count: edited.length, blob: new Blob([zipSync(files)])};
 }

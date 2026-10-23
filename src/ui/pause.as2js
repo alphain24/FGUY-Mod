@@ -413,14 +413,16 @@ function FGUYPausePoll() {
 }
 
 // The HUD's head (its SetHeadIcon - and twice a second, from the poll): a player wearing a skin that has a head picture
-// (FGUYMOD_HeadIcon - src/loader/icons.cpp makes the movie it loads) shows that in place of the character's drawn head,
-// as big and where it was. A skin without one, or none: the game's own again.
+// (FGUYMOD_HeadIcon: "<movie>|<face left>|<face right>|<face bottom>" - src/loader/icons.cpp makes the movie) shows that
+// in place of the character's drawn head: its face as wide as that head and where it was, its bottom at the head's chin
+// (a hat stands up out of it). A skin without one, or none: the game's own again.
 function FGUYHeadIcon(p) {
     var v = PlayerViewportMapping != undefined ? PlayerViewportMapping[p] : undefined;
     if (v == undefined) return;
     var bar = _root['Icon_Lifebar' + GetObjectPath(v, p)];
     if (bar == undefined || bar.PlayerHead == undefined) return;
-    var url = String(flash.external.ExternalInterface.call('FGUYMOD_HeadIcon', p));
+    var said = String(flash.external.ExternalInterface.call('FGUYMOD_HeadIcon', p)).split('|'), url = said[0];
+    var face = said.length >= 4 ? [Number(said[1]), Number(said[2]), Number(said[3])] : [0, 1, 1];
     var head = bar.PlayerHead, mine = bar.FGUYHead;
     if (url == '' || url == 'undefined' || url == 'null') {
         if (mine != undefined) mine.removeMovieClip();
@@ -436,13 +438,15 @@ function FGUYHeadIcon(p) {
         mine.box = [b.xMin, b.yMin, b.xMax - b.xMin, b.yMax - b.yMin];
         mine.createEmptyMovieClip('pic', 1).loadMovie(url);
     }
-    var pic = mine.pic, box = mine.box;   // (the picture: once loaded, about the head's size, on its box's bottom - a hat
-    if (pic == undefined || !(pic._width > 0)) return;   //  stands up out of it)
-    var s = Math.min(box[2] / (pic._width / pic._xscale * 100), box[3] / (pic._height / pic._yscale * 100)) * 1.2;
+    var pic = mine.pic, box = mine.box;   // (the picture, once loaded)
+    if (pic == undefined || !(pic._width > 0)) return;
+    var w = pic._width / pic._xscale * 100, h = pic._height / pic._yscale * 100;
+    // (the game's head drawn in its box: 57% of its width across the cheeks, centred, its chin 34% of it below the middle)
+    var s = box[2] * 0.57 / Math.max(1, (face[1] - face[0]) * w);
     pic._xscale = s * 100;
     pic._yscale = s * 100;
-    pic._x = box[0] + (box[2] - pic._width) / 2;
-    pic._y = box[1] + box[3] - pic._height;
+    pic._x = box[0] + box[2] / 2 - (face[0] + face[1]) / 2 * w * s;
+    pic._y = box[1] + box[3] * 0.84 - face[2] * h * s;
     head._visible = false;
 }
 

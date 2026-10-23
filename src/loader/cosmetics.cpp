@@ -813,6 +813,7 @@ std::wstring CosmeticsMySkinPath() {
 }
 
 // FGUYMOD_HeadIcon (the HUD's SetHeadIcon - pause.as2js FGUYHeadIcon): the head picture of the skin a player wears
+// ("<movie>|<face left>|<face right>|<face bottom>", fractions of the picture - or the movie alone, or "")
 const char* CosmeticsHeadIcon(int player) {
     static std::string out;
     std::lock_guard<std::mutex> l(g_headLock);
@@ -878,6 +879,17 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
         {   // (its head for the HUD - icons.cpp)
             std::vector<unsigned char> head;
             std::string icon = !p.pack.empty() && ZipEntry(p.pack, "head.png", head) ? IconsAdd(head) : "";
+            std::vector<unsigned char> js;   // (and where its face is: "headFace": [left, right, bottom] - "url|l|r|b")
+            if (!icon.empty() && ZipEntry(p.pack, "skin.json", js)) {
+                std::string j(js.begin(), js.end());
+                size_t at = j.find("\"headFace\"");
+                std::vector<double> f = at == std::string::npos ? std::vector<double>() : Numbers(j, j.find('[', at));
+                if (f.size() == 3) {
+                    char t[96];
+                    sprintf_s(t, "|%.4f|%.4f|%.4f", f[0], f[1], f[2]);
+                    icon += t;
+                }
+            }
             std::lock_guard<std::mutex> l(g_headLock);
             g_head[p.slot] = icon;
         }
