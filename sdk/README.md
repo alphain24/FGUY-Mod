@@ -1,5 +1,8 @@
 # Making mods for the FGUY Mod
 
+> **The full modding guide is in [`docs/`](../docs/README.md)** — skins, outfits, emotes, menu patches, plugins,
+> online play, testing. This page is the short version.
+
 The FGUY Mod (the base mod) can load separate mods: cosmetics, maps, gameplay changes, new features.
 Players switch them on and off on the **MODS** page of the main menu (it takes a restart).
 

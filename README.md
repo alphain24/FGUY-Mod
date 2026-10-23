@@ -26,8 +26,9 @@ there's a new version, and installs it for you.
   `FGUYMod\reports` to send in.
 
 **Mods** (Main Menu > MODS)
-- Put separate mods in `FGUYMod\mods\` (a mod is one `.fgmod` file, or a folder) and switch them on and off. Making
-  one: see [`sdk/`](sdk/README.md).
+- Put separate mods in `FGUYMod\mods\` (a mod is one `.fgmod` file, or a folder) and switch them on and off.
+- **Making mods:** the [**modding guide**](docs/README.md) covers skins, outfits, emotes, menu patches, plugins and
+  online play, step by step.
 
 **FGUY Cosmetics and FGUY Emotes** (two mods that come with it, on the MODS page; they grow with each update)
 - **Cosmetics** (`FGUYMod\mods\FGUYCosmetics.fgmod`, every skin in that one file): new skins and outfits for the characters. Online, pick a skin on the lobby's character
