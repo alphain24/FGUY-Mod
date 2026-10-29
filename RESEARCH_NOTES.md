@@ -765,6 +765,18 @@ ematch_<lobby pid>.txt`), whose lobby then
   filter none (graphics.cpp, the ramp fix) - the PC then matches the Xbox shot. Ruled out on the way: our texture
   filtering, projected shadows, outline shells, the 128x128 shading lookup (its mips, its shadow tone), the palette
   strips' mips, the resolution. The shipped game has it too, under its blur.
+- **The characters' outlines thin out at high resolutions** (the Xbox's look thick: 720p, scaled up). They're the
+  ink strokes (the same pass: FGUYMOD_TEST_INKRED=1 draws them red) - only the outlines (each character's edge, the
+  eyes, glasses, Stewie's head); the lines inside (smile, chin, creases) are in the models and scale by themselves.
+  The game makes the strokes each frame as quads in view space (32-byte vertices: position, D3DCOLOR, uv0 along,
+  uv1 across; the pixel shader draws ramp(uv0) * ramp(uv1) * alpha, each uv pair adding up to the same number at a
+  quad's corners: a solid band with a one-unit soft edge). They're a few pixels across at any resolution, and fainter
+  the taller the picture: colour ff000000 at 1080p, 4c000000 (30%: about 720 / 2400) at 2400 lines, uv1 +-5 then
+  +-2.4. Line thickness (graphics.cpp): the strokes' vertex shader makes their alpha solid again (x height / 720) and
+  the pixel shader widens the band (uv1 + c) - auto 1.5x at 2400 lines matched the Xbox. Growing the quads on the CPU
+  (to fit wider lines) needed their vertex buffer read back each draw: 35 fps -> 7, so not done; a quad holds about 3x.
+  The outline shells (FogColor,outlineColor) push out by outlineParams.x * the vertex's distance (capped by .y): a
+  fraction of the screen, so they scale already.
 - Research switches (graphics.cpp, environment only): FGUYMOD_TEST_PSTRACE=1 (every 1000th frame: each pixel shader by
   its constants' names, its render target, blend / depth states, textures and their filters, the game's return
   addresses from the stack), FGUYMOD_TEST_PSSKIP=<constant name> or =<whole name list> (draws with that shader left

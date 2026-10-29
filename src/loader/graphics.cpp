@@ -30,6 +30,7 @@
 namespace {
 
 volatile int g_sharp = 1, g_filter = 16, g_aa = 0, g_sharpen = 0, g_bright = 50;
+volatile int g_lines = 0;   // (the ink lines' width: 0 auto - as on the console at any resolution - or 100-300 %)
 volatile bool g_statesDirty = false;   // (a filtering setting changed: every stage again, on the render thread)
 IDirect3DDevice9* g_dev = nullptr;
 UINT g_bbW = 0, g_bbH = 0;
@@ -136,6 +137,8 @@ HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* self, DWORD stage, I
 const DWORD kHalf = 255;
 int g_vsSeen = 0, g_vsPatched = 0;
 float g_halfConst[4] = {0, 0, 0, 0};
+bool g_c254Used = false;            // (some shader of the game's has c254: the strokes' alpha left alone)
+float g_inkAlphaConst[4] = {1, 0, 0, 0};
 
 int RegType(DWORD t) { return (int)(((t >> 28) & 7) | ((t >> 8) & 0x18)); }
 DWORD RegNum(DWORD t) { return t & 0x7FF; }
@@ -165,6 +168,10 @@ bool PatchVertexShader(const DWORD* in, std::vector<DWORD>& out, const char** wh
                 if (!(t & 0x80000000)) continue;
                 if (RegType(t) == 0 && (int)RegNum(t) > maxTemp) maxTemp = (int)RegNum(t);
                 if (RegType(t) == 2 && RegNum(t) == kHalf) { *why = "uses c255"; return false; }
+                if (RegType(t) == 2 && RegNum(t) == kHalf - 1 && !g_c254Used) {   // (c254: the strokes' alpha - see AddInkAlpha)
+                    g_c254Used = true;
+                    Log(L"Graphics: a vertex shader uses c254 - the ink strokes keep the game's alpha");
+                }
             }
         }
         i += 1 + len;
@@ -200,11 +207,39 @@ CreateVertexShader_t Real_CreateVertexShader;
 SetViewport_t Real_SetViewport;
 SetVSConstF_t Real_SetVSConstF;
 
+// The ink strokes' vertex shader (projMat and the fog's constants): the game fades the strokes as the picture gets
+// taller (their alpha about 720 / its height past 1080: 30% at 2400 lines); on the Xbox's 720p they're solid. With Line
+// thickness other than the PC game's, its colour's alpha is made saturate(alpha * c254.x), c254.x = height / 720 -
+// the console's solid outline (then the ink pixel shader widens it: see PatchInkShader).
+std::string CtabNames(const DWORD* code);
+const char kInkVsNames[] = "FogLerpParams,FogMode,HeightFogLerpParams,HeightFogMode,projMat";
+
+bool AddInkAlpha(std::vector<DWORD>& code) {
+    int colourIn = -1, colourOut = -1;   // (input texcoord2 - the D3DCOLOR - and output texcoord1, what the pixel's v1 is)
+    for (size_t i = 1; i + 2 < code.size() && code[i] != 0x0000FFFF;) {
+        DWORD tok = code[i], op = tok & 0xFFFF;
+        if (op == 0xFFFE) { i += 1 + ((tok >> 16) & 0x7FFF); continue; }
+        DWORD len = (tok >> 24) & 0xF;
+        if (op == 31 && (code[i + 1] & 0x1F) == 5) {
+            DWORD index = (code[i + 1] >> 16) & 0xF;
+            if (RegType(code[i + 2]) == 1 && index == 2) colourIn = (int)RegNum(code[i + 2]);
+            if (RegType(code[i + 2]) == 6 && index == 1) colourOut = (int)RegNum(code[i + 2]);
+        }
+        i += 1 + len;
+    }
+    if (colourIn < 0 || colourOut < 0 || code.back() != 0x0000FFFF) return false;
+    code.insert(code.end() - 1, {5u | (3u << 24), RegTok(6, colourOut) | (0x8u << 16) | (1u << 20),
+                                 RegTok(1, colourIn) | (0xFFu << 16), RegTok(2, kHalf - 1) | (0x00u << 16)});   // mul_sat oN.w, vM.w, c254.x
+    return true;
+}
+
 void PutHalf(IDirect3DDevice9* dev, DWORD w, DWORD h) {
     bool on = g_sharp && w && h;
     g_halfConst[0] = on ? -1.0f / w : 0;
     g_halfConst[1] = on ? 1.0f / h : 0;
     Real_SetVSConstF(dev, kHalf, g_halfConst, 1);
+    g_inkAlphaConst[0] = g_lines != 100 && g_bbH > 720 ? g_bbH / 720.0f : 1.0f;
+    if (!g_c254Used) Real_SetVSConstF(dev, kHalf - 1, g_inkAlphaConst, 1);
 }
 
 HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* self, const DWORD* code, IDirect3DVertexShader9** out) {
@@ -212,6 +247,10 @@ HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* self, const 
     const char* why = "";
     ++g_vsSeen;
     if (code && PatchVertexShader(code, patched, &why)) {
+        if (CtabNames(code) == kInkVsNames) {
+            if (AddInkAlpha(patched)) Log(L"Graphics: the ink strokes' vertex shader patched (their alpha)");
+            else Log(L"Graphics: the ink strokes' vertex shader isn't as expected - their alpha left as it is");
+        }
         HRESULT hr = Real_CreateVertexShader(self, patched.data(), out);
         if (SUCCEEDED(hr)) { ++g_vsPatched; return hr; }
         why = "refused";
@@ -234,6 +273,7 @@ HRESULT STDMETHODCALLTYPE Hook_SetVSConstF(IDirect3DDevice9* self, UINT start, c
         if (told++ < 5) Log(L"Graphics: the game sets vertex constants %u-%u (over c%u)", start, start + count - 1, kHalf);
         Real_SetVSConstF(self, kHalf, g_halfConst, 1);
     }
+    if (start <= kHalf - 1 && start + count > kHalf - 1 && !g_c254Used) Real_SetVSConstF(self, kHalf - 1, g_inkAlphaConst, 1);
     return hr;
 }
 
@@ -308,7 +348,67 @@ void PutHeld(IDirect3DDevice9* dev) {
         if (w.ps == g_curPs && g_psConst[w.which].hold) Real_SetPSConstF(dev, w.reg, g_psConst[w.which].v, 1);
 }
 
+// The ink strokes - the characters' outlines, made by the game each frame as quads (the lines inside them, the
+// smile, the creases, are in the models): their pixel shader (constants FogColor, diffuseMap, lightMap) draws
+// ramp(uv0) * ramp(uv1) * the vertex's alpha, in the vertex's colour. Each uv pair's two values add up to the same
+// number at every corner of a quad (uv0 along the stroke, uv1 across, adding up to 0), so ramp(max(u, v)) is a band:
+// solid where both are <= 0, a one-unit soft edge either side. Patched to read the ramp at uv + c[kInk] (the two
+// pairs' widening, negative): the solid middle grows, the soft edge stays as it is - a wider line, no softer. The quad
+// holds a line up to about 3x the game's (uv1 runs to about +-2.4 at 4K, +-5 at 1080p).
+const DWORD kInk = 1;
+float g_inkConst[4] = {0, 0, 0, 0};
+float g_inkTest[2] = {0, 0};   // (research, FGUYMOD_TEST_INK=a,b: what's taken off uv0 / uv1)
+bool g_inkRed = false;
+const float kInkRed[4] = {1, 0, 0, 0};
+std::vector<IDirect3DPixelShader9*> g_inkPs;
+
+bool PatchInkShader(const DWORD* in, std::vector<DWORD>& out) {
+    if ((in[0] & 0xFFFF0000) != 0xFFFF0000 || ((in[0] >> 8) & 0xFF) != 3) return false;   // (ps_3_0 only)
+    int maxTemp = -1;
+    size_t i = 1, lastDcl = 0;
+    for (; in[i] != 0x0000FFFF && i < 4096;) {
+        DWORD tok = in[i], op = tok & 0xFFFF;
+        if (op == 0xFFFE) { i += 1 + ((tok >> 16) & 0x7FFF); continue; }
+        DWORD len = (tok >> 24) & 0xF;
+        if (op == 31) lastDcl = i + 1 + len;
+        else if (op != 81 && op != 48 && op != 47)
+            for (DWORD k = 1; k <= len; ++k) {
+                DWORD t = in[i + k];
+                if ((t & 0x80000000) && RegType(t) == 0 && (int)RegNum(t) > maxTemp) maxTemp = (int)RegNum(t);
+                if ((t & 0x80000000) && RegType(t) == 2 && RegNum(t) >= kInk && RegNum(t) <= kInk + 3) return false;   // (in use)
+            }
+        i += 1 + len;
+    }
+    if (in[i] != 0x0000FFFF || !lastDcl) return false;
+    DWORD temp = (DWORD)(maxTemp + 1), v0 = RegTok(1, 0), t = RegTok(0, temp);
+    out.assign(in, in + lastDcl);
+    out.insert(out.end(), {2u | (3u << 24), t | (0xFu << 16), v0 | (0xE4u << 16), RegTok(2, kInk) | (0xE4u << 16)});   // add rT, v0, c1
+    for (size_t j = lastDcl; j < i;) {
+        DWORD tok = in[j], op = tok & 0xFFFF;
+        size_t len = op == 0xFFFE ? ((tok >> 16) & 0x7FFF) : ((tok >> 24) & 0xF);
+        size_t at = out.size();
+        out.insert(out.end(), in + j, in + j + 1 + len);
+        if (op == 66 && len >= 3 && RegType(out[at + 2]) == 1 && RegNum(out[at + 2]) == 0)   // texld rX, v0(.swizzle), sN
+            out[at + 2] = t | (out[at + 2] & 0x00FF0000);
+        j += 1 + len;
+    }
+    if (g_inkRed)   // (research, FGUYMOD_TEST_INKRED: the strokes drawn red - which pixels are theirs)
+        out.insert(out.end(), {1u | (2u << 24), RegTok(8, 0) | (0x7u << 16), RegTok(2, kInk + 3) | (0xE4u << 16)});   // mov oC0.xyz, c4
+    out.push_back(0x0000FFFF);
+    return true;
+}
+
 HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* self, const DWORD* code, IDirect3DPixelShader9** out) {
+    if (code && CtabNames(code) == "FogColor,diffuseMap,lightMap") {
+        std::vector<DWORD> patched;
+        if (PatchInkShader(code, patched) && SUCCEEDED(Real_CreatePixelShader(self, patched.data(), out)) && out && *out) {
+            g_inkPs.push_back(*out);
+            if (g_psTrace) g_psNames.push_back({*out, CtabNames(code)});
+            Log(L"Graphics: the ink strokes' pixel shader patched (their width)");
+            return D3D_OK;
+        }
+        Log(L"Graphics: the ink strokes' pixel shader isn't as expected - left as it is");
+    }
     HRESULT hr = Real_CreatePixelShader(self, code, out);
     if (SUCCEEDED(hr) && code && out && *out && g_psTrace) g_psNames.push_back({*out, CtabNames(code)});
     UINT skipReg;   // (a name, or "=" and a shader's whole list of constant names as the trace prints it)
@@ -327,6 +427,17 @@ HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* self, const D
 
 HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* self, IDirect3DPixelShader9* ps) {
     HRESULT hr = Real_SetPixelShader(self, ps);
+    if (ps && std::find(g_inkPs.begin(), g_inkPs.end(), ps) != g_inkPs.end()) {
+        // The strokes are a few pixels wide at any resolution (and fainter the taller it is: see AddInkAlpha); the
+        // Xbox draws them at 720p and scales the picture up. A line's solid middle is 2c + 1 units of uv1 for c taken
+        // off it: m times as wide for c = (m - 1) / 2. Auto, with their alpha made solid again: m = the picture's
+        // height / 1600 (1 below that) - beside the Xbox at 2400 lines, 1.5 matched it.
+        float m = g_lines ? g_lines / 100.0f : (g_bbH > 1600 ? g_bbH / 1600.0f : 1.0f);
+        g_inkConst[0] = g_inkConst[1] = -g_inkTest[0];
+        g_inkConst[2] = g_inkConst[3] = g_inkTest[1] ? -g_inkTest[1] : -(m - 1) * 0.5f;
+        Real_SetPSConstF(self, kInk, g_inkConst, 1);
+        if (g_inkRed) Real_SetPSConstF(self, kInk + 3, kInkRed, 1);
+    }
     if (g_psTrace && g_frame % 1000 == 999 && ps && ps != g_curPs) {
         IDirect3DSurface9* rt = nullptr;
         D3DSURFACE_DESC d = {};
@@ -342,6 +453,8 @@ HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* self, IDirect3DP
 
 HRESULT STDMETHODCALLTYPE Hook_SetPSConstF(IDirect3DDevice9* self, UINT start, const float* data, UINT count) {
     HRESULT hr = Real_SetPSConstF(self, start, data, count);
+    if (start <= kInk && start + count > kInk && g_curPs && std::find(g_inkPs.begin(), g_inkPs.end(), g_curPs) != g_inkPs.end())
+        Real_SetPSConstF(self, kInk, g_inkConst, 1);   // (the game's own over ours: ours again)
     for (const PsWatch& w : g_psWatch) {
         if (w.ps != g_curPs || w.reg < start || w.reg >= start + count) continue;
         PsConst& c = g_psConst[w.which];
@@ -368,9 +481,100 @@ IDirect3DPixelShader9* g_loggedPs = nullptr;
 const char* g_drawKind = "";
 UINT g_drawCount = 0;
 
+// FGUYMOD_TEST_DUMPSHADER=<constant name>: at a traced frame, the first draw with a pixel shader that has it writes that
+// shader and the vertex shader with it, disassembled (d3dcompiler_47's D3DDisassemble), to FGUYMod\shaders_<name>.txt
+char g_dumpShader[64] = "";
+bool g_shaderDumped = false;
+void DumpShaders(IDirect3DDevice9* dev) {
+    using D3DDisassemble_t = HRESULT(WINAPI*)(LPCVOID, SIZE_T, UINT, LPCSTR, ID3DBlob**);
+    HMODULE m = LoadLibraryW(L"d3dcompiler_47.dll");
+    auto disasm = m ? reinterpret_cast<D3DDisassemble_t>(GetProcAddress(m, "D3DDisassemble")) : nullptr;
+    if (!disasm) return;
+    wchar_t path[MAX_PATH];
+    swprintf_s(path, L"%s\\shaders_%S.txt", g_modDir, g_dumpShader);
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path, L"w") || !f) return;
+    IDirect3DVertexShader9* vs = nullptr;
+    dev->GetVertexShader(&vs);
+    for (int k = 0; k < 2; ++k) {
+        UINT size = 0;
+        std::vector<unsigned char> code;
+        if (k == 0 && g_curPs && SUCCEEDED(g_curPs->GetFunction(nullptr, &size))) { code.resize(size); g_curPs->GetFunction(code.data(), &size); }
+        if (k == 1 && vs && SUCCEEDED(vs->GetFunction(nullptr, &size))) { code.resize(size); vs->GetFunction(code.data(), &size); }
+        ID3DBlob* text = nullptr;
+        fprintf(f, "==== %s shader (%u bytes)\n", k == 0 ? "pixel" : "vertex (as patched: the half-pixel fix at its end)", size);
+        if (!code.empty() && SUCCEEDED(disasm(code.data(), code.size(), 0, nullptr, &text)) && text) {
+            fwrite(text->GetBufferPointer(), 1, text->GetBufferSize() - 1, f);
+            text->Release();
+        }
+        fprintf(f, "\n");
+    }
+    if (vs) vs->Release();
+    // the draw's vertices: its declaration, then the first 24 (stream 0, as floats) and first 36 indices
+    IDirect3DVertexDeclaration9* decl = nullptr;
+    if (SUCCEEDED(dev->GetVertexDeclaration(&decl)) && decl) {
+        D3DVERTEXELEMENT9 el[32];
+        UINT n = 32;
+        if (SUCCEEDED(decl->GetDeclaration(el, &n)))
+            for (UINT e = 0; e < n && el[e].Stream != 0xFF; ++e)
+                fprintf(f, "element: stream %u offset %u type %u usage %u index %u\n", el[e].Stream, el[e].Offset, el[e].Type,
+                        el[e].Usage, el[e].UsageIndex);
+        decl->Release();
+    }
+    IDirect3DVertexBuffer9* vb = nullptr;
+    UINT offset = 0, stride = 0;
+    if (SUCCEEDED(dev->GetStreamSource(0, &vb, &offset, &stride)) && vb) {
+        D3DVERTEXBUFFER_DESC vd;
+        vb->GetDesc(&vd);
+        void* p = nullptr;
+        fprintf(f, "stream 0: stride %u offset %u, buffer %u bytes, usage %#lx pool %d\n", stride, offset, vd.Size, vd.Usage, vd.Pool);
+        if (SUCCEEDED(vb->Lock(0, 0, &p, D3DLOCK_READONLY)) && p) {
+            for (UINT v = 0; v < 24 && offset + (v + 1) * stride <= vd.Size; ++v) {
+                const float* fl = reinterpret_cast<const float*>(static_cast<const char*>(p) + offset + v * stride);
+                fprintf(f, "v%02u:", v);
+                for (UINT k = 0; k < stride / 4; ++k) fprintf(f, " %9.4f", fl[k]);
+                fprintf(f, "\n");
+            }
+            if (stride == 32)   // (the strokes: per quad its colour, and each uv pair's sum - its band's solid width)
+                for (UINT q = 0; q < 150 && offset + (q * 4 + 4) * stride <= vd.Size; ++q) {
+                    const char* base = static_cast<const char*>(p) + offset + q * 4 * stride;
+                    const float* a = reinterpret_cast<const float*>(base);
+                    DWORD col = *reinterpret_cast<const DWORD*>(base + 12);
+                    float minU0 = 1e9f, maxU0 = -1e9f, minU1 = 1e9f, maxU1 = -1e9f;
+                    for (int c = 0; c < 4; ++c) {
+                        const float* t = reinterpret_cast<const float*>(base + c * stride);
+                        minU0 = min(minU0, t[4]); maxU0 = max(maxU0, t[4]); minU1 = min(minU1, t[6]); maxU1 = max(maxU1, t[6]);
+                    }
+                    fprintf(f, "quad %3u: colour %08lx  uv0 sum %7.3f range %6.2f..%6.2f  uv1 sum %7.3f range %6.2f..%6.2f  z %.3f\n", q,
+                            col, a[4] + a[5], minU0, maxU0, a[6] + a[7], minU1, maxU1, a[2]);
+                }
+            vb->Unlock();
+        }
+        vb->Release();
+    }
+    IDirect3DIndexBuffer9* ib = nullptr;
+    if (SUCCEEDED(dev->GetIndices(&ib)) && ib) {
+        D3DINDEXBUFFER_DESC id;
+        ib->GetDesc(&id);
+        void* p = nullptr;
+        if (id.Format == D3DFMT_INDEX16 && SUCCEEDED(ib->Lock(0, 0, &p, D3DLOCK_READONLY)) && p) {
+            fprintf(f, "indices:");
+            for (UINT k = 0; k < 36 && k * 2 < id.Size; ++k) fprintf(f, " %u", static_cast<const unsigned short*>(p)[k]);
+            fprintf(f, "\n");
+            ib->Unlock();
+        }
+        ib->Release();
+    }
+    fclose(f);
+    Log(L"Graphics test: shaders written to %s", path);
+}
+
 bool SkipDraw(IDirect3DDevice9* dev) {
     if (g_psTrace && g_frame % 1000 == 999 && g_curPs != g_loggedPs) {
         g_loggedPs = g_curPs;
+        if (g_dumpShader[0] && !g_shaderDumped)
+            for (auto& p : g_psNames)
+                if (p.first == g_curPs && p.second.find(g_dumpShader) != std::string::npos) { g_shaderDumped = true; DumpShaders(dev); }
         DWORD s[11];
         const D3DRENDERSTATETYPE kStates[11] = {D3DRS_ALPHABLENDENABLE, D3DRS_SRCBLEND, D3DRS_DESTBLEND, D3DRS_ALPHATESTENABLE,
                                                 D3DRS_ALPHAREF, D3DRS_ALPHAFUNC, D3DRS_ZENABLE, D3DRS_ZWRITEENABLE, D3DRS_CULLMODE,
@@ -460,6 +664,9 @@ HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* self, D3
 void LoadPsConstTest() {
     char spec[512];
     g_psTrace = GetEnvironmentVariableA("FGUYMOD_TEST_PSTRACE", spec, sizeof(spec)) != 0;
+    GetEnvironmentVariableA("FGUYMOD_TEST_DUMPSHADER", g_dumpShader, sizeof(g_dumpShader));
+    if (GetEnvironmentVariableA("FGUYMOD_TEST_INK", spec, sizeof(spec))) sscanf_s(spec, "%f,%f", &g_inkTest[0], &g_inkTest[1]);
+    g_inkRed = GetEnvironmentVariableA("FGUYMOD_TEST_INKRED", spec, sizeof(spec)) != 0;
     if (GetEnvironmentVariableA("FGUYMOD_TEST_PSSKIP", g_psSkip, sizeof(g_psSkip)))
         Log(L"Graphics test: draws with pixel shaders that have %S are left out", g_psSkip);
     if (!GetEnvironmentVariableA("FGUYMOD_TEST_PSCONST", spec, sizeof(spec))) return;
@@ -626,8 +833,10 @@ void GraphicsLoadSettings() {
     g_sharpen = s < 0 ? 0 : s > 100 ? 100 : s;
     int b = SettingInt(L"Graphics", L"Brightness", L"FGUYMOD_GFX_BRIGHT", 50);
     g_bright = b < 0 ? 0 : b > 100 ? 100 : b;
-    Log(L"Graphics: sharp picture %s, texture filtering %d, anti-aliasing %s, sharpening %d, brightness %d", g_sharp ? L"on" : L"off",
-        g_filter, g_aa ? L"FXAA" : L"off", g_sharpen, g_bright);
+    int l = SettingInt(L"Graphics", L"LineThickness", L"FGUYMOD_GFX_LINES", 0);
+    g_lines = l <= 0 ? 0 : l < 100 ? 100 : l > 300 ? 300 : l;
+    Log(L"Graphics: sharp picture %s, texture filtering %d, anti-aliasing %s, sharpening %d, brightness %d, line thickness %d%s",
+        g_sharp ? L"on" : L"off", g_filter, g_aa ? L"FXAA" : L"off", g_sharpen, g_bright, g_lines, g_lines ? L"%" : L" (auto)");
 }
 
 // d3d9.cpp: the game's device (before the skins' hooks: theirs go through ours)
@@ -647,12 +856,13 @@ void GraphicsDeviceCreated(IDirect3DDevice9* dev, UINT w, UINT h) {
     if (void* o = Patch(dev, 23, (void*)Hook_CreateTexture)) Real_CreateTexture = (CreateTexture_t)o;
     static bool testLoaded = false;
     if (!testLoaded) { testLoaded = true; LoadPsConstTest(); }
+    // (the ink strokes' shader: always - the research switches below go through the same three)
+    if (void* o = Patch(dev, 106, (void*)Hook_CreatePixelShader)) Real_CreatePixelShader = (CreatePixelShader_t)o;
+    if (void* o = Patch(dev, 107, (void*)Hook_SetPixelShader)) Real_SetPixelShader = (SetPixelShader_t)o;
+    if (void* o = Patch(dev, 109, (void*)Hook_SetPSConstF)) Real_SetPSConstF = (SetPSConstF_t)o;
     if (!g_psConst.empty() || g_psTrace || g_psSkip[0]) {   // (research only - see FGUYMOD_TEST_PSCONST)
-        if (void* o = Patch(dev, 106, (void*)Hook_CreatePixelShader)) Real_CreatePixelShader = (CreatePixelShader_t)o;
-        if (void* o = Patch(dev, 107, (void*)Hook_SetPixelShader)) Real_SetPixelShader = (SetPixelShader_t)o;
-        if (void* o = Patch(dev, 109, (void*)Hook_SetPSConstF)) Real_SetPSConstF = (SetPSConstF_t)o;
-        if (void* o = Patch(dev, 81, (void*)Hook_DrawPrimitive)) Real_DrawPrimitive = (DrawPrimitive_t)o;
         if (void* o = Patch(dev, 82, (void*)Hook_DrawIndexedPrimitive)) Real_DrawIndexedPrimitive = (DrawIndexedPrimitive_t)o;
+        if (void* o = Patch(dev, 81, (void*)Hook_DrawPrimitive)) Real_DrawPrimitive = (DrawPrimitive_t)o;
         if (void* o = Patch(dev, 83, (void*)Hook_DrawPrimitiveUP)) Real_DrawPrimitiveUP = (DrawPrimitiveUP_t)o;
         if (void* o = Patch(dev, 84, (void*)Hook_DrawIndexedPrimitiveUP)) Real_DrawIndexedPrimitiveUP = (DrawIndexedPrimitiveUP_t)o;
     }
@@ -735,6 +945,12 @@ const int kFilters[] = {0, 1, 2, 4, 8, 16};
 const char* kFilterNames[] = {"THE GAME'S (BILINEAR)", "TRILINEAR", "ANISOTROPIC 2X", "ANISOTROPIC 4X", "ANISOTROPIC 8X",
                               "ANISOTROPIC 16X"};
 const char* kRateNames[] = {"VSYNC", "30 FPS", "60 FPS", "120 FPS", "144 FPS", "240 FPS", "UNCAPPED"};
+const int kLines[] = {0, 100, 150, 200, 250, 300};
+const char* kLineNames[] = {"AUTO (AS ON THE CONSOLE)", "100% (THE PC GAME'S)", "150%", "200%", "250%", "300%"};
+int LinesIndex() {
+    for (int i = 0; i < 6; ++i) if (kLines[i] == g_lines) return i;
+    return 0;
+}
 int FilterIndex() {
     for (int i = 0; i < 6; ++i) if (kFilters[i] == g_filter) return i;
     return 5;
@@ -768,6 +984,7 @@ const char* GraphicsMenuRows(int page) {
         row("Texture filtering", kFilterNames[FilterIndex()], 'c', "Sharper ground far off, seen at a low angle (a small change in this game)");
         sprintf_s(v, "%d", (int)g_sharpen);
         row("Sharpening", v, 's', "Crisper lines and textures. 0: none");
+        row("Line thickness", kLineNames[LinesIndex()], 'c', "The characters' outlines. Auto: as on the console at any resolution (the PC game's fade at 4K)");
     } else {
         row("Menu style", GraphicsMenuNew() ? "NEW" : "CLASSIC", 'c', "Classic: Options opens the game's own options (these settings are in it too)");
         row("More options", "AUDIO, CONTROLS, LANGUAGE", 'l', "The game's own options");
@@ -790,6 +1007,10 @@ int GraphicsMenuChange(int page, int row, int delta) {
             g_statesDirty = true;
         }
         if (row == 3 && delta) { g_sharpen = Step(g_sharpen, delta, 10); Save(L"Graphics", L"Sharpening", g_sharpen); }
+        if (row == 4) {   // (at the next stroke drawn: the constant is put whenever their shader is set)
+            g_lines = kLines[(LinesIndex() + dir + 6) % 6];
+            Save(L"Graphics", L"LineThickness", g_lines);
+        }
     } else {
         if (row == 0) Save(L"Interface", L"MenuStyle", GraphicsMenuNew() ? 0 : 1);
         if (row == 1) return 2;
