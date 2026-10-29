@@ -269,6 +269,22 @@ void LogFullscreenTrouble(IDirect3DDevice9* dev, const D3DPRESENT_PARAMETERS& pp
     d3d->Release();
 }
 
+// The game's resolution change (Options > Screen, GRFX_ChangeResolution: FGUY.exe 0x447950 / 0x419680) sets its
+// "reset asked" flag (0xb06c12) and resets the device through 0x420880: its resources let go, then Reset. The menus'
+// renderer (Scaleform, [0xb06c4c] + 0x3e0, its 0x7125d0) only lets go of its own - a dynamic vertex and index buffer,
+// glyph and gradient textures, all D3DPOOL_DEFAULT - when TestCooperativeLevel says the device is lost; this reset
+// isn't a lost device, so they stayed, and Direct3D refused the Reset (INVALIDCALL). 0x420880 gives up on that (its
+// answer, 0, clears the flag its frame would try again with): the picture froze, at every size and mode, until the
+// game was closed. So while the game has asked for a reset, the device says it needs one (D3DERR_DEVICENOTRESET - what
+// 0x420880 itself takes as "reset now", same as its flag): everything lets go, and the first Reset works.
+using TCL_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*);
+TCL_t Real_TestCooperativeLevel;
+HRESULT STDMETHODCALLTYPE Hook_TestCooperativeLevel(IDirect3DDevice9* self) {
+    HRESULT hr = Real_TestCooperativeLevel(self);
+    if (hr == D3D_OK && *reinterpret_cast<volatile char*>(0xb06c12)) return D3DERR_DEVICENOTRESET;
+    return hr;
+}
+
 HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* self, D3DPRESENT_PARAMETERS* pp) {
     D3DPRESENT_PARAMETERS original = *pp, mine = *pp;
     FixPresentParameters(&mine);
@@ -276,6 +292,7 @@ HRESULT STDMETHODCALLTYPE Hook_Reset(IDirect3DDevice9* self, D3DPRESENT_PARAMETE
     HRESULT hr = Real_Reset(self, &mine);
     Log(L"D3D: Reset %ux%u %s interval %#x refresh %u -> %#lx", mine.BackBufferWidth, mine.BackBufferHeight,
         mine.Windowed ? L"windowed" : L"fullscreen", mine.PresentationInterval, mine.FullScreen_RefreshRateInHz, hr);
+    if (hr == D3DERR_INVALIDCALL) PoolTraceDump();   // (research: what is still alive - pooltrace.cpp)
     if (FAILED(hr)) {
         *pp = original;  // try exactly what the game asked for
         hr = Real_Reset(self, pp);
@@ -546,6 +563,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DD
         Log(L"D3D:   back buffer %ux%u format %d, multisample %d/%lu, %u back buffers", pp->BackBufferWidth,
             pp->BackBufferHeight, pp->BackBufferFormat, pp->MultiSampleType, pp->MultiSampleQuality, pp->BackBufferCount);
         if (void* o = PatchVtable(*out, 16, (void*)Hook_Reset)) Real_Reset = (Reset_t)o;
+        if (void* o = PatchVtable(*out, 3, (void*)Hook_TestCooperativeLevel)) Real_TestCooperativeLevel = (TCL_t)o;
         if (void* o = PatchVtable(*out, 17, (void*)Hook_Present)) Real_Present = (Present_t)o;
         if (void* o = PatchVtable(*out, 23, (void*)Hook_CreateTexture)) Real_CreateTexture = (CreateTexture_t)o;
         GraphicsDeviceCreated(*out, pp->BackBufferWidth, pp->BackBufferHeight);   // (graphics.cpp - before the skins' hooks)
@@ -556,6 +574,7 @@ HRESULT STDMETHODCALLTYPE Hook_CreateDevice(IDirect3D9* self, UINT adapter, D3DD
             if (void* o = PatchVtable(*out, 34, (void*)Hook_StretchRect)) Real_StretchRect = (StretchRect_t)o;
         }
         CosmeticsDeviceCreated(*out);   // (skins: which player a draw is of - cosmetics.cpp)
+        PoolTraceInstall(*out);         // (research - pooltrace.cpp)
     }
     return hr;
 }

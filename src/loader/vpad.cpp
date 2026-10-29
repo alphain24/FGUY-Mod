@@ -145,7 +145,7 @@ DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
         if (pad == 0) ModsTick();   // the mods' plugins (after the lockstep has this tick's inputs)
         return NetplayPadConnected(pad) ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
     }
-    if (pad == 0) ModsTick();
+    if (pad == 0) { ModsTick(); NetplayOfflineTick(); }
     DWORD r = Real_XInputGetState(pad, state);   // (offline the emote wheel looks at it last: the test pipe's presses too)
     if (IsBot() && state && r == ERROR_SUCCESS) ZeroMemory(&state->Gamepad, sizeof(state->Gamepad));  // not your pad
     static LONG calls[4];

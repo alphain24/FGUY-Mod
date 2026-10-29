@@ -89,7 +89,8 @@ void NetplayLevelFileOpened(const wchar_t* path);   // config.cpp: a file opened
 void NetplayFetchSave(const wchar_t* path);         // config.cpp: the save about to be read - rejoining story: the host's
 void NetplayTestHurt(int player, float amount);   //   test pipe "hurt": my player there takes a hit nobody caused
 void OnlineMenuLogYaw();               //   test pipe "yaw": the lobby preview's facing (onlinemenu.cpp)
-void NetplayTestResolution(int w, int h);   //   test pipe: the game changes resolution (Options > Screen)               //   test pipe: my player moves a little here only (out of sync)
+void NetplayOfflineTick();                  // vpad.cpp: every pad 0 poll outside sessions (test pipe's resolution)
+void NetplayTestResolution(int w, int h);   //   test pipe: the game changes resolution (Options > Screen)             //   test pipe: my player moves a little here only (out of sync)
 int NetplaySessionSlot();              //   my player slot in this game's session (also after leaving it)
 unsigned NetplayTick();                //   the lockstep tick being simulated
 int NetplayRate();                     //   ticks (frames) per second online
@@ -150,6 +151,8 @@ void CosmeticsDeviceCreated(IDirect3DDevice9* dev);   //   d3d9.cpp: the game's 
 void GraphicsLoadSettings();
 void GraphicsDeviceCreated(IDirect3DDevice9* dev, UINT w, UINT h);
 void GraphicsBeforeReset();
+void PoolTraceInstall(IDirect3DDevice9* dev);   // research FGUYMOD_TEST_POOLTRACE: the D3DPOOL_DEFAULT resources alive
+void PoolTraceDump();                           //   (pooltrace.cpp - on a refused Reset)
 void GraphicsAfterReset(IDirect3DDevice9* dev, UINT w, UINT h);
 void GraphicsPresent(IDirect3DDevice9* dev);   //   every frame, before it's shown
 bool GraphicsMenuNew();                        //   the main menu's SETTINGS page: Options opens it (else the game's)

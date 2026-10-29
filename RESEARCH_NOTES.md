@@ -164,6 +164,15 @@ Registry `HKCU\Software\Heavy Iron Studios Inc.\Family Guy\Settings`: `ScreenWid
 `ScreenWindowed`, `ScreenMonitor` (4-byte REG_BINARY), `Language`, `IsKeyboardMouseInput`, `KeyConfig`,
 `MainWindowPlacement`. The loader can override these per run (see README).
 
+Changing the size (2026-10-30): `GRFX_ChangeResolution` queues `0x44f920` → render thread `0x4cac40(w, h, windowed)` →
+`0x447950` (same windowed state) / `0x419680` (windowed toggle): they fill the present parameters (`0xaf3418`), set
+"reset asked" `0xb06c12` and call the device reset `0x420880` (resources let go, TestCooperativeLevel, Reset through
+`0x48b760`, made again), keeping its answer in `0xaf35a1` (the frame `0x44da30` retries while it's 1). Scaleform's
+renderer (`[0xb06c4c] + 0x3e0`, release `0x7125d0`) only lets go of its DEFAULT-pool buffers / glyph / gradient
+textures when TestCooperativeLevel isn't D3D_OK, so a reset asked from the menus was refused (INVALIDCALL - 33 of
+its resources alive, `FGUYMOD_TEST_POOLTRACE`) and, its answer 0, never tried again: the picture froze for good. The
+mod answers DEVICENOTRESET while `0xb06c12` is set. The game's Present is `0x4a39c0` (EndScene, StretchRect, Present).
+
 ## File loading
 All game data is opened via `CreateFileW` with relative paths like `./FGUY/Levels/AMDM.ho`, so the
 loader can redirect individual files to modded copies later. The game also probes `./boot.ini` (not present).
