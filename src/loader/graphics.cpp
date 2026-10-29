@@ -242,16 +242,34 @@ void PutHalf(IDirect3DDevice9* dev, DWORD w, DWORD h) {
     if (!g_c254Used) Real_SetVSConstF(dev, kHalf - 1, g_inkAlphaConst, 1);
 }
 
+// (the constants are put again each time the strokes' vertex shader is set: a device reset - even one that fails, as
+// a resolution change in borderless did - clears them all, and c254 = 0 drew every outline see-through)
+std::vector<IDirect3DVertexShader9*> g_inkVs;
+using SetVertexShader_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, IDirect3DVertexShader9*);
+SetVertexShader_t Real_SetVertexShader;
+
+HRESULT STDMETHODCALLTYPE Hook_SetVertexShader(IDirect3DDevice9* self, IDirect3DVertexShader9* vs) {
+    HRESULT hr = Real_SetVertexShader(self, vs);
+    if (vs && !g_c254Used && std::find(g_inkVs.begin(), g_inkVs.end(), vs) != g_inkVs.end()) {
+        g_inkAlphaConst[0] = g_lines != 100 && g_bbH > 720 ? g_bbH / 720.0f : 1.0f;
+        Real_SetVSConstF(self, kHalf - 1, g_inkAlphaConst, 1);
+        Real_SetVSConstF(self, kHalf, g_halfConst, 1);
+    }
+    return hr;
+}
+
 HRESULT STDMETHODCALLTYPE Hook_CreateVertexShader(IDirect3DDevice9* self, const DWORD* code, IDirect3DVertexShader9** out) {
     std::vector<DWORD> patched;
     const char* why = "";
     ++g_vsSeen;
     if (code && PatchVertexShader(code, patched, &why)) {
-        if (CtabNames(code) == kInkVsNames) {
+        bool ink = CtabNames(code) == kInkVsNames;
+        if (ink) {
             if (AddInkAlpha(patched)) Log(L"Graphics: the ink strokes' vertex shader patched (their alpha)");
-            else Log(L"Graphics: the ink strokes' vertex shader isn't as expected - their alpha left as it is");
+            else { Log(L"Graphics: the ink strokes' vertex shader isn't as expected - their alpha left as it is"); ink = false; }
         }
         HRESULT hr = Real_CreateVertexShader(self, patched.data(), out);
+        if (SUCCEEDED(hr) && ink && out && *out) g_inkVs.push_back(*out);
         if (SUCCEEDED(hr)) { ++g_vsPatched; return hr; }
         why = "refused";
     }
@@ -853,6 +871,7 @@ void GraphicsDeviceCreated(IDirect3DDevice9* dev, UINT w, UINT h) {
     if (void* o = Patch(dev, 91, (void*)Hook_CreateVertexShader)) Real_CreateVertexShader = (CreateVertexShader_t)o;
     if (void* o = Patch(dev, 47, (void*)Hook_SetViewport)) Real_SetViewport = (SetViewport_t)o;
     if (void* o = Patch(dev, 94, (void*)Hook_SetVSConstF)) Real_SetVSConstF = (SetVSConstF_t)o;
+    if (void* o = Patch(dev, 92, (void*)Hook_SetVertexShader)) Real_SetVertexShader = (SetVertexShader_t)o;
     if (void* o = Patch(dev, 23, (void*)Hook_CreateTexture)) Real_CreateTexture = (CreateTexture_t)o;
     static bool testLoaded = false;
     if (!testLoaded) { testLoaded = true; LoadPsConstTest(); }
@@ -876,6 +895,7 @@ void GraphicsAfterReset(IDirect3DDevice9* dev, UINT w, UINT h) {
     g_bbW = w;
     g_bbH = h;
     if (Real_SetSamplerState) ResetStages(dev);
+    if (Real_SetVSConstF) PutHalf(dev, w, h);   // (a reset clears every constant: ours again)
 }
 
 // d3d9.cpp, every Present (before the frame is shown): our passes
