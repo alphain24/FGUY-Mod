@@ -1,4 +1,4 @@
-﻿# Builds the players' download:
+# Builds the players' download:
 #   build\release\FGUYMod-<version>-Setup.exe   the one file players run (src/installer/setup.cpp, with the zip in it)
 #   build\release\FGUYMod-<version>.zip         what goes into the game folder, nothing else (for the updater and
 #                                                 anyone installing by hand)
@@ -22,9 +22,12 @@ Copy-Item "$P\dist\FGUYMod\dxvk\*" "$stage\FGUYMod\dxvk\"
 Copy-Item "$P\dist\FGUYMod\ui\*.fgpatch" "$stage\FGUYMod\ui\"
 # (our own mods: FGUY Cosmetics, FGUY Emotes - their content only: skins, emotes... - each one file, <name>.fgmod, made
 #  from its folder in dist\FGUYMod\mods: tools/make_fgmod.py; also next to the release's files, for downloading alone)
+# (Python: py, python, or the per-user install - whichever this PC has)
+$python = @((Get-Command py -ErrorAction SilentlyContinue).Source, (Get-Command python -ErrorAction SilentlyContinue).Source) + @(Get-ChildItem "$env:LOCALAPPDATA\Programs\Python\Python3*\python.exe" -ErrorAction SilentlyContinue | ForEach-Object FullName) | Where-Object { $_ } | Select-Object -First 1
+if (-not $python) { Write-Output "Python isn't installed (it makes the .fgmod files)"; exit 1 }
 New-Item -ItemType Directory -Force "$stage\FGUYMod\mods" | Out-Null
 foreach ($m in Get-ChildItem "$P\dist\FGUYMod\mods" -Directory) {
-    python "$P\tools\make_fgmod.py" $m.FullName "$stage\FGUYMod\mods\$($m.Name).fgmod"
+    & $python "$P\tools\make_fgmod.py" $m.FullName "$stage\FGUYMod\mods\$($m.Name).fgmod"
     Copy-Item "$stage\FGUYMod\mods\$($m.Name).fgmod" (Join-Path $P "build\release\$($m.Name).fgmod") -Force
 }
 if (Test-Path "$P\dist\FGUYMod\sounds\*.wav") {
@@ -88,7 +91,11 @@ if (-not $version) { Write-Output "no kModVersion in src\loader\online.cpp"; exi
 # src/installer/setup.cpp, built with these resources: 1 the zip (the setup; none: the uninstaller), 2 the version.
 $rel = Join-Path $P "build\release"
 Set-Content (Join-Path $rel "version.txt") $version -Encoding ascii -NoNewline
-$vs = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"
+# (Visual Studio 2022 with C++ - Community or the Build Tools: vswhere finds whichever is installed, as build.bat does)
+$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+$vsDir = if (Test-Path $vswhere) { & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath }
+$vs = "$vsDir\VC\Auxiliary\Build\vcvarsall.bat"
+if (-not $vsDir -or -not (Test-Path $vs)) { Write-Output "Visual Studio 2022 with C++ isn't installed"; exit 1 }
 $src = Join-Path $P "src\installer\setup.cpp"
 function BuildSetup([string]$rc, [string]$out) {
     $rc | Set-Content (Join-Path $rel "setup.rc") -Encoding ascii
