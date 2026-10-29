@@ -90,15 +90,27 @@ decltype(&RegQueryValueExW) Real_RegQueryValueExW;
 LSTATUS WINAPI Hook_RegQueryValueExW(HKEY key, LPCWSTR name, LPDWORD reserved, LPDWORD type,
                                      LPBYTE data, LPDWORD size) {
     LSTATUS r = Real_RegQueryValueExW(key, name, reserved, type, data, size);
-    if (r != ERROR_SUCCESS || !name || !data || !size) return r;
+    // A game never set up on this PC (or this Windows user) has no screen settings saved yet: it then goes
+    // exclusive fullscreen at the monitor's resolution, whatever our mode. Those reads are answered too
+    // (as the game's defaults: fullscreen), with our values where we have them.
+    bool missing = r == ERROR_FILE_NOT_FOUND;
+    if ((r != ERROR_SUCCESS && !missing) || !name || !data || !size) return r;
     if (g_padMode && *size >= 1 && _wcsicmp(name, L"IsKeyboardMouseInput") == 0) {
         data[0] = 0;  // 1-byte flag
         Log(L"Input: game setting IsKeyboardMouseInput -> 0 (controller mode)");
+        if (missing) {
+            if (type) *type = REG_BINARY;
+            *size = 1;
+            return ERROR_SUCCESS;
+        }
         return r;
     }
     if (*size < 4) return r;
-    int value = -1, stored;
-    memcpy(&stored, data, 4);
+    int value = -1, stored = 0;
+    if (!missing) memcpy(&stored, data, 4);
+    else if (_wcsicmp(name, L"ScreenWidth") != 0 && _wcsicmp(name, L"ScreenHeight") != 0 &&
+             _wcsicmp(name, L"ScreenWindowed") != 0)
+        return r;
     bool sizeOverride = g_width > 0 && (g_envRes || g_mode == Mode::Borderless);
     if (_wcsicmp(name, L"ScreenWindowed") == 0) {
         g_gameWindowed = stored ? 1 : 0;
@@ -113,15 +125,19 @@ LSTATUS WINAPI Hook_RegQueryValueExW(HKEY key, LPCWSTR name, LPDWORD reserved, L
         }
         if (g_mode != Mode::Default) value = 1;   // (always windowed for Direct3D, see Covering)
     } else if (_wcsicmp(name, L"ScreenWidth") == 0) {
-        g_gameWidth = sizeOverride ? g_width : stored;
+        if (sizeOverride || !missing) g_gameWidth = sizeOverride ? g_width : stored;
         if (sizeOverride) value = g_width;
     } else if (_wcsicmp(name, L"ScreenHeight") == 0) {
-        g_gameHeight = sizeOverride ? g_height : stored;
+        if (sizeOverride || !missing) g_gameHeight = sizeOverride ? g_height : stored;
         if (sizeOverride) value = g_height;
     }
-    if (value >= 0) {
-        memcpy(data, &value, 4);
-        Log(L"Display: game setting %s -> %d", name, value);
+    if (value < 0) return r;
+    memcpy(data, &value, 4);
+    Log(L"Display: game setting %s -> %d%s", name, value, missing ? L" (none saved yet)" : L"");
+    if (missing) {
+        if (type) *type = REG_BINARY;
+        *size = 4;
+        return ERROR_SUCCESS;
     }
     return r;
 }

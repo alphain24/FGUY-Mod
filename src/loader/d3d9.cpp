@@ -22,6 +22,8 @@
 #include <mmsystem.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 #include <vector>
 
 #pragma comment(lib, "winmm.lib")
@@ -617,24 +619,107 @@ void AddUnregisteredVulkanDrivers() {
     Log(L"D3D: Vulkan driver(s) installed but not registered - added for the game: %s", add.c_str());
 }
 
+// DXVK with no GPU it can use doesn't return "no adapters": it closes the whole game (seen on an AMD Ryzen
+// 5900HX's Vega graphics, newest driver - Vulkan 1.3, but not VK_KHR_load_store_op_none). So before loading it,
+// ask Vulkan ourselves: some GPU with Vulkan 1.3 and that extension (core in 1.4). Just the types used, no SDK.
+struct VkAppInfo { uint32_t sType; const void* pNext; const char* app; uint32_t appVersion; const char* engine;
+                   uint32_t engineVersion; uint32_t apiVersion; };
+struct VkInstInfo { uint32_t sType; const void* pNext; uint32_t flags; const VkAppInfo* app; uint32_t layerCount;
+                    const char* const* layers; uint32_t extCount; const char* const* exts; };
+struct VkExtProps { char name[256]; uint32_t specVersion; };
+using vkCreateInstance_t = int(__stdcall*)(const VkInstInfo*, const void*, void**);
+using vkDestroyInstance_t = void(__stdcall*)(void*, const void*);
+using vkEnumeratePhysicalDevices_t = int(__stdcall*)(void*, uint32_t*, void**);
+using vkGetPhysicalDeviceProperties_t = void(__stdcall*)(void*, void*);
+using vkEnumerateDeviceExtensionProperties_t = int(__stdcall*)(void*, const char*, uint32_t*, VkExtProps*);
+
+bool VulkanFitsDxvk() {
+    HMODULE vk = LoadLibraryW(L"vulkan-1.dll");
+    if (!vk) { Log(L"D3D: no Vulkan on this PC"); return false; }
+    auto create = (vkCreateInstance_t)GetProcAddress(vk, "vkCreateInstance");
+    auto destroy = (vkDestroyInstance_t)GetProcAddress(vk, "vkDestroyInstance");
+    auto devices = (vkEnumeratePhysicalDevices_t)GetProcAddress(vk, "vkEnumeratePhysicalDevices");
+    auto props = (vkGetPhysicalDeviceProperties_t)GetProcAddress(vk, "vkGetPhysicalDeviceProperties");
+    auto exts = (vkEnumerateDeviceExtensionProperties_t)GetProcAddress(vk, "vkEnumerateDeviceExtensionProperties");
+    bool fits = false;
+    void* inst = nullptr;
+    VkAppInfo app = {0, nullptr, "FGUY", 1, "FGUYMod", 1, (1u << 22) | (3u << 12)};
+    VkInstInfo info = {1, nullptr, 0, &app, 0, nullptr, 0, nullptr};
+    if (create && destroy && devices && props && exts && create(&info, nullptr, &inst) == 0) {
+        uint32_t n = 0;
+        devices(inst, &n, nullptr);
+        std::vector<void*> pds(n);
+        if (n) devices(inst, &n, pds.data());
+        for (uint32_t i = 0; i < n; ++i) {
+            alignas(8) unsigned char p[2048] = {};   // VkPhysicalDeviceProperties: apiVersion first, name at 20
+            props(pds[i], p);
+            uint32_t api;
+            memcpy(&api, p, 4);
+            uint32_t ne = 0;
+            exts(pds[i], nullptr, &ne, nullptr);
+            std::vector<VkExtProps> e(ne);
+            if (ne) exts(pds[i], nullptr, &ne, e.data());
+            bool loadStoreNone = api >= ((1u << 22) | (4u << 12));
+            for (const VkExtProps& x : e) loadStoreNone |= strcmp(x.name, "VK_KHR_load_store_op_none") == 0;
+            bool ok = api >= ((1u << 22) | (3u << 12)) && loadStoreNone;
+            Log(L"D3D: Vulkan GPU %S: Vulkan %u.%u%s", (const char*)p + 20, api >> 22, (api >> 12) & 0x3ff,
+                ok ? L" - DXVK can use it" : api >= ((1u << 22) | (3u << 12)) ? L", no VK_KHR_load_store_op_none - not for DXVK"
+                                                                          : L" - not for DXVK (needs 1.3)");
+            fits |= ok;
+        }
+        destroy(inst, nullptr);
+    } else {
+        Log(L"D3D: Vulkan wouldn't start");
+    }
+    FreeLibrary(vk);
+    return fits;
+}
+
+// Each DXVK start is marked by a file (FGUYMod\dxvk\vulkan_failed.txt) removed once it's up: if the game closed
+// while DXVK started (a GPU missing something else VulkanFitsDxvk doesn't ask about), the next start finds the
+// file and goes straight to plain Direct3D 9. Deleting the file tries Vulkan again.
 IDirect3D9* CreateDxvk(UINT sdk) {
     static HMODULE dll = nullptr;
+    static bool refused = false;
+    wchar_t dir[MAX_PATH], marker[MAX_PATH];
+    swprintf_s(dir, L"%s\\dxvk", g_modDir);
+    swprintf_s(marker, L"%s\\vulkan_failed.txt", dir);
+    if (refused) return nullptr;
     if (!dll) {
-        wchar_t dir[MAX_PATH], path[MAX_PATH], conf[MAX_PATH], env[8];
-        swprintf_s(dir, L"%s\\dxvk", g_modDir);
+        wchar_t path[MAX_PATH], conf[MAX_PATH], env[8];
         swprintf_s(path, L"%s\\dxvk_d3d9.dll", dir);
         swprintf_s(conf, L"%s\\dxvk.conf", dir);
+        if (GetFileAttributesW(marker) != INVALID_FILE_ATTRIBUTES) {
+            Log(L"D3D: the game closed while Vulkan (DXVK) started last time - plain Direct3D 9 (delete %s to try "
+                L"Vulkan again)", marker);
+            refused = true;
+            return nullptr;
+        }
         if (!GetEnvironmentVariableW(L"DXVK_LOG_PATH", env, 8)) SetEnvironmentVariableW(L"DXVK_LOG_PATH", dir);
         if (!GetEnvironmentVariableW(L"DXVK_CONFIG_FILE", env, 8)) SetEnvironmentVariableW(L"DXVK_CONFIG_FILE", conf);
         AddUnregisteredVulkanDrivers();
+        if (!VulkanFitsDxvk()) {
+            refused = true;
+            return nullptr;
+        }
         dll = LoadLibraryW(path);
         if (!dll) {
             Log(L"D3D: DXVK not found or not loadable (%s, error %lu)", path, GetLastError());
+            refused = true;
             return nullptr;
         }
     }
+    HANDLE f = CreateFileW(marker, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f != INVALID_HANDLE_VALUE) {
+        const char text[] = "The game closed while it started Vulkan (DXVK), so it now uses plain Direct3D 9.\r\n"
+                            "Delete this file to try Vulkan again (e.g. after a graphics driver update).\r\n";
+        DWORD w;
+        WriteFile(f, text, sizeof(text) - 1, &w, nullptr);
+        CloseHandle(f);
+    }
     auto create = reinterpret_cast<Direct3DCreate9_t>(GetProcAddress(dll, "Direct3DCreate9"));
     IDirect3D9* d3d = create ? create(sdk) : nullptr;
+    DeleteFileW(marker);
     if (d3d && d3d->GetAdapterCount() == 0) {   // no GPU it can use (too old a Vulkan): not this one
         d3d->Release();
         d3d = nullptr;
