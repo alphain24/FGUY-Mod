@@ -3,8 +3,9 @@
 // * Sharp picture: the game draws everything half a pixel off (Direct3D 9's pixel centres, which the console port never
 //   made up for), so each of its full-screen passes (glow, ambient occlusion, depth of field, the final copy) blends
 //   four texels where it meant one - the game's well-known blur (it has no anti-aliasing on PC: its MSAAType setting is
-//   never used). Every vertex shader gets the half pixel back (the half-pixel fix, below): the picture as the consoles
-//   draw it.
+//   never used - nor on an HD Xbox 360). Every vertex shader gets the half pixel back (the half-pixel fix, below), and
+//   the characters' ink / shading ramp loses the mipmaps the port gave it (the ramp fix: the grey rings and grain round
+//   eyes and creases): the picture as the consoles draw it.
 // * Texture filtering: the game's own bilinear, trilinear, or anisotropic 2x-16x for every other texture (floors and
 //   walls seen at an angle stay sharp).
 // * Anti-aliasing (FXAA), sharpening (contrast-adaptive) and brightness: our own pass on the finished frame, just
@@ -22,6 +23,7 @@
 #include <d3d9.h>
 #include <d3dcommon.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -41,6 +43,22 @@ SetSamplerState_t Real_SetSamplerState;
 const int kStages = 16;
 DWORD g_want[kStages][3];      // (per stage: the game's MAG / MIN / MIP filter)
 bool g_screen[kStages];        // (a screen-sized render target is set there: its filtering stays the game's)
+bool g_ramp[kStages];          // (the ink / shading pass's ramp is set there: see the ramp fix)
+
+// ---- the ramp fix (Sharp picture) ------------------------------------------------------------------------------
+// The characters' ink lines and soft shading are one more pass over them, its strength read from a 16x16 L8 ramp the
+// game makes at start (255 - 17 * max(x, y)). The Xbox 360 build makes it with one level (0x821b5830:
+// CreateTexture(16, 16, 1, 0, L8, ...)), the PC port with five - and the pass reads the small ones (down to a 1x1 of
+// grey 83) wherever its coordinates change fast: grey rings and grain round every eye, lens and crease. With Sharp
+// picture the ramp's mip filter is none: only its top level, as on the console.
+std::vector<IDirect3DBaseTexture9*> g_ramps;
+
+bool IsRamp(IDirect3DBaseTexture9* tex) {
+    if (!tex || std::find(g_ramps.begin(), g_ramps.end(), tex) == g_ramps.end()) return false;
+    D3DSURFACE_DESC d;   // (still that texture, not a new one at the same address)
+    return tex->GetType() == D3DRTYPE_TEXTURE && SUCCEEDED(static_cast<IDirect3DTexture9*>(tex)->GetLevelDesc(0, &d)) &&
+           d.Width == 16 && d.Height == 16 && d.Format == D3DFMT_L8;
+}
 
 int Slot(D3DSAMPLERSTATETYPE t) {
     return t == D3DSAMP_MAGFILTER ? 0 : t == D3DSAMP_MINFILTER ? 1 : t == D3DSAMP_MIPFILTER ? 2 : -1;
@@ -49,6 +67,7 @@ const D3DSAMPLERSTATETYPE kType[3] = {D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DS
 
 // what a filter the game asks for becomes on a stage
 DWORD Filter(int stage, int k, DWORD want) {
+    if (g_ramp[stage] && k == 2 && g_sharp) return D3DTEXF_NONE;
     if (g_screen[stage]) return want;
     int f = g_filter;
     if (k == 1 && want == D3DTEXF_LINEAR && f >= 2) return D3DTEXF_ANISOTROPIC;
@@ -65,6 +84,7 @@ void ResetStages(IDirect3DDevice9* dev) {   // (a new device, or one just reset:
         g_want[s][0] = g_want[s][1] = D3DTEXF_POINT;
         g_want[s][2] = D3DTEXF_NONE;
         g_screen[s] = false;
+        g_ramp[s] = false;
         Real_SetSamplerState(dev, s, D3DSAMP_MAXANISOTROPY, g_filter >= 2 ? min((DWORD)g_filter, g_maxAniso) : 1);
     }
 }
@@ -97,9 +117,10 @@ HRESULT STDMETHODCALLTYPE Hook_SetSamplerState(IDirect3DDevice9* self, DWORD sta
 HRESULT STDMETHODCALLTYPE Hook_SetTexture(IDirect3DDevice9* self, DWORD stage, IDirect3DBaseTexture9* tex) {
     HRESULT hr = Real_SetTexture(self, stage, tex);
     if (stage < (DWORD)kStages) {
-        bool screen = IsScreenTarget(tex);
-        if (screen != g_screen[stage]) {
+        bool screen = IsScreenTarget(tex), ramp = IsRamp(tex);
+        if (screen != g_screen[stage] || ramp != g_ramp[stage]) {
             g_screen[stage] = screen;
+            g_ramp[stage] = ramp;
             ApplyStage(self, stage);
         }
     }
@@ -214,6 +235,246 @@ HRESULT STDMETHODCALLTYPE Hook_SetVSConstF(IDirect3DDevice9* self, UINT start, c
         Real_SetVSConstF(self, kHalf, g_halfConst, 1);
     }
     return hr;
+}
+
+// ---- research: the game's pixel shader constants by name ---------------------------------------------------------
+// FGUYMOD_TEST_PSCONST=name[=v0,v1,v2,v3];name2... - each named constant (from the shaders' constant tables) is logged
+// as the game sets it, and one given values is held at them (e.g. g_ssaoBlendFactor=0: the effects without it).
+struct PsConst { char name[48]; bool hold; float v[4]; int told; };
+struct PsWatch { IDirect3DPixelShader9* ps; int which; UINT reg; };
+std::vector<PsConst> g_psConst;
+std::vector<PsWatch> g_psWatch;
+IDirect3DPixelShader9* g_curPs = nullptr;
+using CreatePixelShader_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, const DWORD*, IDirect3DPixelShader9**);
+using SetPixelShader_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, IDirect3DPixelShader9*);
+using SetPSConstF_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, UINT, const float*, UINT);
+CreatePixelShader_t Real_CreatePixelShader;
+SetPixelShader_t Real_SetPixelShader;
+SetPSConstF_t Real_SetPSConstF;
+
+// a float constant's register in a shader's constant table (CTAB comment) - false: not there
+bool CtabRegister(const DWORD* code, const char* name, UINT* reg) {
+    for (size_t i = 1; code[i] != 0x0000FFFF && i < 200000;) {
+        DWORD tok = code[i];
+        if ((tok & 0xFFFF) != 0xFFFE) return false;   // (the table comes first, before any instruction)
+        DWORD len = (tok >> 16) & 0x7FFF;
+        if (len >= 8 && code[i + 1] == 0x42415443) {   // 'CTAB'
+            const char* base = reinterpret_cast<const char*>(&code[i + 2]);
+            DWORD count = *reinterpret_cast<const DWORD*>(base + 12), info = *reinterpret_cast<const DWORD*>(base + 16);
+            for (DWORD c = 0; c < count; ++c) {
+                const char* ci = base + info + c * 20;
+                const char* n = base + *reinterpret_cast<const DWORD*>(ci);
+                WORD set = *reinterpret_cast<const WORD*>(ci + 4), index = *reinterpret_cast<const WORD*>(ci + 6);
+                if (set == 2 && strcmp(n, name) == 0) { *reg = index; return true; }   // (D3DXRS_FLOAT4)
+            }
+            return false;
+        }
+        i += 1 + len;
+    }
+    return false;
+}
+
+// FGUYMOD_TEST_PSTRACE=1: every 1000th frame, the pixel shaders it uses in order (by their constants' names), and
+// the constant values of the watched ones as they're bound.
+bool g_psTrace = false;
+int g_frame = 0;
+char g_psSkip[512] = "";                        // (FGUYMOD_TEST_PSSKIP, below)
+std::vector<IDirect3DPixelShader9*> g_skipPs;
+std::vector<std::pair<IDirect3DPixelShader9*, std::string>> g_psNames;
+
+std::string CtabNames(const DWORD* code) {
+    std::string s;
+    for (size_t i = 1; code[i] != 0x0000FFFF && i < 200000;) {
+        DWORD tok = code[i];
+        if ((tok & 0xFFFF) != 0xFFFE) break;
+        DWORD len = (tok >> 16) & 0x7FFF;
+        if (len >= 8 && code[i + 1] == 0x42415443) {
+            const char* base = reinterpret_cast<const char*>(&code[i + 2]);
+            DWORD count = *reinterpret_cast<const DWORD*>(base + 12), info = *reinterpret_cast<const DWORD*>(base + 16);
+            for (DWORD c = 0; c < count && s.size() < 300; ++c) {
+                const char* ci = base + info + c * 20;
+                if (!s.empty()) s += ",";
+                s += base + *reinterpret_cast<const DWORD*>(ci);
+            }
+            break;
+        }
+        i += 1 + len;
+    }
+    return s.empty() ? "(no table)" : s;
+}
+
+void PutHeld(IDirect3DDevice9* dev) {
+    for (const PsWatch& w : g_psWatch)
+        if (w.ps == g_curPs && g_psConst[w.which].hold) Real_SetPSConstF(dev, w.reg, g_psConst[w.which].v, 1);
+}
+
+HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* self, const DWORD* code, IDirect3DPixelShader9** out) {
+    HRESULT hr = Real_CreatePixelShader(self, code, out);
+    if (SUCCEEDED(hr) && code && out && *out && g_psTrace) g_psNames.push_back({*out, CtabNames(code)});
+    UINT skipReg;   // (a name, or "=" and a shader's whole list of constant names as the trace prints it)
+    if (SUCCEEDED(hr) && code && out && *out && g_psSkip[0] &&
+        (g_psSkip[0] == '=' ? CtabNames(code) == g_psSkip + 1 : CtabRegister(code, g_psSkip, &skipReg)))
+        g_skipPs.push_back(*out);
+    if (SUCCEEDED(hr) && code && out && *out)
+        for (int k = 0; k < (int)g_psConst.size(); ++k) {
+            UINT reg;
+            if (!CtabRegister(code, g_psConst[k].name, &reg)) continue;
+            g_psWatch.push_back({*out, k, reg});
+            Log(L"Graphics test: pixel shader %p has %S at c%u", *out, g_psConst[k].name, reg);
+        }
+    return hr;
+}
+
+HRESULT STDMETHODCALLTYPE Hook_SetPixelShader(IDirect3DDevice9* self, IDirect3DPixelShader9* ps) {
+    HRESULT hr = Real_SetPixelShader(self, ps);
+    if (g_psTrace && g_frame % 1000 == 999 && ps && ps != g_curPs) {
+        IDirect3DSurface9* rt = nullptr;
+        D3DSURFACE_DESC d = {};
+        if (SUCCEEDED(self->GetRenderTarget(0, &rt)) && rt) { rt->GetDesc(&d); rt->Release(); }
+        const char* name = "?";
+        for (auto& p : g_psNames) if (p.first == ps) name = p.second.c_str();
+        Log(L"Graphics trace %d: -> %ux%u fmt %d  ps %p %S", g_frame, d.Width, d.Height, d.Format, ps, name);
+    }
+    g_curPs = ps;
+    PutHeld(self);
+    return hr;
+}
+
+HRESULT STDMETHODCALLTYPE Hook_SetPSConstF(IDirect3DDevice9* self, UINT start, const float* data, UINT count) {
+    HRESULT hr = Real_SetPSConstF(self, start, data, count);
+    for (const PsWatch& w : g_psWatch) {
+        if (w.ps != g_curPs || w.reg < start || w.reg >= start + count) continue;
+        PsConst& c = g_psConst[w.which];
+        const float* v = data + (w.reg - start) * 4;
+        if (c.told++ < 6) Log(L"Graphics test: the game sets %S = %g %g %g %g", c.name, v[0], v[1], v[2], v[3]);
+        if (c.hold) Real_SetPSConstF(self, w.reg, c.v, 1);
+    }
+    return hr;
+}
+
+// FGUYMOD_TEST_PSSKIP=name: draws with a pixel shader that has a constant of that name are left out (e.g.
+// projectShadowTexture: the scene without its projected shadows). The watched constants of a shader are logged at its
+// first draw of a traced frame.
+using DrawPrimitive_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, D3DPRIMITIVETYPE, UINT, UINT);
+using DrawIndexedPrimitive_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, D3DPRIMITIVETYPE, INT, UINT, UINT, UINT, UINT);
+using DrawPrimitiveUP_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, D3DPRIMITIVETYPE, UINT, const void*, UINT);
+using DrawIndexedPrimitiveUP_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, D3DPRIMITIVETYPE, UINT, UINT, UINT, const void*,
+                                                             D3DFORMAT, const void*, UINT);
+DrawPrimitive_t Real_DrawPrimitive;
+DrawIndexedPrimitive_t Real_DrawIndexedPrimitive;
+DrawPrimitiveUP_t Real_DrawPrimitiveUP;
+DrawIndexedPrimitiveUP_t Real_DrawIndexedPrimitiveUP;
+IDirect3DPixelShader9* g_loggedPs = nullptr;
+const char* g_drawKind = "";
+UINT g_drawCount = 0;
+
+bool SkipDraw(IDirect3DDevice9* dev) {
+    if (g_psTrace && g_frame % 1000 == 999 && g_curPs != g_loggedPs) {
+        g_loggedPs = g_curPs;
+        DWORD s[11];
+        const D3DRENDERSTATETYPE kStates[11] = {D3DRS_ALPHABLENDENABLE, D3DRS_SRCBLEND, D3DRS_DESTBLEND, D3DRS_ALPHATESTENABLE,
+                                                D3DRS_ALPHAREF, D3DRS_ALPHAFUNC, D3DRS_ZENABLE, D3DRS_ZWRITEENABLE, D3DRS_CULLMODE,
+                                                D3DRS_DEPTHBIAS, D3DRS_SLOPESCALEDEPTHBIAS};
+        for (int k = 0; k < 11; ++k) dev->GetRenderState(kStates[k], &s[k]);
+        D3DSURFACE_DESC t0 = {};
+        IDirect3DBaseTexture9* tex = nullptr;
+        if (SUCCEEDED(dev->GetTexture(0, &tex)) && tex) {
+            if (tex->GetType() == D3DRTYPE_TEXTURE) static_cast<IDirect3DTexture9*>(tex)->GetLevelDesc(0, &t0);
+            tex->Release();
+        }
+        Log(L"Graphics trace %d:    blend %lu (%lu,%lu) alphatest %lu ref %lu func %lu  z %lu write %lu cull %lu bias %g slope %g  "
+            L"tex0 %ux%u fmt %d", g_frame, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8], *(float*)&s[9], *(float*)&s[10],
+            t0.Width, t0.Height, t0.Format);
+        void* frames[24];
+        USHORT n = RtlCaptureStackBackTrace(0, 24, frames, nullptr);
+        wchar_t game[256] = L"";
+        HMODULE exe = GetModuleHandleW(nullptr);
+        for (USHORT k = 0, found = 0; k < n && found < 6; ++k) {   // (the game's own code: FGUY.exe's addresses)
+            uintptr_t a = (uintptr_t)frames[k], base = (uintptr_t)exe;
+            if (a < base || a >= base + 0x800000) continue;
+            swprintf_s(game + wcslen(game), 256 - wcslen(game), L" %p", frames[k]);
+            ++found;
+        }
+        Log(L"Graphics trace %d:    drawn by%s (%S, %u primitives)", g_frame, game, g_drawKind, g_drawCount);
+        for (DWORD st = 0; st < 4; ++st) {
+            IDirect3DBaseTexture9* t = nullptr;
+            if (FAILED(dev->GetTexture(st, &t)) || !t) continue;
+            D3DSURFACE_DESC td = {};
+            if (t->GetType() == D3DRTYPE_TEXTURE) static_cast<IDirect3DTexture9*>(t)->GetLevelDesc(0, &td);
+            DWORD levels = t->GetLevelCount(), lod = t->GetLOD(), f[3], bias, maxMip;
+            t->Release();
+            for (int k = 0; k < 3; ++k) dev->GetSamplerState(st, kType[k], &f[k]);
+            dev->GetSamplerState(st, D3DSAMP_MIPMAPLODBIAS, &bias);
+            dev->GetSamplerState(st, D3DSAMP_MAXMIPLEVEL, &maxMip);
+            Log(L"Graphics trace %d:      stage %lu: %ux%u fmt %08x, %lu levels (lod %lu), filter %lu/%lu/%lu, lod bias %g, max mip %lu",
+                g_frame, st, td.Width, td.Height, td.Format, levels, lod, f[0], f[1], f[2], *(float*)&bias, maxMip);
+        }
+        for (const PsWatch& w : g_psWatch) {
+            if (w.ps != g_curPs) continue;
+            float v[4] = {};
+            dev->GetPixelShaderConstantF(w.reg, v, 1);
+            Log(L"Graphics trace %d:    %S = %g %g %g %g", g_frame, g_psConst[w.which].name, v[0], v[1], v[2], v[3]);
+        }
+    }
+    for (IDirect3DPixelShader9* p : g_skipPs) if (p == g_curPs) return true;
+    return false;
+}
+
+// the ramp fix's other half: the game's 16x16 L8 ramp, made with more than one level (traced: every small L8)
+using CreateTexture_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, UINT, UINT, UINT, DWORD, D3DFORMAT, D3DPOOL,
+                                                    IDirect3DTexture9**, HANDLE*);
+CreateTexture_t Real_CreateTexture;
+HRESULT STDMETHODCALLTYPE Hook_CreateTexture(IDirect3DDevice9* self, UINT w, UINT h, UINT levels, DWORD usage, D3DFORMAT fmt,
+                                             D3DPOOL pool, IDirect3DTexture9** out, HANDLE* share) {
+    HRESULT hr = Real_CreateTexture(self, w, h, levels, usage, fmt, pool, out, share);
+    if (SUCCEEDED(hr) && out && *out && fmt == D3DFMT_L8 && w == 16 && h == 16 && (*out)->GetLevelCount() > 1 &&
+        std::find(g_ramps.begin(), g_ramps.end(), *out) == g_ramps.end()) {
+        g_ramps.push_back(*out);
+        static int told = 0;
+        if (told++ < 3) Log(L"Graphics: the ink / shading ramp (16x16 L8, %lu levels) - its top level only with Sharp picture",
+                            (*out)->GetLevelCount());
+    }
+    if (g_psTrace && fmt == D3DFMT_L8 && w <= 64 && h <= 64)
+        Log(L"Graphics trace: CreateTexture %ux%u L8, %u levels asked, usage %#lx, pool %d", w, h, levels, usage, pool);
+    return hr;
+}
+
+HRESULT STDMETHODCALLTYPE Hook_DrawPrimitive(IDirect3DDevice9* self, D3DPRIMITIVETYPE t, UINT a, UINT b) {
+    g_drawKind = "DrawPrimitive"; g_drawCount = b;
+    return SkipDraw(self) ? D3D_OK : Real_DrawPrimitive(self, t, a, b);
+}
+HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitive(IDirect3DDevice9* self, D3DPRIMITIVETYPE t, INT a, UINT b, UINT c, UINT d, UINT e) {
+    g_drawKind = "DrawIndexedPrimitive"; g_drawCount = e;
+    return SkipDraw(self) ? D3D_OK : Real_DrawIndexedPrimitive(self, t, a, b, c, d, e);
+}
+HRESULT STDMETHODCALLTYPE Hook_DrawPrimitiveUP(IDirect3DDevice9* self, D3DPRIMITIVETYPE t, UINT a, const void* b, UINT c) {
+    g_drawKind = "DrawPrimitiveUP"; g_drawCount = a;
+    return SkipDraw(self) ? D3D_OK : Real_DrawPrimitiveUP(self, t, a, b, c);
+}
+HRESULT STDMETHODCALLTYPE Hook_DrawIndexedPrimitiveUP(IDirect3DDevice9* self, D3DPRIMITIVETYPE t, UINT a, UINT b, UINT c,
+                                                      const void* d, D3DFORMAT e, const void* f, UINT g) {
+    g_drawKind = "DrawIndexedPrimitiveUP"; g_drawCount = c;
+    return SkipDraw(self) ? D3D_OK : Real_DrawIndexedPrimitiveUP(self, t, a, b, c, d, e, f, g);
+}
+
+void LoadPsConstTest() {
+    char spec[512];
+    g_psTrace = GetEnvironmentVariableA("FGUYMOD_TEST_PSTRACE", spec, sizeof(spec)) != 0;
+    if (GetEnvironmentVariableA("FGUYMOD_TEST_PSSKIP", g_psSkip, sizeof(g_psSkip)))
+        Log(L"Graphics test: draws with pixel shaders that have %S are left out", g_psSkip);
+    if (!GetEnvironmentVariableA("FGUYMOD_TEST_PSCONST", spec, sizeof(spec))) return;
+    char* ctx = nullptr;
+    for (char* item = strtok_s(spec, ";", &ctx); item; item = strtok_s(nullptr, ";", &ctx)) {
+        PsConst c = {};
+        char* eq = strchr(item, '=');
+        if (eq) {
+            *eq = 0;
+            c.hold = sscanf_s(eq + 1, "%f,%f,%f,%f", &c.v[0], &c.v[1], &c.v[2], &c.v[3]) >= 1;
+        }
+        strncpy_s(c.name, item, _TRUNCATE);
+        g_psConst.push_back(c);
+        Log(L"Graphics test: watching pixel shader constant %S%s", c.name, c.hold ? L" (held)" : L"");
+    }
 }
 
 // ---- our pass on the finished frame -----------------------------------------------------------------------------
@@ -383,6 +644,18 @@ void GraphicsDeviceCreated(IDirect3DDevice9* dev, UINT w, UINT h) {
     if (void* o = Patch(dev, 91, (void*)Hook_CreateVertexShader)) Real_CreateVertexShader = (CreateVertexShader_t)o;
     if (void* o = Patch(dev, 47, (void*)Hook_SetViewport)) Real_SetViewport = (SetViewport_t)o;
     if (void* o = Patch(dev, 94, (void*)Hook_SetVSConstF)) Real_SetVSConstF = (SetVSConstF_t)o;
+    if (void* o = Patch(dev, 23, (void*)Hook_CreateTexture)) Real_CreateTexture = (CreateTexture_t)o;
+    static bool testLoaded = false;
+    if (!testLoaded) { testLoaded = true; LoadPsConstTest(); }
+    if (!g_psConst.empty() || g_psTrace || g_psSkip[0]) {   // (research only - see FGUYMOD_TEST_PSCONST)
+        if (void* o = Patch(dev, 106, (void*)Hook_CreatePixelShader)) Real_CreatePixelShader = (CreatePixelShader_t)o;
+        if (void* o = Patch(dev, 107, (void*)Hook_SetPixelShader)) Real_SetPixelShader = (SetPixelShader_t)o;
+        if (void* o = Patch(dev, 109, (void*)Hook_SetPSConstF)) Real_SetPSConstF = (SetPSConstF_t)o;
+        if (void* o = Patch(dev, 81, (void*)Hook_DrawPrimitive)) Real_DrawPrimitive = (DrawPrimitive_t)o;
+        if (void* o = Patch(dev, 82, (void*)Hook_DrawIndexedPrimitive)) Real_DrawIndexedPrimitive = (DrawIndexedPrimitive_t)o;
+        if (void* o = Patch(dev, 83, (void*)Hook_DrawPrimitiveUP)) Real_DrawPrimitiveUP = (DrawPrimitiveUP_t)o;
+        if (void* o = Patch(dev, 84, (void*)Hook_DrawIndexedPrimitiveUP)) Real_DrawIndexedPrimitiveUP = (DrawIndexedPrimitiveUP_t)o;
+    }
     PutHalf(dev, w, h);
     ResetStages(dev);
 }
@@ -399,6 +672,7 @@ void GraphicsAfterReset(IDirect3DDevice9* dev, UINT w, UINT h) {
 void GraphicsPresent(IDirect3DDevice9* dev) {
     static int frames = 0;
     if (++frames == 600) Log(L"Graphics: %d of %d vertex shaders have the half-pixel fix", g_vsPatched, g_vsSeen);
+    g_frame = frames;
     if (g_statesDirty && Real_SetSamplerState) {
         g_statesDirty = false;
         for (int s = 0; s < kStages; ++s) {

@@ -741,5 +741,34 @@ ematch_<lobby pid>.txt`), whose lobby then
 - Anisotropic filtering and FXAA change little at 4K (edge strength 2.52 -> 2.57 on the ground; FXAA's steps are a
   4K pixel wide).
 - `G.CameraFOV` in the ini changes nothing on PC (80 and 105 look the same): the levels' cameras set their own.
+
+## The Xbox 360 build next to the PC's (2026-10-29)
+- Its DEFAULT.XEX: retail encryption + basic compression -> memory image at 0x82000000 (tools/re/xex.ps1); in Ghidra
+  as PowerPC:BE:64:A2ALT-32addr with its .pdata's functions (tools/re/ghidra/import.ps1 x360). Its code saves registers
+  through __savegprlr helpers the analysis takes for non-returning: Decompile.java clears that and uses .pdata bodies.
+  Xbox code builds addresses with lis + addi: tools/re/ppcxref.py finds them.
+- Its built-in ini = the PC's but for `MSAAType = 2` (PC: 4). The PC code never reads MSAAType (no reference at all).
+  The Xbox reads it (0x825f33b0: 2 -> 1, 4 -> 2, else 0 = D3DMULTISAMPLE 2 / 4 samples / none into [0x82ac3910]),
+  but its video setup (0x821be338, from the start-up list) overwrites that before it makes its targets: an HD TV gets
+  1280x720 with no MSAA, an SD TV 640x480 with 4x (0x821bddd0 makes the multisampled scene colour + D24S8 depth). So
+  the console on an HD TV has no anti-aliasing: a 720p picture, scaled to the TV by the console.
+- The same effects on both (constant names of the shaders in BULK.ho / MNUS.ho): bloom, depth of field, SSAO, the
+  ink outlines (jump flooding, tJFA), an edge filter (e_kernel); the Xbox adds Kinect ones and VSM shadow blurs.
+- The main menu draws (FGUYMOD_TEST_PSTRACE, graphics.cpp): a 512x512 shadow map and its blurs, the characters
+  (opaque, stage 0 the 128x128 shading lookup - 8 mip levels), the outline shells (inside-out, no depth bias), projected
+  shadows, bloom at 960x540 / 482x272 / 240x135, its composite, then Scaleform. No SSAO there.
+- **The grainy grey round the characters' eyes, lenses and creases** (the "dark thing"; not on the Xbox in Xenia): the
+  characters' ink-line / soft-shading pass (pixel shader `FogColor,diffuseMap,lightMap`, blended, stages 0 and 1 a
+  16x16 L8 ramp the game makes in code: 255 - 17 * max(x, y)) reads that ramp's small mip levels (down to a 1x1 of
+  grey 83) wherever its coordinates change fast. The Xbox makes the ramp with one level (0x821b5830:
+  CreateTexture(16, 16, 1, 0, L8 0x28000102, ...)); the PC port with five. Fixed with Sharp picture: the ramp's mip
+  filter none (graphics.cpp, the ramp fix) - the PC then matches the Xbox shot. Ruled out on the way: our texture
+  filtering, projected shadows, outline shells, the 128x128 shading lookup (its mips, its shadow tone), the palette
+  strips' mips, the resolution. The shipped game has it too, under its blur.
+- Research switches (graphics.cpp, environment only): FGUYMOD_TEST_PSTRACE=1 (every 1000th frame: each pixel shader by
+  its constants' names, its render target, blend / depth states, textures and their filters, the game's return
+  addresses from the stack), FGUYMOD_TEST_PSSKIP=<constant name> or =<whole name list> (draws with that shader left
+  out), FGUYMOD_TEST_PSCONST=name[=v0,v1,v2,v3];... (a constant logged / held). The menu's light changes by itself
+  (the TV): compare colours only within one run, switching live (pipe `gfx`).
 - Our own passes at Present (FXAA, sharpening, brightness) compile with d3dcompiler_47.dll's D3DCompile (ps_3_0) and
   run on DXVK and plain Direct3D 9 alike; a full-screen quad with XYZRHW at -0.5 lines up texel for pixel (checked).
