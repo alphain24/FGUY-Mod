@@ -281,6 +281,8 @@ using TCL_t = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*);
 TCL_t Real_TestCooperativeLevel;
 HRESULT STDMETHODCALLTYPE Hook_TestCooperativeLevel(IDirect3DDevice9* self) {
     HRESULT hr = Real_TestCooperativeLevel(self);
+    static HRESULT last = D3D_OK;   // (a lost device in the log, when it starts and when it ends)
+    if (hr != last) { Log(L"D3D: the device %s (%#lx)", hr == D3D_OK ? L"is fine again" : hr == D3DERR_DEVICELOST ? L"is lost" : L"needs a reset", hr); last = hr; }
     if (hr == D3D_OK && *reinterpret_cast<volatile char*>(0xb06c12)) return D3DERR_DEVICENOTRESET;
     return hr;
 }

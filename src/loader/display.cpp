@@ -456,7 +456,9 @@ LONG WINAPI Hook_ChangeDisplaySettingsW(DEVMODEW* mode, DWORD flags) {
         Log(L"Display: blocked a display mode change (%s)", mode ? L"set mode" : L"restore");
         return DISP_CHANGE_SUCCESSFUL;
     }
-    return Real_ChangeDisplaySettingsW(mode, flags);
+    LONG r = Real_ChangeDisplaySettingsW(mode, flags);
+    Log(L"Display: the game changes the display mode (%s, flags %#lx) -> %ld", mode ? L"set" : L"restore", flags, r);
+    return r;
 }
 
 void MakeDpiAware() {
@@ -739,8 +741,7 @@ void InitDisplay(HMODULE exe) {
         {"user32.dll", "AdjustWindowRect", (void*)Hook_AdjustWindowRect, (void**)&Real_AdjustWindowRect},
         {"user32.dll", "GetClientRect", (void*)Hook_GetClientRect, (void**)&Real_GetClientRect},
         {"user32.dll", "ChangeDisplaySettingsW", (void*)Hook_ChangeDisplaySettingsW, (void**)&Real_ChangeDisplaySettingsW},
-        {"user32.dll", "ShowWindow", (void*)Hook_ShowWindow, (void**)&Real_ShowWindow},
-    };
+        {"user32.dll", "ShowWindow", (void*)Hook_ShowWindow, (void**)&Real_ShowWindow},    };
     InstallHooks(exe, hooks);
 
     HookSpec cursorHooks[] = {  // borderless cursor scaling, and background mode's cursor release
