@@ -632,7 +632,8 @@ function overlayOf(t) {   // the pixels that aren't the recolors' doing - or nul
   return {canvas: c, pixels: n};
 }
 
-// A model pack can come with the skin (outfit pieces made in the Models tab, worn over the character): stored in the
+// A model pack can come with the skin (made in the Models tab: outfit pieces worn over the character, or a model in its
+// place): stored in the
 // pack as model.fgmodel - the game puts it on with the skin, and online it goes along with it.
 // the skin's model on the character (Skins tab) - as it stands; clicking picks the character's colors through it
 async function showPackModel3D() {
@@ -640,9 +641,14 @@ async function showPackModel3D() {
   const m = state.packModel;
   const on = state.mode === 'skins' && m && $('packModelShow').checked && m.character === state.current?.character;
   if (on && !m.group) Object.assign(m, await modelPackGroup(m.bytes));
+  // a model in the character's place (not worn over it): the game draws it instead of the character - so does this
+  // (drawn both, the character's own clothes covered a model made on that character - a costume's: only what stood out
+  // of it showed)
+  const instead = on && !m.info.over;
   for (const mesh of holder.children) {   // (the character's triangles under it, as the game leaves them out)
     const p = mesh.userData.piece;
     if (!p) continue;
+    mesh.visible = !instead;
     const h = on && (m.info.hide || []).find(x => x.verts === p.position.length / 3 && x.indices === p.index.length);
     let index = p.index;
     if (h) {
@@ -797,6 +803,7 @@ async function renderIcons(scale = 1) {   // (scale: bigger, to look at)
     all.expandByObject(o);
     if (o.userData.piece) body.expandByObject(o);
   });
+  if (body.isEmpty()) body.copy(all);   // (a model in the character's place: the character isn't drawn)
   const H = body.max.y - body.min.y, cx = (body.min.x + body.max.x) / 2, cz = (body.min.z + body.max.z) / 2;
   const top = Math.max(all.max.y, body.max.y) + H * 0.02;
   const ratio = renderer.getPixelRatio();

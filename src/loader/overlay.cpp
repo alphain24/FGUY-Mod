@@ -1,7 +1,7 @@
 // A notice over the game window, for online matches: "Waiting for Guest... (7 s)", "Guest left the match",
 // "The match went out of sync". While the match waits for someone's input the game itself draws nothing (its
-// frame is waiting), so this is a window of our own: on its own thread, always on top of the game, never taking
-// the focus or the mouse, a dark box with the text near the top of the game's window.
+// frame is waiting), so this is a window of our own: on its own thread, on top of the game while the game is in
+// front, never taking the focus or the mouse, a dark box with the text near the top of the game's window.
 
 #include "common.h"
 
@@ -52,8 +52,12 @@ LRESULT CALLBACK BoxProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (g_hideAt && GetTickCount64() >= g_hideAt) { g_show = false; g_hideAt = 0; }
         bool show = g_show;
         LeaveCriticalSection(&g_lock);
+        // only over the game in front: a hidden game (an online match still loading, a game being closed) or another
+        // program in front (a browser...) - the box had floated over them
+        HWND gameWnd = DisplayMainWindow();
+        bool front = gameWnd && IsWindowVisible(gameWnd) && !IsIconic(gameWnd) && GetForegroundWindow() == gameWnd;
         RECT game;
-        if (show && DisplayWindowRect(&game)) {
+        if (show && front && DisplayWindowRect(&game)) {
             int w = 560, h = 64, gw = game.right - game.left;
             int x = game.left + (gw - w) / 2, y = game.top + (game.bottom - game.top) / 5;
             SetWindowPos(wnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
