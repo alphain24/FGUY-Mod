@@ -6032,13 +6032,22 @@ const wchar_t* NetplayLobbyName(int slot) {   // a player's lobby name, or "" (n
     ReadNames();
     return slot >= 0 && slot < 4 ? g_names[slot] : L"";
 }
-void NetplayTestResolution(int w, int h) { InterlockedExchange(&g_testResH, h); InterlockedExchange(&g_testResW, w); }
+volatile LONG g_testResWindowed = 1;
+void NetplayTestResolution(int w, int h, bool windowed) {
+    InterlockedExchange(&g_testResWindowed, windowed ? 1 : 0);
+    InterlockedExchange(&g_testResH, h);
+    InterlockedExchange(&g_testResW, w);
+}
 void NetplayOfflineTick() {   // (vpad.cpp: the game thread's pad 0 poll, outside sessions - the test pipe's resolution)
     if (g_enabled) return;
     if (LONG w = InterlockedExchange(&g_testResW, 0)) {
         using ChangeRes_t = void(__cdecl*)(int renderer, int w, int h, int windowed, void* revert);
-        Log(L"Netplay: test - changing the resolution to %ldx%ld (no session)", w, (LONG)g_testResH);
-        reinterpret_cast<ChangeRes_t>(0x44f920)(*reinterpret_cast<int*>(0xad39e8), w, g_testResH, 1,
+        int rw = w, rh = g_testResH, windowed = g_testResWindowed;   // (as the menu does: ui.cpp GRFX_ChangeResolution)
+        bool win = windowed != 0;
+        DisplayOnChangeResolution(&rw, &rh, &win);
+        windowed = win ? 1 : 0;
+        Log(L"Netplay: test - changing the resolution to %dx%d %s (no session)", rw, rh, windowed ? L"windowed" : L"fullscreen");
+        reinterpret_cast<ChangeRes_t>(0x44f920)(*reinterpret_cast<int*>(0xad39e8), rw, rh, windowed,
                                                 reinterpret_cast<void*>(0x4cac40));
     }
 }

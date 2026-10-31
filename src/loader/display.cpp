@@ -349,6 +349,13 @@ BOOL WINAPI Hook_GetWindowRect(HWND wnd, LPRECT rect) {
 decltype(&ClipCursor) Real_ClipCursor;
 
 BOOL WINAPI Hook_ClipCursor(const RECT* rect) {
+    static int logged = 0;   // (the first few: where the game keeps the mouse)
+    if (logged < 12) {
+        ++logged;
+        if (rect) Log(L"Display: the game keeps the mouse in %ld,%ld - %ld,%ld (render %dx%d, monitor %dx%d, mode %s)", rect->left,
+                      rect->top, rect->right, rect->bottom, g_gameWidth, g_gameHeight, MonitorW(), MonitorH(), ModeName(g_mode));
+        else Log(L"Display: the game lets the mouse go");
+    }
     // The game thinks it's always active, so don't let it trap the mouse while you're elsewhere.
     if (rect && g_background && GetForegroundWindow() != g_mainWnd) return Real_ClipCursor(nullptr);
     if (rect && CursorScaled()) {  // the game's rectangle is in its own (render-sized) space
@@ -653,10 +660,24 @@ bool DisplayWindowRectOf(DWORD pid, RECT* r) {
 }
 
 // The menu changes the resolution (ui.cpp, before the game does): borderless always uses the monitor's
-// own resolution, whatever was picked. Returns true if the size was changed.
-bool DisplayOnChangeResolution(int* width, int* height, bool windowed) {
+// own resolution, whatever was picked. Returns true if the size (or *windowed) was changed.
+// The game's own Screen page (the pause menu's - it has no Borderless row) asks for fullscreen with *windowed false:
+// that's our fullscreen (the window covering the screen at the size picked), told to the game as windowed - else
+// Direct3D went exclusive at that size, the screen's real size changed under us and the mouse was scaled for the old
+// one (it could reach only part of the screen).
+bool DisplayOnChangeResolution(int* width, int* height, bool* windowedIo) {
+    bool windowed = *windowedIo, changed = false;
+    if (!windowed && g_menuChoice == Mode::Default) {
+        if (g_mode != Mode::Fullscreen) {
+            Log(L"Display: the game's own page asks for fullscreen (mode %s) - ours", ModeName(g_mode));
+            g_mode = Mode::Fullscreen;
+            SaveMode(Mode::Fullscreen);
+            if (g_mainWnd) PostMessageW(g_mainWnd, kRestyleMsg, static_cast<WPARAM>(Mode::Fullscreen), 0);
+        }
+        *windowedIo = windowed = true;
+        changed = true;
+    }
     bool borderless = g_menuChoice == Mode::Borderless || (g_menuChoice == Mode::Default && g_mode == Mode::Borderless);
-    bool changed = false;
     if (borderless && windowed && !g_envRes && (*width != MonitorW() || *height != MonitorH())) {
         *width = MonitorW();
         *height = MonitorH();

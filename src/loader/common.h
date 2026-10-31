@@ -104,7 +104,7 @@ void NetplayFetchSave(const wchar_t* path);         // config.cpp: the save abou
 void NetplayTestHurt(int player, float amount);   //   test pipe "hurt": my player there takes a hit nobody caused
 void OnlineMenuLogYaw();               //   test pipe "yaw": the lobby preview's facing (onlinemenu.cpp)
 void NetplayOfflineTick();                  // vpad.cpp: every pad 0 poll outside sessions (test pipe's resolution)
-void NetplayTestResolution(int w, int h);   //   test pipe: the game changes resolution (Options > Screen)             //   test pipe: my player moves a little here only (out of sync)
+void NetplayTestResolution(int w, int h, bool windowed = true);   //   test pipe: the game changes resolution (Options > Screen)             //   test pipe: my player moves a little here only (out of sync)
 int NetplaySessionSlot();              //   my player slot in this game's session (also after leaving it)
 unsigned NetplayTick();                //   the lockstep tick being simulated
 int NetplayRate();                     //   ticks (frames) per second online
@@ -140,6 +140,7 @@ bool OnlineDirectConnection();         //   direct connections to players who ha
 void SplitViewHudHas4Way(bool has);    //   the level's HUD: does it have the 4-way layout? (the story's has none)
 int SplitViewMyViewport();             //   online: my player's viewport (-1: offline / not in the level yet)
 int SplitViewShownViewport();          //   the one shown (spectating: a teammate's)
+int SplitViewDrawing();                //   render thread: the view drawing now (-1: another camera's)
 void SplitViewPredict(bool on, float turn, float x, float z);   //   netplay: my view's turn still to come (display only)
 unsigned NetplayShownTick();           // netplay.cpp: the tick the frame being drawn shows
 float NetplayModelTurn(unsigned from, unsigned to);   //   the model's turn of my inputs of ticks (from, to]
@@ -215,6 +216,17 @@ void ModelsResearch(int slot);         //   test pipe "modelpieces <slot>"
 void ModelsFrame(IDirect3DDevice9* dev);   //   cosmetics.cpp, after each frame
 bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT* hr, IDirect3DIndexBuffer9** putBack);   //   a draw of theirs: ours instead
 void CosmeticsTrace(unsigned lo, unsigned hi);   //   test pipe "texdraws": a frame's draws with that texture
+void InitFirstPerson();                // a player's camera at their eyes                     (firstperson.cpp)
+void FirstPersonCommand(const char* args);   //   test pipe "fpv <player> <0|1> [height] [forward] [pitch limit]"
+bool FirstPersonAny();                 //   someone is in first person
+bool FirstPersonMine();                //   onlinesettings.cpp: my player in first person (goes with my input)
+bool FirstPersonDefault();             //   graphics.cpp (SETTINGS > CAMERA): players start in first person
+void FirstPersonDrawnCamera(int view, float* m);   //   splitview.cpp: a view's camera as the game hands it (+0x94) - emoting: from behind
+bool FirstPersonNoLines(float x, float y, float z);   //   models.cpp: no ink lines for what's there, in the view drawing now
+bool MotionPlaying(int slot);          //   (motion.cpp)
+void FirstPersonSetDefault(bool on);   //     (kept in FGUYMod.ini)
+void FirstPersonFromInput(int player, bool on);   //   onlinesettings.cpp, every tick: that player's, from their input
+int FirstPersonOwnDraw(const float* c2, const float* c3, float* plane);   //   render thread (cosmetics.cpp): a player's own body in their view - 1 clip (plane), 2 skip
 void InitMotion();                     // characters' poses: read / ours instead              (motion.cpp)
 void MotionFrame();                    //   d3d9.cpp: a frame was drawn
 void MotionCommand(const char* cmd, const char* a, const char* b);   //   test pipe "poserec" / "posefreeze" / "poseplay" / "posestop" / "findptr"
@@ -351,7 +363,7 @@ int DisplayMenuIndex();                // Options > Screen > Display Mode suppor
 bool DisplayMenuSelect(int index);     //   returns the game's own "windowed" flag for that choice
 void DisplayMenuApply();
 void DisplayMenuReset();
-bool DisplayOnChangeResolution(int* width, int* height, bool windowed);  // may change the size (borderless)
+bool DisplayOnChangeResolution(int* width, int* height, bool* windowed);  // may change the size (borderless), fullscreen -> ours
 void DisplayReveal();                  // show the hidden online-session window
 bool DisplayWindowRect(RECT* r);       // where the game window is (handed to the session game)
 void DisplayShowForQuit();             // test tools' quit: bring the window up so it draws its last frame

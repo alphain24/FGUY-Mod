@@ -257,7 +257,8 @@ void HandleCommand(char* line) {
     if (cmd && _stricmp(cmd, "resolution") == 0) {   // test tools: resolution <w> <h> - as Options > Screen does
         char* w = strtok_s(nullptr, " \t\r\n", &ctx);
         char* h = strtok_s(nullptr, " \t\r\n", &ctx);
-        if (w && h) NetplayTestResolution(atoi(w), atoi(h));
+        char* win = strtok_s(nullptr, " \t\r\n", &ctx);   // (optional: 0 = fullscreen)
+        if (w && h) NetplayTestResolution(atoi(w), atoi(h), !win || atoi(win) != 0);
         return;
     }
     if (cmd && _stricmp(cmd, "winkey") == 0) {   // test tools: winkey <vk> <ms> - a key held in the game's own key
@@ -339,6 +340,10 @@ void HandleCommand(char* line) {
         wchar_t wpath[MAX_PATH] = L"";
         if (path) MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath, MAX_PATH);
         if (slot) CosmeticsLoadSkinFile(atoi(slot), wpath);
+        return;
+    }
+    if (cmd && _stricmp(cmd, "fpv") == 0) {   // research: fpv <player> <0|1> [height] [forward] [pitch limit]
+        FirstPersonCommand(strtok_s(nullptr, "\r\n", &ctx));
         return;
     }
     if (cmd && (_stricmp(cmd, "poserec") == 0 || _stricmp(cmd, "posefreeze") == 0 || _stricmp(cmd, "poseplay") == 0 ||

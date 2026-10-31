@@ -326,9 +326,13 @@ const unsigned char kScenePassStart[] = {0x8b, 0xd9, 0x8b, 0xbb, 0x90, 0x02, 0x0
 const uintptr_t kEffectsPass = 0x44ec4b;   // back at 0x44ec54, next camera at 0x44ecae (the stub)
 const unsigned char kEffectsPassStart[] = {0x8b, 0xfa, 0x83, 0xbf, 0x8c, 0x00, 0x00, 0x00, 0x01};
 
+volatile int g_drawingView = -1;   // the view whose camera is drawing now (firstperson.cpp), -1 another camera's
+bool g_skipOthers = false;         // the other players' views aren't drawn (online)
+
 bool __cdecl DrawSkip(void* camera) {
     int v = ViewportOf(camera);
-    if (v < 0) return false;
+    g_drawingView = v;
+    if (v < 0 || !g_skipOthers) return false;
     // Booting hidden (title, menus, the level loading - until its HUD is up): nobody sees these views, so no 3D
     // at all - the menus' movies still draw (they load while drawn). The same ticks on every PC (the HUD comes up
     // at the same tick everywhere), and drawing doesn't change the game anyway.
@@ -406,13 +410,14 @@ bool PatchJumpPadded(uintptr_t at, const unsigned char* expected, size_t n, void
 const uintptr_t kCamUpdate = 0x48db10;   // back at 0x48db16
 const unsigned char kCamUpdateStart[] = {0x55, 0x8b, 0xec, 0x8b, 0x45, 0x08};
 volatile LONG g_predOn = 0;
+bool g_predAllowed = false;   // ([Online] InstantCamera, online)
 float g_predTurn = 0, g_predX = 0, g_predZ = 0;   // radians still to come, around my player at (x, z)
 SRWLOCK g_predLock = SRWLOCK_INIT;
 struct Predicted { float base[12], out[12]; bool have; };
 Predicted g_predicted[2];
 
 void __cdecl PredictCamera(void* camera) {
-    if (!g_predOn) return;
+    if (!g_predOn || !g_predAllowed) return;
     int v = ShownViewport();
     if (v < 0 || v != MyViewport()) return;   // (spectating: their view as it is)
     int k = camera == Camera(v, 0) ? 0 : camera == Camera(v, 1) ? 1 : -1;
@@ -472,11 +477,18 @@ void __cdecl PredictCamera(void* camera) {
     if (k == 0) lastTurn = turn;
 }
 
+// (and a player in first person who's emoting: their view drawn from behind them - firstperson.cpp)
+void __cdecl CameraHandoff(void* camera) {
+    PredictCamera(camera);
+    int v = ViewportOf(camera);
+    if (v >= 0) FirstPersonDrawnCamera(v, reinterpret_cast<float*>(static_cast<unsigned char*>(camera) + 0x94));
+}
+
 __declspec(naked) void CamUpdateStub() {
     __asm {
         pushad
         push ecx
-        call PredictCamera
+        call CameraHandoff
         add esp, 4
         popad
         push ebp
@@ -534,6 +546,7 @@ int SplitViewHudZoomViewport() { return g_active && g_hud4Way ? MyPlayerViewport
 // My player's viewport online (the one this PC shows full screen - audio.cpp's listener), -1: offline / not yet.
 int SplitViewMyViewport() { return g_active ? MyPlayerViewport() : -1; }
 int SplitViewShownViewport() { return g_active && MyViewport() >= 0 ? ShownViewport() : SplitViewMyViewport(); }
+int SplitViewDrawing() { return g_drawingView; }
 
 // netplay.cpp, every tick of a session (the game thread): spectate when dead in Multiverse Madness - 3 s after my
 // player went down, the first teammate still standing; mine again once I'm back (or SETTINGS > Spectate off).
@@ -640,6 +653,11 @@ const char* SplitViewMenuCamera() {
 void InitSplitView() {
     wchar_t env[16];
     if (GetEnvironmentVariableW(L"FGUYMOD_FULLVIEW", env, 16)) g_forced = _wtoi(env);
+    // (each view's passes: which one is drawing - first person hides a player's own head in their own view)
+    bool passes = PatchJumpPadded(kScenePass, kScenePassStart, sizeof(kScenePassStart), (void*)ScenePassStub) &&
+                  PatchJumpPadded(kEffectsPass, kEffectsPassStart, sizeof(kEffectsPassStart), (void*)EffectsPassStub);
+    if (!passes) Log(L"SplitView: the views' drawing passes aren't where they should be");
+    bool handoff = PatchJumpPadded(kCamUpdate, kCamUpdateStart, sizeof(kCamUpdateStart), (void*)CamUpdateStub);
     bool online = NetplayEnabled() && SettingInt(L"Netplay", L"FullScreenView", L"FGUYMOD_FULLSCREENVIEW", 1) != 0;
     if (!online && g_forced < 0) return;
     if (PatchImm(kRectImm, kRectFn, (void*)Hook_Rect) && PatchImm(kEnableImm, kEnableFn, (void*)Hook_Enable) &&
@@ -652,13 +670,14 @@ void InitSplitView() {
         PatchCall(kNameCall2, kSprintf, (void*)PlayerNameText);
         g_active = true;
         Log(L"SplitView: on - one full-screen view per PC%s", g_forced >= 0 ? L" (test: forced viewport)" : L"");
-        if (SettingInt(L"Netplay", L"DrawOtherViews", nullptr, 0) == 0 &&
-            PatchJumpPadded(kScenePass, kScenePassStart, sizeof(kScenePassStart), (void*)ScenePassStub) &&
-            PatchJumpPadded(kEffectsPass, kEffectsPassStart, sizeof(kEffectsPassStart), (void*)EffectsPassStub))
+        if (SettingInt(L"Netplay", L"DrawOtherViews", nullptr, 0) == 0 && passes) {
+            g_skipOthers = true;
             Log(L"SplitView: the other players' views aren't drawn");
+        }
         // ([Online] InstantCamera=0: my view turns only as the match's camera does)
-        if (online && SettingInt(L"Online", L"InstantCamera", L"FGUYMOD_INSTANTCAMERA", 1) != 0 &&
-            PatchJumpPadded(kCamUpdate, kCamUpdateStart, sizeof(kCamUpdateStart), (void*)CamUpdateStub))
+        if (online && SettingInt(L"Online", L"InstantCamera", L"FGUYMOD_INSTANTCAMERA", 1) != 0 && handoff) {
+            g_predAllowed = true;
             Log(L"SplitView: my view turns at once (not after the input delay)");
+        }
     }
 }

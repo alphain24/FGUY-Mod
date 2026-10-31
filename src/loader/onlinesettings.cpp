@@ -115,9 +115,11 @@ void OnlineSettingsInit() {
 
 // My input for a tick: my aim sensitivity / invert / reticles (once they're known).
 void OnlineSettingsStamp(KbmRaw* k) {
-    if (!g_mine.known) return;
-    k->aim = (BYTE)g_mine.aim;
-    k->opts = (BYTE)((g_mine.invert ? 1 : 0) | (g_mine.reticles ? 2 : 0) | 0x80);
+    if (g_mine.known) {
+        k->aim = (BYTE)g_mine.aim;
+        k->opts = (BYTE)((g_mine.invert ? 1 : 0) | (g_mine.reticles ? 2 : 0) | 0x80);
+    }
+    k->opts |= (BYTE)(0x08 | (FirstPersonMine() ? 0x04 : 0));   // (bit 3: bit 2 is first person - firstperson.cpp)
 }
 
 // Every tick on every PC, before the game runs it: every player's own aim settings onto their player.
@@ -131,6 +133,7 @@ void OnlineSettingsApply(const KbmRaw* bySlot, int players) {
         int slot = *reinterpret_cast<int*>(p + 0xdf8);
         if (slot < 0 || slot >= players || slot >= 4) continue;
         const KbmRaw& k = bySlot[slot];
+        if (k.opts & 0x08) FirstPersonFromInput(slot, (k.opts & 0x04) != 0);
         if (!(k.opts & 0x80)) continue;
         float& aim = *reinterpret_cast<float*>(kAimSensitivity + i * 4);
         float want = k.aim / 100.0f;

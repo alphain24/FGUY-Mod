@@ -958,7 +958,7 @@ void GraphicsPresent(IDirect3DDevice9* dev) {
 }
 
 // ---- the SETTINGS page (the main menu: src/ui/lobby.as2js FGUYDrawGfx) -------------------------------------------
-// Three pages of rows: FGUYMOD_GfxRows(page) -> "label~value~kind~hint\n..." (kind: c a choice, s a 0-100 slider,
+// Four pages of rows: FGUYMOD_GfxRows(page) -> "label~value~kind~hint\n..." (kind: c a choice, s a 0-100 slider,
 // l a link - A opens the game's own page for it), FGUYMOD_GfxChange(page, row, delta: -1 / +1 / 0 for A) -> what the
 // menu does then: 0 nothing, 1 the game's Screen page, 2 the game's Options. Changes show at once and are saved.
 namespace {
@@ -1014,9 +1014,12 @@ const char* GraphicsMenuRows(int page) {
         row("Sharpening", v, 's', "Crisper lines and textures. 0: none");
         row("Line thickness", kLineNames[LinesIndex()], 'c', "The characters' outlines. Auto: as on the console at any resolution (the PC game's fade at 4K)");
         row("HD character textures", g_hdChars ? "ON" : "OFF", 'c', "The characters' textures at twice their size, made on this PC: smoother lines up close");
-    } else {
+    } else if (page == 2) {
         row("Menu style", GraphicsMenuNew() ? "NEW" : "CLASSIC", 'c', "Classic: Options opens the game's own options (these settings are in it too)");
         row("More options", "AUDIO, CONTROLS, LANGUAGE", 'l', "The game's own options");
+    } else {
+        row("First person", FirstPersonDefault() ? "ON" : "OFF", 'c',
+            "Play through your character's eyes. In a match: V, or Back twice on a controller, switches");
     }
     return g_rows.c_str();
 }
@@ -1041,9 +1044,11 @@ int GraphicsMenuChange(int page, int row, int delta) {
             Save(L"Graphics", L"LineThickness", g_lines);
         }
         if (row == 5) { g_hdChars = !g_hdChars; Save(L"Graphics", L"HDCharacters", g_hdChars); }
-    } else {
+    } else if (page == 2) {
         if (row == 0) Save(L"Interface", L"MenuStyle", GraphicsMenuNew() ? 0 : 1);
         if (row == 1) return 2;
+    } else {
+        if (row == 0) FirstPersonSetDefault(!FirstPersonDefault());
     }
     return 0;
 }

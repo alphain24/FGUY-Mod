@@ -1,5 +1,5 @@
 // The mod's SETTINGS page in the main menu (compiled into the front-end movie: tools/ui/make_menu_patch.py): DISPLAY,
-// GRAPHICS and INTERFACE, its rows from src/loader/graphics.cpp (FGUYMOD_GfxRows / FGUYMOD_GfxChange). Main Menu >
+// GRAPHICS, INTERFACE and CAMERA, its rows from src/loader/graphics.cpp (FGUYMOD_GfxRows / FGUYMOD_GfxChange). Main Menu >
 // OPTIONS opens it (menu style New - FGUYEventName, session.as2js), or Options > GRAPHICS (Classic: the game's own
 // Options, with this row first). Like MODS, it borrows the Options > Screen page's frame (OnOnlineSelect) and is drawn
 // by lobby.as2js's FGUYDraw.
@@ -61,7 +61,7 @@ function FGUYGfxRead() {
 function FGUYDrawGfx(ui) {
     FGUYTitle(ui, 48, 26, 600, 80, 'SETTINGS', 60, FGUYC.title, 'left');
     FGUYText(ui, 640, 50, 912, 30, 'Changes show at once and are kept', false, 20, FGUYC.muted2, 'right');
-    var tabs = ['DISPLAY', 'GRAPHICS', 'INTERFACE'];
+    var tabs = ['DISPLAY', 'GRAPHICS', 'INTERFACE', 'CAMERA'];
     for (var t = 0; t < tabs.length; t++) {
         var tx = 48 + t * 252, on = t == FGUYGfxTab;
         FGUYRect(ui, tx, 116, 236, 54, 16, on ? FGUYC.yellow : FGUYC.row, 100, on ? FGUYC.yellow : FGUYC.rowLine, 100, 2);
@@ -99,7 +99,7 @@ function FGUYDrawGfx(ui) {
 function FGUYInputGfx(key) {
     var n = FGUYGfxRows.length;
     if (key == 27) { FGUYSound('back'); PrevPage(); return; }
-    if (key == 76 || key == 82) { FGUYGfxPageTo((FGUYGfxTab + (key == 76 ? 2 : 1)) % 3); return; }
+    if (key == 76 || key == 82) { FGUYGfxPageTo((FGUYGfxTab + (key == 76 ? 3 : 1)) % 4); return; }
     if (n == 0) return;
     if (key == 38) { FGUYGfxSel = (FGUYGfxSel + n - 1) % n; FGUYSound('nav'); }
     else if (key == 40) { FGUYGfxSel = (FGUYGfxSel + 1) % n; FGUYSound('nav'); }

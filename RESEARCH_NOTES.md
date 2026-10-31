@@ -793,3 +793,32 @@ ematch_<lobby pid>.txt`), whose lobby then
   (the TV): compare colours only within one run, switching live (pipe `gfx`).
 - Our own passes at Present (FXAA, sharpening, brightness) compile with d3dcompiler_47.dll's D3DCompile (ps_3_0) and
   run on DXVK and plain Direct3D 9 alike; a full-screen quad with XYZRHW at -0.5 lines up texel for pixel (checked).
+
+## First person: the camera's height and distance, aim (2026-10-31)
+- The player's camera orbits a point straight above the player (x, z the player's) at a height and a distance from a
+  camera tuning block: `[player+0xfa8c]+0xc4` = **height** above the feet (Stewie 1.2), `+0xcc` = **distance** (6.0),
+  `+0xc8` (0, between them) still to try. (The same block is reached from `[player+0xfa94]+0x8c` and `[player+0xff8c]+0x29c`.)
+  Writing them moves the game's own camera at once (distance 0.05, height 1.0: Stewie's eye level) - aim and the
+  view follow, since they come from that camera. Two players of one character share it (and the settings blob).
+- Not these: `camera+0x248` (6.0, a target recomputed every frame) and the orbit block's own distance `+0x274`.
+  The settings at `[camera+0x178]` (FOV 1.396 at `+0x88`, pitch limits -0.785 / 0.785 at `+0x94` / `+0x98`) don't hold them.
+- Aim: `0x5ec750` (a player method) - when `+0x14d0 == 2`, `0x5d85f0` (the reticle's point on screen) and `0x6568c0`
+  (viewport, point, out): a direction only, from the viewport's projection (`viewport+0x164`) and inverse view matrix
+  (`viewport+0x3a28`); otherwise the direction stored at `+0x14d4`. The camera stays level: the reticle moves instead.
+- **Where the camera reads them: 0x647890** (this = the player, ret 4, arg != 0: mode 0) - the player's camera mode
+  `+0xed08` (0..4) picks the character's offsets through 0x62b730 / 0x6316a0..e0 and hands back a pointer to them:
+  side +0x0, height +0x4, ahead +0x8, distance +0xc (= tuning block +0xc0..). The getters 0x647a70 / 0x647ad0 /
+  0x647b30 / 0x647930 blend them between modes (`+0xeda0` blending, `+0xeda8` how far, `+0xedac..` the old values).
+  Its callers keep edx and the SSE registers across the call (the game's own never touches them) - a hook must too.
+  Found with a read watchpoint on the game thread only (src/loader/firstperson.cpp "fpv watch"); the old watch (every
+  thread) crashed the game. Repointing the player's +0xfa8c / +0xfa94 to a copy changed nothing: nothing else points
+  at the block - it's reached by arithmetic from the character's data.
+- The camera won't go below a height that's about the top of the character's collision (Peter 1.80: asking for less
+  gives 1.80 and the distance 0.1); above it, anything.
+- The right stick pitches the camera (limits from the settings, `+0x94` / `+0x98`); the stick click (R3, bound to
+  actions 26 / 52 / 53, keyboard C) moves the camera too. Pad buttons in the game's bits at device+0x14 (a word; R3
+  0x0800, L3 0x400, A 0x1000, Back 2); every pad bit is bound to some action; keyboard V is free.
+- Ink lines are made from the camera's place (the game's camera, not the drawn one): a view drawn from elsewhere gets
+  scribbles round the characters.
+- Research scripts: the session's fpv_probe / fpv_find / fpv_ptrs / fpv_scan / fpv_copy / ptrscan (camera dump, value
+  search, struct pointers, settings scan by poking, private copy test, every pointer into a range).

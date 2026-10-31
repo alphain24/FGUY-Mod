@@ -587,9 +587,13 @@ volatile LONG g_noLinesCount = 0;
 
 void __cdecl Hook_QueuePiece(int a1, unsigned char* node, float a3, int a4, float* a5, int a6, int a7, unsigned a8, char a9) {
     bool off = false;
-    if (g_noLinesCount && node && !IsBadReadPtr(node, 12) && (*reinterpret_cast<DWORD*>(node + 4) & 0x4000)) {
+    if ((g_noLinesCount || FirstPersonAny()) && node && !IsBadReadPtr(node, 12) && (*reinterpret_cast<DWORD*>(node + 4) & 0x4000)) {
         auto r = *reinterpret_cast<unsigned char* const*>(node + 8);   // (its Renderable: [+0xcc] its world matrix, 3x4)
         auto m = r && !IsBadReadPtr(r + 0xcc, 4) ? *reinterpret_cast<const float* const*>(r + 0xcc) : nullptr;
+        if (m && !IsBadReadPtr(m, 48) && FirstPersonNoLines(m[3], m[7], m[11])) {   // (firstperson.cpp: seen from where they aren't)
+            *reinterpret_cast<DWORD*>(node + 4) &= ~0x4000u;
+            off = true;
+        }
         if (m && !IsBadReadPtr(m, 48))
             for (LONG i = 0; i < g_noLinesCount && !off; ++i) {
                 const float* at = reinterpret_cast<const float*>(g_noLinesAt[i] + 0x30);

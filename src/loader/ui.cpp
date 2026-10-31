@@ -617,11 +617,15 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
     }
     if (name && strcmp(name, "GRFX_ChangeResolution") == 0 && argc >= 2) {
         int w = (int)ArgNumber(args, argc, 0), h = (int)ArgNumber(args, argc, 1);
-        if (DisplayOnChangeResolution(&w, &h, ArgNumber(args, argc, 2) != 0)) {
-            // borderless: the game gets the monitor's own resolution instead of the one picked
+        bool windowed = ArgNumber(args, argc, 2) != 0;
+        if (DisplayOnChangeResolution(&w, &h, &windowed)) {
+            // borderless: the game gets the monitor's own resolution instead of the one picked; fullscreen from the
+            // game's own page: ours, so the game is told windowed
             auto a = const_cast<GFxValue*>(args);
             if ((a[0].type & 0x0F) == kNumber) a[0].number = w;
             if ((a[1].type & 0x0F) == kNumber) a[1].number = h;
+            if (argc >= 3 && (a[2].type & 0x0F) == kNumber) a[2].number = windowed ? 1 : 0;
+            if (argc >= 3 && (a[2].type & 0x0F) == kBool) a[2].boolean = windowed;
         }
     }
     Real_Callback(self, movie, name, args, argc);

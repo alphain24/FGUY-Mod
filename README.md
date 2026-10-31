@@ -25,6 +25,13 @@ there's a new version, and installs it for you.
 - Matches stay in sync (lockstep, checked all the time); if one ever doesn't, a report is saved in
   `FGUYMod\reports` to send in.
 
+**First person** (Main Menu > OPTIONS > CAMERA)
+- Play through your character's own eyes: their real arms and gun as they shoot, the view tilting up and down.
+  Aim, hits and the crosshair all come from the eyes (it's the game's own camera, moved).
+- Switch any time in a match: **V** (keyboard) or **BACK twice** (controller). Each player picks their own -
+  split-screen and online too.
+- An emote shows you from behind while it plays.
+
 **Mods** (Main Menu > MODS)
 - Put separate mods in `FGUYMod\mods\` (a mod is one `.fgmod` file, or a folder) and switch them on and off.
 - **Making skins:** the [**FGUY Skin Studio**](https://alphain24.github.io/FGUY-Mod/) — in your browser (Chrome, Edge or Firefox),
