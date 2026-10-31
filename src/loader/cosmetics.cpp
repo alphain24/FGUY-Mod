@@ -913,14 +913,12 @@ const char* CosmeticsSkinList() {
         char f[MAX_PATH * 3];
         WideCharToMultiByte(CP_UTF8, 0, e.file.c_str(), -1, f, sizeof(f), nullptr, nullptr);
         std::string n = e.name, w = e.who;
-        if (!e.from.empty()) {   // ("Stewie - Default (FGUY Cosmetics)")
-            char m[256];
-            WideCharToMultiByte(CP_UTF8, 0, e.from.c_str(), -1, m, sizeof(m), nullptr, nullptr);
-            w += std::string(" (") + m + ")";
-        }
-        for (char& c : n) if (c == '|' || c == '\n') c = ' ';
-        for (char& c : w) if (c == '|' || c == '\n') c = ' ';
-        g_listText += std::string(f) + "|" + n + "|" + w + "|" + (PickFor(e.lo, e.hi) == e.file ? "1" : "0") + "\n";
+        char m[256] = "";   // (the mod it's part of - the page lists it under that mod, not as one of its own)
+        WideCharToMultiByte(CP_UTF8, 0, e.from.c_str(), -1, m, sizeof(m), nullptr, nullptr);
+        std::string from = m;
+        for (std::string* s : {&n, &w, &from})
+            for (char& c : *s) if (c == '|' || c == '\n') c = ' ';
+        g_listText += std::string(f) + "|" + n + "|" + w + "|" + (PickFor(e.lo, e.hi) == e.file ? "1" : "0") + "|" + from + "\n";
     }
     return g_listText.c_str();
 }

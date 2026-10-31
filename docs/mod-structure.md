@@ -151,7 +151,9 @@ Switching a mod on or off on the MODS page takes effect at the **next start** (t
 
 *Main Menu › MODS* lists:
 
-- **Mods** — name, version, author, a **GAMEPLAY** or **COSMETIC** badge, and **ON / OFF**.
-- **Loose skin packs** from `FGUYMod\skins\` and the skins inside mods — with a **SKIN** badge. **ON** means: worn
-  whenever that outfit is played offline, and picked for it online. One skin per outfit.
+- **Mods** — name, version, author, how many skins it has, a **GAMEPLAY** or **COSMETIC** badge, and **ON / OFF**.
+  A mod's skins are part of it: named in its description, picked in the game's own skin menus (the Store's
+  costumes, the join screens, the online lobby).
+- **Loose skin packs** from `FGUYMod\skins\` — a row each, with a **SKIN** badge. **ON** means: worn whenever that
+  outfit is played offline, and picked for it online. One skin per outfit.
 - **Y** opens `FGUYMod\mods\` in Explorer.

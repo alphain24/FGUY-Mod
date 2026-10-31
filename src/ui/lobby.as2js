@@ -2174,15 +2174,19 @@ function FGUYModsRead() {
         if (lines[i] == '') continue;
         var f = lines[i].split('|');
         FGUYMods.push({folder: f[0], name: f[1], version: f[2], author: f[3], type: f[4], on: f[5] == '1', running: f[6] == '1',
-                       about: f[7]});
+                       about: f[7], skins: []});
     }
-    // and the skin packs (FGUYMod\\skins, from the Skin Studio): on = worn offline, and the pick for that outfit online
+    // and the skin packs: a mod's are part of it (listed with it); the player's own (FGUYMod\\skins, from the Skin
+    // Studio) a row each - on = worn offline, and the pick for that outfit online
     var skins = String(flash.external.ExternalInterface.call('FGUYMOD_SkinList')).split('\n');
     for (var k = 0; k < skins.length; k++) {
         if (skins[k] == '') continue;
-        var g = skins[k].split('|');
+        var g = skins[k].split('|'), owner = undefined;
+        for (var j = 0; j < FGUYMods.length && g[4] != undefined && g[4] != ''; j++)
+            if (FGUYMods[j].name == g[4] && FGUYMods[j].type != 'skin') owner = FGUYMods[j];
+        if (owner != undefined) { owner.skins.push(g[1]); continue; }
         FGUYMods.push({folder: g[0], name: g[1], version: '', author: '', who: g[2], type: 'skin', on: g[3] == '1',
-                       running: false, about: 'Skin pack for ' + g[2] + ' (FGUYMod\\skins\\' + g[0] + ')'});
+                       running: false, about: 'Skin pack for ' + g[2] + ' (FGUYMod\\skins\\' + g[0] + ')', skins: []});
     }
     if (FGUYModsSel >= FGUYMods.length) FGUYModsSel = Math.max(0, FGUYMods.length - 1);
 }
@@ -2224,7 +2228,9 @@ function FGUYDrawMods(ui) {
         FGUYHit(76, y, rowW, 62, 'modRow', i);
         FGUYText(ui, 100, y + 6, 760, 30, m.name + '  ' + m.version, false, 22, FGUYC.white, 'left');
         FGUYText(ui, 100, y + 34, 760, 26, m.type == 'skin' ? 'for ' + m.who
-                 : (m.author != '' ? 'by ' + m.author : m.folder), false, 16, FGUYC.muted2, 'left');
+                 : (m.author != '' ? 'by ' + m.author : m.folder) +
+                   (m.skins.length > 0 ? '  -  ' + m.skins.length + (m.skins.length == 1 ? ' skin' : ' skins') : ''),
+                 false, 16, FGUYC.muted2, 'left');
         var gameplay = m.type == 'gameplay', skin = m.type == 'skin';
         var sx = more ? -72 : 0;   // (the arrows' room)
         FGUYRect(ui, 1080 + sx, y + 16, 170, 32, 10, FGUYC.ink, 100, gameplay ? FGUYC.yellow : FGUYC.glow, 100, 2);
@@ -2239,6 +2245,9 @@ function FGUYDrawMods(ui) {
                  : c.type == 'gameplay' ? 'Gameplay mod: online, everyone in the lobby needs it (the same version).'
                                         : 'Cosmetic mod: online, the others don\'t need it.';
         if (c.on && c.running) note = note + '  Its plugin is running.';
+        if (c.skins.length > 0)
+            note = 'Skins: ' + c.skins.slice(0, 4).join(', ') + (c.skins.length > 4 ? ' and ' + (c.skins.length - 4) + ' more' : '') +
+                   ' (pick them in the Store\'s costumes, the join screens and the lobby).  ' + note;
         FGUYText(ui, 90, 676, 1420, 30, c.about, false, 20, FGUYC.white, 'left');
         FGUYText(ui, 90, 712, 1420, 28, note, false, 17, FGUYC.muted2, 'left');
     }
