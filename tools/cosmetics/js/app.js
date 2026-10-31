@@ -250,6 +250,9 @@ async function textureFor(info) {
   ctx.putImageData(original, 0, 0);
   const tex = new THREE.CanvasTexture(canvas);
   tex.flipY = false;
+  // (wrapped, as the game draws them - some pieces' coordinates run past the edge: a battle-damage patch's go to -0.95,
+  //  and clamped they smear the edge's pixels - black streaks on Stewie's back)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
   // (ops: the recolors done to it, in order - the pack carries them, not the texture; history: {img, ops} to go back to)
   const t = {name: key, canvas, ctx, original, base: original, scale: 1, tex, history: [], ops: [], modified: false, format: dds.format, mips: dds.mips,
