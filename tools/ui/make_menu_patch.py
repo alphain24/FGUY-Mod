@@ -375,6 +375,10 @@ def costume_edits(p, data, actions):
     resize(*at_start('EnterCharacterPrep', lambda r: A.call('FGUYPrepEnter').assemble())[1:])
     # SelectCostume(costumeIndex): a custom skin picked is that outfit's skin
     resize(*at_start('SelectCostume', lambda r: A.call('FGUYStoreSelect', Reg(r['costumeIndex'])).assemble())[1:])
+    # PurchaseCostume(yesPressed): the outfit's price charged once (not once a row: its custom skins' rows are its too)
+    resize(*at_start('PurchaseCostume', lambda r: A.call('FGUYStoreBuying', Reg(r['yesPressed'])).assemble())[1:])
+    # OnCostumesExit() (a DefineFunction - the same code size field, no parameters): the preview, the scrolling reset
+    resize(*at_start('OnCostumesExit', lambda r: A.call('FGUYStoreExit').assemble())[1:])
     # RefreshCostumes(): wrapped - and, right after it fetches costumeInfo (its first SetVariable; r6 the character), the
     # custom skins put in
     o, code_start, code_end, size_field = at_start('RefreshCostumes', lambda r: wrapped('FGUYStoreRefreshWrap'))

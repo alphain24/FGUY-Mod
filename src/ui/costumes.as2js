@@ -4,7 +4,8 @@
 // picture:
 //   - Store > Costumes (the main menu: costumeInfo, fetched by RefreshCostumes) - the skin that outfit wears, as the
 //     MODS page's ON (FGUYMOD_StoreSkinPick); hovering one shows it on the preview (menu player 2). A skin on an outfit
-//     not bought yet is there too, at the outfit's price: buying it buys the outfit, and puts the skin on.
+//     not bought yet is there too, at the outfit's price: buying it buys the outfit, and puts the skin on. More than its
+//     8 rows scroll.
 //   - Multiverse Madness' join screen (the main menu: costumesInfo / prepCostume) and the HUD's change character
 //     screen (costumesInfo / costumeInfoIndex) - that player's skin (FGUYMOD_OfflineSkinPick), not the others'.
 // A custom skin's entry is its outfit's (the same CostumeIndex: the game puts that outfit on) and the mod puts the
@@ -139,16 +140,125 @@ function FGUYPrepEnter() {   // (EnterCharacterPrep: the players' skins shown ag
     FGUYJoinSynced = [];
 }
 
-// Store > Costumes: RefreshCostumes just fetched costumeInfo (this, inserted right after): the custom skins in it -
-// as many as its 8 buttons take
+// Store > Costumes: RefreshCostumes just fetched costumeInfo (this, inserted right after): the custom skins in it.
+// Its 8 buttons show 8 rows: with more (custom skins; Stewie's and Brian's outfits once story mode has unlocked them -
+// the game showed their first 8 only) the list scrolls - up / down past the first or last row, the mouse wheel, the
+// arrows beside the rows. costumeInfo is the 8 shown (the game's buttons, CurBtn, buying all go by it), FGUYStoreAll
+// the whole list, FGUYStoreTop the first shown.
 function FGUYStoreAddSkins(c) {
-    if (costumeInfo == undefined || FGUYSkinsOnline()) return;
-    FGUYAddSkins(costumeInfo, c, FGUYSkinEntries(), true);
-    // (8 buttons: past that, skins on outfits not bought go first, then other skins - never the game's own outfits)
-    for (var pass = 0; pass < 2 && costumeInfo.length > 8; pass++)
-        for (var k = costumeInfo.length - 1; k >= 0 && costumeInfo.length > 8; k--)
-            if (costumeInfo[k].FGUYSkin != undefined && (pass == 1 || costumeInfo[k].IsBought == false)) costumeInfo.splice(k, 1);
-    if (costumeInfo.length > 8) costumeInfo.splice(8, costumeInfo.length - 8);
+    if (costumeInfo == undefined) return;
+    if (!FGUYSkinsOnline()) FGUYAddSkins(costumeInfo, c, FGUYSkinEntries(), true);
+    if (c != FGUYStoreChar) { FGUYStoreChar = c; FGUYStoreTop = 0; }
+    FGUYStoreAll = costumeInfo.slice(0);
+    var n = costumeInfo.length;
+    if (FGUYStoreTop == undefined || FGUYStoreTop < 0) FGUYStoreTop = 0;
+    if (FGUYStoreTop > Math.max(0, n - 8)) FGUYStoreTop = Math.max(0, n - 8);
+    if (n <= 8) return;
+    costumeInfo.splice(FGUYStoreTop + 8, n - FGUYStoreTop - 8);
+    costumeInfo.splice(0, FGUYStoreTop);
+}
+
+// (Down / Up on the Store's costumes - the game calls these instead of moving itself)
+function OnCostumesDownPressed() { FGUYStoreMove(1); }
+function OnCostumesUpPressed() { FGUYStoreMove(-1); }
+
+function FGUYStoreMove(d) {
+    var n = costumeInfo == undefined ? 0 : costumeInfo.length, all = FGUYStoreAll;
+    if (n == 0) return;
+    if (all == undefined || all.length <= n || (d > 0 ? CurBtn < n - 1 : CurBtn > 0)) {   // (within the rows: as the game)
+        if (d > 0) _NextBtn();
+        else _PrevBtn();
+        FGUYSound('nav');
+        return;
+    }
+    var top = FGUYStoreTop + d, btn = CurBtn;
+    if (top < 0) { top = all.length - n; btn = n - 1; }   // (round to the other end, as the game's rows go round)
+    else if (top > all.length - n) { top = 0; btn = 0; }
+    FGUYStoreGo(top, btn);
+    FGUYSound('nav');
+}
+
+// the rows from `top` on, `btn` the one pointed at
+function FGUYStoreGo(top, btn) {
+    UnHover();
+    FGUYStoreTop = top;
+    CurBtn = btn;
+    RefreshCostumes();
+    Hover();
+}
+
+// by `by` rows (the wheel, the arrows): the same row pointed at
+function FGUYStoreScroll(by) {
+    if (FGUYStoreAll == undefined || costumeInfo == undefined) return;
+    var top = Math.max(0, Math.min(FGUYStoreAll.length - costumeInfo.length, FGUYStoreTop + by));
+    if (top == FGUYStoreTop) return;
+    FGUYStoreGo(top, CurBtn);
+    FGUYSound('nav');
+}
+
+// (10 times a second while the rows scroll) the mouse wheel
+function FGUYStorePoll() {
+    if (CurPage != 'Costumes' || FGUYStoreAll == undefined || FGUYStoreAll.length <= 8) {
+        clearInterval(FGUYStoreTimer);
+        FGUYStoreTimer = undefined;
+        return;
+    }
+    var steps = Number(flash.external.ExternalInterface.call('FGUYMOD_MenuWheel'));
+    if (steps != 0 && !isNaN(steps)) FGUYStoreScroll(-steps);
+}
+
+// the arrows beside the rows (more above / below: lit, a click scrolls) and which rows are shown
+function FGUYStoreArrows(root) {
+    if (root == undefined) return;
+    var all = FGUYStoreAll, n = costumeInfo == undefined ? 0 : costumeInfo.length;
+    if (all == undefined || all.length <= n || n == 0) {
+        root.FGUYScroll.removeMovieClip();
+        return;
+    }
+    if (FGUYC == undefined) FGUYColors();
+    if (FGUYStoreTimer == undefined) {
+        flash.external.ExternalInterface.call('FGUYMOD_MenuWheel');   // (turned before: not for this page)
+        FGUYStoreTimer = setInterval(FGUYStorePoll, 100);
+    }
+    // (a row's bar: from 60 above its clip's origin to 18 above, ending about 400 right of it - its bounds take in
+    //  the hover glow, far bigger)
+    var first = root.Costume0, last = root['Costume' + (n - 1)];
+    var s = 44, x = Math.round(first._x + 412), top = Math.round(first._y - 60), bottom = Math.round(last._y - 18);
+    var ui = root.createEmptyMovieClip('FGUYScroll', 30999);
+    var upOn = FGUYStoreTop > 0, downOn = FGUYStoreTop + n < all.length;
+    FGUYStoreArrow(ui, x, top, s, -1, upOn);
+    FGUYStoreArrow(ui, x, bottom - s, s, 1, downOn);
+    var cx = x + s / 2, cy = top + s + 10;   // (which rows: a chip under the up arrow - the wall's light strip behind)
+    FGUYRect(ui, cx - 56, cy, 112, 32, 10, FGUYC.ink, 85, FGUYC.rowLine, 100, 2);
+    FGUYText(ui, cx - 56, cy + 3, 112, 28, (FGUYStoreTop + 1) + '-' + (FGUYStoreTop + n) + ' of ' + all.length, false, 18,
+             FGUYC.white, 'center');
+}
+
+function FGUYStoreArrow(ui, x, y, s, d, on) {
+    var c = ui.createEmptyMovieClip('arrow' + (d > 0 ? 'Down' : 'Up'), ui.getNextHighestDepth());
+    FGUYRect(c, x, y, s, s, Math.round(s / 4), FGUYC.row, 90, on ? FGUYC.yellow : FGUYC.rowLine, 100, 2);
+    var m = s / 4;
+    if (d < 0) FGUYPoly(c, [x + s / 2, y + m, x + s - m, y + s - m * 1.3, x + m, y + s - m * 1.3], on ? FGUYC.yellow : FGUYC.rowLine, 100);
+    else FGUYPoly(c, [x + m, y + m * 1.3, x + s - m, y + m * 1.3, x + s / 2, y + s - m], on ? FGUYC.yellow : FGUYC.rowLine, 100);
+    c.fgBy = d;
+    c.onRelease = FGUYStoreArrowPress;
+}
+
+function FGUYStoreArrowPress() {
+    FGUYStoreScroll(this.fgBy);
+}
+
+// PurchaseCostume(yesPressed), at its start: it charges each row of the outfit bought - a custom skin's row is that
+// outfit's too, so buying one charged its price once a row. Just the first row's price, then (the rows come again
+// after: RefreshStorePage).
+function FGUYStoreBuying(yes) {
+    if (yes != true || costumeInfo == undefined) return;
+    var first = true;
+    for (var i = 0; i < costumeInfo.length; i++) {
+        if (costumeInfo[i].CostumeIndex != costumeToPurchase) continue;
+        if (!first) costumeInfo[i].Price = 0;
+        first = false;
+    }
 }
 
 // ...and RefreshCostumes wrapped (inserted at its start): after it, which button is worn - the custom skin the
@@ -181,6 +291,7 @@ function FGUYStoreRefreshWrap() {
     }
     var cur = costumeInfo[CurBtn];
     flash.external.ExternalInterface.call('FGUYMOD_OfflineSkinPick', 2, cur != undefined && cur.FGUYSkin != undefined ? cur.FGUYSkin : '-');
+    FGUYStoreArrows(root);
     return true;
 }
 
@@ -198,8 +309,13 @@ function FGUYStoreSelect(i) {
     flash.external.ExternalInterface.call('FGUYMOD_StoreSkinPick', key, e.FGUYSkin != undefined ? e.FGUYSkin : '');
 }
 
-function FGUYStoreExit() {   // (OnCostumesExit: the preview back to what's picked)
+function FGUYStoreExit() {   // (OnCostumesExit: the preview back to what's picked; the rows from the top next time)
     FGUYStorePending = undefined;
+    FGUYStoreChar = undefined;
+    FGUYStoreAll = undefined;
+    clearInterval(FGUYStoreTimer);
+    FGUYStoreTimer = undefined;
+    GetCostumesRoot().FGUYScroll.removeMovieClip();
     flash.external.ExternalInterface.call('FGUYMOD_OfflineSkinPick', 2, '');
 }
 
