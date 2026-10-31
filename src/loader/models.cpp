@@ -46,6 +46,8 @@ struct Model {
     std::vector<Vert> verts;
     std::vector<unsigned short> idx;
     std::vector<std::vector<unsigned char>> pngs;
+    struct Pixels { std::vector<unsigned char> rgba; unsigned w = 0, h = 0; };
+    std::vector<Pixels> painted;           // (a texture painted here, in place of its PNG - MergeLayers)
     // (the render thread's)
     std::vector<IDirect3DTexture9*> tex;
     IDirect3DVertexBuffer9* skinned = nullptr;   // positions, then normals - every frame
@@ -92,6 +94,105 @@ void Free(Model* m) {
     delete m;
 }
 
+// A piece seen through another's see-through texels: a character's eyes - the eyelids (an atlas of lids, an open one
+// see-through) over the eyeballs (white, a pupil), on the same vertices. The game draws those with a shader of their
+// own; ours is the body's, which leaves no texel out (its alpha isn't the texture's - an alpha test didn't help), so
+// the open lids came out black. So here the piece under them is painted into their see-through texels, and isn't drawn.
+void MergeLayers(Model* m) {
+    std::vector<Model::Pixels> px(m->pngs.size());
+    auto pixels = [&](unsigned t) -> Model::Pixels* {
+        if (t >= px.size()) return nullptr;
+        if (!px[t].w && !m->pngs[t].empty() && !SkinDecodePng(m->pngs[t], px[t].rgba, &px[t].w, &px[t].h)) px[t].w = 0;
+        return px[t].w && px[t].h && px[t].rgba.size() >= (size_t)px[t].w * px[t].h * 4 ? &px[t] : nullptr;
+    };
+    auto clear = [](const Model::Pixels& p) {   // (its see-through share)
+        size_t n = 0;
+        for (size_t i = 3; i < p.rgba.size(); i += 4) n += p.rgba[i] < 128;
+        return (double)n / ((size_t)p.w * p.h);
+    };
+    auto vertsOf = [&](const Part& p) {
+        std::vector<unsigned short> v(m->idx.begin() + p.first, m->idx.begin() + p.first + p.count);
+        std::sort(v.begin(), v.end());
+        v.erase(std::unique(v.begin(), v.end()), v.end());
+        return v;
+    };
+    std::vector<bool> paintedTex(m->pngs.size());
+    int merged = 0;
+    for (Part& top : m->parts) {
+        Model::Pixels* tp = top.count >= 3 ? pixels(top.texture) : nullptr;
+        if (!tp || clear(*tp) < 0.01) continue;
+        std::vector<unsigned short> tv = vertsOf(top);
+        for (Part& under : m->parts) {
+            if (&under == &top || under.count < 3 || under.texture == top.texture) continue;
+            std::vector<unsigned short> uv = vertsOf(under);
+            if (uv.size() != tv.size()) continue;
+            // (its vertex at each of top's: the nearest - it sits just behind, the eyeballs about 0.005 back from the
+            //  lids, the eyes 0.14 across - within a twentieth of top's size)
+            float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
+            for (unsigned short a : tv)
+                for (int r = 0; r < 3; ++r) {
+                    lo[r] = (std::min)(lo[r], m->verts[a].pos[r]);
+                    hi[r] = (std::max)(hi[r], m->verts[a].pos[r]);
+                }
+            float near2 = ((hi[0] - lo[0]) * (hi[0] - lo[0]) + (hi[1] - lo[1]) * (hi[1] - lo[1]) + (hi[2] - lo[2]) * (hi[2] - lo[2])) / 400;
+            std::vector<int> match(m->verts.size(), -1);
+            bool all = true;
+            for (unsigned short a : tv) {
+                float best = near2;
+                for (unsigned short b : uv) {
+                    const float* p = m->verts[a].pos, *q = m->verts[b].pos;
+                    float d = (p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1]) + (p[2] - q[2]) * (p[2] - q[2]);
+                    if (d < best) { best = d; match[a] = b; }
+                }
+                if (match[a] < 0) { all = false; break; }
+            }
+            Model::Pixels* up = all ? pixels(under.texture) : nullptr;
+            if (!up || clear(*up) > 0.01) continue;
+            for (unsigned k = top.first; k + 2 < top.first + top.count; k += 3) {   // (each triangle, in top's texels)
+                const Vert* a[3], *b[3];
+                for (int c = 0; c < 3; ++c) { a[c] = &m->verts[m->idx[k + c]]; b[c] = &m->verts[match[m->idx[k + c]]]; }
+                float x[3], y[3];
+                for (int c = 0; c < 3; ++c) { x[c] = a[c]->uv[0] * tp->w; y[c] = a[c]->uv[1] * tp->h; }
+                float area = (x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0]);
+                if (std::fabs(area) < 1e-6f) continue;
+                int x0 = (std::max)(0, (int)std::floor((std::min)({x[0], x[1], x[2]})) - 1);
+                int x1 = (std::min)((int)tp->w - 1, (int)std::ceil((std::max)({x[0], x[1], x[2]})) + 1);
+                int y0 = (std::max)(0, (int)std::floor((std::min)({y[0], y[1], y[2]})) - 1);
+                int y1 = (std::min)((int)tp->h - 1, (int)std::ceil((std::max)({y[0], y[1], y[2]})) + 1);
+                for (int ty = y0; ty <= y1; ++ty)
+                    for (int tx = x0; tx <= x1; ++tx) {
+                        float cx = tx + 0.5f, cy = ty + 0.5f, w[3];
+                        w[0] = ((x[1] - cx) * (y[2] - cy) - (x[2] - cx) * (y[1] - cy)) / area;
+                        w[1] = ((x[2] - cx) * (y[0] - cy) - (x[0] - cx) * (y[2] - cy)) / area;
+                        w[2] = 1 - w[0] - w[1];
+                        // (a texel's width past its edges too: the texels a draw blends in at the lid's rim)
+                        float edge = 1.5f / (std::max)(1.0f, std::sqrt(std::fabs(area)));
+                        if (w[0] < -edge || w[1] < -edge || w[2] < -edge) continue;
+                        unsigned char* t = &tp->rgba[((size_t)ty * tp->w + tx) * 4];
+                        if (t[3] == 255) continue;
+                        float u = 0, v = 0;
+                        for (int c = 0; c < 3; ++c) { u += w[c] * b[c]->uv[0]; v += w[c] * b[c]->uv[1]; }
+                        int sx = (std::min)((int)up->w - 1, (std::max)(0, (int)std::floor(u * up->w)));
+                        int sy = (std::min)((int)up->h - 1, (std::max)(0, (int)std::floor(v * up->h)));
+                        const unsigned char* s = &up->rgba[((size_t)sy * up->w + sx) * 4];
+                        float al = t[3] / 255.0f;
+                        for (int c = 0; c < 3; ++c) t[c] = (unsigned char)(t[c] * al + s[c] * (1 - al) + 0.5f);
+                        t[3] = 255;
+                    }
+            }
+            paintedTex[top.texture] = true;
+            under.count = 0;   // (not drawn: it's in top now)
+            ++merged;
+            break;
+        }
+    }
+    if (!merged) return;
+    m->painted.resize(m->pngs.size());
+    for (size_t t = 0; t < px.size(); ++t)
+        if (paintedTex[t]) m->painted[t] = std::move(px[t]);
+    Log(L"Models: %s - %d pieces painted into the see-through texels of the ones over them", m->name.c_str(), merged);
+}
+
 Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
     std::vector<unsigned char> mesh, json;
     if (!ZipRead(pack, "mesh.bin", mesh) || !ZipRead(pack, "model.json", json) || mesh.size() < 24) return nullptr;
@@ -123,6 +224,17 @@ Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
         if ((size_t)p.first + p.count > (size_t)I) { delete m; return nullptr; }
     for (unsigned short i : m->idx)
         if (i >= V) { delete m; return nullptr; }
+    std::string js(json.begin(), json.end());   // its textures: "textures": ["textures/0.png", ...]
+    size_t at = js.find("\"textures\"");
+    if (at != std::string::npos)
+        for (size_t q1 = js.find('"', js.find('[', at) + 1); q1 != std::string::npos && q1 < js.find(']', at); ) {
+            size_t q2 = js.find('"', q1 + 1);
+            std::vector<unsigned char> png;
+            ZipRead(pack, js.substr(q1 + 1, q2 - q1 - 1), png);
+            m->pngs.push_back(std::move(png));
+            q1 = js.find('"', q2 + 1);
+        }
+    MergeLayers(m);
     for (const Part& p : m->parts) {   // (the parts outlined: their sizes across)
         float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
         for (unsigned k = p.first; k < p.first + p.count; ++k)
@@ -137,7 +249,6 @@ Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
     }
     for (int s = 0; s < S; ++s)   // (parents before their children: one pass makes the matrices)
         if (m->parent[s] >= s) { delete m; return nullptr; }
-    std::string js(json.begin(), json.end());   // its textures: "textures": ["textures/0.png", ...]
     size_t ov = js.find("\"over\"");   // ("over": true - worn over the character)
     m->over = ov != std::string::npos && js.find("true", ov) == js.find_first_not_of(" \t\r\n:", ov + 6);
     size_t hd = js.find("\"hide\"");   // ("hide": [{"verts": V, "indices": I, "tris": [first, count, ...]}, ...])
@@ -169,15 +280,6 @@ Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
             h0 = close;
         }
     }
-    size_t at = js.find("\"textures\"");
-    if (at != std::string::npos)
-        for (size_t q1 = js.find('"', js.find('[', at) + 1); q1 != std::string::npos && q1 < js.find(']', at); ) {
-            size_t q2 = js.find('"', q1 + 1);
-            std::vector<unsigned char> png;
-            ZipRead(pack, js.substr(q1 + 1, q2 - q1 - 1), png);
-            m->pngs.push_back(std::move(png));
-            q1 = js.find('"', q2 + 1);
-        }
     return m;
 }
 
@@ -202,10 +304,14 @@ void Make(IDirect3DDevice9* dev, Model* m) {
         memcpy(p, m->idx.data(), m->idx.size() * 2);
         m->ib->Unlock();
     }
-    for (const auto& png : m->pngs) {
+    for (size_t t = 0; t < m->pngs.size(); ++t) {
         std::vector<unsigned char> dds;
-        m->tex.push_back(!png.empty() && SkinPngToDds(png, dds) ? CosmeticsTextureFromDds(dev, dds) : nullptr);
+        const Model::Pixels* pt = t < m->painted.size() && m->painted[t].w ? &m->painted[t] : nullptr;
+        if (pt) SkinRgbaToDds(pt->rgba, pt->w, pt->h, dds);
+        m->tex.push_back(pt || (!m->pngs[t].empty() && SkinPngToDds(m->pngs[t], dds)) ? CosmeticsTextureFromDds(dev, dds) : nullptr);
+        if (!m->tex.back()) Log(L"Models: %s - its texture %zu not made (%zu bytes of PNG)", m->name.c_str(), t, m->pngs[t].size());
     }
+    m->painted.clear();
     if (!g_decl) {
         D3DVERTEXELEMENT9 el[] = {
             {0, 0, D3DDECLTYPE_FLOAT3, D3DDECLMETHOD_DEFAULT, D3DDECLUSAGE_POSITION, 0},
@@ -489,7 +595,11 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     dev->SetStreamSource(1, m->skinned, V * 12, 12);
     dev->SetStreamSource(2, m->uv, 0, 8);
     dev->SetIndices(m->ib);
+    static int skipParts = -1;   // (research: FGUYMOD_TEST_MODELSKIP=<bits> - those parts not drawn)
+    if (skipParts < 0) { wchar_t v[12] = L""; GetEnvironmentVariableW(L"FGUYMOD_TEST_MODELSKIP", v, 12); skipParts = _wtoi(v); }
+    int partNo = 0;
     for (const Part& p : m->parts) {
+        if ((skipParts >> partNo++ & 1) || p.count < 3) continue;   // (count 0: painted into another - MergeLayers)
         if (p.texture < m->tex.size() && m->tex[p.texture]) {   // (stage 2 too: the outfit's material has its color
             dev->SetTexture(1, m->tex[p.texture]);              //  texture there again - read with our uvs, it showed
             if (oldTex2) dev->SetTexture(2, m->tex[p.texture]); //  through in stripes)

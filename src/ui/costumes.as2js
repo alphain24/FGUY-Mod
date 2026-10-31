@@ -3,7 +3,8 @@
 // FGUY Cosmetics mod's too) is a skin of its own there, right after the outfit it goes on, with its own name and
 // picture:
 //   - Store > Costumes (the main menu: costumeInfo, fetched by RefreshCostumes) - the skin that outfit wears, as the
-//     MODS page's ON (FGUYMOD_StoreSkinPick); hovering one shows it on the preview (menu player 2).
+//     MODS page's ON (FGUYMOD_StoreSkinPick); hovering one shows it on the preview (menu player 2). A skin on an outfit
+//     not bought yet is there too, at the outfit's price: buying it buys the outfit, and puts the skin on.
 //   - Multiverse Madness' join screen (the main menu: costumesInfo / prepCostume) and the HUD's change character
 //     screen (costumesInfo / costumeInfoIndex) - that player's skin (FGUYMOD_OfflineSkinPick), not the others'.
 // A custom skin's entry is its outfit's (the same CostumeIndex: the game puts that outfit on) and the mod puts the
@@ -42,19 +43,21 @@ function FGUYSkinsOnline() {
     return flash.external.ExternalInterface.call('FGUYMOD_OnlineMatch') == true;
 }
 
-// into one character's list of outfits (entries as the game makes them): each custom skin after its outfit - once
-function FGUYAddSkins(list, c, skins) {
+// into one character's list of outfits (entries as the game makes them): each custom skin after its outfit - once.
+// locked: also after outfits not bought yet, as they are (the Store: its price; buying it buys that outfit) - the skin
+// had stayed out of sight, nothing said it needed the outfit
+function FGUYAddSkins(list, c, skins, locked) {
     if (list == undefined || list.fguySkins == true) return;
     list.fguySkins = true;
     for (var k = list.length - 1; k >= 0; k--) {   // (from the end: what's inserted doesn't move what's left to do)
         var base = list[k];
-        if (base.FGUYSkin != undefined || base.IsBought == false) continue;
+        if (base.FGUYSkin != undefined || (base.IsBought == false && !locked)) continue;
         var key = FGUYCostumeKey(base, c), at = k + 1;
         for (var j = 0; j < skins.length; j++) {
             if (skins[j].pic != key) continue;
-            list.splice(at, 0, {UIName: skins[j].name, CostumeIndex: base.CostumeIndex, IsBought: true, LinkageID: base.LinkageID,
-                                Price: base.Price, UnlockStr: base.UnlockStr, FGUYSkin: skins[j].file, FGUYIcon: skins[j].icon,
-                                FGUYPic: key});
+            list.splice(at, 0, {UIName: skins[j].name, CostumeIndex: base.CostumeIndex, IsBought: base.IsBought == false ? false : true,
+                                LinkageID: base.LinkageID, Price: base.Price, UnlockStr: base.UnlockStr, FGUYSkin: skins[j].file,
+                                FGUYIcon: skins[j].icon, FGUYPic: key});
             at++;
         }
     }
@@ -140,7 +143,11 @@ function FGUYPrepEnter() {   // (EnterCharacterPrep: the players' skins shown ag
 // as many as its 8 buttons take
 function FGUYStoreAddSkins(c) {
     if (costumeInfo == undefined || FGUYSkinsOnline()) return;
-    FGUYAddSkins(costumeInfo, c, FGUYSkinEntries());
+    FGUYAddSkins(costumeInfo, c, FGUYSkinEntries(), true);
+    // (8 buttons: past that, skins on outfits not bought go first, then other skins - never the game's own outfits)
+    for (var pass = 0; pass < 2 && costumeInfo.length > 8; pass++)
+        for (var k = costumeInfo.length - 1; k >= 0 && costumeInfo.length > 8; k--)
+            if (costumeInfo[k].FGUYSkin != undefined && (pass == 1 || costumeInfo[k].IsBought == false)) costumeInfo.splice(k, 1);
     if (costumeInfo.length > 8) costumeInfo.splice(8, costumeInfo.length - 8);
 }
 
@@ -154,6 +161,16 @@ function FGUYStoreRefreshWrap() {
     FGUYStoreRefreshing = false;
     if (costumeInfo == undefined) return true;
     var c = GetDockCharacterIndex(), sel = GetSelectedCostume(c), root = GetCostumesRoot();
+    if (FGUYStorePending != undefined) {   // (a skin's outfit bought from the skin's own button: that skin on now)
+        for (var p = 0; p < costumeInfo.length; p++) {
+            var pe = costumeInfo[p];
+            if (pe.FGUYSkin != FGUYStorePending.file || pe.FGUYPic != FGUYStorePending.key || !IsCostumeBought(c, p)) continue;
+            FGUYStorePending = undefined;
+            flash.external.ExternalInterface.call('FGUYMOD_StoreSkinPick', pe.FGUYPic, pe.FGUYSkin);
+            sel = GetSelectedCostume(c);
+            break;
+        }
+    }
     for (var i = 0; i < costumeInfo.length && i < 8; i++) {
         var e = costumeInfo[i], b = root['Costume' + i].button;
         if (b == undefined || e.CostumeIndex != sel) continue;
@@ -171,12 +188,18 @@ function FGUYStoreRefreshWrap() {
 function FGUYStoreSelect(i) {
     if (costumeInfo == undefined || FGUYSkinsOnline()) return;
     var e = costumeInfo[i], c = GetDockCharacterIndex();
-    if (e == undefined || !IsCostumeBought(c, i)) return;
+    if (e == undefined) return;
     var key = e.FGUYPic != undefined ? e.FGUYPic : FGUYCostumeKey(e, c);
+    if (!IsCostumeBought(c, i)) {   // (the game offers to buy the outfit: a skin's button - that skin once it's bought)
+        FGUYStorePending = e.FGUYSkin != undefined ? {file: e.FGUYSkin, key: key} : undefined;
+        return;
+    }
+    FGUYStorePending = undefined;
     flash.external.ExternalInterface.call('FGUYMOD_StoreSkinPick', key, e.FGUYSkin != undefined ? e.FGUYSkin : '');
 }
 
 function FGUYStoreExit() {   // (OnCostumesExit: the preview back to what's picked)
+    FGUYStorePending = undefined;
     flash.external.ExternalInterface.call('FGUYMOD_OfflineSkinPick', 2, '');
 }
 

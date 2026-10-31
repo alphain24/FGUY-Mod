@@ -550,8 +550,13 @@ bool SkinPngToDds(const std::vector<unsigned char>& png, std::vector<unsigned ch
     Rgba px;
     unsigned w = 0, h = 0;
     if (!DecodePng(png, 0, 0, px, &w, &h) || !w || !h) return false;
+    SkinRgbaToDds(px, w, h, dds);
+    return true;
+}
+
+//   ... or its pixels (RGBA)
+void SkinRgbaToDds(const std::vector<unsigned char>& rgba, unsigned w, unsigned h, std::vector<unsigned char>& dds) {
     unsigned mips = 1;
     while ((w >> mips) || (h >> mips)) ++mips;
-    dds = EncodeDds(px, w, h, D3DFMT_DXT5, mips);
-    return true;
+    dds = EncodeDds(rgba, w, h, D3DFMT_DXT5, mips);
 }

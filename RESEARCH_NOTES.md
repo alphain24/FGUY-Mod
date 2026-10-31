@@ -732,6 +732,16 @@ ematch_<lobby pid>.txt`), whose lobby then
   bones move are left out of its pictures.
 - First outfit made with img2threejs: content/peter-adventurer (its README) - fitted on Peter's measured bind mesh,
   16,720 triangles (Peter: 8,680). Tested in solo Multiverse Madness at 1920x1080 (tools/test_solo_mp.ps1 -God).
+- **A model's black eyes** (a skin's model from a character's own export, 2026-11-01): a character's eyes are two
+  pieces each - the lids (<Char>_Lids_CO, 1024x128, an atlas of 16 lids: an open one see-through, alpha 0 and black)
+  over the eyeballs (<Char>_Pupil_CO, white with a pupil, opaque), the eyeballs about 0.005 behind on the same
+  shape. Our draw uses the body's shader, whose output alpha isn't the texture's: an alpha test or culling changed
+  nothing, the open lids drew black. models.cpp MergeLayers: at load, a piece under a see-through one (its vertices
+  each within 1/20 of its size) is painted into its see-through texels and not drawn. The Studio draws them with an
+  alpha test, so it showed them right. Research knob FGUYMOD_TEST_MODELSKIP=<bits>: those parts not drawn.
+- The skin pickers' pictures are Costume_<Char><Outfit>.tif (MNUS.ho; Adam West "West"), with some outfit names not
+  the models': cosmetics.cpp PictureOutfit / model.js PICTURE_NAMES. A skin made on a model name the picture doesn't
+  use (Stewie "SexyPartySuit" - picture "Sailor") had no row in the Store.
 
 ## Graphics: the blur, filtering, post passes (2026-10-23)
 - The PC game has **no anti-aliasing**: every render target, depth buffer and the back buffer are made without

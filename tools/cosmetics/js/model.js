@@ -59,10 +59,21 @@ async function materialTexture(ho, mat) {
   return null;
 }
 
+// An outfit's name in those pictures, from its model's (<Character><Outfit>_Rig_Geo) - mostly the same, these not (the
+// loader's cosmetics.cpp PictureOutfit has the same table)
+const PICTURE_NAMES = {
+  Peter: {DaisyDuke: 'DaisyDukes', LJP: 'LongJohn', Stache: 'Moustache', TuxGold: 'Gold'},
+  Brian: {Beagle: 'Snoopy', Coked: 'CokedOut', Tux: 'Tuxedo', TuxGold: 'Gold'},
+  Stewie: {SexyPartySuit: 'Sailor', Tux: 'Tuxedo', TuxGold: 'Gold'},
+  Lois: {SchoolGirl: 'Schoolgirl', TuxGold: 'Gold'},
+  Meg: {SexyCat: 'Cat', PostPrison: 'Prison', TuxGold: 'Gold'},
+  Chris: {TuxGold: 'Gold'}, Quagmire: {WildnCrazy: 'Wild'}, Death: {BoxerRobe: 'Boxing'}, AdamWest: {Tux: 'Tuxedo'},
+};
+
 // An outfit's picture in the game's skin pickers (Texture "Costume_<Character><Outfit>.tif" - Adam West is "West"),
 // as materialTexture gives a texture - or null
 export async function pictureFor(ho, character, outfit) {
-  const name = 'Costume_' + (character === 'AdamWest' ? 'West' : character) + outfit + '.tif';
+  const name = 'Costume_' + (character === 'AdamWest' ? 'West' : character) + (PICTURE_NAMES[character]?.[outfit] || outfit) + '.tif';
   const asset = ho.assets.find(a => a.type === T.Texture && a.name === name);
   if (!asset) return null;
   const b = await asset.bytes(), dv = new DataView(b.buffer, b.byteOffset, b.byteLength);

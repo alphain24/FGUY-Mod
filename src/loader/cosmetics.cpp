@@ -926,6 +926,26 @@ std::vector<unsigned char> ReadAll(const std::wstring& path) {
     return d;
 }
 
+// An outfit's name in the game's pictures (Costume_<Character><Outfit>.tif - what the skin pickers know an outfit by),
+// from its name in a skin pack (its model's: <Character><Outfit>_Rig_Geo). Mostly the same - these not: a skin on one
+// of them had never shown in the offline pickers (the Store, the join screen, change character). The Studio's
+// tools/cosmetics/js/model.js has the same table.
+std::string PictureOutfit(const std::string& who, const std::string& outfit) {
+    static const char* const kNames[][3] = {
+        {"Peter", "DaisyDuke", "DaisyDukes"}, {"Peter", "LJP", "LongJohn"}, {"Peter", "Stache", "Moustache"},
+        {"Peter", "TuxGold", "Gold"},
+        {"Brian", "Beagle", "Snoopy"}, {"Brian", "Coked", "CokedOut"}, {"Brian", "Tux", "Tuxedo"}, {"Brian", "TuxGold", "Gold"},
+        {"Stewie", "SexyPartySuit", "Sailor"}, {"Stewie", "Tux", "Tuxedo"}, {"Stewie", "TuxGold", "Gold"},
+        {"Lois", "SchoolGirl", "Schoolgirl"}, {"Lois", "TuxGold", "Gold"},
+        {"Meg", "SexyCat", "Cat"}, {"Meg", "PostPrison", "Prison"}, {"Meg", "TuxGold", "Gold"},
+        {"Chris", "TuxGold", "Gold"}, {"Quagmire", "WildnCrazy", "Wild"}, {"Death", "BoxerRobe", "Boxing"},
+        {"AdamWest", "Tux", "Tuxedo"},
+    };
+    for (const auto& n : kNames)
+        if (who == n[0] && outfit == n[1]) return n[2];
+    return outfit;
+}
+
 void ScanPacks() {
     ULONGLONG now = GetTickCount64();
     if (g_packsAt && now - g_packsAt < 3000) return;
@@ -953,7 +973,7 @@ void ScanPacks() {
                 e.who = JsonField(d, "character");   // ("Stewie - Default": the MODS page)
                 std::string outfit = JsonField(d, "outfit");
                 if (!e.who.empty() && !outfit.empty())   // (the game's pictures call Adam West "West")
-                    e.pic = "Costume_" + (e.who == "AdamWest" ? std::string("West") : e.who) + outfit + ".tif";
+                    e.pic = "Costume_" + (e.who == "AdamWest" ? std::string("West") : e.who) + PictureOutfit(e.who, outfit) + ".tif";
                 if (!outfit.empty()) e.who += " - " + outfit;
                 out.push_back(e);
             }

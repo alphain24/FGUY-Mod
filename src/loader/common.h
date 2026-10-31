@@ -178,6 +178,7 @@ struct IDirect3DIndexBuffer9;
 bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, const std::vector<unsigned char>& overlay,
                       std::vector<unsigned char>& dds);   // skinbuild.cpp: a skin's texture from the game's own (format 2)
 bool SkinPngToDds(const std::vector<unsigned char>& png, std::vector<unsigned char>& dds);   //   a PNG as a DXT5 DDS, its mips
+void SkinRgbaToDds(const std::vector<unsigned char>& rgba, unsigned w, unsigned h, std::vector<unsigned char>& dds);   //   ... pixels
 bool SkinDecodePng(const std::vector<unsigned char>& png, std::vector<unsigned char>& rgba, unsigned* w, unsigned* h);   //   its pixels
 bool SkinBuildRgba(IDirect3DTexture9* game, const std::vector<double>& ops, const std::vector<unsigned char>& overlay,
                    std::vector<unsigned char>& rgba, unsigned* w, unsigned* h);   //   a skin's picture made here

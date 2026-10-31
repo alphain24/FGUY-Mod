@@ -10,6 +10,60 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+
+def dds_to_png(dds):
+    """A DDS's top level (DXT1 / DXT3 / DXT5, or 32-bit BGRA) as PNG bytes - without Pillow."""
+    import zlib
+    h, w = struct.unpack_from('<II', dds, 12)
+    four = dds[84:88]
+    px = bytearray(w * h * 4)
+    def c565(c):
+        return ((c >> 11) * 255 // 31, ((c >> 5) & 63) * 255 // 63, (c & 31) * 255 // 31)
+    if four in (b'DXT1', b'DXT3', b'DXT5'):
+        bs = 8 if four == b'DXT1' else 16
+        o = 128
+        for by in range(0, h, 4):
+            for bx in range(0, w, 4):
+                blk = dds[o:o + bs]
+                o += bs
+                cb = blk[bs - 8:]
+                a, b = struct.unpack_from('<HH', cb, 0)
+                ca, cbb = c565(a), c565(b)
+                if a > b or four != b'DXT1':
+                    cols = [ca, cbb, tuple((2 * x + y) // 3 for x, y in zip(ca, cbb)), tuple((x + 2 * y) // 3 for x, y in zip(ca, cbb))]
+                    alpha4 = 255
+                else:
+                    cols = [ca, cbb, tuple((x + y) // 2 for x, y in zip(ca, cbb)), (0, 0, 0)]
+                    alpha4 = 0
+                bits = struct.unpack_from('<I', cb, 4)[0]
+                alphas = [255] * 16
+                if four == b'DXT3':
+                    ab = int.from_bytes(blk[:8], 'little')
+                    alphas = [((ab >> (4 * i)) & 15) * 17 for i in range(16)]
+                elif four == b'DXT5':
+                    a0, a1 = blk[0], blk[1]
+                    t = [a0, a1] + ([((6 - i) * a0 + (i + 1) * a1) // 7 for i in range(6)] if a0 > a1 else
+                                    [((4 - i) * a0 + (i + 1) * a1) // 5 for i in range(4)] + [0, 255])
+                    ab = int.from_bytes(blk[2:8], 'little')
+                    alphas = [t[(ab >> (3 * i)) & 7] for i in range(16)]
+                for i in range(16):
+                    x, y = bx + i % 4, by + i // 4
+                    if x >= w or y >= h:
+                        continue
+                    k = (bits >> (2 * i)) & 3
+                    r, g, bl = cols[k]
+                    al = alphas[i] if four != b'DXT1' else (alpha4 if k == 3 else 255)
+                    p = (y * w + x) * 4
+                    px[p:p + 4] = bytes((r, g, bl, al))
+    else:   # 32-bit BGRA
+        for i in range(w * h):
+            b_, g_, r_, a_ = dds[128 + i * 4:132 + i * 4]
+            px[i * 4:i * 4 + 4] = bytes((r_, g_, b_, a_))
+    raw = b''.join(b'\0' + bytes(px[y * w * 4:(y + 1) * w * 4]) for y in range(h))
+    chunk = lambda t, d: struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0)) +
+            chunk(b'IDAT', zlib.compress(raw, 6)) + chunk(b'IEND', b''))
 import ho  # noqa: E402
 
 T_MODEL, T_SKIN, T_MAT, T_TEX, T_RAW = 0x5247BB31, 0x66EC031B, 0x189F55BF, 0x2952081F, 0xBDE21A8D
@@ -157,7 +211,7 @@ def main():
             continue
         vd, pos, nor, tc = vb.data(), [], [], []
         starts = vertex_starts(vd, n, g.data())
-        if len(starts) != n:
+        if len(starts) != n or (starts and starts[-1] + 24 > len(vd)):
             print('   (vertices not walked through - skipped)')
             continue
         for o in starts:
@@ -195,10 +249,14 @@ def main():
         mat = {'name': mats[0].name if mats else 'none', 'pbrMetallicRoughness': {'metallicFactor': 0, 'roughnessFactor': 1}}
         if dds:
             if tname not in tex_index:
-                from PIL import Image
-                png = io.BytesIO()
-                Image.open(io.BytesIO(dds)).save(png, 'PNG')
-                gl['images'].append({'bufferView': view(png.getvalue()), 'mimeType': 'image/png', 'name': tname})
+                try:
+                    from PIL import Image
+                    png = io.BytesIO()
+                    Image.open(io.BytesIO(dds)).save(png, 'PNG')
+                    png = png.getvalue()
+                except ImportError:   # (no Pillow here: our own - DXT1 / 3 / 5, 32-bit)
+                    png = dds_to_png(dds)
+                gl['images'].append({'bufferView': view(png), 'mimeType': 'image/png', 'name': tname})
                 gl['textures'].append({'source': len(gl['images']) - 1, 'sampler': 0})
                 tex_index[tname] = len(gl['textures']) - 1
             mat['pbrMetallicRoughness']['baseColorTexture'] = {'index': tex_index[tname]}
