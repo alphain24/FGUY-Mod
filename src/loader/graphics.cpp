@@ -31,6 +31,7 @@ namespace {
 
 volatile int g_sharp = 1, g_filter = 16, g_aa = 0, g_sharpen = 0, g_bright = 50;
 volatile int g_lines = 0;   // (the ink lines' width: 0 auto - as on the console at any resolution - or 100-300 %)
+volatile bool g_hdChars = true;   // (the characters' textures at twice their size - cosmetics.cpp)
 volatile bool g_statesDirty = false;   // (a filtering setting changed: every stage again, on the render thread)
 IDirect3DDevice9* g_dev = nullptr;
 UINT g_bbW = 0, g_bbH = 0;
@@ -853,8 +854,15 @@ void GraphicsLoadSettings() {
     g_bright = b < 0 ? 0 : b > 100 ? 100 : b;
     int l = SettingInt(L"Graphics", L"LineThickness", L"FGUYMOD_GFX_LINES", 0);
     g_lines = l <= 0 ? 0 : l < 100 ? 100 : l > 300 ? 300 : l;
-    Log(L"Graphics: sharp picture %s, texture filtering %d, anti-aliasing %s, sharpening %d, brightness %d, line thickness %d%s",
-        g_sharp ? L"on" : L"off", g_filter, g_aa ? L"FXAA" : L"off", g_sharpen, g_bright, g_lines, g_lines ? L"%" : L" (auto)");
+    g_hdChars = SettingInt(L"Graphics", L"HDCharacters", L"FGUYMOD_GFX_HD", 1) != 0;
+    Log(L"Graphics: sharp picture %s, texture filtering %d, anti-aliasing %s, sharpening %d, brightness %d, line thickness %d%s, "
+        L"HD character textures %s", g_sharp ? L"on" : L"off", g_filter, g_aa ? L"FXAA" : L"off", g_sharpen, g_bright, g_lines,
+        g_lines ? L"%" : L" (auto)", g_hdChars ? L"on" : L"off");
+}
+
+bool GraphicsHdCharacters() { return g_hdChars; }
+bool GraphicsDrawingInk() {   // (cosmetics.cpp: the ink strokes' shader is set - their own band texture, not for HD)
+    return g_curPs && std::find(g_inkPs.begin(), g_inkPs.end(), g_curPs) != g_inkPs.end();
 }
 
 // d3d9.cpp: the game's device (before the skins' hooks: theirs go through ours)
@@ -1005,6 +1013,7 @@ const char* GraphicsMenuRows(int page) {
         sprintf_s(v, "%d", (int)g_sharpen);
         row("Sharpening", v, 's', "Crisper lines and textures. 0: none");
         row("Line thickness", kLineNames[LinesIndex()], 'c', "The characters' outlines. Auto: as on the console at any resolution (the PC game's fade at 4K)");
+        row("HD character textures", g_hdChars ? "ON" : "OFF", 'c', "The characters' textures at twice their size, made on this PC: smoother lines up close");
     } else {
         row("Menu style", GraphicsMenuNew() ? "NEW" : "CLASSIC", 'c', "Classic: Options opens the game's own options (these settings are in it too)");
         row("More options", "AUDIO, CONTROLS, LANGUAGE", 'l', "The game's own options");
@@ -1031,6 +1040,7 @@ int GraphicsMenuChange(int page, int row, int delta) {
             g_lines = kLines[(LinesIndex() + dir + 6) % 6];
             Save(L"Graphics", L"LineThickness", g_lines);
         }
+        if (row == 5) { g_hdChars = !g_hdChars; Save(L"Graphics", L"HDCharacters", g_hdChars); }
     } else {
         if (row == 0) Save(L"Interface", L"MenuStyle", GraphicsMenuNew() ? 0 : 1);
         if (row == 1) return 2;

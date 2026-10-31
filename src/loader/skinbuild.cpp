@@ -317,6 +317,91 @@ Rgba Double(const Rgba& d, unsigned w, unsigned h) {
     return out;
 }
 
+// ---- HD: a texture at twice its size (the Graphics page's HD character textures) --------------------------------------
+// The game's character art is flat colours and ink lines, squeezed into 4x4 blocks of four colours each (DXT1): made
+// bigger as it is, the blocks show and the lines stair-step. So: first an edge-keeping smoothing (bilateral - the block
+// noise out, the lines' edges kept: neighbours only count as far as their colour is near), then twice the size with a
+// Lanczos filter (sharp, no blur of its own), then a little unsharp masking (the lines crisp again). Alpha: only the
+// Lanczos step. All on the CPU (a worker thread - cosmetics.cpp).
+Rgba Upscale2x(const Rgba& src, unsigned W, unsigned H) {
+    const int R = 2;
+    const double ss = 1.6, sr = 22;
+    std::vector<float> smooth((size_t)W * H * 3);
+    double wsp[2 * R + 1][2 * R + 1], wr[3 * 255 * 255 / 64 + 2];
+    for (int dy = -R; dy <= R; ++dy) for (int dx = -R; dx <= R; ++dx) wsp[dy + R][dx + R] = exp(-(dx * dx + dy * dy) / (2 * ss * ss));
+    for (size_t k = 0; k < sizeof(wr) / sizeof(wr[0]); ++k) wr[k] = exp(-(double)(k * 64) / (2 * sr * sr));   // (by colour distance^2 / 64)
+    for (unsigned y = 0; y < H; ++y)
+        for (unsigned x = 0; x < W; ++x) {
+            const unsigned char* c = &src[((size_t)y * W + x) * 4];
+            double a[3] = {0, 0, 0}, t = 0;
+            for (int dy = -R; dy <= R; ++dy) {
+                unsigned yy = (unsigned)min(max((int)y + dy, 0), (int)H - 1);
+                for (int dx = -R; dx <= R; ++dx) {
+                    unsigned xx = (unsigned)min(max((int)x + dx, 0), (int)W - 1);
+                    const unsigned char* q = &src[((size_t)yy * W + xx) * 4];
+                    int d = (q[0] - c[0]) * (q[0] - c[0]) + (q[1] - c[1]) * (q[1] - c[1]) + (q[2] - c[2]) * (q[2] - c[2]);
+                    double w = wsp[dy + R][dx + R] * wr[d / 64];
+                    a[0] += q[0] * w; a[1] += q[1] * w; a[2] += q[2] * w; t += w;
+                }
+            }
+            for (int k = 0; k < 3; ++k) smooth[((size_t)y * W + x) * 3 + k] = (float)(a[k] / t);
+        }
+    // Lanczos 3, twice the size: each new pixel at half-steps between the old ones; rows, then columns
+    auto lanczos = [](double x) {
+        x = fabs(x);
+        if (x < 1e-6) return 1.0;
+        if (x >= 3) return 0.0;
+        double p = 3.14159265358979 * x;
+        return 3 * sin(p) * sin(p / 3) / (p * p);
+    };
+    double tap[2][6];
+    int base[2];
+    for (int ph = 0; ph < 2; ++ph) {
+        double s = (ph + 0.5) / 2 - 0.5, t = 0;
+        base[ph] = (int)floor(s) - 2;
+        for (int k = 0; k < 6; ++k) t += tap[ph][k] = lanczos(s - (base[ph] + k));
+        for (int k = 0; k < 6; ++k) tap[ph][k] /= t;
+    }
+    const unsigned W2 = W * 2, H2 = H * 2;
+    std::vector<float> rows((size_t)W2 * H * 4), big((size_t)W2 * H2 * 4);
+    for (unsigned y = 0; y < H; ++y)
+        for (unsigned x2 = 0; x2 < W2; ++x2) {
+            int ph = x2 & 1, bx = (int)(x2 >> 1) + base[ph];
+            for (int c = 0; c < 4; ++c) {
+                double s = 0;
+                for (int k = 0; k < 6; ++k) {
+                    unsigned xx = (unsigned)min(max(bx + k, 0), (int)W - 1);
+                    s += (c < 3 ? smooth[((size_t)y * W + xx) * 3 + c] : src[((size_t)y * W + xx) * 4 + 3]) * tap[ph][k];
+                }
+                rows[((size_t)y * W2 + x2) * 4 + c] = (float)s;
+            }
+        }
+    for (unsigned y2 = 0; y2 < H2; ++y2) {
+        int ph = y2 & 1, by = (int)(y2 >> 1) + base[ph];
+        for (unsigned x = 0; x < W2; ++x)
+            for (int c = 0; c < 4; ++c) {
+                double s = 0;
+                for (int k = 0; k < 6; ++k) s += rows[((size_t)min(max(by + k, 0), (int)H - 1) * W2 + x) * 4 + c] * tap[ph][k];
+                big[((size_t)y2 * W2 + x) * 4 + c] = (float)s;
+            }
+    }
+    Rgba out((size_t)W2 * H2 * 4);   // (unsharp: + 0.6 x (it - its 3x3 average); not alpha)
+    for (unsigned y = 0; y < H2; ++y)
+        for (unsigned x = 0; x < W2; ++x)
+            for (int c = 0; c < 4; ++c) {
+                double v = big[((size_t)y * W2 + x) * 4 + c];
+                if (c < 3) {
+                    double s = 0;
+                    for (int dy = -1; dy <= 1; ++dy)
+                        for (int dx = -1; dx <= 1; ++dx)
+                            s += big[((size_t)min(max((int)y + dy, 0), (int)H2 - 1) * W2 + min(max((int)x + dx, 0), (int)W2 - 1)) * 4 + c];
+                    v += (v - s / 9) * 0.6;
+                }
+                out[((size_t)y * W2 + x) * 4 + c] = Byte(v);
+            }
+    return out;
+}
+
 // The overlay on the pixels (w x h). The Studio keeps a texture at twice or four times the game's size (up to 2048) when
 // a picture that big is put on it - the skin's texture is made that big then (sharper than the game's own); for a
 // picture of the game's size it's laid on it made small again. Any other size: left out.
@@ -413,9 +498,28 @@ bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, c
     D3DFORMAT fmt = D3DFMT_UNKNOWN;
     if (!game || !ReadTexture(game, px, &w, &h, &fmt, &mips)) return false;
     for (size_t i = 0; i + 7 <= ops.size(); i += 7) Recolor(px, &ops[i], &ops[i + 3], ops[i + 6]);
+    unsigned w0 = w;
     if (!overlay.empty()) LayOverlay(px, &w, &h, &mips, overlay, true);
+    if (w == w0 && GraphicsHdCharacters() && w * 2 <= 2048 && h * 2 <= 2048 && w >= 64 && h >= 64) {   // (HD: bigger too)
+        px = Upscale2x(px, w, h);
+        w *= 2; h *= 2;
+        if (mips > 1) ++mips;
+    }
     dds = EncodeDds(px, w, h, fmt == D3DFMT_DXT3 ? D3DFMT_DXT5 : fmt, mips);
     return true;
+}
+
+// cosmetics.cpp (HD character textures): the game's texture as RGBA - on the render thread (it's locked)
+bool SkinReadTexture(IDirect3DTexture9* game, std::vector<unsigned char>& rgba, unsigned* w, unsigned* h, D3DFORMAT* fmt,
+                     unsigned* mips) {
+    D3DSURFACE_DESC d{};
+    if (!game || FAILED(game->GetLevelDesc(0, &d)) || d.Pool != D3DPOOL_MANAGED) return false;
+    return ReadTexture(game, rgba, w, h, fmt, mips);
+}
+// ... then twice its size, as a DDS of its format with a level more - any thread
+void SkinUpscaleDds(const std::vector<unsigned char>& rgba, unsigned w, unsigned h, D3DFORMAT fmt, unsigned mips,
+                    std::vector<unsigned char>& dds) {
+    dds = EncodeDds(Upscale2x(rgba, w, h), w * 2, h * 2, fmt == D3DFMT_DXT3 ? D3DFMT_DXT5 : fmt, mips > 1 ? mips + 1 : 1);
 }
 
 // cosmetics.cpp: a skin's picture made here - the game's texture's pixels (RGBA) with the recolors and the overlay on

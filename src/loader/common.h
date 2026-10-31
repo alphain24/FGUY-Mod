@@ -166,6 +166,13 @@ bool SkinPngToDds(const std::vector<unsigned char>& png, std::vector<unsigned ch
 bool SkinDecodePng(const std::vector<unsigned char>& png, std::vector<unsigned char>& rgba, unsigned* w, unsigned* h);   //   its pixels
 bool SkinBuildRgba(IDirect3DTexture9* game, const std::vector<double>& ops, const std::vector<unsigned char>& overlay,
                    std::vector<unsigned char>& rgba, unsigned* w, unsigned* h);   //   a skin's picture made here
+enum _D3DFORMAT;
+bool SkinReadTexture(IDirect3DTexture9* game, std::vector<unsigned char>& rgba, unsigned* w, unsigned* h, _D3DFORMAT* fmt,
+                     unsigned* mips);   //   HD character textures: the game's (managed) texture as RGBA, render thread
+void SkinUpscaleDds(const std::vector<unsigned char>& rgba, unsigned w, unsigned h, _D3DFORMAT fmt, unsigned mips,
+                    std::vector<unsigned char>& dds);   //   ... twice its size, as a DDS (any thread)
+bool GraphicsHdCharacters();   // graphics.cpp: Graphics > HD character textures
+bool GraphicsDrawingInk();     //   the ink strokes' shader is the one set
 // icons.cpp: skin icons in the menus
 std::string IconsAdd(const std::vector<unsigned char>& png);   // the movie a menu loads to show it ("fguyicon_<key>.gfx"; "": not a PNG)
 const std::vector<unsigned char>* IconsMovie(const char* url);  //   ui.cpp: the movie for a file the game opens (nullptr: not one)
