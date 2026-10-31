@@ -29,6 +29,11 @@ Reconstructed from a reference picture with the img2threejs skill, then skinned 
    triangles of his deep inside the boots and the crown listed to hide; Skins tab - four recolours (shirt, jeans,
    buckle), the belt and the glasses' lenses painted as our own pixels, the model added; both saved.
 
+His shirt showed through the vest at the back and shoulders (the vest sat up to 0.1 inside him there) and his hip
+through the sheath: the Studio now moves a worn-over model out of the character wherever he's drawn
+(`docs/models.md`, "Nothing of the character showing through"). `clash_check.js` (run in the Studio's page like
+`studio_build.js`) measures it - per part of the outfit, how many vertices are inside him and how deep.
+
 The boots end below his knee (at 0.29; the knee is at 0.32): over the knee his trousers bulged out of them whenever it
 bent. They cover his legs without touching each other (inner edges at x 0.0003).
 

@@ -98,6 +98,14 @@ body never pokes through as both move. (*The character › hidden* shows what's 
 A triangle is hidden when two of its corners are inside a solid part — inside on every axis, at least 0.004 units from
 its surface, and the part at least 0.12 units thick there. Thin shells like a vest hide nothing.
 
+### Nothing of the character showing through
+
+Thin shells hide nothing, so the Studio makes sure they sit **outside** the character instead: wherever your model is
+inside the character's drawn surface, or closer than 0.008 units to it, it's moved out along the character's normal to
+0.008 off it (three rounds, up to 0.15 units — a part meant to be deep inside stays). The model's vertices nearby go
+with it (fully within 0.03, fading out by 0.06), so a shell keeps its thickness and a button stays on its pocket.
+Where the character is hidden under a solid part, nothing needs to move.
+
 ---
 
 ## How the game draws it

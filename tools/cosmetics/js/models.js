@@ -346,6 +346,73 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     }
   }
 
+  // ---- worn over the character: none of the character showing through it ------------------------------------------
+  // Where the model's surface is inside the character, or nearer than CLEAR, and that bit of the character is drawn (not
+  // among the triangles left out under the model: a leg inside a boot, the head inside a hat's crown), it goes out
+  // along the character's normal there to CLEAR off it - a vest whose back and shoulders sat inside Peter's showed his
+  // shirt through it. The model's vertices within CARRY of one moved go with it (all the way to half of it, then less, to
+  // none at CARRY): a shell keeps its thickness, a button or a pocket stays on it. Moves of more than PUSH are left (a part meant to be
+  // inside). The character's triangles in a grid, as charGrid does its vertices.
+  function pushOut(m) {
+    const CLEAR = 0.008, CARRY = 0.06, PUSH = 0.15, cell = 0.05;
+    const hidden = new Map(hiddenUnder(m).map(h => [h.piece, new Set(h.ranges.flatMap(([s, n]) => Array.from({length: n}, (_, k) => s + k)))]));
+    const grid = new Map(), key = (x, y, z) => x + ',' + y + ',' + z;
+    for (const p of ed.pieces) {
+      const P = p.position, N = p.normal, I = p.index, gone = hidden.get(p);
+      for (let t = 0; t < I.length / 3; t++) {
+        if (gone?.has(t)) continue;
+        const c = [I[t * 3], I[t * 3 + 1], I[t * 3 + 2]];
+        const tri = {tri: new THREE.Triangle(...c.map(i => new THREE.Vector3().fromArray(P, i * 3))),
+          n: c.map(i => new THREE.Vector3().fromArray(N, i * 3))};
+        const box = new THREE.Box3().setFromPoints([tri.tri.a, tri.tri.b, tri.tri.c]);
+        for (let x = Math.floor(box.min.x / cell); x <= Math.floor(box.max.x / cell); x++)
+          for (let y = Math.floor(box.min.y / cell); y <= Math.floor(box.max.y / cell); y++)
+            for (let z = Math.floor(box.min.z / cell); z <= Math.floor(box.max.z / cell); z++) {
+              const k = key(x, y, z);
+              if (!grid.has(k)) grid.set(k, []);
+              grid.get(k).push(tri);
+            }
+      }
+    }
+    const q = new THREE.Vector3(), bary = new THREE.Vector3();
+    const outOf = p => {   // (how far out of the character: from its nearest drawn point, along its normal there)
+      let best = null, bd = Infinity;
+      const cx = Math.floor(p.x / cell), cy = Math.floor(p.y / cell), cz = Math.floor(p.z / cell);
+      for (let r = 1; r <= 3 && !best; r++)
+        for (let x = cx - r; x <= cx + r; x++) for (let y = cy - r; y <= cy + r; y++) for (let z = cz - r; z <= cz + r; z++)
+          for (const t of grid.get(key(x, y, z)) || []) {
+            t.tri.closestPointToPoint(p, q);
+            const d = q.distanceToSquared(p);
+            if (d < bd) { bd = d; best = {t, at: q.clone()}; }
+          }
+      if (!best) return null;
+      best.t.tri.getBarycoord(best.at, bary);
+      const n = best.t.n[0].clone().multiplyScalar(bary.x).add(best.t.n[1].clone().multiplyScalar(bary.y))
+        .add(best.t.n[2].clone().multiplyScalar(bary.z)).normalize();
+      return {d: p.clone().sub(best.at).dot(n), n};
+    };
+    let moved = 0;
+    for (let pass = 0; pass < 3; pass++) {   // (again: neighbours moved along slightly different normals)
+      const pushes = [];
+      for (const v of m.verts) {
+        const o = outOf(v.pos);
+        if (o && o.d < CLEAR && CLEAR - o.d <= PUSH) pushes.push({at: v.pos.clone(), by: o.n.multiplyScalar(CLEAR - o.d)});
+      }
+      if (!pushes.length) break;
+      for (const v of m.verts) {   // (each vertex: the biggest of the moves near it, fading with distance)
+        let best = null, size = 0;
+        for (const p of pushes) {
+          const d = p.at.distanceTo(v.pos);
+          if (d >= CARRY) continue;
+          const s = p.by.length() * (d < CARRY / 2 ? 1 : 2 - 2 * d / CARRY);
+          if (s > size) { size = s; best = p.by.clone().setLength(s); }
+        }
+        if (best) { v.pos.add(best); moved++; }
+      }
+    }
+    return moved;
+  }
+
   // the model as the game will have it: parts with vertices (character space, bones) and their textures
   function prepare() {
     const P = placer(), rigged = ed.src.parts.every(p => p.boneOf);
@@ -410,6 +477,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
       }
       parts.push({first, count: idx.length - first, tex});
     }
+    if ($('modelOver').checked) pushOut({verts, idx, parts});
     if (G && $('modelOver').checked) ride(verts, pieces);
     // (the palette: a color an 8 x 8 cell, 32 a row - the game's 4 x 4 compressed blocks and smaller mip levels keep it)
     if (palette.length > 1024) throw new Error('too many colors (' + palette.length + ') - 1,024 at most without a texture');
