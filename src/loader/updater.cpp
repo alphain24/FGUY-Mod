@@ -5,6 +5,11 @@
 // player's settings). The running dinput8.dll can't be overwritten, but it can be renamed: dinput8.dll.old (deleted at
 // the next start), the new one in its place - the next start runs the new version.
 // Test knob: FGUYMOD_UPDATE_URL=<url of a releases/latest JSON> (e.g. a local test server, http allowed).
+//
+// The mod's lobby server: the same check reads server.txt in the repo (its one address:port line), so the server can
+// move without a release - kept in FGUYMod\lobby_server.txt for when GitHub can't be reached (some providers block
+// raw.githubusercontent.com). online.cpp uses it unless the player named a server of their own.
+// Test knob: FGUYMOD_SERVER_URL=<url of a server.txt>.
 
 #include "common.h"
 
@@ -127,9 +132,79 @@ std::wstring LatestUrl() {
     return L"https://api.github.com/repos/" + std::wstring(repo) + L"/releases/latest";
 }
 
-DWORD WINAPI CheckThread(LPVOID) {
+std::string g_lobbyServer;   // the mod's lobby server as server.txt names it ("": not known - online.cpp's own)
+
+std::wstring LobbyServerFile() { return std::wstring(g_gameDir) + L"\\FGUYMod\\lobby_server.txt"; }
+
+std::wstring ServerUrl() {
+    wchar_t env[512];
+    if (GetEnvironmentVariableW(L"FGUYMOD_SERVER_URL", env, 512)) return env;
+    wchar_t repo[200];
+    SettingString(L"Update", L"Repo", nullptr, L"alphain24/FGUY-Mod", repo, 200);
+    if (!repo[0]) return L"";
+    return L"https://raw.githubusercontent.com/" + std::wstring(repo) + L"/HEAD/server.txt";
+}
+
+// server.txt's address: its first line that isn't empty or a # comment, if it's an address:port ("" if not).
+std::string ServerLine(const std::string& text) {
+    size_t at = 0;
+    while (at < text.size()) {
+        size_t end = text.find('\n', at);
+        if (end == std::string::npos) end = text.size();
+        std::string line = text.substr(at, end - at);
+        at = end + 1;
+        while (!line.empty() && isspace((unsigned char)line.back())) line.pop_back();
+        size_t from = 0;
+        while (from < line.size() && isspace((unsigned char)line[from])) ++from;
+        line = line.substr(from);
+        if (line.size() >= 3 && (unsigned char)line[0] == 0xEF) line = line.substr(3);   // (a UTF-8 byte-order mark)
+        if (line.empty() || line[0] == '#') continue;
+        size_t colon = line.rfind(':');
+        bool ok = line.size() <= 100 && colon != 0 && line.find_first_not_of(
+                      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:") == std::string::npos;
+        if (ok && colon != std::string::npos) {
+            int port = atoi(line.c_str() + colon + 1);
+            ok = colon + 1 < line.size() && line.find(':') == colon && port > 0 && port < 65536;
+        }
+        return ok ? line : "";
+    }
+    return "";
+}
+
+void CheckServer() {
+    std::wstring url = ServerUrl();
+    if (url.empty()) return;
     std::vector<unsigned char> body;
     std::string error;
+    if (!Get(url, body, &error)) {
+        Log(L"Online: couldn't read the lobby server's address from GitHub (%S) - the last one known", error.c_str());
+        return;
+    }
+    std::string line = ServerLine(std::string(body.begin(), body.end()));
+    if (line.empty()) {
+        Log(L"Online: server.txt has no address:port line - the last one known");
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_lock);
+    if (line == g_lobbyServer) return;
+    Log(L"Online: the mod's lobby server is %S (server.txt)", line.c_str());
+    g_lobbyServer = line;
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, LobbyServerFile().c_str(), L"wb") == 0 && f) {
+        fputs((line + "\n").c_str(), f);
+        fclose(f);
+    }
+}
+
+DWORD WINAPI CheckThread(LPVOID) {
+    CheckServer();   // (first: the ONLINE screen may want it soon)
+    std::vector<unsigned char> body;
+    std::string error;
+    if (LatestUrl().empty()) {
+        g_busy = false;
+        Set("off");
+        return 0;
+    }
     if (!Get(LatestUrl(), body, &error)) {
         Log(L"Update: the check failed - %S", error.c_str());
         Set("failed", "Couldn't check for updates (" + error + ")");
@@ -300,12 +375,25 @@ DWORD WINAPI InstallThread(LPVOID) {
 void InitUpdater() {
     std::wstring old = std::wstring(g_gameDir) + L"\\dinput8.dll.old";
     DeleteFileW(old.c_str());
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, LobbyServerFile().c_str(), L"rb") == 0 && f) {   // (the address server.txt named last time)
+        char buf[256] = {};
+        fread(buf, 1, sizeof(buf) - 1, f);
+        fclose(f);
+        g_lobbyServer = ServerLine(buf);
+    }
     wchar_t v[8];
     bool session = GetEnvironmentVariableW(L"FGUYMOD_SESSION", v, 8) || GetEnvironmentVariableW(L"FGUYMOD_HANDOFF", v, 8);
-    if (session || IsBot() || LatestUrl().empty()) return;
+    if (session || IsBot() || (LatestUrl().empty() && ServerUrl().empty())) return;
     g_busy = true;
-    Set("checking");
+    if (!LatestUrl().empty()) Set("checking");
     if (HANDLE t = CreateThread(nullptr, 0, CheckThread, nullptr, 0, nullptr)) CloseHandle(t);
+}
+
+// online.cpp: the mod's lobby server as the repo's server.txt names it (or named last time), "" if never known.
+std::string LobbyServerFromRepo() {
+    std::lock_guard<std::mutex> lock(g_lock);
+    return g_lobbyServer;
 }
 
 // FGUYMOD_UpdateState: "<state>|<latest version>|<message>"  (state: off checking current available downloading ready

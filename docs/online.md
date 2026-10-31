@@ -82,8 +82,10 @@ sequenceDiagram
 
 ## The lobby server
 
-Players connect to a lobby server (`FGUYMod\FGUYMod.ini` › `[Online]` › `Server=host:port`). It only puts players
-together and helps their games reach each other; the match itself runs between the players' PCs.
+Players connect to a lobby server. It only puts players together and helps their games reach each other; the match
+itself runs between the players' PCs. By default that's the mod's own server, whose address the mod reads from
+[`server.txt`](../server.txt) in this repository when the game starts, so the server can move without an update.
+`FGUYMod\FGUYMod.ini` › `[Online]` › `Server=host:port` picks another one.
 
 You can run your own — for testing, or for your community. It's one Python file with no dependencies:
 

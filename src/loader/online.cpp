@@ -17,7 +17,8 @@
 // The menu asks for everything with FGUYMOD_LobbyState() (one text blob, see LobbyState below) a few
 // times per second and acts with FGUYMOD_LobbyDo(command, args...).
 //
-// Settings ([Online] in FGUYMod.ini): Server=host:port (default port 7650; default server: the mod's, 91.226.56.14),
+// Settings ([Online] in FGUYMod.ini): Server=host:port (default port 7650; empty: the mod's - the address in the repo's
+// server.txt, read at start by updater.cpp, so the server can move without a release),
 // Name=<your name>.
 
 #include "common.h"
@@ -79,6 +80,9 @@ HANDLE g_thread = nullptr;
 volatile bool g_wantConnection = false;
 std::string g_serverHost;
 int g_serverPort = 7650;
+std::string g_serverSetting;        // FGUYMod.ini's [Online] Server
+bool g_modServer = true;            //   empty or one of the mod's own: the mod's server, wherever server.txt says
+const char* kServer = "91.226.56.14:7650";   // the mod's lobby server if GitHub was never reachable
 std::string g_name;
 std::string g_saveB64;              // the host's save, received before START
 std::string g_rejoin;               // "<code> <token> <slot>": the lobby to go back to after a match
@@ -341,11 +345,21 @@ void HandleLine(const std::string& line) {
     }
 }
 
+// The lobby server to connect to: the player's own, or the mod's (the repo's server.txt - updater.cpp - or kServer).
+void PickServer() {
+    std::string s = g_modServer ? LobbyServerFromRepo() : g_serverSetting;
+    if (s.empty()) s = kServer;
+    size_t colon = s.rfind(':');
+    g_serverHost = colon == std::string::npos ? s : s.substr(0, colon);
+    g_serverPort = colon == std::string::npos ? 7650 : atoi(s.c_str() + colon + 1);
+}
+
 DWORD WINAPI LobbyThread(LPVOID) {
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
     while (g_wantConnection) {
         SetStatus(State::Connecting, "");
+        PickServer();   // (each try: the repo's address may have come in meanwhile)
         addrinfo hints{}, *res = nullptr;
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
@@ -753,23 +767,18 @@ void OnlineEnter() {
     OnlineMenuOpen(true);
     if (g_wantConnection) return;
     wchar_t server[256], name[64];
-    const wchar_t* kServer = L"91.226.56.14:7650";   // (the mod's lobby server)
-    SettingString(L"Online", L"Server", L"FGUYMOD_ONLINE_SERVER", kServer, server, 256);
-    // (an update leaves FGUYMod.ini as it is - a player's still names the mod's servers before this one: this one)
-    for (const wchar_t* old : {L"145.79.134.160", L"87.76.191.217"})
-        if (wcsstr(server, old) == server) {
-            Log(L"Online: FGUYMod.ini names the mod's old server (%s) - the new one, %s", server, kServer);
-            wcscpy_s(server, kServer);
-        }
+    SettingString(L"Online", L"Server", L"FGUYMOD_ONLINE_SERVER", L"", server, 256);
+    // (FGUYMod.ini named the mod's server itself up to 0.9.4, and an update leaves it as it is: one of those is the
+    // mod's server too, wherever it is now)
+    g_serverSetting = Narrow(server);
+    g_modServer = g_serverSetting.empty();
+    for (const char* mod : {"91.226.56.14", "145.79.134.160", "87.76.191.217"})
+        if (g_serverSetting.rfind(mod, 0) == 0) g_modServer = true;
     DWORD len = 64;
     wchar_t user[64] = L"Player";
     GetUserNameW(user, &len);
     SettingString(L"Online", L"Name", L"FGUYMOD_ONLINE_NAME", user, name, 64);
     if (!name[0]) wcscpy_s(name, user);
-    std::string s = Narrow(server);
-    size_t colon = s.rfind(':');
-    g_serverHost = colon == std::string::npos ? s : s.substr(0, colon);
-    g_serverPort = colon == std::string::npos ? 7650 : atoi(s.c_str() + colon + 1);
     g_name = CleanName(Narrow(name));
     // keyboard and mouse or controller online: [Online] Controls = auto | keyboard | controller
     // (auto: a controller if one is plugged in)

@@ -1,0 +1,4 @@
+# The mod's lobby server (address:port). Every player's game reads this when it starts, so moving the server needs
+# no new release: change the line below. Games started after the change use the new address (GitHub can take a few
+# minutes to serve the new version). Lines starting with # are notes.
+91.226.56.14:7650

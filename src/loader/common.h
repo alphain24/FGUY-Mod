@@ -262,6 +262,7 @@ bool NetplayInputOf(int slot, WORD* buttons, BYTE* lt, BYTE* rt, SHORT* sticks, 
 const char* ModVersion();              // online.cpp: the mod's version
 void InitUpdater();                    // updater.cpp: the player's own game checks for a newer release
 const char* UpdateState();             //   FGUYMOD_UpdateState
+std::string LobbyServerFromRepo();     //   the mod's lobby server as the repo's server.txt names it ("" if never known)
 void UpdateInstall();                  //   FGUYMOD_UpdateInstall
 int SplitViewHudViewport(int viewport);
 int SplitViewHudZoomViewport();        //   online: the HUD quarter to show full screen (-1: none)

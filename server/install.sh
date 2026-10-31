@@ -47,4 +47,5 @@ echo
 echo "Done. The lobby server runs on port $PORT (TCP + UDP) and starts by itself after a reboot."
 echo "If your VPS provider has its own firewall in their website's control panel, allow port $PORT"
 echo "for both TCP and UDP there too."
-echo "Players set this in FGUYMod\\FGUYMod.ini:   [Online]  Server=$(hostname -I | awk '{print $1}'):$PORT"
+echo "The mod's own server: put its public address and port in server.txt in the mod's GitHub repository."
+echo "Your own server: players set this in FGUYMod\\FGUYMod.ini:   [Online]  Server=<its address>:$PORT"

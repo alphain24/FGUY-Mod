@@ -42,7 +42,12 @@ python server\test_lobby.py        # self-test on a spare port
 
 ## Point the game at a server
 
-`FGUYMod\FGUYMod.ini`:
+**The mod's own server:** its address is in [`server.txt`](../server.txt) at the top of the repository. Every
+player's game reads it when it starts (and remembers it, for when GitHub can't be reached). To move the server,
+install it on the new one, then change that line on GitHub. Games started after that connect to the new address; no
+release needed. Keep the old server running for a day or so, for players whose game was already open.
+
+**Your own server**, in `FGUYMod\FGUYMod.ini`:
 
 ```
 [Online]
