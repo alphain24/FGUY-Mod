@@ -456,6 +456,15 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, 
         if (path[0]) SaveShot(self, path);
     }
     HRESULT hr = Real_Present(self, src, dst, wnd, dirty);
+    {   // (a long frame - a stall - in the log; loading screens make some too)
+        static LARGE_INTEGER prev{};
+        static int told = 0;
+        LARGE_INTEGER t;
+        QueryPerformanceCounter(&t);
+        double ms = prev.QuadPart ? (t.QuadPart - prev.QuadPart) * 1000.0 / g_freq.QuadPart : 0;
+        if (ms > 150 && told < 60) { ++told; Log(L"Slow: a frame took %.0f ms", ms); }
+        prev = t;
+    }
     if (g_quitRequested) {
         // Exiting from the render thread between frames lets Direct3D and the driver clean up in this
         // process. Killing the process instead can leave the driver unable to create D3D9 devices for a

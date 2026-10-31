@@ -11,6 +11,20 @@ extern wchar_t g_gameDir[MAX_PATH];  // folder containing FGUY.exe
 extern wchar_t g_modDir[MAX_PATH];   // <game>\FGUYMod
 
 void Log(const wchar_t* fmt, ...);
+// (in a block: how long it took, in the log when it's over `ms` - a stall's cause, in players' logs too)
+struct SlowLog {
+    const wchar_t* what;
+    double ms;
+    LARGE_INTEGER t0;
+    explicit SlowLog(const wchar_t* w, double limit = 20) : what(w), ms(limit) { QueryPerformanceCounter(&t0); }
+    ~SlowLog() {
+        LARGE_INTEGER t1, f;
+        QueryPerformanceCounter(&t1);
+        QueryPerformanceFrequency(&f);
+        double took = (t1.QuadPart - t0.QuadPart) * 1000.0 / f.QuadPart;
+        if (took > ms) Log(L"Slow: %s took %.0f ms (thread %lu)", what, took, GetCurrentThreadId());
+    }
+};
 void OpenLog();
 
 bool FileExists(const wchar_t* path);
@@ -169,6 +183,9 @@ bool SkinBuildRgba(IDirect3DTexture9* game, const std::vector<double>& ops, cons
 enum _D3DFORMAT;
 bool SkinReadTexture(IDirect3DTexture9* game, std::vector<unsigned char>& rgba, unsigned* w, unsigned* h, _D3DFORMAT* fmt,
                      unsigned* mips);   //   HD character textures: the game's (managed) texture as RGBA, render thread
+void SkinBuildFrom(std::vector<unsigned char> px, unsigned w, unsigned h, _D3DFORMAT fmt, unsigned mips,
+                   const std::vector<double>& ops, const std::vector<unsigned char>& overlay,
+                   std::vector<unsigned char>& dds);   //   a skin's texture from the game's pixels (any thread)
 void SkinUpscaleDds(const std::vector<unsigned char>& rgba, unsigned w, unsigned h, _D3DFORMAT fmt, unsigned mips,
                     std::vector<unsigned char>& dds);   //   ... twice its size, as a DDS (any thread)
 bool GraphicsHdCharacters();   // graphics.cpp: Graphics > HD character textures

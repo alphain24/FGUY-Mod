@@ -169,6 +169,7 @@ const std::vector<unsigned char>* IconsMovie(const char* name) {
     std::lock_guard<std::mutex> l(g_lock);
     auto made = g_movie.find(key);
     if (made != g_movie.end()) return &made->second;
+    SlowLog slow(L"a skin icon's movie made");
     std::vector<unsigned char> rgba;
     unsigned w = 0, h = 0;
     auto px = g_pixels.find(key);

@@ -9,6 +9,8 @@
 #include <intrin.h>
 #include <algorithm>
 #include <condition_variable>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -329,11 +331,63 @@ struct Hd {
     unsigned w = 0, h = 0, mips = 0;
     D3DFORMAT fmt = D3DFMT_UNKNOWN;
 };
-std::vector<Hd*> g_hd;   // (the render thread's; the worker only fills an entry's dds while it's being made)
-std::mutex g_hdLock;
-std::condition_variable g_hdWake;
-std::vector<Hd*> g_hdJobs, g_hdDone;
-bool g_hdStarted = false;
+std::vector<Hd*> g_hd;   // (the render thread's; a worker only fills an entry's dds while it's being made)
+
+// ---- the slow work off the render thread (skins' textures, HD ones): two worker threads; each job's work there, then
+// its finish (making the texture - Direct3D) on the render thread, at the next frame (JobsFrame)
+struct Job { std::function<void()> work; std::function<void(IDirect3DDevice9*)> done; };
+std::mutex g_jobLock;
+std::condition_variable g_jobWake;
+std::vector<Job> g_jobs;
+std::vector<std::function<void(IDirect3DDevice9*)>> g_jobsDone;
+bool g_workersStarted = false;
+void Worker() {
+    for (;;) {
+        Job j;
+        {
+            std::unique_lock<std::mutex> l(g_jobLock);
+            g_jobWake.wait(l, [] { return !g_jobs.empty(); });
+            j = std::move(g_jobs.front());
+            g_jobs.erase(g_jobs.begin());
+        }
+        j.work();
+        std::lock_guard<std::mutex> l(g_jobLock);
+        g_jobsDone.push_back(std::move(j.done));
+    }
+}
+void InBackground(std::function<void()> work, std::function<void(IDirect3DDevice9*)> done) {
+    if (!g_workersStarted) {
+        g_workersStarted = true;
+        std::thread(Worker).detach();
+        std::thread(Worker).detach();
+    }
+    std::lock_guard<std::mutex> l(g_jobLock);
+    g_jobs.push_back({std::move(work), std::move(done)});
+    g_jobWake.notify_one();
+}
+void JobsFrame(IDirect3DDevice9* dev) {
+    std::vector<std::function<void(IDirect3DDevice9*)>> done;
+    {
+        std::lock_guard<std::mutex> l(g_jobLock);
+        done.swap(g_jobsDone);
+    }
+    for (auto& f : done) f(dev);
+}
+
+// A skin's texture, made once (a worker) and shared: every player wearing that skin - the same recipe on the same
+// game texture - gets the one texture (each holding it). Kept while anyone holds it.
+struct Built { std::string key; IDirect3DTexture9* tex = nullptr; bool making = true; std::vector<unsigned char> dds; };
+std::vector<std::shared_ptr<Built>> g_built;
+bool g_builtNew = false;   // (one finished: the skins look again at once)
+std::string BuiltKey(const SkinTex& t) {
+    unsigned hash = 2166136261u;
+    auto mix = [&](const void* p, size_t n) { for (size_t i = 0; i < n; ++i) hash = (hash ^ static_cast<const unsigned char*>(p)[i]) * 16777619u; };
+    mix(t.ops.data(), t.ops.size() * sizeof(double));
+    mix(t.overlay.data(), t.overlay.size());
+    char k[64];
+    sprintf_s(k, "%x:%x:%08x:%d", t.lo, t.hi, hash, GraphicsHdCharacters() ? 1 : 0);
+    return k;
+}
 
 // (only the game's own art: managed - never a render target or anything of the device's own, which held here would
 //  keep the device from being reset - DXT or 32-bit, 64 to 1024 across. Others are only remembered, not held: one let
@@ -357,37 +411,9 @@ Hd* HdFor(IDirect3DBaseTexture9* tex) {
     return h;
 }
 
-void HdWorker() {
-    for (;;) {
-        Hd* h;
-        {
-            std::unique_lock<std::mutex> l(g_hdLock);
-            g_hdWake.wait(l, [] { return !g_hdJobs.empty(); });
-            h = g_hdJobs.front();
-            g_hdJobs.erase(g_hdJobs.begin());
-        }
-        SkinUpscaleDds(h->rgba, h->w, h->h, h->fmt, h->mips, h->dds);
-        h->rgba.clear();
-        h->rgba.shrink_to_fit();
-        std::lock_guard<std::mutex> l(g_hdLock);
-        g_hdDone.push_back(h);
-    }
-}
-
 void HdFrame(IDirect3DDevice9* dev) {
-    std::vector<Hd*> done;
-    {
-        std::lock_guard<std::mutex> l(g_hdLock);
-        done.swap(g_hdDone);
-    }
-    for (Hd* h : done) {   // (made: ours from its DDS)
-        h->mine = CosmeticsTextureFromDds(dev, h->dds);
-        h->dds.clear();
-        h->dds.shrink_to_fit();
-        h->state = h->mine ? 2 : 3;
-        if (h->mine) Log(L"Graphics: an HD character texture made (%ux%u format %08x -> %ux%u)", h->w, h->h, (unsigned)h->fmt, h->w * 2, h->h * 2);
-    }
-    for (Hd* h : g_hd) {   // (one a frame read, for the worker)
+    (void)dev;
+    for (Hd* h : g_hd) {   // (one a frame read, for a worker)
         if (h->state != 0) continue;
         auto* t = static_cast<IDirect3DTexture9*>(h->game);
         h->state = 3;
@@ -396,10 +422,17 @@ void HdFrame(IDirect3DDevice9* dev) {
         for (size_t i = 3; i < h->rgba.size() && opaque; i += 4) opaque = h->rgba[i] >= 250;
         if (!opaque || h->w < 64 || h->h < 64 || h->w * 2 > 2048 || h->h * 2 > 2048) { h->rgba.clear(); break; }
         h->state = 1;
-        if (!g_hdStarted) { g_hdStarted = true; std::thread(HdWorker).detach(); }
-        std::lock_guard<std::mutex> l(g_hdLock);
-        g_hdJobs.push_back(h);
-        g_hdWake.notify_one();
+        InBackground([h] {
+            SkinUpscaleDds(h->rgba, h->w, h->h, h->fmt, h->mips, h->dds);
+            h->rgba.clear();
+            h->rgba.shrink_to_fit();
+        }, [h](IDirect3DDevice9* d) {   // (made: ours from its DDS)
+            h->mine = CosmeticsTextureFromDds(d, h->dds);
+            h->dds.clear();
+            h->dds.shrink_to_fit();
+            h->state = h->mine ? 2 : 3;
+            if (h->mine) Log(L"Graphics: an HD character texture made (%ux%u -> %ux%u)", h->w, h->h, h->w * 2, h->h * 2);
+        });
         break;
     }
     static ULONGLONG lastSweep = 0;   // (the game's let go of: ours too)
@@ -418,6 +451,17 @@ void HdFrame(IDirect3DDevice9* dev) {
             if (h->state == 1) h->game->Release();
             ++i;
         }
+    }
+}
+
+void BuiltSweep() {   // (skins' textures no one wears any more: let go)
+    for (size_t i = 0; i < g_built.size();) {
+        auto& b = g_built[i];
+        if (!b->making && b->tex) {
+            b->tex->AddRef();
+            if (b->tex->Release() == 1) { b->tex->Release(); g_built.erase(g_built.begin() + i); continue; }
+        }
+        ++i;
     }
 }
 
@@ -862,6 +906,7 @@ void ScanPacks() {
     ULONGLONG now = GetTickCount64();
     if (g_packsAt && now - g_packsAt < 3000) return;
     g_packsAt = now;
+    SlowLog slow(L"the skin packs looked through");
     std::vector<PackEntry> out;
     for (const auto& folder : ModsContentFolders(L"skins")) {   // (the Cosmetics mod's skins, then FGUYMod\skins)
         WIN32_FIND_DATAW fd;
@@ -1179,7 +1224,10 @@ void CosmeticsTest(bool fill, unsigned lo, unsigned hi, unsigned rgb) {
 // d3d9.cpp, the render thread after each Present
 void CosmeticsOfflineTick();
 void CosmeticsFrame(IDirect3DDevice9* dev) {
+    JobsFrame(dev);   // (what the workers made: its textures)
     if (GraphicsHdCharacters() || !g_hd.empty()) HdFrame(dev);
+    static ULONGLONG lastBuiltSweep = 0;
+    if (GetTickCount64() - lastBuiltSweep > 5000) { lastBuiltSweep = GetTickCount64(); BuiltSweep(); }
     if (!NetplayEnabled()) CosmeticsOfflineTick();   // (offline: the skins switched on - MODS page)
     if (g_tracing) {   // (a frame traced: done)
         g_tracing = false;
@@ -1218,6 +1266,7 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
             std::vector<unsigned char> rgba;
             unsigned w = 0, h = 0;
             r->done = true;
+            SlowLog slow(L"a skin's picture (render thread)");
             if (!SkinBuildRgba(tex, r->ops, r->overlay, rgba, &w, &h)) { Log(L"Cosmetics: a skin's picture couldn't be made"); continue; }
             while (w > 128 && h > 64 && !(w & 1) && !(h & 1)) {   // (halved: about the menus' size, fewer shapes)
                 std::vector<unsigned char> half((size_t)(w / 2) * (h / 2) * 4);
@@ -1261,6 +1310,7 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
         static bool skinModel[4] = {};
         std::vector<unsigned char> model;
         if (!p.pack.empty() && ZipEntry(p.pack, "model.fgmodel", model)) {
+            SlowLog slow(L"a skin's model loaded (render thread)");
             ModelsLoad(p.slot, model, (p.name + L" (its model)").c_str());
             skinModel[p.slot] = true;
         } else if (skinModel[p.slot]) {
@@ -1268,6 +1318,7 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
             skinModel[p.slot] = false;
         }
         if (!p.pack.empty()) {
+            SlowLog slow(L"a skin pack read (render thread)");
             Skin* s = ParsePack(p.pack, p.name);
             if (s) for (SkinTex& t : s->textures) t.mine = MakeTexture(dev, t);
             g_skins[p.slot] = s;
@@ -1280,20 +1331,50 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
     }
     static ULONGLONG lastLookup = 0;   // (the game's textures, looked up now and then: a level loads new ones)
     ULONGLONG now = GetTickCount64();
-    if (changed || now - lastLookup > 2000) {
+    if (changed || g_builtNew || now - lastLookup > 2000) {
         lastLookup = now;
+        g_builtNew = false;
         bool any = false;
         for (Skin* s : g_skins)
             if (s) for (SkinTex& t : s->textures) {
                 IDirect3DTexture9* g = TextureOf(t.lo, t.hi);
                 if (g != t.game) { t.game = g; changed = true; }
-                if (t.recipe && g && !t.mine) {   // (made from this player's own game texture, once it's here)
-                    if (SkinBuildTexture(g, t.ops, t.overlay, t.dds)) t.mine = MakeTexture(dev, t);
-                    Log(L"Cosmetics: skin texture %x:%x made here (%zu recolors%s)%s", t.lo, t.hi, t.ops.size() / 7,
-                        t.overlay.empty() ? L"" : L", own pixels", t.mine ? L"" : L" - FAILED");
-                    t.dds.clear();
-                    t.dds.shrink_to_fit();
-                    changed = true;
+                if (t.recipe && g && !t.mine) {   // (made from this player's own game texture, once it's here - on a
+                    std::string key = BuiltKey(t);  //  worker, the game's own drawn meanwhile; one for all wearing it)
+                    auto it = std::find_if(g_built.begin(), g_built.end(), [&](const auto& b) { return b->key == key; });
+                    if (it != g_built.end()) {
+                        if (!(*it)->making && (*it)->tex) {
+                            t.mine = (*it)->tex;
+                            t.mine->AddRef();
+                            changed = true;
+                        }
+                    } else {
+                        auto b = std::make_shared<Built>();
+                        b->key = key;
+                        g_built.push_back(b);
+                        std::vector<unsigned char> px;
+                        unsigned w = 0, h = 0, mips = 1;
+                        D3DFORMAT fmt = D3DFMT_UNKNOWN;
+                        if (!SkinReadTexture(static_cast<IDirect3DTexture9*>(g), px, &w, &h, &fmt, &mips)) {
+                            b->making = false;
+                            Log(L"Cosmetics: skin texture %x:%x - the game's can't be read: FAILED", t.lo, t.hi);
+                        } else {
+                            unsigned lo = t.lo, hi = t.hi;
+                            size_t recolors = t.ops.size() / 7;
+                            bool own = !t.overlay.empty();
+                            InBackground([b, px = std::move(px), w, h, fmt, mips, ops = t.ops, ov = t.overlay]() mutable {
+                                SkinBuildFrom(std::move(px), w, h, fmt, mips, ops, ov, b->dds);
+                            }, [b, lo, hi, recolors, own](IDirect3DDevice9* d) {
+                                SkinTex tmp;
+                                tmp.dds.swap(b->dds);
+                                b->tex = MakeTexture(d, tmp);
+                                b->making = false;
+                                g_builtNew = true;
+                                Log(L"Cosmetics: skin texture %x:%x made here (%zu recolors%s)%s", lo, hi, recolors,
+                                    own ? L", own pixels" : L"", b->tex ? L"" : L" - FAILED");
+                            });
+                        }
+                    }
                 }
                 any = true;
             }

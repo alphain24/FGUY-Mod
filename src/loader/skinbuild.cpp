@@ -497,6 +497,14 @@ bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, c
     unsigned w = 0, h = 0, mips = 1;
     D3DFORMAT fmt = D3DFMT_UNKNOWN;
     if (!game || !ReadTexture(game, px, &w, &h, &fmt, &mips)) return false;
+    SkinBuildFrom(std::move(px), w, h, fmt, mips, ops, overlay, dds);
+    return true;
+}
+
+// ... the same from the game's texture's pixels (SkinReadTexture) - any thread: cosmetics.cpp makes skins on a worker,
+// the game drawing on meanwhile (on the render thread a 1024 skin, HD, stalled it ~1.4 s - for each player wearing it)
+void SkinBuildFrom(std::vector<unsigned char> px, unsigned w, unsigned h, D3DFORMAT fmt, unsigned mips,
+                   const std::vector<double>& ops, const std::vector<unsigned char>& overlay, std::vector<unsigned char>& dds) {
     for (size_t i = 0; i + 7 <= ops.size(); i += 7) Recolor(px, &ops[i], &ops[i + 3], ops[i + 6]);
     unsigned w0 = w;
     if (!overlay.empty()) LayOverlay(px, &w, &h, &mips, overlay, true);
@@ -506,7 +514,6 @@ bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, c
         if (mips > 1) ++mips;
     }
     dds = EncodeDds(px, w, h, fmt == D3DFMT_DXT3 ? D3DFMT_DXT5 : fmt, mips);
-    return true;
 }
 
 // cosmetics.cpp (HD character textures): the game's texture as RGBA - on the render thread (it's locked)
