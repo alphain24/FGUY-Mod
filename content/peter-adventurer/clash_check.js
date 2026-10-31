@@ -12,14 +12,14 @@ async function waitFor(test, ms = 20000) {
   return false;
 }
 
-export async function load() {
+export async function load(file = 'peter_adventurer_outfit.glb') {
   const studio = window.studio, models = window.studioView.models;
   const peter = () => studio.outfits.find(o => o.model.name === 'Peter_Rig_Geo');
   await waitFor(() => studio.outfits?.length && peter());
   $('tabModels').click();
   peter().chip.click();
   await waitFor(() => models.state.outfit === peter() && models.state.solid);
-  const glb = await (await fetch('/research/peter_adventurer_outfit.glb')).blob();
+  const glb = await (await fetch('/research/' + file, {cache: 'no-store'})).blob();
   const dt = new DataTransfer();
   dt.items.add(new File([glb], 'Peter Adventurer.glb'));
   $('importModel').files = dt.files;
@@ -69,11 +69,11 @@ export function outOf(G, p, reach = 3) {
   best.t.tri.getBarycoord(best.at, bary);
   const n = best.t.n[0].clone().multiplyScalar(bary.x).add(best.t.n[1].clone().multiplyScalar(bary.y))
     .add(best.t.n[2].clone().multiplyScalar(bary.z)).normalize();
-  return {d: p.clone().sub(best.at).dot(n), at: best.at, n};
+  return {d: p.clone().sub(best.at).dot(n), at: best.at, n, bone: best.t.bone};
 }
 
-export async function check(margin = 0.008) {
-  const ed = await load();
+export async function check(margin = 0.008, file) {
+  const ed = await load(file);
   const m = ed.prepared, G = bodyGrid(ed.pieces);
   const names = ed.src.parts.map((p, k) => {   // (the GLB's parts have no names here: colour, size, where)
     const box = new THREE.Box3();

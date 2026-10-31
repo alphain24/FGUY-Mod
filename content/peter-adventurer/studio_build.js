@@ -68,7 +68,8 @@ export async function build() {
   $('tabModels').click();
   peter().chip.click();
   await waitFor(() => window.studioView.models.state.outfit === peter() && window.studioView.models.state.solid);
-  const glb = await (await fetch('/research/peter_adventurer_outfit.glb')).blob();
+  // (the outfit with its vest made from Peter's own surface - vest_from_body.js - over the first GLB's)
+  const glb = await (await fetch('/research/peter_adventurer_outfit_v2.glb', {cache: 'no-store'})).blob();
   let dt = new DataTransfer();
   dt.items.add(new File([glb], 'Peter Adventurer.glb'));
   $('importModel').files = dt.files;
