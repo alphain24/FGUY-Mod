@@ -13,6 +13,11 @@ walks, jumps, fights and emotes with them. There are two kinds:
 A model is worn **through a skin pack**: in the Skin Studio's Skins tab, **Wear a model with it** adds it to the
 skin, and the game puts it on and takes it off with the skin — online too.
 
+> **Where does the `.fgmodel` file go?** Nowhere on its own — the game doesn't read loose `.fgmodel` files, and it
+> doesn't need a folder or a `mod.ini`. Put it in a skin: Skins tab › pick the character's outfit › **Wear a model
+> with it** › choose the `.fgmodel` › **Save skin pack**. Then put the `.fgskin` in `FGUYMod\skins\` (just for you), or
+> in a mod's `skins\` folder to share it as a mod ([Mod structure](mod-structure.md)).
+
 - [Making the model](#making-the-model)
 - [The Models tab](#the-models-tab)
 - [How the game draws it](#how-the-game-draws-it)

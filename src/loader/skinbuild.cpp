@@ -176,23 +176,16 @@ bool DecodePng(const std::vector<unsigned char>& png, unsigned w, unsigned h, Rg
     return ok;
 }
 
-// ---- writing it as the game's format (the Studio's dds.js encodeDds) -------------------------------------------------
-unsigned To565(double r, double g, double b) {
-    return ((unsigned)nearbyint(r) >> 3) << 11 | ((unsigned)nearbyint(g) >> 2) << 5 | (unsigned)nearbyint(b) >> 3;
+// ---- writing it as the game's format ---------------------------------------------------------------------------------
+unsigned To565(const double* c) {
+    auto q = [](double v, int top) { v = v < 0 ? 0 : v > 255 ? 255 : v; return (unsigned)nearbyint(v * top / 255); };
+    return q(c[0], 31) << 11 | q(c[1], 63) << 5 | q(c[2], 31);
 }
 
-void EncodeColorBlock(const unsigned char px[16][4], unsigned char* o) {
-    double lo[3] = {255, 255, 255}, hi[3] = {0, 0, 0};
-    for (int i = 0; i < 16; ++i)
-        for (int k = 0; k < 3; ++k) { lo[k] = fmin(lo[k], px[i][k]); hi[k] = fmax(hi[k], px[i][k]); }
-    for (int k = 0; k < 3; ++k) {   // (a little in from the extremes: less banding)
-        double inset = (hi[k] - lo[k]) / 16;
-        lo[k] = fmin(255, lo[k] + inset);
-        hi[k] = fmax(0, hi[k] - inset);
-    }
-    unsigned c0 = To565(hi[0], hi[1], hi[2]), c1 = To565(lo[0], lo[1], lo[2]);
+// a block's 16 pixels coded with two colors (c0 > c1: four colors, never the transparent mode) - how far off it is
+double CodeBlock(const unsigned char px[16][4], unsigned c0, unsigned c1, unsigned* bits) {
     if (c0 < c1) { unsigned t = c0; c0 = c1; c1 = t; }
-    if (c0 == c1 && c0 > 0) c1 = c0 - 1;   // (four colors, never the transparent mode)
+    if (c0 == c1) { if (c1 > 0) --c1; else ++c0; }
     double pal[4][3];
     From565(c0, pal[0]);
     From565(c1, pal[1]);
@@ -200,7 +193,8 @@ void EncodeColorBlock(const unsigned char px[16][4], unsigned char* o) {
         pal[2][k] = (2 * pal[0][k] + pal[1][k]) / 3;
         pal[3][k] = (pal[0][k] + 2 * pal[1][k]) / 3;
     }
-    unsigned bits = 0;
+    double err = 0;
+    *bits = 0;
     for (int i = 0; i < 16; ++i) {
         int best = 0;
         double bd = 1e30;
@@ -209,10 +203,64 @@ void EncodeColorBlock(const unsigned char px[16][4], unsigned char* o) {
             for (int k = 0; k < 3; ++k) d += (px[i][k] - pal[j][k]) * (px[i][k] - pal[j][k]);
             if (d < bd) { bd = d; best = j; }
         }
-        bits |= (unsigned)best << (2 * i);
+        *bits |= (unsigned)best << (2 * i);
+        err += bd;
     }
+    bits[1] = c0 | c1 << 16;
+    return err;
+}
+
+// One 4x4 block as DXT1. Its two colors: the ends of the line its pixels lie along most (their principal axis - the box
+// of their red, green and blue ranges alone puts colors on edges that aren't in the picture: speckled outlines), then
+// moved to fit the pixels best for the colors they were given (least squares, twice); whichever is closest.
+void EncodeColorBlock(const unsigned char px[16][4], unsigned char* o) {
+    double mean[3] = {0, 0, 0}, cov[6] = {0, 0, 0, 0, 0, 0};
+    for (int i = 0; i < 16; ++i)
+        for (int k = 0; k < 3; ++k) mean[k] += px[i][k] / 16.0;
+    for (int i = 0; i < 16; ++i) {
+        double r = px[i][0] - mean[0], g = px[i][1] - mean[1], b = px[i][2] - mean[2];
+        cov[0] += r * r; cov[1] += r * g; cov[2] += r * b; cov[3] += g * g; cov[4] += g * b; cov[5] += b * b;
+    }
+    double axis[3] = {0.577, 0.577, 0.577};
+    for (int it = 0; it < 8; ++it) {   // (power iteration)
+        double v[3] = {cov[0] * axis[0] + cov[1] * axis[1] + cov[2] * axis[2],
+                       cov[1] * axis[0] + cov[3] * axis[1] + cov[4] * axis[2],
+                       cov[2] * axis[0] + cov[4] * axis[1] + cov[5] * axis[2]};
+        double n = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (n < 1e-9) break;
+        for (int k = 0; k < 3; ++k) axis[k] = v[k] / n;
+    }
+    double tmin = 1e30, tmax = -1e30;
+    for (int i = 0; i < 16; ++i) {
+        double t = (px[i][0] - mean[0]) * axis[0] + (px[i][1] - mean[1]) * axis[1] + (px[i][2] - mean[2]) * axis[2];
+        tmin = fmin(tmin, t); tmax = fmax(tmax, t);
+    }
+    double e0[3], e1[3];
+    for (int k = 0; k < 3; ++k) { e0[k] = mean[k] + axis[k] * tmax; e1[k] = mean[k] + axis[k] * tmin; }
+    unsigned bits[2], best[2];
+    double bestErr = CodeBlock(px, To565(e0), To565(e1), best);
+    for (int it = 0; it < 2; ++it) {   // (the colors that fit the pixels best, each given the color it was coded with)
+        static const double w0[4] = {1, 0, 2.0 / 3, 1.0 / 3};
+        double aa = 0, ab = 0, bb = 0, ax[3] = {0, 0, 0}, bx[3] = {0, 0, 0};
+        for (int i = 0; i < 16; ++i) {
+            double a = w0[(best[0] >> (2 * i)) & 3], b = 1 - a;
+            aa += a * a; ab += a * b; bb += b * b;
+            for (int k = 0; k < 3; ++k) { ax[k] += a * px[i][k]; bx[k] += b * px[i][k]; }
+        }
+        double det = aa * bb - ab * ab;
+        if (fabs(det) < 1e-9) break;
+        for (int k = 0; k < 3; ++k) { e0[k] = (ax[k] * bb - bx[k] * ab) / det; e1[k] = (bx[k] * aa - ax[k] * ab) / det; }
+        double err = CodeBlock(px, To565(e0), To565(e1), bits);
+        if (err >= bestErr) break;
+        bestErr = err; best[0] = bits[0]; best[1] = bits[1];
+    }
+    double lo[3] = {255, 255, 255}, hi[3] = {0, 0, 0};   // (the box's corners - a flat or two-tone block can be closer)
+    for (int i = 0; i < 16; ++i)
+        for (int k = 0; k < 3; ++k) { lo[k] = fmin(lo[k], px[i][k]); hi[k] = fmax(hi[k], px[i][k]); }
+    if (CodeBlock(px, To565(hi), To565(lo), bits) < bestErr) { best[0] = bits[0]; best[1] = bits[1]; }
+    unsigned c0 = best[1] & 0xffff, c1 = best[1] >> 16;
     o[0] = c0 & 255; o[1] = (unsigned char)(c0 >> 8); o[2] = c1 & 255; o[3] = (unsigned char)(c1 >> 8);
-    o[4] = bits & 255; o[5] = (bits >> 8) & 255; o[6] = (bits >> 16) & 255; o[7] = (unsigned char)(bits >> 24);
+    o[4] = best[0] & 255; o[5] = (best[0] >> 8) & 255; o[6] = (best[0] >> 16) & 255; o[7] = (unsigned char)(best[0] >> 24);
 }
 
 void EncodeAlphaBlock(const unsigned char px[16][4], unsigned char* o) {
@@ -247,6 +295,56 @@ Rgba Halve(const Rgba& d, unsigned w, unsigned h, unsigned* nw, unsigned* nh) {
                 out[(y * *nw + x) * 4 + k] = (unsigned char)(s / 4);
             }
     return out;
+}
+
+// twice the size, smooth (each new pixel from the four nearest: as the Studio's canvas draws it bigger)
+Rgba Double(const Rgba& d, unsigned w, unsigned h) {
+    Rgba out((size_t)w * h * 16);
+    for (unsigned y = 0; y < h * 2; ++y)
+        for (unsigned x = 0; x < w * 2; ++x) {
+            double sx = (x + 0.5) / 2 - 0.5, sy = (y + 0.5) / 2 - 0.5;
+            int x0 = (int)floor(sx), y0 = (int)floor(sy);
+            double fx = sx - x0, fy = sy - y0;
+            auto at = [&](int xx, int yy, int k) {
+                xx = xx < 0 ? 0 : xx >= (int)w ? w - 1 : xx;
+                yy = yy < 0 ? 0 : yy >= (int)h ? h - 1 : yy;
+                return (double)d[((size_t)yy * w + xx) * 4 + k];
+            };
+            for (int k = 0; k < 4; ++k)
+                out[((size_t)y * w * 2 + x) * 4 + k] = Byte((at(x0, y0, k) * (1 - fx) + at(x0 + 1, y0, k) * fx) * (1 - fy) +
+                                                            (at(x0, y0 + 1, k) * (1 - fx) + at(x0 + 1, y0 + 1, k) * fx) * fy);
+        }
+    return out;
+}
+
+// The overlay on the pixels (w x h). The Studio keeps a texture at twice or four times the game's size (up to 2048) when
+// a picture that big is put on it - the skin's texture is made that big then (sharper than the game's own); for a
+// picture of the game's size it's laid on it made small again. Any other size: left out.
+bool LayOverlay(Rgba& px, unsigned* w, unsigned* h, unsigned* mips, const std::vector<unsigned char>& overlay, bool grow) {
+    Rgba ov;
+    unsigned ow = 0, oh = 0;
+    if (!DecodePng(overlay, 0, 0, ov, &ow, &oh)) { Log(L"Cosmetics: a skin's overlay isn't a PNG - left out"); return false; }
+    for (int i = 0; i < 2 && ow > *w && oh > *h && ow % *w == 0 && oh % *h == 0 && ow / *w == oh / *h && ow <= 2048 && oh <= 2048; ++i) {
+        if (grow) {
+            px = Double(px, *w, *h);
+            *w *= 2; *h *= 2;
+            if (mips && *mips > 1) ++*mips;   // (down to the same smallest level)
+        } else {
+            unsigned nw, nh;
+            ov = Halve(ov, ow, oh, &nw, &nh);
+            ow = nw; oh = nh;
+        }
+    }
+    if (ow != *w || oh != *h) {
+        Log(L"Cosmetics: a skin's overlay is %ux%u, its texture %ux%u - left out", ow, oh, *w, *h);
+        return false;
+    }
+    for (size_t i = 0; i + 3 < px.size(); i += 4) {
+        double a = ov[i + 3] / 255.0;
+        if (a <= 0) continue;
+        for (int k = 0; k < 3; ++k) px[i + k] = Byte(ov[i + k] * a + px[i + k] * (1 - a));
+    }
+    return true;
 }
 
 void PutU32(std::vector<unsigned char>& b, size_t at, unsigned v) { memcpy(&b[at], &v, 4); }
@@ -315,16 +413,7 @@ bool SkinBuildTexture(IDirect3DTexture9* game, const std::vector<double>& ops, c
     D3DFORMAT fmt = D3DFMT_UNKNOWN;
     if (!game || !ReadTexture(game, px, &w, &h, &fmt, &mips)) return false;
     for (size_t i = 0; i + 7 <= ops.size(); i += 7) Recolor(px, &ops[i], &ops[i + 3], ops[i + 6]);
-    if (!overlay.empty()) {
-        Rgba ov;
-        if (!DecodePng(overlay, w, h, ov)) { Log(L"Cosmetics: a skin's overlay isn't a %ux%u PNG - left out", w, h); }
-        else
-            for (size_t i = 0; i + 3 < px.size(); i += 4) {
-                double a = ov[i + 3] / 255.0;
-                if (a <= 0) continue;
-                for (int k = 0; k < 3; ++k) px[i + k] = Byte(ov[i + k] * a + px[i + k] * (1 - a));
-            }
-    }
+    if (!overlay.empty()) LayOverlay(px, &w, &h, &mips, overlay, true);
     dds = EncodeDds(px, w, h, fmt == D3DFMT_DXT3 ? D3DFMT_DXT5 : fmt, mips);
     return true;
 }
@@ -336,13 +425,7 @@ bool SkinBuildRgba(IDirect3DTexture9* game, const std::vector<double>& ops, cons
     D3DFORMAT fmt = D3DFMT_UNKNOWN;
     if (!game || !ReadTexture(game, rgba, w, h, &fmt, &mips)) return false;
     for (size_t i = 0; i + 7 <= ops.size(); i += 7) Recolor(rgba, &ops[i], &ops[i + 3], ops[i + 6]);
-    Rgba ov;
-    if (!overlay.empty() && DecodePng(overlay, *w, *h, ov))
-        for (size_t i = 0; i + 3 < rgba.size(); i += 4) {
-            double a = ov[i + 3] / 255.0;
-            if (a <= 0) continue;
-            for (int k = 0; k < 3; ++k) rgba[i + k] = Byte(ov[i + k] * a + rgba[i + k] * (1 - a));
-        }
+    if (!overlay.empty()) LayOverlay(rgba, w, h, nullptr, overlay, false);   // (a picture: the game's size)
     return true;
 }
 

@@ -22,7 +22,6 @@ folder with `FGUY.exe`), and pick a character and outfit on the left. The **Skin
 
 - **Drag** to turn the character, **scroll** to zoom.
 - **Click the character** to pick the colour under the mouse.
-- **Show battle damage** shows the torn-clothes pieces the game draws when the character is hurt.
 - **In-game look** shows it as the game draws it: flat cel shading and black ink outlines.
 
 ### Recolouring
@@ -49,16 +48,20 @@ So shading painted into the texture is kept: a dark fold of a white shirt become
 (*How close* is stored as the radius: the slider's value × 2.2.)
 
 > [!NOTE]
-> A recolour also goes to the outfit's **battle damage** textures. They carry their own copy of the clothes'
-> colours — without this, the old colour would show through when the character is hurt.
+> A recolour also goes to the outfit's **battle damage** textures. Some patches of the body (a shirt's front, a
+> sleeve) are drawn from them — whole until the character is hurt, then torn — so they carry their own copy of the
+> clothes' colours; without this, the old colour would show there.
 
 **Undo** steps back one recolour; **Reset texture** starts that texture over.
 
 ### Painting your own
 
 **Export PNG** saves the texture; paint on it in any program (Krita, GIMP, Photoshop, Paint.NET); **Import PNG**
-brings it back. Keep the same size. Only the pixels you actually changed are saved in the pack (see
-[the overlay](#the-overlay)).
+brings it back. Only the pixels you actually changed are saved in the pack (see [the overlay](#the-overlay)).
+
+**Sharper than the game:** import a picture **twice the texture's size or more** (2048×2048 for Peter's
+1024×1024) and the skin keeps it at twice — or four times, for a small texture — the game's own size, up to
+2048×2048; the game makes the skin's texture that big. A smaller picture is made the texture's size.
 
 ### Saving
 
@@ -161,7 +164,7 @@ Blue_Stewie.fgskin
 | `modelId` | ✅ | The outfit's model asset id `[lo, hi]`: **which outfit the skin is for.** |
 | `textures` | ✅ | One entry per changed texture, keyed by the texture's name. |
 | `textures.*.id` | ✅ | The texture's asset id `[lo, hi]`. |
-| `textures.*.width/height/format/mips` | | The game texture's size, format and mip levels. For your reference — the mod reads them from the game. |
+| `textures.*.width/height/format/mips` | | The texture's size as saved (the game's, or 2× / 4× it), format and mip levels. For your reference — the mod reads them from the game and the overlay. |
 | `textures.*.ops` | | The recolours, in order: `[from R, G, B,  to R, G, B,  radius]`. |
 | `textures.*.overlay` | | A PNG in the pack with your own pixels (see below). |
 | `withModel` | | The name of the model in `model.fgmodel`, if there is one. |
@@ -178,9 +181,11 @@ Blue_Stewie.fgskin
 
 ### The overlay
 
-`textures/<name>.png` is a PNG **the size of the game's texture**, transparent everywhere except the pixels you
-painted. It's laid over the texture after the recolours (its alpha blends it in). Because it holds only your own
-pixels, it's yours to share.
+`textures/<name>.png` is a PNG **the size of the game's texture — or 2× or 4× it, up to 2048×2048** — transparent
+everywhere except the pixels you painted. It's laid over the texture after the recolours (its alpha blends it in);
+a bigger one first has the recoloured texture drawn that big (smooth), and the skin's texture is made that size.
+Because it holds only your own pixels, it's yours to share. (Versions before 0.9.3 leave out an overlay that isn't
+the game texture's size.)
 
 The Skin Studio writes the overlay for you: every pixel that differs from the recoloured texture by more than a
 little is kept, the rest left transparent.
@@ -227,7 +232,7 @@ MySkins\
 ```
 
 Then pack it — the Skin Studio's **Save as mod** (add the packs, save), or `tools/make_fgmod.py` on the folder. When the mod is on, its skins are offered just like loose
-ones (the MODS page shows which mod each comes from). Updating the mod later with more skins is just a new
+ones (the MODS page lists them with their mod, not as rows of their own). Updating the mod later with more skins is just a new
 `.fgmod` with the same name.
 
 ---
@@ -237,6 +242,6 @@ ones (the MODS page shows which mod each comes from). Updating the mod later wit
 - **Small packs travel faster online.** The overlay is usually the biggest part: paint only what you need, and
   prefer recolours (a few bytes each) over painting whole areas.
 - **One colour at a time.** Several small recolours with a low *How close* give cleaner results than one big one.
-- **Check the battle damage** (*Show battle damage*) and the **In-game look** before saving.
+- **Check the In-game look** before saving.
 - **Same outfit, many skins:** players pick one per outfit, so variants of one outfit compete — name them clearly.
 - **Test both ways:** offline (MODS page) and in an online lobby. See [Testing](testing.md).

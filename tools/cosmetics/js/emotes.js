@@ -40,7 +40,6 @@ export function createEmoteEditor({scene, camera, controls, renderer, holder, $,
     const skeleton = new THREE.Skeleton(bones, skel.invBind.map(m => m.clone()));
     for (const p of pieces) {
       if (!p.skin) continue;
-      if (/damage|dstr/i.test(p.texture?.name || '')) continue;   // (battle damage: not shown here)
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(p.position, 3));
       g.setAttribute('normal', new THREE.BufferAttribute(p.normal, 3));

@@ -154,6 +154,7 @@ function leavePack() {
   state.fromPack = false;
   for (const t of state.textures.values()) {
     if (!t.modified && !t.ops.length) continue;
+    setScale(t, 1);
     t.ctx.putImageData(t.original, 0, 0);
     t.ops = [];
     t.history = [];
@@ -215,7 +216,7 @@ async function textureFor(info) {
   tex.flipY = false;
   tex.colorSpace = THREE.SRGBColorSpace;
   // (ops: the recolors done to it, in order - the pack carries them, not the texture; history: {img, ops} to go back to)
-  const t = {name: key, canvas, ctx, original, tex, history: [], ops: [], modified: false, format: dds.format, mips: dds.mips,
+  const t = {name: key, canvas, ctx, original, base: original, scale: 1, tex, history: [], ops: [], modified: false, format: dds.format, mips: dds.mips,
     id: [info.texture.lo, info.texture.hi]};
   state.textures.set(key, t);
   return t;
@@ -263,9 +264,7 @@ async function selectOutfit(o) {
     const mesh = new THREE.Mesh(g, m);
     mesh.userData.texture = t;
     mesh.userData.piece = p;   // (its triangles under a skin's model: hidden while that shows)
-    mesh.userData.damage = /damage|dstr/i.test(p.texture?.name || '');   // (battle damage: shown when hurt in the game)
-    mesh.visible = !mesh.userData.damage || $('showDamage').checked;
-    holder.add(mesh);
+    holder.add(mesh);   // (the pieces on a "Damage" texture too: patches of the body that tear when hurt, whole till then)
   }
   // its picture in the game's skin pickers - a texture of its own here: the recolors go to it too, and the pack keeps
   // what was done to it (the game makes the skin's picture from its own, as it does the textures)
@@ -284,10 +283,6 @@ async function selectOutfit(o) {
   if (!$('packName').value) $('packName').placeholder = 'My ' + (NICE[o.character] || o.character) + ' skin';
   setStatus('');
 }
-
-$('showDamage').onchange = () => {
-  for (const m of holder.children) if (m.userData.damage) m.visible = $('showDamage').checked;
-};
 
 function frame() {
   const box = new THREE.Box3().setFromObject(holder);
@@ -495,6 +490,7 @@ $('undo').onclick = () => {
   const t = state.selected;
   if (!t?.history.length) return;
   const h = t.history.pop();
+  setScale(t, h.img.width / t.base.width);
   t.ctx.putImageData(h.img, 0, 0);
   t.ops.length = Math.min(t.ops.length, h.ops);
   t.modified = t.history.length > 0 || t.modified;
@@ -505,6 +501,7 @@ $('reset').onclick = () => {
   if (!t) return;
   remember(t);
   t.ops = [];
+  setScale(t, 1);
   t.ctx.putImageData(t.original, 0, 0);
   t.modified = false;
   changed(t);
@@ -521,10 +518,39 @@ function download(blob, name) {
 const pngOf = t => new Promise(r => t.canvas.toBlob(r, 'image/png'));
 $('exportPng').onclick = async () => state.selected && download(await pngOf(state.selected), state.selected.name + '.png');
 
+// A texture kept at twice or four times the game's size (scale 2, 4 - up to 2048): a picture that big put on it keeps
+// its detail - the pack's overlay is that size and the game makes the skin's texture that size
+// (src/loader/skinbuild.cpp LayOverlay). The game's own pixels under it: drawn bigger, smooth, as the game does it.
+const MAX_SIDE = 2048;
+function scaleFor(t, img) {   // (the biggest the picture fills)
+  let s = 1;
+  while (s < 4 && t.base.width * s * 2 <= Math.min(MAX_SIDE, img.width) && t.base.height * s * 2 <= Math.min(MAX_SIDE, img.height)) s *= 2;
+  return s;
+}
+function setScale(t, s) {
+  if (t.scale === s) return;
+  const w = t.base.width * s, h = t.base.height * s;
+  const was = document.createElement('canvas');
+  was.width = t.canvas.width; was.height = t.canvas.height;
+  was.getContext('2d').drawImage(t.canvas, 0, 0);
+  const base = document.createElement('canvas');
+  base.width = t.base.width; base.height = t.base.height;
+  base.getContext('2d').putImageData(t.base, 0, 0);
+  t.canvas.width = w; t.canvas.height = h;
+  t.ctx.drawImage(base, 0, 0, w, h);
+  t.original = t.ctx.getImageData(0, 0, w, h);
+  t.ctx.clearRect(0, 0, w, h);
+  t.ctx.drawImage(was, 0, 0, w, h);
+  t.scale = s;
+  t.tex.dispose();   // (a new size: three.js makes the GPU's copy again)
+}
+
 async function imageInto(t, blob) {
   const img = await createImageBitmap(blob);
   remember(t);
+  setScale(t, scaleFor(t, img));   // (twice the game's size or more: kept bigger; smaller - the game's size)
   t.ctx.clearRect(0, 0, t.canvas.width, t.canvas.height);
+  t.ctx.imageSmoothingQuality = 'high';   // (made smaller well - not the quick way: jagged edges)
   t.ctx.drawImage(img, 0, 0, t.canvas.width, t.canvas.height);
   t.modified = true;
   changed(t);
@@ -535,8 +561,12 @@ $('importPng').onchange = async e => {
   e.target.value = '';
   if (!f || !t) return;
   const img = await imageInto(t, f);
-  setStatus(img.width === t.canvas.width && img.height === t.canvas.height ? 'Imported.' :
-    `Imported (resized from ${img.width}x${img.height} to ${t.canvas.width}x${t.canvas.height}).`);
+  const size = `${t.canvas.width}x${t.canvas.height}`;
+  setStatus((img.width === t.canvas.width && img.height === t.canvas.height ? `Imported at ${size}` :
+    `Imported (made ${size} from ${img.width}x${img.height})`) +
+    (t.scale > 1 ? ` - ${t.scale === 2 ? 'twice' : t.scale + ' times'} the game's own size: sharper in the game.` :
+      t.base.width * 2 <= MAX_SIDE && t.base.height * 2 <= MAX_SIDE ?
+        `. A picture of ${t.base.width * 2}x${t.base.height * 2} or more is kept bigger: sharper in the game.` : '.'));
 };
 
 // ---- skin packs ------------------------------------------------------------------------------------------------
@@ -694,8 +724,6 @@ async function renderIcons(scale = 1) {   // (scale: bigger, to look at)
   $('gameLook').checked = false;   // (its own materials back first)
   syncLook();
   if (state.packModel) { $('packModelShow').checked = true; await showPackModel3D(); }
-  const hidden = holder.children.filter(m => m.userData.damage && m.visible);
-  for (const m of hidden) m.visible = false;
   const skel = state.current ? await loadSkeleton(state.ho, state.current.model).catch(() => null) : null;
   const face = new Set((skel?.names || []).map((n, i) => /^Face /.test(n) ? i : -1).filter(i => i >= 0));
   const opened = [];
@@ -754,7 +782,6 @@ async function renderIcons(scale = 1) {   // (scale: bigger, to look at)
   renderer.setPixelRatio(ratio);
   for (const o of lines) for (const c of o.children.filter(c => c.userData.iconLine)) o.remove(c);
   for (const [o, m] of swapped) { o.material.dispose(); o.material = m; }
-  for (const m of hidden) m.visible = true;
   for (const [o, idx] of opened) { o.geometry.index.array.set(idx); o.geometry.index.needsUpdate = true; }
   $('gameLook').checked = was.look;
   $('packModelShow').checked = was.model;
@@ -923,11 +950,13 @@ async function openPackBytes(bytes, label) {
       if (!t) continue;
       if (m.format >= 2) {   // (its recolors done again on the game's texture, then its own pixels on top)
         remember(t);
+        const ov = info.overlay && files[info.overlay] ? await createImageBitmap(new Blob([files[info.overlay]], {type: 'image/png'})) : null;
+        setScale(t, ov && [2, 4].includes(ov.width / t.base.width) ? ov.width / t.base.width : 1);   // (its own pixels bigger)
         const img = new ImageData(new Uint8ClampedArray(t.original.data), t.canvas.width, t.canvas.height);
         for (const [r0, g0, b0, r1, g1, b1, tol] of info.ops || []) recolorData(img.data, [r0, g0, b0], [r1, g1, b1], tol);
         t.ctx.putImageData(img, 0, 0);
         t.ops = (info.ops || []).map(x => x.slice());
-        if (info.overlay && files[info.overlay]) t.ctx.drawImage(await createImageBitmap(new Blob([files[info.overlay]], {type: 'image/png'})), 0, 0);
+        if (ov) t.ctx.drawImage(ov, 0, 0);
         t.modified = true;
         changed(t);
       } else if (files[info.file]) {
@@ -953,6 +982,15 @@ async function openPackBytes(bytes, label) {
 
 function setStatus(s) { for (const id of ['status', 'status2', 'status3']) $(id).textContent = s; }
 
+// When something breaks, say so (and what) - not a page that just stops answering
+const oops = msg => setStatus('Something went wrong: ' + msg + ' - save your skin pack, then reload the page. ' +
+  '(If it keeps happening, send this message to the mod\'s Discord.)');
+addEventListener('error', e => oops(e.message || 'an error'));
+addEventListener('unhandledrejection', e => oops(e.reason?.message || String(e.reason)));
+renderer.domElement.addEventListener('webglcontextlost', () =>   // (the graphics driver reset, or too little memory)
+  setStatus('The 3D view stopped (the browser lost the graphics card) - save your skin pack, then reload the page.'));
+renderer.domElement.addEventListener('webglcontextrestored', () => setStatus('The 3D view is back.'));
+
 // ---- Skins / Emotes --------------------------------------------------------------------------------------------
 models = createModelEditor({holder, $, setStatus, download, textureFor, outfitsOf: ch => state.outfits.filter(o => o.character === ch)});
 emotes = createEmoteEditor({scene, camera, controls, renderer, holder, $, setStatus, download, textureFor,
@@ -968,7 +1006,6 @@ function setMode(mode) {
   $('modelSide').hidden = mode !== 'models';
   $('tabModels').classList.toggle('on', mode === 'models');
   $('timeline').hidden = mode !== 'emotes';
-  $('damageOpt').hidden = mode !== 'skins';
   $('hint').textContent = mode === 'models' ? 'Drag to turn - scroll to zoom'
     : mode === 'emotes' ? 'Drag to turn - scroll to zoom - click a joint to pose it'
     : 'Drag to turn - scroll to zoom - click the character to pick a color';

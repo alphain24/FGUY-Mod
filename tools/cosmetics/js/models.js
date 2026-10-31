@@ -59,7 +59,6 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     const solid = new THREE.Group(), xray = new THREE.Group();
     const wire = new THREE.MeshBasicMaterial({color: 0x5cc8ff, wireframe: true, transparent: true, opacity: 0.18});
     for (const p of pieces) {
-      if (/damage|dstr/i.test(p.texture?.name || '')) continue;
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(p.position, 3));
       if (p.normal) g.setAttribute('normal', new THREE.BufferAttribute(p.normal, 3));
@@ -147,7 +146,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
   // sliders: a size (around its feet), a turn, a move.
   function charBox() {
     const b = new THREE.Box3();
-    for (const p of ed.pieces) if (!/damage|dstr/i.test(p.texture?.name || '')) b.union(new THREE.Box3().setFromArray(p.position));
+    for (const p of ed.pieces) b.union(new THREE.Box3().setFromArray(p.position));
     return b;
   }
   function srcBox() {
@@ -214,7 +213,6 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     // the character's shape: its own points, its arm height from its skeleton
     const cpts = [];
     for (const p of ed.pieces) {
-      if (/damage|dstr/i.test(p.texture?.name || '')) continue;
       for (let i = 0; i < p.position.length; i += 3) cpts.push({x: p.position[i] - cc.x, y: p.position[i + 1] - c.min.y, z: p.position[i + 2] - cc.z});
     }
     const arm = ed.skel.names.findIndex(nm => /^Arm L 2 /.test(nm));
@@ -261,7 +259,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
   function charGrid(cell) {
     const grid = new Map(), key = (x, y, z) => x + ',' + y + ',' + z;
     for (const p of ed.pieces) {
-      if (!p.skin || /damage|dstr/i.test(p.texture?.name || '')) continue;
+      if (!p.skin) continue;
       for (let i = 0; i < p.position.length / 3; i++) {
         const x = p.position[i * 3], y = p.position[i * 3 + 1], z = p.position[i * 3 + 2];
         const k = key(Math.floor(x / cell), Math.floor(y / cell), Math.floor(z / cell));
