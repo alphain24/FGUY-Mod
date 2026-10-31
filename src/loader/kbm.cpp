@@ -322,6 +322,7 @@ void __fastcall Hook_MenuInputUpdate(void* movie, void* edx, int arg) {
 const uintptr_t kMenuButtonsCall = 0x5a079e, kMenuButtons = 0x44d7e0;
 volatile LONG g_levelMenus = 0;   // players a level menu has the input of (bits): there Enter also counts as Start -
                                   // the character screen accepts with Start (A on a pad: 13, which it ignores here)
+volatile LONG g_charScreens = 0;  // players whose change character screen is open (bits - the HUD says: pause.as2js)
 using MenuButtons_t = void(__cdecl*)(void* movie, int controller, unsigned buttons, int arg);
 void __cdecl Hook_MenuButtons(void* movie, int controller, unsigned buttons, int arg) {
     BYTE keys[32];
@@ -332,8 +333,27 @@ void __cdecl Hook_MenuButtons(void* movie, int controller, unsigned buttons, int
         bool menu = false;   // (a keyboard player's level menu: they all share the keyboard's controller)
         for (int p = 0; p < 4; ++p) menu |= ((g_levelMenus >> p) & 1) && KbmIsKeyboardSlot(p);
         if (menu && ((keys[VK_RETURN >> 3] >> (VK_RETURN & 7)) & 1)) buttons |= 1u;   // (Start)
+        // a keyboard player's change character screen: their W A S D as the d-pad (the arrows: character, costume) -
+        // there only (on the death menu W / S would move its unseen focus: Enter then picked something else)
+        for (int s = 0; s < 4; ++s) {
+            if (!((g_charScreens >> s) & 1) || !g_kbmSlot[s]) continue;
+            const BYTE* k = g_slotKeys[s];
+            auto down = [k](int c) { return ((k[c >> 3] >> (c & 7)) & 1) != 0; };
+            if (down('A')) buttons |= 0x04;
+            if (down('D')) buttons |= 0x08;
+            if (down('W')) buttons |= 0x10;
+            if (down('S')) buttons |= 0x20;
+        }
     }
     reinterpret_cast<MenuButtons_t>(kMenuButtons)(movie, controller, buttons, arg);
+}
+
+// The HUD (pause.as2js FGUYCharScreen): a player's change character screen opened / closed - its own script, run for
+// every player on every PC alike.
+void KbmCharacterScreen(int player, bool open) {
+    if (player < 0 || player >= 4) return;
+    if (open) InterlockedOr(&g_charScreens, 1 << player);
+    else InterlockedAnd(&g_charScreens, ~(1 << player));
 }
 
 // ui.cpp: CTRL_AddInput / CTRL_RemoveInput(player) in a session (only once the level runs: the front end's don't
@@ -422,6 +442,7 @@ int KbmKeyPlayer(int code) {
     int from[2] = {code, -1};
     if (code == VK_ESCAPE) from[1] = VK_BACK;
     if (code == VK_HOME || code == VK_SPACE) from[1] = VK_RETURN;
+    int letter = code == VK_LEFT ? 'A' : code == VK_RIGHT ? 'D' : code == VK_UP ? 'W' : code == VK_DOWN ? 'S' : -1;
     for (int pass = 0; pass < 2; ++pass)
         for (int s = 0; s < 4; ++s) {
             if (!g_kbmSlot[s]) continue;
@@ -429,6 +450,7 @@ int KbmKeyPlayer(int code) {
             auto down = [keys](int k) { return k > 0 && ((keys[k >> 3] >> (k & 7)) & 1); };
             if (down(from[0])) return s;
             if (down(from[1])) return code == VK_SPACE ? s + 4 : s;
+            if (((g_charScreens >> s) & 1) && down(letter)) return s;   // (W A S D as the arrows: Hook_MenuButtons)
         }
     return -1;
 }

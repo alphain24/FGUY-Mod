@@ -420,6 +420,7 @@ void KbmSessionStart(const char* session);     // netplay.cpp: which players pla
 void KbmLeaveSession();                         //   netplay.cpp: the session is over for this game
 bool KbmIsKeyboardSlot(int slot);
 void KbmLevelMenu(int player, bool open);      //   ui.cpp: a level menu takes / gives back a player's input (CTRL_Add/RemoveInput)
+void KbmCharacterScreen(int player, bool open);   //   ui.cpp (the HUD): a player's change character screen - W A S D as arrows
 bool KbmCursorScreen(POINT* pt);               //   netplay.cpp: the keyboard players' cursor this tick, on screen
 void KbmCapture(KbmRaw* out);                  //   my keyboard and mouse now
 void KbmApply(const KbmRaw* bySlot, int players);  //   every tick: feed the keyboard players' devices

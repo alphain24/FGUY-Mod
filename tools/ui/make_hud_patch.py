@@ -220,16 +220,19 @@ def build(data):
         insert_at_start(p, data, actions, 'RefreshCostume', lambda r: A.Code(
             A.Code(A.callv('FGUYHudRefreshWrap', Reg(r['playerIndex'])), A.op('Not')).if_true('go') +
             A.Code(A.pushes(False), A.op('Return')).label('go')))
-        insert_at_start(p, data, actions, 'OnCharacterSelectScreenEnter', lambda r: A.Code(A.call('FGUYHudEnter')))
+        insert_at_start(p, data, actions, 'OnCharacterSelectScreenEnter', lambda r: A.Code(
+            A.call('FGUYHudEnter'), A.call('FGUYCharScreen', Reg(r['playerIndex']), 1)))
     except KeyError:
         pass
     # A skin's head picture in place of the character's head (pause.as2js FGUYHeadIcon: the poll looks again too)
     insert_at_start(p, data, actions, 'SetHeadIcon', lambda r: A.Code(A.call('FGUYHeadIcon', Reg(r['playerIndex']))))
-    #     (and on the change character / change weapons screens: FGUYNavHints)
-    for name, which in (('OnCharacterSelectRefreshText', 0), ('OnCharacterCustomizeRefreshText', 1)):
+    #     (on the change character / change weapons screens the keys are a bar the poll draws - FGUYNavBar; the change
+    #      character screen opening / closing tells the loader, which takes W A S D as its arrows: FGUYCharScreen)
+    #      (its entry: with FGUYHudEnter, above)
+    for name in ('OnCharacterSelectStartPressed', 'OnCharacterSelectCancelPressed', 'OnCharacterCustomizeScreenEnter'):
         try:
             insert_at_start(p, data, actions, name,
-                            lambda r, which=which: A.Code(A.call('FGUYNavHints', Reg(r['playerIndex']), which)))
+                            lambda r: A.Code(A.call('FGUYCharScreen', Reg(r['playerIndex']), 0)))
         except KeyError:
             pass
     # The game hands the HUD real viewport numbers in many places (and the HUD stores them), so they

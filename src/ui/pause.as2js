@@ -556,6 +556,7 @@ function FGUYDeathMouse() {
         flash.external.ExternalInterface.call('FGUYMOD_DeathPanel', deathUp ? 1 : 0);
     }
     FGUYDeathPanel(p, deathUp, mouseScreen);
+    FGUYNavBar(screen, p >= 0 && IsKeyboardEnabled(p) && flash.external.ExternalInterface.call('FGUYMOD_OnlineMatch') == true);
     if (mouseScreen && deathUp) boxes = FGUYDeathBoxes;
     if (boxes == '' && layer == undefined) return;   // (nothing to say: no menu of mine now, none before)
     var c = String(flash.external.ExternalInterface.call('FGUYMOD_DeathMouse', boxes)).split('|');
@@ -699,43 +700,61 @@ function FGUYDeathHints(playerIndex) {
     if (c.fguyHint != undefined) c.fguyHint._visible = false;   // (our panel shows the keys: FGUYDeathPanel)
 }
 
-// ...and on the screens behind it (change character, change weapons): there the game hides its controller help
-// in keyboard mode (it's for the mouse there). Ours goes where that help is. which: 0 character, 1 weapons.
-function FGUYNavHints(playerIndex, which) {
+// The change character screen opened / closed for a player (its enter, pick and cancel): the loader then takes that
+// keyboard player's W A S D as the arrows there (kbm.cpp KbmCharacterScreen) - the screen hears only arrows, and
+// letters never reach the HUD as keys. Run for every player on every PC alike, so it's the same everywhere.
+function FGUYCharScreen(playerIndex, open) {
     if (flash.external.ExternalInterface.call('FGUYMOD_OnlineMatch') != true) return;
-    var m = GetScreenMovieClip(playerIndex);
-    if (m == undefined || m.navHelp == undefined) return;
-    var name = which == 1 ? 'fguyHintWeapons' : 'fguyHintCharacter';
-    if (!IsKeyboardEnabled(playerIndex)) {
-        if (m[name] != undefined) m[name]._visible = false;
+    flash.external.ExternalInterface.call('FGUYMOD_CharScreen', playerIndex, open ? 1 : 0);
+}
+
+// ...and on the screens behind it (change character, change weapons) my keyboard player's keys: a bar of key caps
+// along the bottom (the game hides its own help there in keyboard mode - it's for the mouse), up only while that
+// screen is (FGUYDeathMouse, the poll). screen: CurScreen's.
+function FGUYNavBar(screen, keyboard) {
+    var which = !keyboard ? -1 : screen == 'CharacterSelect' ? 0 : screen == 'CharacterCustomize' ? 1 : -1;
+    var ui = _root.FGUYNavUI;
+    if (which < 0) {
+        if (ui != undefined) ui.removeMovieClip();
+        FGUYNavSig = undefined;
         return;
     }
-    if (m[name] == undefined) {
-        var b = m.navHelp.getBounds(m), y = b.yMin;
-        var wheel = which == 1 ? GetWeaponWheel(playerIndex) : undefined;
-        if (wheel != undefined) {   // (the weapons screen's help is inside the wheel: ours goes under it)
-            var vb = undefined;   // (its spokes only: the clip holds hidden pieces far around it)
-            for (var i = 0; i < 8; i++) {
-                var c = GetSpokeFromSlot(playerIndex, i);
-                if (c == undefined || !c._visible) continue;
-                var cb = c.getBounds(m);
-                if (cb.xMax <= cb.xMin) continue;
-                if (vb == undefined) vb = {xMin: cb.xMin, xMax: cb.xMax, yMin: cb.yMin, yMax: cb.yMax};
-                else {
-                    vb.xMin = Math.min(vb.xMin, cb.xMin); vb.xMax = Math.max(vb.xMax, cb.xMax);
-                    vb.yMin = Math.min(vb.yMin, cb.yMin); vb.yMax = Math.max(vb.yMax, cb.yMax);
-                }
-            }
-            if (vb != undefined) {
-                b = vb;
-                y = b.yMax + 8;
-            }
+    var r = FGUYPauseRect(), size = r.h / 720;
+    var sig = which + ',' + r.x + ',' + r.y + ',' + r.w + ',' + r.h;
+    if (ui == undefined || sig != FGUYNavSig) {
+        ui.removeMovieClip();
+        ui = _root.createEmptyMovieClip('FGUYNavUI', 29994);
+        var bg = ui.createEmptyMovieClip('bg', 1);
+        var items = which == 1 ? [['W A S D', 'choose'], ['X', 'buy'], ['ENTER', 'done'], ['BACKSPACE', 'back']]
+                               : [['A / D', 'character'], ['W / S', 'skin'], ['ENTER', 'pick'], ['BACKSPACE', 'back']];
+        var capH = 34 * size, pad = 12 * size, inner = 10 * size, outer = 34 * size, parts = [], total = 0;
+        for (var i = 0; i < items.length; i++) {
+            var kt = FGUYPauseText(ui, 0, 0, 300 * size, capH, items[i][0], true, 17 * size, 0x1A1A1A, 'left');
+            var lt = FGUYPauseText(ui, 0, 0, 300 * size, capH, items[i][1], true, 21 * size, 0xFFFFFF, 'left');
+            var kw = Math.max(capH, kt.textWidth + pad * 2), lw = lt.textWidth + 6;
+            parts.push({kt: kt, kw: kw, lt: lt, lw: lw});
+            total += kw + inner + lw + (i > 0 ? outer : 0);
         }
-        var str = which == 1 ? 'W A S D or point  choose      X or click  buy      ENTER  done      BACKSPACE  back'
-                             : 'LEFT / RIGHT  character      UP / DOWN  costume      ENTER  pick      BACKSPACE  back';
-        m[name] = FGUYPauseText(m, (b.xMin + b.xMax) / 2 - 400, y, 800, 30, str, false, 16, 0xFFFFFF, 'center');
+        var barH = capH + 22 * size, barW = total + 56 * size;
+        var bx = r.x + (r.w - barW) / 2, by = r.y + r.h - barH - 30 * size;
+        FGUYPauseBox(bg, bx, by, barW, barH, barH / 2, 0x13213C, 92, 0x2E5C9A, 100, 3);
+        var x = bx + 28 * size, cy = by + (barH - capH) / 2;
+        for (var j = 0; j < parts.length; j++) {
+            var pt = parts[j];
+            FGUYPauseBox(bg, x, cy, pt.kw, capH, 8 * size, 0xFFFFFF, 100, 0x000000, 50, 1);
+            pt.kt._x = x + (pt.kw - pt.kt.textWidth) / 2 - 2;
+            pt.kt._y = cy + (capH - pt.kt.textHeight) / 2 - 2;
+            x += pt.kw + inner;
+            pt.lt._x = x;
+            pt.lt._y = cy + (capH - pt.lt.textHeight) / 2 - 2;
+            x += pt.lw + outer;
+        }
+        if (which == 1)   // (the mouse works there too: the loader turns a point / click into those keys)
+            FGUYPauseText(ui, bx, by - 30 * size, barW, 26 * size, 'or point at a weapon and click to buy it', false,
+                          15 * size, 0xBFD0EA, 'center');
+        FGUYNavSig = sig;
     }
-    m[name]._visible = true;
+    FGUYMouseUnzoom(ui);
 }
 
 // Research (make_hud_patch.py --debug): a screen's own key handler ran - which key, for whom (where: 1 weapons, 2 death).
