@@ -354,7 +354,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
   // none at CARRY): a shell keeps its thickness, a button or a pocket stays on it. Moves of more than PUSH are left (a part meant to be
   // inside). The character's triangles in a grid, as charGrid does its vertices.
   function pushOut(m) {
-    const CLEAR = 0.008, CARRY = 0.06, PUSH = 0.15, cell = 0.05;
+    const CLEAR = 0.02, CARRY = 0.06, PUSH = 0.15, cell = 0.05;   // (CLEAR: past the character's outline, 0.007 out)
     const hidden = new Map(hiddenUnder(m).map(h => [h.piece, new Set(h.ranges.flatMap(([s, n]) => Array.from({length: n}, (_, k) => s + k)))]));
     const grid = new Map(), key = (x, y, z) => x + ',' + y + ',' + z;
     for (const p of ed.pieces) {
@@ -411,6 +411,50 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
       }
     }
     return moved;
+  }
+
+  // A part worn on the trunk (most of its weight on the spine, from the hips up to where the arms join) doesn't follow
+  // the limbs: weight on a limb's bones past its first (the collarbone, the thigh, the neck) goes to that first bone,
+  // and the first takes at most LIMB of a vertex (the rest to the spine bone it hangs from). The vest's armholes and
+  // sides took the upper arms' weights from under them, and swung with the arms - onto the gun. The trunk: the spine
+  // bones up to the one both hands hang from (a hand: a bone with four children or more - its fingers - the furthest
+  // out on its side; the head has as many, its face's).
+  function keepToTheTrunk(m) {   // (part by part: a model's parts can all be one geometry)
+    const LIMB = 0.35, {parent, count} = ed.skel;
+    const kids = Array.from({length: count}, () => 0);
+    parent.forEach(p => { if (p >= 0) kids[p]++; });
+    const xs = ed.skel.bind.map(b => new THREE.Vector3().setFromMatrixPosition(b).x);
+    const many = kids.map((k, i) => k >= 4 ? i : -1).filter(i => i >= 0);   // (the head too: its face bones)
+    const hands = [many.reduce((a, b) => xs[b] > xs[a] ? b : a, many[0]), many.reduce((a, b) => xs[b] < xs[a] ? b : a, many[0])];
+    if (!many.length || !(xs[hands[0]] > 0.1) || !(xs[hands[1]] < -0.1)) return;   // (one far out on each side)
+    const up = b => { const out = []; for (; b >= 0; b = parent[b]) out.push(b); return out; };
+    const a = up(hands[0]), b = new Set(up(hands[1]));
+    const join = a.find(x => b.has(x));
+    if (join === undefined) return;
+    const trunk = new Set(up(join));
+    const first = bone => { while (bone >= 0 && !trunk.has(parent[bone])) bone = parent[bone]; return bone; };
+    const verts = m.verts;
+    for (const part of m.parts) {
+      const mine = new Set();
+      for (let k = part.first; k < part.first + part.count; k++) mine.add(m.idx[k]);
+      let all = 0, onTrunk = 0;
+      for (const i of mine) for (const [bone, w] of verts[i].bw) { all += w; if (trunk.has(bone)) onTrunk += w; }
+      if (!all || onTrunk < all * 0.5) continue;
+      for (const i of mine) {
+        const acc = new Map(), total = verts[i].bw.reduce((t, [, w]) => t + w, 0) || 1;
+        for (const [bone, w] of verts[i].bw) {
+          const f = trunk.has(bone) ? bone : first(bone);
+          if (f < 0) { acc.set(bone, (acc.get(bone) || 0) + w); continue; }
+          acc.set(f, (acc.get(f) || 0) + w);
+        }
+        for (const [bone, w] of [...acc]) {
+          if (trunk.has(bone) || w <= total * LIMB) continue;
+          acc.set(bone, total * LIMB);
+          acc.set(parent[bone], (acc.get(parent[bone]) || 0) + w - total * LIMB);
+        }
+        verts[i].bw = [...acc.entries()].sort((x, y) => y[1] - x[1]).slice(0, 4);
+      }
+    }
   }
 
   // the model as the game will have it: parts with vertices (character space, bones) and their textures
@@ -478,7 +522,16 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
       parts.push({first, count: idx.length - first, tex});
     }
     if ($('modelOver').checked) pushOut({verts, idx, parts});
-    if (G && $('modelOver').checked) ride(verts, pieces);
+    // (a triangle wound against its own normals - left by the modeller's meshing, or folded moving it out - turned
+    //  round: the game culls it as a back face, a hole, and our black outline - the model inflated, inside out - shows
+    //  it as a black speck on the surface)
+    const ea = new THREE.Vector3(), eb = new THREE.Vector3(), fn = new THREE.Vector3();
+    for (let k = 0; k + 2 < idx.length; k += 3) {
+      const A = verts[idx[k]], B = verts[idx[k + 1]], C = verts[idx[k + 2]];
+      fn.crossVectors(ea.subVectors(B.pos, A.pos), eb.subVectors(C.pos, A.pos));
+      if (fn.dot(A.nrm) + fn.dot(B.nrm) + fn.dot(C.nrm) < 0) [idx[k + 1], idx[k + 2]] = [idx[k + 2], idx[k + 1]];
+    }
+    if (G && $('modelOver').checked) { keepToTheTrunk({verts, idx, parts}); ride(verts, pieces); }
     // (the palette: a color an 8 x 8 cell, 32 a row - the game's 4 x 4 compressed blocks and smaller mip levels keep it)
     if (palette.length > 1024) throw new Error('too many colors (' + palette.length + ') - 1,024 at most without a texture');
     if (palette.length) {

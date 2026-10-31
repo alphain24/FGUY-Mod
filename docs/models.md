@@ -101,10 +101,22 @@ its surface, and the part at least 0.12 units thick there. Thin shells like a ve
 ### Nothing of the character showing through
 
 Thin shells hide nothing, so the Studio makes sure they sit **outside** the character instead: wherever your model is
-inside the character's drawn surface, or closer than 0.008 units to it, it's moved out along the character's normal to
-0.008 off it (three rounds, up to 0.15 units — a part meant to be deep inside stays). The model's vertices nearby go
-with it (fully within 0.03, fading out by 0.06), so a shell keeps its thickness and a button stays on its pocket.
-Where the character is hidden under a solid part, nothing needs to move.
+inside the character's drawn surface, or closer than 0.02 units to it (past the character's outline), it's moved out
+along the character's normal to 0.02 off it (three rounds, up to 0.15 units — a part meant to be deep inside stays).
+The model's vertices nearby go with it (fully within 0.03, fading out by 0.06), so a shell keeps its thickness and a
+button stays on its pocket. Where the character is hidden under a solid part, nothing needs to move.
+
+### Parts on the body don't follow the arms
+
+A part worn on the trunk (most of its weight on the spine, from the hips up to where the arms join — a vest, a belt,
+a pendant) can't follow a limb past its first bone: weight on the upper arm, forearm or hand goes to the collarbone,
+on the shin or foot to the thigh, and that first bone takes at most 35% of a vertex (the rest goes to the spine).
+Otherwise a vest's sides, weighted from the arms right under them, swing with the arms.
+
+### Triangles facing the right way
+
+A triangle wound against its own normals (meshing tools leave a few) is turned round: the game would cull it as a
+back face — a hole — and the black outline, an inflated inside-out copy, shows it as a black speck.
 
 ---
 

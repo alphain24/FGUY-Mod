@@ -31,7 +31,9 @@ Reconstructed from a reference picture with the img2threejs skill, then skinned 
 
 His shirt showed through the vest at the back and shoulders (the vest sat up to 0.1 inside him there) and his hip
 through the sheath: the Studio now moves a worn-over model out of the character wherever he's drawn
-(`docs/models.md`, "Nothing of the character showing through"). `clash_check.js` (run in the Studio's page like
+(`docs/models.md`, "Nothing of the character showing through"). The vest's sides also followed his upper arms (447 of
+its 1,157 vertices took arm weights) and swung onto the gun, and 169 of the outfit's triangles were wound backwards
+(black specks on the vest's back): both fixed in the Studio for every worn-over model (`docs/models.md`). `clash_check.js` (run in the Studio's page like
 `studio_build.js`) measures it - per part of the outfit, how many vertices are inside him and how deep.
 
 The boots end below his knee (at 0.29; the knee is at 0.32): over the knee his trousers bulged out of them whenever it
