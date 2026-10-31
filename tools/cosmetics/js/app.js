@@ -113,8 +113,12 @@ async function openPackage(file) {
   if (first) selectOutfit(first);
 }
 
+// The game folder: Chrome and Edge let the page open just the file it needs in it (showDirectoryPicker); Firefox and
+// Safari pick the whole folder (webkitdirectory: the browser lists its files, only PLYS.ho is read). Anywhere, the
+// folder - or PLYS.ho, or a skin pack - can be dropped on the page.
+const NOT_GAME = "That doesn't look like the game folder (no FGUY\\Global_Scenes\\Players\\PLYS.ho).";
 $('openFolder').onclick = async () => {
-  if (!window.showDirectoryPicker) { setStatus('This browser can\'t open folders - use "Or pick PLYS.ho".'); return; }
+  if (!window.showDirectoryPicker) { $('openDir').click(); return; }
   try {
     let dir = await window.showDirectoryPicker({id: 'fguy', mode: 'read'});
     for (const part of ['FGUY', 'Global_Scenes', 'Players']) {
@@ -123,10 +127,42 @@ $('openFolder').onclick = async () => {
     const file = await (await dir.getFileHandle('PLYS.ho')).getFile();
     await openPackage(file);
   } catch (e) {
-    if (e.name !== 'AbortError') setStatus("That doesn't look like the game folder (no FGUY\\Global_Scenes\\Players\\PLYS.ho).");
+    if (e.name !== 'AbortError') setStatus(NOT_GAME);
   }
 };
 $('openFile').onchange = e => e.target.files[0] && openPackage(e.target.files[0]);
+$('openDir').onchange = e => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  const plys = files.find(f => /(^|\/)Global_Scenes\/Players\/PLYS\.ho$/i.test(f.webkitRelativePath)) ||
+    files.find(f => /^PLYS\.ho$/i.test(f.name));
+  if (plys) openPackage(plys);
+  else if (files.length) setStatus(NOT_GAME);
+};
+
+addEventListener('dragover', e => {
+  if (!e.dataTransfer?.types.includes('Files')) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+addEventListener('drop', async e => {
+  const item = e.dataTransfer?.items?.[0];
+  if (!item || item.kind !== 'file') return;
+  e.preventDefault();
+  const entry = item.webkitGetAsEntry?.(), file = e.dataTransfer.files[0];
+  if (entry?.isDirectory) {   // (the game folder, or one further in)
+    const get = path => new Promise(ok => entry.getFile(path, {}, f => f.file(ok, () => ok(null)), () => ok(null)));
+    for (const path of ['FGUY/Global_Scenes/Players/PLYS.ho', 'Global_Scenes/Players/PLYS.ho', 'Players/PLYS.ho', 'PLYS.ho']) {
+      const plys = await get(path);
+      if (plys) { await openPackage(plys); return; }
+    }
+    setStatus(NOT_GAME);
+  } else if (file && /\.ho$/i.test(file.name)) {
+    await openPackage(file);
+  } else if (file && /\.(fgskin|zip)$/i.test(file.name)) {   // (a skin pack: opened as "Open skin pack" does)
+    await openPackBytes(new Uint8Array(await file.arrayBuffer()), file.name);
+  }
+});
 
 // Our skins (the FGUY Cosmetics mod's - no game art in them): library.json lists them, the packs are the mod's own files
 // (dev_server.py hands out dist/FGUYMod/mods as /mods/). Each shows as a chip beside its character's outfits.

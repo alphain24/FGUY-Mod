@@ -89,6 +89,7 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
     <span style="flex:1"></span>
     <button class="btn primary" id="openFolder">Open game folder</button>
     <label class="btn" style="display:inline-block">Or pick PLYS.ho <input type="file" id="openFile" accept=".ho" hidden></label>
+    <input type="file" id="openDir" webkitdirectory hidden>
   </header>
 
   <aside class="panel">
@@ -102,7 +103,9 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
       <p>Click <b>Open game folder</b> and choose the folder Family Guy is installed in
       (the one with <code>FGUY.exe</code>). The studio reads the characters from your own copy of the game -
       nothing is uploaded anywhere.</p>
-      <p class="muted">Chrome or Edge. In other browsers use "Or pick PLYS.ho" (it's in <code>FGUY\Global_Scenes\Players</code>).</p>
+      <p>Or drag the game folder onto this page.</p>
+      <p class="muted">Firefox asks whether to "upload" the folder's files: it means to this page, on your PC - only
+      <code>PLYS.ho</code> is read (it's in <code>FGUY\Global_Scenes\Players</code>, and "Or pick PLYS.ho" opens it on its own).</p>
     </div></div>
     <div class="hint" id="hint">Drag to turn - scroll to zoom - click the character to pick a color</div>
     <label class="viewopt" title="Cel shading and the game's black outlines on the character - our pieces get none in the game, so none here; what the game leaves out under a model, left out"><input type="checkbox" id="gameLook"> In-game look</label>

@@ -36,7 +36,7 @@ You only need what you'll use:
 
 | For | You need |
 |---|---|
-| Skins, outfits, emotes | **Chrome or Edge**, and the Skin Studio (below) |
+| Skins, outfits, emotes | A web browser (Chrome, Edge, Firefox), and the Skin Studio (below) |
 | Packing a mod into one file, menu patches | **Python 3.8+** |
 | Plugins | **Visual Studio 2022** (the *Desktop development with C++* workload) |
 | Outfits / models | A 3D program that exports `.glb` — **Blender** is free |
@@ -51,8 +51,8 @@ Get the project's files: on the [repository page](https://github.com/alphain24/F
 
 ### The Skin Studio
 
-Open **[the Skin Studio](https://alphain24.github.io/FGUY-Mod/)** in Chrome or Edge and click **Open game folder**.
-It reads the characters from **your own copy of the game**, right in your browser — nothing is uploaded anywhere.
+Open **[the Skin Studio](https://alphain24.github.io/FGUY-Mod/)** and click **Open game folder** (or drag the game
+folder onto the page). It reads the characters from **your own copy of the game**, right in your browser — nothing is uploaded anywhere.
 
 <details>
 <summary>Running it from the project's files instead</summary>
@@ -65,8 +65,8 @@ Then open **http://127.0.0.1:8766**.
 </details>
 
 > [!NOTE]
-> In browsers without folder access (Firefox, Safari), use **Or pick PLYS.ho** instead and choose
-> `FGUY\Global_Scenes\Players\PLYS.ho` from your game folder.
+> **Firefox** asks whether to "upload" the folder's files: it means to the page, on your PC — only
+> `FGUY\Global_Scenes\Players\PLYS.ho` is read. **Or pick PLYS.ho** opens that one file on its own.
 
 ## 3. Make a skin
 
