@@ -17,7 +17,7 @@
 // The menu asks for everything with FGUYMOD_LobbyState() (one text blob, see LobbyState below) a few
 // times per second and acts with FGUYMOD_LobbyDo(command, args...).
 //
-// Settings ([Online] in FGUYMod.ini): Server=host:port (default port 7650; default server: the mod's, 145.79.134.160),
+// Settings ([Online] in FGUYMod.ini): Server=host:port (default port 7650; default server: the mod's, 91.226.56.14),
 // Name=<your name>.
 
 #include "common.h"
@@ -36,7 +36,7 @@
 namespace {
 
 const int kProto = 3;
-const char* kModVersion = "0.9.3";
+const char* kModVersion = "0.9.4";
 
 struct Member {
     std::string name, character = "Peter", costume = "0", team = "0", input = "c";  // input: k keyboard, c controller
@@ -753,7 +753,14 @@ void OnlineEnter() {
     OnlineMenuOpen(true);
     if (g_wantConnection) return;
     wchar_t server[256], name[64];
-    SettingString(L"Online", L"Server", L"FGUYMOD_ONLINE_SERVER", L"145.79.134.160:7650", server, 256);   // (the mod's lobby server)
+    const wchar_t* kServer = L"91.226.56.14:7650";   // (the mod's lobby server)
+    SettingString(L"Online", L"Server", L"FGUYMOD_ONLINE_SERVER", kServer, server, 256);
+    // (an update leaves FGUYMod.ini as it is - a player's still names the mod's servers before this one: this one)
+    for (const wchar_t* old : {L"145.79.134.160", L"87.76.191.217"})
+        if (wcsstr(server, old) == server) {
+            Log(L"Online: FGUYMod.ini names the mod's old server (%s) - the new one, %s", server, kServer);
+            wcscpy_s(server, kServer);
+        }
     DWORD len = 64;
     wchar_t user[64] = L"Player";
     GetUserNameW(user, &len);

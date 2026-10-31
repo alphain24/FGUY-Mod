@@ -217,6 +217,21 @@ class Server:
         self.sock = None
         self.sim = None   # test knob: a simulated bad connection (NetSim)
         self.rate = {}  # addr -> [window start, count]
+        # (a player's packets to them sent from the address theirs came to - see relay_thread)
+        self.pktinfo = None
+        self.local = {}  # addr -> the server's address (4 bytes) their packets arrived at
+
+    def send(self, data, addr):
+        """A relay packet to a player, from the address they send theirs to. A server behind its host's NAT (one
+        address on a link for incoming traffic, routed out by a rule "from <it>", another as the default route) would
+        otherwise answer from its default route's own private address: players' routers drop it - the match waits
+        for the other players forever."""
+        src = self.local.get(addr) if self.pktinfo else None
+        if src:
+            self.sock.sendmsg([data], [(socket.IPPROTO_IP, self.pktinfo, struct.pack('=I4s4s', 0, src, b'\0\0\0\0'))],
+                              0, addr)
+        else:
+            self.sock.sendto(data, addr)
 
     # ---- lobby (TCP) -------------------------------------------------------------------------------
     async def handle(self, reader, writer):
@@ -494,17 +509,17 @@ class Server:
                         try:
                             pkt = (b'FG' + data[2:10] + b'\xfe' + b'A\xfe' + bytes([about]) + socket.inet_aton(ip) +
                                    struct.pack('>H', port))
-                            self.sock.sendto(pkt, s.addrs[to])
+                            self.send(pkt, s.addrs[to])
                         except OSError:
                             pass
             return
         for i, a in enumerate(s.addrs):
             if a and i != slot:
                 if self.sim:
-                    self.sim.forward(self.sock, data, a)
+                    self.sim.forward(self.send, data, a)
                     continue
                 try:
-                    self.sock.sendto(data, a)
+                    self.send(data, a)
                 except OSError:
                     pass
 
@@ -515,6 +530,8 @@ class Server:
             for t in [t for t, s in list(self.sessions.items()) if now - s.last > SESSION_IDLE_S]:
                 del self.sessions[t]
             self.rate = {a: r for a, r in list(self.rate.items()) if now - r[0] < 5}
+            playing = {a for s in self.sessions.values() for a in s.addrs if a}
+            self.local = {a: v for a, v in list(self.local.items()) if a in playing}
             # lobbies whose players never came back from their match; places nobody reclaimed
             for code, l in list(self.lobbies.items()):
                 gone = [m for m in l.members if m.away and m.gone_at and now - m.gone_at > LOBBY_KEEP_S]
@@ -540,13 +557,13 @@ class NetSim:
         threading.Thread(target=self.run, daemon=True).start()
         log.info('relay: simulating %d ms lag, +-%d ms jitter, %.1f%% loss (each way)', lag_ms, jitter_ms, loss_pct)
 
-    def forward(self, sock, data, addr):
+    def forward(self, send, data, addr):
         if random.random() < self.loss:
             return
         at = time.monotonic() + max(0.0, self.lag + random.uniform(-self.jitter, self.jitter))
         with self.cv:
             self.n += 1
-            heapq.heappush(self.queue, (at, self.n, sock, data, addr))
+            heapq.heappush(self.queue, (at, self.n, send, data, addr))
             self.cv.notify()
 
     def run(self):
@@ -554,9 +571,9 @@ class NetSim:
             with self.cv:
                 while not self.queue or self.queue[0][0] > time.monotonic():
                     self.cv.wait(None if not self.queue else max(0.0, self.queue[0][0] - time.monotonic()))
-                _, _, sock, data, addr = heapq.heappop(self.queue)
+                _, _, send, data, addr = heapq.heappop(self.queue)
             try:
-                sock.sendto(data, addr)
+                send(data, addr)
             except OSError:
                 pass
 
@@ -578,10 +595,24 @@ def relay_thread(server, host, port):
             time.sleep(2)
             continue
         server.sock = sock
-        log.info('relay: listening on UDP port %d', port)
+        # (Linux: each packet's destination address, to answer from it - Server.send)
+        pktinfo = getattr(socket, 'IP_PKTINFO', None) if hasattr(sock, 'recvmsg') and host in ('', '0.0.0.0') else None
+        if pktinfo is not None:
+            try:
+                sock.setsockopt(socket.IPPROTO_IP, pktinfo, 1)
+            except OSError:
+                pktinfo = None
+        server.pktinfo = pktinfo
+        log.info('relay: listening on UDP port %d%s', port, ' (answering from each packet\'s own address)' if pktinfo else '')
         while True:
             try:
-                data, addr = sock.recvfrom(2048)
+                if pktinfo is not None:
+                    data, anc, _, addr = sock.recvmsg(2048, socket.CMSG_SPACE(12))
+                    for level, kind, cdata in anc:   # (struct in_pktinfo: ifindex, spec_dst, addr - the header's)
+                        if level == socket.IPPROTO_IP and kind == pktinfo and len(cdata) >= 12:
+                            server.local[addr] = cdata[8:12]
+                else:
+                    data, addr = sock.recvfrom(2048)
             except (ConnectionResetError, ConnectionRefusedError):
                 continue  # someone's game closed: nothing to do
             except OSError as e:
