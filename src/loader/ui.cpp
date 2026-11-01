@@ -309,6 +309,9 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
     //  store says otherwise right after - costumes.as2js FGUYStoreRefreshWrap)
     if (name && strcmp(name, "PLYR_ApplyCostume") == 0 && argc > 0 && (int)ArgNumber(args, argc, 0) == 2 && !NetplayEnabled())
         CosmeticsOfflineSkinPick(2, "");
+    // (research: FGUYMOD_TEST_UNLOCKED=1 - every outfit's challenge counts as done, so the Store sells it)
+    static const bool allUnlocked = [] { char v[4] = {}; return GetEnvironmentVariableA("FGUYMOD_TEST_UNLOCKED", v, 4) && v[0] == '1'; }();
+    if (allUnlocked && name && strcmp(name, "STOR_IsCostumeUnlocked") == 0) { ReturnBool(movie, true); return; }
     if (name && strncmp(name, "FGUYPLUGIN_", 11) == 0) {   // (a mod's plugin's own menu call - modloader.cpp)
         std::vector<std::string> a;
         for (unsigned i = 0; i < argc && i < 16; ++i) {

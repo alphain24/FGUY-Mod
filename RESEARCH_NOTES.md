@@ -742,6 +742,10 @@ ematch_<lobby pid>.txt`), whose lobby then
 - The skin pickers' pictures are Costume_<Char><Outfit>.tif (MNUS.ho; Adam West "West"), with some outfit names not
   the models': cosmetics.cpp PictureOutfit / model.js PICTURE_NAMES. A skin made on a model name the picture doesn't
   use (Stewie "SexyPartySuit" - picture "Sailor") had no row in the Store.
+- The Store sells an outfit only once its challenge is done (IsCostumeLocked -> STOR_IsCostumeUnlocked, the game's)
+  and it isn't bought; the research save has bought every outfit it may. Research knob FGUYMOD_TEST_UNLOCKED=1
+  (ui.cpp): every outfit unlocked, so buying can be tried. Tried 2026-11-01: a custom skin's locked row (Chris
+  Christobel, multiplayer costumes) charged 2000 once and both rows came out bought, the skin on the outfit.
 
 ## Graphics: the blur, filtering, post passes (2026-10-23)
 - The PC game has **no anti-aliasing**: every render target, depth buffer and the back buffer are made without
