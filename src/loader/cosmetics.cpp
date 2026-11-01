@@ -490,8 +490,9 @@ HRESULT STDMETHODCALLTYPE Hook_SetVSConstF(IDirect3DDevice9* self, UINT reg, con
 HRESULT DrawIndexedSkinned(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT base, UINT minIdx, UINT verts, UINT start,
                            UINT prims);
 // A player in first person, their own body in their own view: what's near their eyes (their head, a snout) and above
-// them (a hat) clipped away - clip planes made from the draw's own projection (firstperson.cpp). (g_ownClipped: while
-// one is drawn - a model's outline isn't, models.cpp: through the cut it showed black)
+// them (a hat) clipped away - clip planes made from the draw's own projection (firstperson.cpp). Their outlines aren't
+// drawn - the game's shells (their shader's: graphics.cpp) or a model's (models.cpp, while g_ownClipped): through the
+// cut, looking down into their opened shoulders, the inside-out black copy showed as a blob.
 bool g_ownClipped = false;
 struct OwnBody {
     IDirect3DDevice9* dev;
@@ -500,7 +501,7 @@ struct OwnBody {
     explicit OwnBody(IDirect3DDevice9* d) : dev(d) {
         float planes[8];
         int count = FirstPersonOwnDraw(g_vsConst, planes);
-        if (count < 0) { skip = true; return; }
+        if (count < 0 || (count > 0 && GraphicsDrawingOutline())) { skip = true; return; }
         if (count == 0) return;
         dev->GetRenderState(D3DRS_CLIPPLANEENABLE, &was);
         for (int i = 0; i < count; ++i) dev->SetClipPlane(i, planes + 4 * i);

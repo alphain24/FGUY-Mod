@@ -380,6 +380,7 @@ float g_inkTest[2] = {0, 0};   // (research, FGUYMOD_TEST_INK=a,b: what's taken 
 bool g_inkRed = false;
 const float kInkRed[4] = {1, 0, 0, 0};
 std::vector<IDirect3DPixelShader9*> g_inkPs;
+std::vector<IDirect3DPixelShader9*> g_outlinePs;   // (the outline shells' - GraphicsDrawingOutline)
 
 bool PatchInkShader(const DWORD* in, std::vector<DWORD>& out) {
     if ((in[0] & 0xFFFF0000) != 0xFFFF0000 || ((in[0] >> 8) & 0xFF) != 3) return false;   // (ps_3_0 only)
@@ -430,6 +431,8 @@ HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* self, const D
     }
     HRESULT hr = Real_CreatePixelShader(self, code, out);
     if (SUCCEEDED(hr) && code && out && *out && g_psTrace) g_psNames.push_back({*out, CtabNames(code)});
+    UINT outlineReg;   // (the characters' outline shells: inside-out black copies - FogColor, outlineColor)
+    if (SUCCEEDED(hr) && code && out && *out && CtabRegister(code, "outlineColor", &outlineReg)) g_outlinePs.push_back(*out);
     UINT skipReg;   // (a name, or "=" and a shader's whole list of constant names as the trace prints it)
     if (SUCCEEDED(hr) && code && out && *out && g_psSkip[0] &&
         (g_psSkip[0] == '=' ? CtabNames(code) == g_psSkip + 1 : CtabRegister(code, g_psSkip, &skipReg)))
@@ -863,6 +866,9 @@ void GraphicsLoadSettings() {
 bool GraphicsHdCharacters() { return g_hdChars; }
 bool GraphicsDrawingInk() {   // (cosmetics.cpp: the ink strokes' shader is set - their own band texture, not for HD)
     return g_curPs && std::find(g_inkPs.begin(), g_inkPs.end(), g_curPs) != g_inkPs.end();
+}
+bool GraphicsDrawingOutline() {   // (cosmetics.cpp: a character's outline shell's shader is set - outlineColor)
+    return g_curPs && std::find(g_outlinePs.begin(), g_outlinePs.end(), g_curPs) != g_outlinePs.end();
 }
 
 // d3d9.cpp: the game's device (before the skins' hooks: theirs go through ours)

@@ -861,3 +861,4 @@ ematch_<lobby pid>.txt`), whose lobby then
   off, they hung in front of the eyes. Their own lines are left out while their head is half way to the eye or past it
   (with one view on the screen, always in first person - split screen, the partner keeps seeing them otherwise). The
   neck cut sits 0.15 under the head bone: the chin and an open mouth are below it.
+- The game's own outline shells (pixel shaders with outlineColor) showed black through the neck cut too, looking down into the opened shoulders: on a player's own clipped body they aren't drawn. Peter's drill gun is held up at his shoulder, beside his head, even firing - from his eyes it's out of the view; a gun held at the chest sits under the view's bottom edge (77 degrees across at 16:9 is 48 up and down).

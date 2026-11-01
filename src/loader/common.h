@@ -193,6 +193,7 @@ void SkinUpscaleDds(const std::vector<unsigned char>& rgba, unsigned w, unsigned
                     std::vector<unsigned char>& dds);   //   ... twice its size, as a DDS (any thread)
 bool GraphicsHdCharacters();   // graphics.cpp: Graphics > HD character textures
 bool GraphicsDrawingInk();     //   the ink strokes' shader is the one set
+bool GraphicsDrawingOutline(); //   a character's outline shell's shader is the one set
 // icons.cpp: skin icons in the menus
 std::string IconsAdd(const std::vector<unsigned char>& png);   // the movie a menu loads to show it ("fguyicon_<key>.gfx"; "": not a PNG)
 const std::vector<unsigned char>* IconsMovie(const char* url);  //   ui.cpp: the movie for a file the game opens (nullptr: not one)
