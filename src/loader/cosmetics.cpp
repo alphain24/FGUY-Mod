@@ -489,23 +489,25 @@ HRESULT STDMETHODCALLTYPE Hook_SetVSConstF(IDirect3DDevice9* self, UINT reg, con
 }
 HRESULT DrawIndexedSkinned(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT base, UINT minIdx, UINT verts, UINT start,
                            UINT prims);
-// A player in first person, their own body in their own view: what's near their eyes (their head, a hat's brim, a snout)
-// clipped away - a clip plane ahead of the eyes, made from the draw's own projection (firstperson.cpp).
+// A player in first person, their own body in their own view: what's near their eyes (their head, a snout) and above
+// them (a hat) clipped away - clip planes made from the draw's own projection (firstperson.cpp). (g_ownClipped: while
+// one is drawn - a model's outline isn't, models.cpp: through the cut it showed black)
+bool g_ownClipped = false;
 struct OwnBody {
     IDirect3DDevice9* dev;
     bool clip = false, skip = false;
     DWORD was = 0;
     explicit OwnBody(IDirect3DDevice9* d) : dev(d) {
-        float plane[4];
-        int what = FirstPersonOwnDraw(g_vsConst[2], g_vsConst[3], plane);
-        if (what == 2) { skip = true; return; }
-        if (what != 1) return;
+        float planes[8];
+        int count = FirstPersonOwnDraw(g_vsConst, planes);
+        if (count < 0) { skip = true; return; }
+        if (count == 0) return;
         dev->GetRenderState(D3DRS_CLIPPLANEENABLE, &was);
-        dev->SetClipPlane(0, plane);
-        dev->SetRenderState(D3DRS_CLIPPLANEENABLE, was | D3DCLIPPLANE0);
-        clip = true;
+        for (int i = 0; i < count; ++i) dev->SetClipPlane(i, planes + 4 * i);
+        dev->SetRenderState(D3DRS_CLIPPLANEENABLE, was | (count == 2 ? D3DCLIPPLANE0 | D3DCLIPPLANE1 : D3DCLIPPLANE0));
+        clip = g_ownClipped = true;
     }
-    ~OwnBody() { if (clip) dev->SetRenderState(D3DRS_CLIPPLANEENABLE, was); }
+    ~OwnBody() { if (clip) { dev->SetRenderState(D3DRS_CLIPPLANEENABLE, was); g_ownClipped = false; } }
 };
 
 HRESULT STDMETHODCALLTYPE Hook_DrawIndexed(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT base, UINT minIdx,
@@ -736,6 +738,7 @@ IDirect3DTexture9* CosmeticsTextureFromDds(IDirect3DDevice9* dev, const std::vec
     return MakeTexture(dev, t);
 }
 int CosmeticsDrawPlayer() { return DrawPlayer(); }
+bool CosmeticsOwnBodyClipped() { return g_ownClipped; }
 
 void CosmeticsDeviceCreated(IDirect3DDevice9* dev) {
     if (void* o = Patch(dev, 65, (void*)Hook_SetTexture)) Real_SetTexture = (SetTexture_t)o;

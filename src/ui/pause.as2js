@@ -377,6 +377,7 @@ function FGUYPausePoll() {
     FGUYPingPoll();
     FGUYSpectatePoll();
     FGUYEmotePoll();
+    FGUYCrosshairPoll();
     if (FGUYHudDumpWait == undefined) FGUYHudDumpWait = 0;
     FGUYHudDump();
     FGUYHudZoom();
@@ -484,6 +485,37 @@ function FGUYEmotePoll() {
                            : 'Mouse: pick  -  let go of B to play' + (pages > 1 ? '  -  mouse wheel: more' : '');
     FGUYPauseText(tx, r.x, cy + R + 14 * size, r.w, 30 * size, hint, false, 16 * size, 0xFFFFFF, 'center');
     FGUYMouseUnzoom(ui);   // (whole-screen units: online the HUD's root is zoomed to one viewport)
+}
+
+// First person's crosshairs (FGUYMOD_Crosshairs: "x,y;..." - the middle of each view looking through its player's
+// eyes, in 1/10000 of the screen): a small cross there, under the HUD's menus (drawn again only when they move)
+function FGUYCrosshairPoll() {
+    var s = flash.external.ExternalInterface.call('FGUYMOD_Crosshairs');
+    s = s == undefined ? '' : String(s);
+    if (s == FGUYCrossLast) { if (_root.FGUYCrossUI != undefined) FGUYMouseUnzoom(_root.FGUYCrossUI); return; }
+    FGUYCrossLast = s;
+    _root.FGUYCrossUI.removeMovieClip();
+    if (s == '') return;
+    var ui = _root.createEmptyMovieClip('FGUYCrossUI', 29989);
+    var r = FGUYPauseRect(), k = r.h / 720, at = s.split(';');
+    for (var i = 0; i < at.length; i++) {
+        var xy = at[i].split(',');
+        if (xy.length == 2) FGUYCrosshair(ui, r.x + Number(xy[0]) / 10000 * r.w, r.y + Number(xy[1]) / 10000 * r.h, k);
+    }
+    FGUYMouseUnzoom(ui);   // (whole-screen units: online the HUD's root is zoomed to one viewport)
+}
+
+// four short lines round a dot, white on a dark edge (seen on snow and in the dark); k: the screen's height / 720
+function FGUYCrosshair(mc, x, y, k) {
+    var gap = 4 * k, len = 7 * k;
+    for (var pass = 0; pass < 2; pass++) {
+        mc.lineStyle((pass == 0 ? 4 : 2) * k, pass == 0 ? 0x000000 : 0xFFFFFF, pass == 0 ? 40 : 90);
+        mc.moveTo(x - gap - len, y); mc.lineTo(x - gap, y);
+        mc.moveTo(x + gap, y); mc.lineTo(x + gap + len, y);
+        mc.moveTo(x, y - gap - len); mc.lineTo(x, y - gap);
+        mc.moveTo(x, y + gap); mc.lineTo(x, y + gap + len);
+        mc.moveTo(x - 0.5 * k, y); mc.lineTo(x + 0.5 * k, y);
+    }
 }
 
 // a ring's slice from angle a0 to a1 (0 = up, clockwise), radius r0 to r1 (r0 0: to the middle)

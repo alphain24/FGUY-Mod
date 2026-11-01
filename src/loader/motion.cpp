@@ -51,6 +51,8 @@ struct Track {
     double playStart = 0, stopAt = 0;     // (stopAt: blending back to the game's own since then)
     std::vector<float> last;              // the pose this frame, as built (models.cpp skins a new model with it)
     int lastBones = 0;
+    bool haveHead = false;                // where their head is this frame, in the world (firstperson.cpp)
+    float head[3] = {};
 };
 Track g_tracks[4];
 volatile bool g_palArm[4];
@@ -101,6 +103,47 @@ void Sample(const Motion& m, double t, bool loop, float* out) {
     }
 }
 
+// A bone's local transform (rotation x y z w, translation, scale) applied to a point.
+void Apply(const float* rot, const float* pos, const float* scale, const float* in, float* out) {
+    float x = rot[0], y = rot[1], z = rot[2], w = rot[3];
+    float v[3] = {in[0] * scale[0], in[1] * scale[1], in[2] * scale[2]};
+    float R[9] = {1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w),
+                  2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w),
+                  2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)};
+    for (int i = 0; i < 3; ++i) out[i] = R[i * 3] * v[0] + R[i * 3 + 1] * v[1] + R[i * 3 + 2] * v[2] + pos[i];
+}
+
+// Where the character's head is, in the world, as posed: the head is the skeleton's bone with the most bones on it
+// (the face's: Peter's 6, 11 of them - a hand has its fingers, fewer). The skeleton's parents: [[[[entity +0x1d4]
+// +0x80] +0x283c]] a byte a bone (0xff the root); the pose's bone 0 is the entity's origin, its bone n + 1 the
+// skeleton's n. Its place: down the chain of local transforms to the origin, then the entity's (rows right / up /
+// forward / place).
+bool HeadPlace(const unsigned char* ent, const float* rot, const float* pos, const float* scale, int bones, float* out) {
+    auto at = [](const void* p, int off) -> const unsigned char* {
+        if (!p || IsBadReadPtr(static_cast<const unsigned char*>(p) + off, 4)) return nullptr;
+        return *reinterpret_cast<const unsigned char* const*>(static_cast<const unsigned char*>(p) + off);
+    };
+    const unsigned char* skel = at(at(at(ent, 0x1d4), 0x80), 0x283c);
+    const unsigned char* parent = at(skel, 0);
+    int n = bones - 1;
+    if (!parent || n < 2 || n > 254 || IsBadReadPtr(parent, n)) return false;
+    int children[255] = {}, head = -1;
+    for (int b = 0; b < n; ++b)
+        if (parent[b] != 0xff) {
+            if (parent[b] >= b) return false;   // (parents come first - not a parent table)
+            ++children[parent[b]];
+        }
+    for (int b = 0; b < n; ++b) if (head < 0 || children[b] > children[head]) head = b;
+    if (children[head] < 6) return false;
+    float p[3] = {0, 0, 0};
+    for (int b = head + 1; b > 0; b = parent[b - 1] == 0xff ? 0 : parent[b - 1] + 1)
+        Apply(rot + b * 4, pos + b * 3, scale + b * 3, p, p);
+    Apply(rot, pos, scale, p, p);
+    const float* m = reinterpret_cast<const float*>(ent);
+    for (int i = 0; i < 3; ++i) out[i] = p[0] * m[i] + p[1] * m[4 + i] + p[2] * m[8 + i] + m[12 + i];
+    return true;
+}
+
 void __cdecl Hook_PoseBuild(unsigned char* ent, float* rot, float* pos, float* scale, int bones) {
     EnterCriticalSection(&g_lock);
     for (Track& tr : g_tracks) {
@@ -143,6 +186,7 @@ void __cdecl Hook_PoseBuild(unsigned char* ent, float* rot, float* pos, float* s
         tr.last.resize(bones * kFloats);
         Gather(rot, pos, scale, bones, tr.last.data());
         tr.lastBones = bones;
+        tr.haveHead = FirstPersonAny() && HeadPlace(ent, rot, pos, scale, bones, tr.head);
     }
     LeaveCriticalSection(&g_lock);
     g_poseOriginal(ent, rot, pos, scale, bones);
@@ -260,6 +304,16 @@ bool MotionPose(int slot, std::vector<float>& out, int* bones) {
     EnterCriticalSection(&g_lock);
     bool have = g_tracks[slot].lastBones > 0 && g_tracks[slot].ent;
     if (have) { out = g_tracks[slot].last; *bones = g_tracks[slot].lastBones; }
+    LeaveCriticalSection(&g_lock);
+    return have;
+}
+
+// firstperson.cpp: where a player's head is this frame (the world), false: not known
+bool MotionHead(int slot, float* at) {
+    if (slot < 0 || slot >= 4 || !g_poseOriginal) return false;
+    EnterCriticalSection(&g_lock);
+    bool have = g_tracks[slot].haveHead && g_tracks[slot].ent;
+    if (have) memcpy(at, g_tracks[slot].head, sizeof(g_tracks[slot].head));
     LeaveCriticalSection(&g_lock);
     return have;
 }

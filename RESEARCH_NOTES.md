@@ -836,3 +836,28 @@ ematch_<lobby pid>.txt`), whose lobby then
   scribbles round the characters.
 - Research scripts: the session's fpv_probe / fpv_find / fpv_ptrs / fpv_scan / fpv_copy / ptrscan (camera dump, value
   search, struct pointers, settings scan by poking, private copy test, every pointer into a range).
+
+## First person: their own body in their view (2026-11-01)
+- A character faces where they last went, not the camera: standing and turning the view in first person looked across
+  their own shoulder and gun (Peter's drill gun is held up beside his head). Their heading: `[player+0x5c]+0x58` and
+  `+0x78` (radians, 0..2 pi; +0x78 the one it turns toward) - the game rebuilds the transforms ([+0x38], [+0x5c], rows
+  right / up / forward / place) from it every frame, so turning only the matrices did nothing. Writing both: the body
+  follows the view exactly. The forward vector also sits at player +0x10a8 / +0x10b0 (x, z).
+- The camera trails the player as they set off: the orbit block's point (`player+0xf3a8`, eye at +0x18) is written from
+  a smoothed copy of its own each update (0.6 behind at a run) - writing the point before the update changes nothing;
+  moving it (and the eye) after the update does, and the view follows.
+- A character's draws carry world positions: they're skinned on the CPU straight into the world, c0..c3 is the view x
+  projection (the eye solved from c0, c1, c3 came out as the camera's world place); c4..c6 is near their place but
+  doesn't move the points.
+- The skeleton's parent table at runtime: `[[[[entity +0x1d4] +0x80] +0x283c]]` (a byte a bone, 0xff the root; Peter 58
+  bones: 0-6 the spine to the head, 6 with 11 face bones on it). The head bone (the one with the most bones on it) sits
+  1.42 above Peter's feet, at the neck; the camera's eye is at 1.80. Setting off at a run, the head lunges ahead and
+  down past the eye for about a third of a second.
+- A skin's model drawn with a clip plane through it shows its outline (the inside-out black copy) through the cut: a
+  black blob (the Adventurer's hat brim seen from below). Their own body's outline isn't drawn in first person.
+- Offline Deathmatch with two pads (pad 1 joins) has no enemies - a calm place to test views. The test pipe's `heal
+  <player> <health>` keeps a player alive offline (god works only free-running).
+- The ink lines of a player's face aren't clipped with their body (drawn apart, from the queue of 0x4c6ed0): setting
+  off, they hung in front of the eyes. Their own lines are left out while their head is half way to the eye or past it
+  (with one view on the screen, always in first person - split screen, the partner keeps seeing them otherwise). The
+  neck cut sits 0.15 under the head bone: the chin and an open mouth are below it.

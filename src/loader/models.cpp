@@ -606,9 +606,11 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
         }
         *hr = real(dev, (int)D3DPT_TRIANGLELIST, 0, 0, V, p.first, p.count / 3);
     }
-    DWORD cull = D3DCULL_NONE;   // (its outline: inside out - only when the game culls a side, else it would cover it)
+    // (its outline: inside out - only when the game culls a side, else it would cover it; and not on a player's own body
+    //  in first person - cut open there by the clip, its inside showed black)
+    DWORD cull = D3DCULL_NONE;
     dev->GetRenderState(D3DRS_CULLMODE, &cull);
-    if (m->hull && g_black && cull != D3DCULL_NONE) {
+    if (m->hull && g_black && cull != D3DCULL_NONE && !CosmeticsOwnBodyClipped()) {
         dev->SetStreamSource(0, m->hull, 0, 12);
         dev->SetTexture(1, g_black);
         if (oldTex2) dev->SetTexture(2, g_black);

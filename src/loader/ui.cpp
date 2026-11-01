@@ -482,6 +482,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnBool(movie, true);
         } else if (strcmp(fn, "EmoteWheel") == 0) {      // (the HUD: the emote wheel - emotes.cpp)
             ReturnString(movie, EmotesWheelText());
+        } else if (strcmp(fn, "Crosshairs") == 0) {      // (the HUD: first person's crosshairs - firstperson.cpp)
+            ReturnString(movie, FirstPersonCrosshairs());
         } else if (strcmp(fn, "ModsOpenFolder") == 0) {  // (the mods folder in Explorer)
             ModsOpenFolder();
             ReturnBool(movie, true);

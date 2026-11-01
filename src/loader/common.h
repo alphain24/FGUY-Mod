@@ -141,6 +141,7 @@ void SplitViewHudHas4Way(bool has);    //   the level's HUD: does it have the 4-
 int SplitViewMyViewport();             //   online: my player's viewport (-1: offline / not in the level yet)
 int SplitViewShownViewport();          //   the one shown (spectating: a teammate's)
 int SplitViewDrawing();                //   render thread: the view drawing now (-1: another camera's)
+bool SplitViewRect(int viewport, float* ltrb);   //   a view's place on the screen (0..1) - false: not shown
 void SplitViewPredict(bool on, float turn, float x, float z);   //   netplay: my view's turn still to come (display only)
 unsigned NetplayShownTick();           // netplay.cpp: the tick the frame being drawn shows
 float NetplayModelTurn(unsigned from, unsigned to);   //   the model's turn of my inputs of ticks (from, to]
@@ -207,6 +208,7 @@ void CosmeticsStoreSkinPick(const char* pic, const char* file);
 const char* CosmeticsHeadIcon(int player);   // cosmetics.cpp, FGUYMOD_HeadIcon: the HUD head of the skin a player wears ("" none)
 IDirect3DTexture9* CosmeticsTextureFromDds(IDirect3DDevice9* dev, const std::vector<unsigned char>& dds);   // cosmetics.cpp
 int CosmeticsDrawPlayer();             //   which player this draw is of (-1 none)
+bool CosmeticsOwnBodyClipped();        //   this draw is a player's own body in first person, clipped (no outline)
 // models.cpp: new characters (the FGUY Cosmetics mod's models)
 using ModelsRealDraw = HRESULT(__stdcall*)(IDirect3DDevice9*, int, int, unsigned, unsigned, unsigned, unsigned);
 void ModelsLoad(int slot, const std::vector<unsigned char>& pack, const wchar_t* name);   // a player wears a model ({}: none)
@@ -226,8 +228,15 @@ void FirstPersonDrawnCamera(int view, float* m);   //   splitview.cpp: a view's 
 bool FirstPersonNoLines(float x, float y, float z);   //   models.cpp: no ink lines for what's there, in the view drawing now
 bool MotionPlaying(int slot);          //   (motion.cpp)
 void FirstPersonSetDefault(bool on);   //     (kept in FGUYMod.ini)
+const char* FirstPersonFovName();      //   graphics.cpp (SETTINGS > CAMERA): first person's field of view
+void FirstPersonFovStep(int by);       //     the next / previous (kept in FGUYMod.ini)
+int FirstPersonFovMine();              //   onlinesettings.cpp: mine, as it goes with my input (1..5)
+void FirstPersonFovFromInput(int player, int code);   //   ...and a player's from theirs
+bool FirstPersonCrosshair();           //   graphics.cpp (SETTINGS > CAMERA): a crosshair in first person
+void FirstPersonSetCrosshair(bool on); //     (kept in FGUYMod.ini)
+const char* FirstPersonCrosshairs();   //   FGUYMOD_Crosshairs: where the HUD draws them
 void FirstPersonFromInput(int player, bool on);   //   onlinesettings.cpp, every tick: that player's, from their input
-int FirstPersonOwnDraw(const float* c2, const float* c3, float* plane);   //   render thread (cosmetics.cpp): a player's own body in their view - 1 clip (plane), 2 skip
+int FirstPersonOwnDraw(const float (*c)[4], float* planes);   //   render thread (cosmetics.cpp): a player's own body in their view - clip planes (how many), -1 skip
 void InitMotion();                     // characters' poses: read / ours instead              (motion.cpp)
 void MotionFrame();                    //   d3d9.cpp: a frame was drawn
 void MotionCommand(const char* cmd, const char* a, const char* b);   //   test pipe "poserec" / "posefreeze" / "poseplay" / "posestop" / "findptr"
@@ -239,6 +248,7 @@ void MotionPlay(int slot, std::shared_ptr<const MotionClip> clip, const std::vec
 void MotionStop(int slot);             //   (blending back to the game's own)
 bool MotionPlaying(int slot);
 bool MotionPose(int slot, std::vector<float>& out, int* bones);   //   a player's pose this frame (models.cpp)
+bool MotionHead(int slot, float* at);  //   where a player's head is this frame, in the world (firstperson.cpp)
 struct _XINPUT_STATE;
 void EmotesPad(DWORD pad, _XINPUT_STATE* st);   // emotes.cpp: held Back is the emote wheel     (emotes.cpp)
 bool EmotesMouse(LONG* dx, LONG* dy, LONG* dz);  //   kbm.cpp: the mouse, the keyboard's wheel open (true: taken)
@@ -409,7 +419,8 @@ struct KbmRaw {            // one player's raw keyboard and mouse for one tick (
     SHORT cursorX, cursorY; //   mouse cursor in the window, 0..32767 across / down (every PC's window differs)
     BYTE flags;            //   bit 0: this player's level HUD is up (every player's: keyboard mode starts)
     BYTE aim;              //   this player's aim sensitivity, 0..100 (onlinesettings.cpp)
-    BYTE opts;             //   bit 0 invert look, bit 1 reticles, bit 7: aim / opts set
+    BYTE opts;             //   bit 0 invert look, bit 1 reticles, bit 7: aim / opts set; bit 2 first person (bit 3: said),
+                           //   bits 4..6 its field of view (firstperson.cpp)
     BYTE pace;             //   frames per second this player's PC manages right now (0: not known) - netplay.cpp
     BYTE sync;             //   (the host) 1: everyone takes the host's random numbers at this tick - netplay.cpp
 };

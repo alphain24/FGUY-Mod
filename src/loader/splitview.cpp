@@ -548,6 +548,14 @@ int SplitViewMyViewport() { return g_active ? MyPlayerViewport() : -1; }
 int SplitViewShownViewport() { return g_active && MyViewport() >= 0 ? ShownViewport() : SplitViewMyViewport(); }
 int SplitViewDrawing() { return g_drawingView; }
 
+// A view's place on the screen: its first camera's edges as last set (+0x34: left, top, right, bottom, 0..1) - split
+// screen's, or online mine whole and the others in a corner pixel (those: false)
+bool SplitViewRect(int viewport, float* ltrb) {
+    if (viewport < 0 || viewport >= kMaxViewports || viewport >= Count()) return false;
+    memcpy(ltrb, static_cast<const unsigned char*>(Camera(viewport, 0)) + 0x34, 4 * sizeof(float));
+    return ltrb[2] - ltrb[0] > 0.05f && ltrb[3] - ltrb[1] > 0.05f;
+}
+
 // netplay.cpp, every tick of a session (the game thread): spectate when dead in Multiverse Madness - 3 s after my
 // player went down, the first teammate still standing; mine again once I'm back (or SETTINGS > Spectate off).
 void SplitViewSpectateTick(int rate) {

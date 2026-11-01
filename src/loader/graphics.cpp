@@ -1020,6 +1020,8 @@ const char* GraphicsMenuRows(int page) {
     } else {
         row("First person", FirstPersonDefault() ? "ON" : "OFF", 'c',
             "Play through your character's eyes. In a match: V, or Back twice on a controller, switches");
+        row("Field of view", FirstPersonFovName(), 'c', "In first person: how wide you see. Wider shows more around you");
+        row("Crosshair", FirstPersonCrosshair() ? "ON" : "OFF", 'c', "In first person: a mark in the middle of your view, where your shots go");
     }
     return g_rows.c_str();
 }
@@ -1049,6 +1051,8 @@ int GraphicsMenuChange(int page, int row, int delta) {
         if (row == 1) return 2;
     } else {
         if (row == 0) FirstPersonSetDefault(!FirstPersonDefault());
+        if (row == 1) FirstPersonFovStep(dir);
+        if (row == 2) FirstPersonSetCrosshair(!FirstPersonCrosshair());
     }
     return 0;
 }

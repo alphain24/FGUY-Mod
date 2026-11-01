@@ -317,6 +317,17 @@ void HandleCommand(char* line) {
         NetplayTestGod(!on || atoi(on) != 0);
         return;
     }
+    if (cmd && _stricmp(cmd, "heal") == 0) {   // test tools: heal <player> <health> - offline too (god is free-running
+        char* who = strtok_s(nullptr, " \t\r\n", &ctx);   //   only): the listed player's health, found again each time
+        char* hp = strtok_s(nullptr, " \t\r\n", &ctx);
+        auto list = *reinterpret_cast<char***>(0xbad988);
+        int index = who ? atoi(who) : -1;
+        if (!hp || !list || index < 0 || index >= *reinterpret_cast<int*>(reinterpret_cast<char*>(list) + 0x20)) return;
+        char* health = list[index] ? *reinterpret_cast<char**>(list[index] + 0x105c) : nullptr;
+        if (health && !IsBadWritePtr(health + 0x50, 4) && *reinterpret_cast<float*>(health + 0x50) > 0)   // (not once down)
+            *reinterpret_cast<float*>(health + 0x50) = (float)atof(hp);
+        return;
+    }
     if (cmd && _stricmp(cmd, "sendevent") == 0) {   // research: sendevent <id low hex> <id high hex> <event hex> - that
         char* lo = strtok_s(nullptr, " \t\r\n", &ctx);   //   object (by its asset id) gets the event here (free-running)
         char* hi = strtok_s(nullptr, " \t\r\n", &ctx);
