@@ -862,3 +862,35 @@ ematch_<lobby pid>.txt`), whose lobby then
   (with one view on the screen, always in first person - split screen, the partner keeps seeing them otherwise). The
   neck cut sits 0.15 under the head bone: the chin and an open mouth are below it.
 - The game's own outline shells (pixel shaders with outlineColor) showed black through the neck cut too, looking down into the opened shoulders: on a player's own clipped body they aren't drawn. Peter's drill gun is held up at his shoulder, beside his head, even firing - from his eyes it's out of the view; a gun held at the chest sits under the view's bottom edge (77 degrees across at 16:9 is 48 up and down).
+
+## First person: shooting, the gun's stances, zoom (2026-11-02)
+- **The clip**: player `+0x4ffc` (int; the weapon objects at `[player+0x2240]` = `[player+0xf0]` keep the rounds used at
+  `+0x164`). Shots are taken in `0x675740` (callers `0x67f230`, `0x6835f0`; `0x6755a0` / `0x675850` the clip's sums).
+  Peter's drill: one round a pull. On the virtual pad every pull fired, first person or third, zoomed or not, in the empty
+  arena; with enemies about, 94% (the misses: hit stuns) - no first-person cause found. What looked like "not shooting":
+  the gun's kick swung the game's hand, our arm let go and the gun (and its flash) left the view.
+- **The upper body's blending, `[player+0x13cc]`**: `+0x78` an action played over it (-1 none, 4 the aiming stance -
+  firing, zooming, reloading, RB), `+0x50` its weight (eased in ~0.1 s, out ~0.15 s, ~1.3 s after the last shot);
+  `+0x104` the relaxed stance's weight (it gives way to the aiming stance and to a melee swing, a jump, a power-up's
+  throw). Player `+0xfa24` / `+0xfa28` follow `+0x50`. Between the two stances the hand swings 45-60 degrees against the
+  upper arm - as much as a reload or a power-up's gesture.
+- The hand against the upper arm, measured (max): standing 9.5 degrees; a shot 58 / 0.23 (for an eye 1.8 up); reload 48
+  / 0.18; zooming in 60 / 0.29; Peter's melee 13 / 0.02; a power-up 65 / 0.14.
+- **Controls (pad)**: LT zooms (held; the view's projection narrows - Peter's drill to 0.74 of its width - the camera's
+  field of view, settings `+0x88`, doesn't change), RT fires, X reloads, B melee, LB a power-up, D-pad left / right
+  pick the power-up (Multiverse Madness: one gun each, no weapon switch).
+- **Vaults**: sprinting into low cover (Santa's Workshop's crates) vaults over it - the other arm reaches across the
+  view and the eye goes through the crate's top for a moment. Not handled yet.
+- Test copies on this PC lose their Direct3D device (0x88760868) a minute after the last real input: the screen saver
+  (`Mystify.scr`, 60 s; the virtual pad isn't input to Windows). `tools/keep_screen_on.ps1` keeps it off meanwhile.
+- **The ten Multiverse Madness characters** (character select from the left; it wraps after ten): Peter 59 bones (pose
+  count), Lois 50, Chris 47 (a bow, in his LEFT hand), Brian 71, Stewie 48, Meg 61, Carter 53 (two revolvers), Quagmire
+  66 (a rifle), Death 61 (a staff in his left hand; casts from his hands), Cleveland 44 (two pistols). Skeletons differ a
+  lot: the most-branched bone is Meg's hips, not her head; Stewie's head has only his two eyes on it (his chest has more);
+  Chris's and Cleveland's arms have no collarbone; cartoon hands have four or five fingers. What holds for all: the hands
+  are a pair of alike bones (as deep, as many bones on them) with 4+ short finger chains; the chest is where the arms
+  meet; the head is the chest's other branch nearest the eye, down its neck.
+- Aiming (`[+0x13cc]+0x50` at 1), the game points any character's gun at the crosshair: the hand's turn then, against the
+  view, is the gun's in first person - no per-weapon table needed.
+- `tools/start_arena.ps1` (`-Enemies` keeps them), `tools/test_fpv_all.ps1` (every character's first person on a
+  contact sheet - `tools/re/fpv_frames.py`).

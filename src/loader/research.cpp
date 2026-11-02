@@ -201,6 +201,22 @@ char __fastcall Spy_Input2(void* self, void*, int action, int a, int b) {
 }
 
 void InitResearch() {
+    // the test arena (FGUYMOD_TEST_ARENA=1, test scripts only): no enemy spawns - an offline match is a quiet place to
+    // look at things. The spawn (0x60d080, cdecl: a request -> the enemy) made "return 0": none free, as the spawners
+    // know (they try again later) - turning down the enemy's going into the world instead crashed its spawner.
+    if (SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_ARENA", 0)) {
+        const unsigned char start[] = {0x53, 0x56, 0x8b, 0x74, 0x24, 0x0c};
+        auto at = reinterpret_cast<unsigned char*>(0x60d080);
+        if (!IsBadReadPtr(at, sizeof(start)) && memcmp(at, start, sizeof(start)) == 0) {
+            const unsigned char none[] = {0x31, 0xc0, 0xc3};   // xor eax, eax; ret
+            DWORD old;
+            VirtualProtect(at, sizeof(none), PAGE_EXECUTE_READWRITE, &old);
+            memcpy(at, none, sizeof(none));
+            VirtualProtect(at, sizeof(none), old, &old);
+            FlushInstructionCache(GetCurrentProcess(), at, sizeof(none));
+            Log(L"Research: test arena - no enemies");
+        }
+    }
     g_spyAction = SettingInt(L"Debug", L"InputSpy", L"FGUYMOD_INPUTSPY", -1);
     if (g_spyAction >= 0) {
         auto vt = reinterpret_cast<void**>(kInputVtable);

@@ -36,10 +36,11 @@ const int kFov = 0x88;
 const int kFovs[] = {70, 0, 90, 100, 110};
 const int kFovCount = 5;
 const float kGlide = 0.25f;                  // seconds from one view to the other
+const float kZoomed = 0.2f;                  // (a weapon's zoom: the view this much narrower is "all the way")
 const uintptr_t kViewports = 0xb5a9b0, kViewportSize = 0x3c70;   // (the views: splitview.cpp)
-// the eye, of the character's camera height (Peter's 2.2: 1.76 up, 0.22 ahead, 0.4 to the left - the gun, held at the right
-// shoulder as they shoot, comes up at the bottom right of the view instead of across its middle)
-const float kEyeHeight = 0.8f, kEyeAhead = 0.1f, kEyeSide = -0.18f;
+// the eye, of the character's camera height (Peter's 2.2: 1.76 up, 0.22 ahead) - over the middle of their body: off to a
+// side it came out past their collision at a wall (their gun is put in the view by motion.cpp, wherever the game holds it)
+const float kEyeHeight = 0.8f, kEyeAhead = 0.1f, kEyeSide = 0;
 
 using Update_t = void(__thiscall*)(void* camera, int a, float dt);
 Update_t g_real = nullptr;
@@ -68,6 +69,7 @@ struct View {
     float side = -99;                                    // (to their right; -99: kEyeSide)
     float blend = 0;                                     // 0 third person .. 1 first person
     int fov = 0;                                         // (their field of view in first person, degrees; 0 the game's)
+    float wideAs = 0;                                    // (their view's width not aiming, tan across - FirstPersonArms)
     int viewport = -1;                                   // (their view)
     float offsets[16];                                   // (their camera offsets, 0x647890's)
     float eyeOff[3] = {0, 0, 0};                         // (their eye from their place, the lag taken out - EyeNow)
@@ -280,7 +282,8 @@ void __fastcall Hook_Update(unsigned char* camera, void*, int a, float dt) {
     float lo = *pmin, hi = *pmax, fov = *pfov, t = Eased(v.blend);
     *pmin = lo + (-v.pitch - lo) * t;
     *pmax = hi + (v.pitch - hi) * t;
-    if (v.fov > 0) *pfov = fov + (v.fov * 3.14159265f / 180 - fov) * t;
+    float ours = v.fov > 0 ? fov + (v.fov * 3.14159265f / 180 - fov) * t : fov;
+    *pfov = ours;
     // no aim assist in first person: the game hands the camera the point on the enemy nearest the aim and a strength
     // each frame (0x62c110 -> 0x5707a0: camera +0x334 on, +0x338 the point, +0x344 / +0x348 the strength), and its
     // update pulls the view that way - the crosshair stuck to enemies. Turned off just before it updates (every PC
@@ -289,8 +292,9 @@ void __fastcall Hook_Update(unsigned char* camera, void*, int a, float dt) {
     g_real(camera, a, dt);
     // no lag across the ground: the game's camera trails the player as they set off (its own smoothed copy of the point
     // it orbits - 0.6 behind at a run), and their own head and shoulders ran into the view. The point it orbits and the
-    // eye moved to where it settles standing - their place, our offsets along the view (side, ahead); the height keeps
-    // the game's smoothing (a jump). The eye kept as an offset from their place: the view is drawn - and their gun
+    // eye moved to where it settles standing - their place, our offsets along the view (side, ahead) and up (the game's
+    // height smoothing too: jumping, their body rose ahead of the eye into the view). The eye kept as an offset from
+    // their place: the view is drawn - and their gun
     // held - from their place as it is when it's drawn (the game draws more often than it updates the camera: from
     // this update's eye, the view and gun stepped as they moved).
     float* orbit = reinterpret_cast<float*>(player + kOrbit);
@@ -298,16 +302,20 @@ void __fastcall Hook_Update(unsigned char* camera, void*, int a, float dt) {
         float yaw = *reinterpret_cast<float*>(player + kCamYaw), fx = -sinf(yaw), fz = -cosf(yaw);
         float side = v.offsets[0], ahead = v.offsets[2];
         float dx = (xf[12] + fx * ahead - fz * side - orbit[0]) * t, dz = (xf[14] + fz * ahead + fx * side - orbit[2]) * t;
+        float dy = (xf[13] + v.offsets[1] - orbit[1]) * t;
         orbit[0] += dx;
+        orbit[1] += dy;
         orbit[2] += dz;
         orbit[6] += dx;
+        orbit[7] += dy;
         orbit[8] += dz;
         for (int i = 0; i < 3; ++i) v.eyeOff[i] = orbit[6 + i] - xf[12 + i];
         v.haveEye = true;
     }
     *pmin = lo;
     *pmax = hi;
-    *pfov = fov;
+    *pfov = fov + (*pfov - ours);   // (the game's own change in the update kept - a weapon's zoom easing in and out:
+                                    //  put back as it was, it never finished zooming out)
     if (g_face) FaceView(player, t);
 }
 
@@ -509,8 +517,9 @@ void FirstPersonFovFromInput(int player, int code) {
 
 // motion.cpp: a player whose gun is brought into their view - in first person (by how far), their view on this
 // screen and drawn from their eyes (not emoting), alive: their eye and which way they look (from the eye to the
-// point the camera orbits - its pitch too), in the world; and whether they're standing still
-bool FirstPersonArms(int slot, float* eye, float* forward, float* weight, bool* still, float* tans) {
+// point the camera orbits - its pitch too), in the world; whether they're standing still, their view's width, their
+// weapon's zoom and the game's upper-body stance
+bool FirstPersonArms(int slot, ArmsView* out) {
     if (!g_any || slot < 0 || slot >= 4) return false;
     View& v = g_view[slot];
     float r[4];
@@ -521,18 +530,36 @@ bool FirstPersonArms(int slot, float* eye, float* forward, float* weight, bool* 
     float f[3] = {orbit[0] - orbit[6], orbit[1] - orbit[7], orbit[2] - orbit[8]};
     float len = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
     if (len < 0.02f) return false;
-    if (!EyeNow(v, eye)) return false;
-    for (int i = 0; i < 3; ++i) forward[i] = f[i] / len;
-    *weight = Eased(v.blend);
-    *still = *reinterpret_cast<const int*>(v.player + 0x1a34) == 0;   // (its move state: 0 standing, 2 walking)
+    if (!EyeNow(v, out->eye)) return false;
+    for (int i = 0; i < 3; ++i) out->forward[i] = f[i] / len;
+    out->weight = Eased(v.blend);
+    out->still = *reinterpret_cast<const int*>(v.player + 0x1a34) == 0;   // (its move state: 0 standing, 2 walking)
     // the view's projection (its viewport +0x164: 1 / tan across - negative - and up the diagonal)
     const float* proj = reinterpret_cast<const float*>(kViewports + v.viewport * kViewportSize + 0x164);
-    tans[0] = 0.79f;
-    tans[1] = 0.45f;
+    out->tans[0] = 0.79f;
+    out->tans[1] = 0.45f;
     if (!IsBadReadPtr(proj, 24) && std::fabs(proj[0]) > 0.1f && std::fabs(proj[5]) > 0.1f) {
-        tans[0] = 1 / std::fabs(proj[0]);
-        tans[1] = 1 / std::fabs(proj[5]);
+        out->tans[0] = 1 / std::fabs(proj[0]);
+        out->tans[1] = 1 / std::fabs(proj[5]);
     }
+    // the upper body's blending ([player+0x13cc]): an action played over it (+0x78, -1 none; its weight +0x50 - firing,
+    // zooming, reloading: the aiming stance, eased in and out) and the relaxed stance's weight (+0x104 - it gives way to
+    // the aiming stance, and to a melee swing, a jump, a power-up's throw)
+    out->aim = 0;
+    out->rest = 1;
+    auto layer = *reinterpret_cast<const unsigned char* const*>(v.player + 0x13cc);
+    if (layer && !IsBadReadPtr(layer + 0x50, 0xb8)) {
+        float a = *reinterpret_cast<const int*>(layer + 0x78) >= 0 ? *reinterpret_cast<const float*>(layer + 0x50) : 0;
+        float b = *reinterpret_cast<const float*>(layer + 0x104);
+        out->aim = a > 0 ? (a < 1 ? a : 1) : 0;
+        out->rest = b > 0 ? (b < 1 ? b : 1) : 0;
+    }
+    // the weapon's zoom: the view narrower than it is when not aiming (zooming eases the aiming stance in first; the
+    // game narrows the view's projection itself, not the camera's field of view) - all the way at a fifth narrower
+    if (out->aim <= 0 || v.wideAs <= 0) v.wideAs = out->tans[0];
+    float wide = out->tans[0] / v.wideAs;
+    out->wide = wide < 0.2f ? 0.2f : (wide > 1 ? 1 : wide);
+    out->zoom = (1 - out->wide) / kZoomed < 1 ? (1 - out->wide) / kZoomed : 1;
     return true;
 }
 
@@ -672,6 +699,11 @@ void FirstPersonCommand(const char* args) {
         if ((s = strtok_s(nullptr, " \t", &ctx)) != nullptr) v[2] = (float)atof(s);
         s = strtok_s(nullptr, " \t", &ctx);
         MotionArmsTest(v[0], v[1], v[2], !s || atoi(s) != 0);
+        return;
+    }
+    if (_stricmp(p, "armszoom") == 0) {   // fpv armszoom <right> <down> - the gun hand's place zoomed in
+        char* s = strtok_s(nullptr, " \t", &ctx);
+        MotionArmsZoomTest((float)atof(on), s ? (float)atof(s) : 0.75f);
         return;
     }
     if (_stricmp(p, "armsturn") == 0) {   // fpv armsturn <pitch> <yaw> <roll> - the gun hand turned after (degrees)
