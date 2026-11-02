@@ -34,9 +34,8 @@ const int kFov = 0x88;
 // their input as its index + 1 (KbmRaw.opts bits 4..6; 0: not said - the game's)
 const int kFovs[] = {70, 0, 90, 100, 110};
 const int kFovCount = 5;
-const float kGlide = 0.25f;
+const float kGlide = 0.25f;                  // seconds from one view to the other
 const uintptr_t kViewports = 0xb5a9b0, kViewportSize = 0x3c70;   // (the views: splitview.cpp)
-const float kLeanRate = 12, kLeanMost = 1.0f;   // (the eye over their neck: how fast it follows (1/s), how far at most)                  // seconds from one view to the other
 // the eye, of the character's camera height (Peter's 2.2: 1.76 up, 0.22 ahead, 0.4 to the left - the gun, held at the right
 // shoulder as they shoot, comes up at the bottom right of the view instead of across its middle)
 const float kEyeHeight = 0.8f, kEyeAhead = 0.1f, kEyeSide = -0.18f;
@@ -70,8 +69,9 @@ struct View {
     int fov = 0;                                         // (their field of view in first person, degrees; 0 the game's)
     int viewport = -1;                                   // (their view)
     float offsets[16];                                   // (their camera offsets, 0x647890's)
-    float lean[2] = {0, 0};                              // (their neck from their feet, over the ground - smoothed)
-    float eyeAt[3] = {0, 0, 0};                          // (their eye this update, the lag taken out - the drawn view's)
+    float eyeOff[3] = {0, 0, 0};                         // (their eye from their place, the lag taken out - EyeNow)
+    float seen[2][3] = {};                               // (their place: the last two the game set, and when -
+    LONGLONG seenAt[2] = {0, 0};                         //  EyeNow goes smoothly between them)
     bool haveEye = false;
 };
 View g_view[8];
@@ -155,6 +155,33 @@ __declspec(naked) void OffsetsStub() {
     }
 }
 
+// Their eye now: their place and the eye's offset from the last camera update. The game moves them a few times a
+// frame's worth less often than it draws (about 22 a second at 108 drawn): from their place as set, the view and their
+// gun moved in steps. So their place goes from the last one set to the one before smoothly, a set's time behind.
+bool EyeNow(View& v, float* eye) {
+    auto xf = v.player && v.haveEye ? *reinterpret_cast<const float* const*>(v.player + 0x38) : nullptr;
+    if (!xf) return false;
+    LARGE_INTEGER now, freq;
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&freq);
+    const float* at = xf + 12;
+    if (memcmp(at, v.seen[1], sizeof(v.seen[1])) != 0) {   // (a new place)
+        float dx = at[0] - v.seen[1][0], dy = at[1] - v.seen[1][1], dz = at[2] - v.seen[1][2];
+        bool jump = !v.seenAt[1] || dx * dx + dy * dy + dz * dz > 4;   // (a respawn, a teleport: straight there)
+        memcpy(v.seen[0], jump ? at : v.seen[1], sizeof(v.seen[0]));
+        v.seenAt[0] = jump ? now.QuadPart : v.seenAt[1];
+        memcpy(v.seen[1], at, sizeof(v.seen[1]));
+        v.seenAt[1] = now.QuadPart;
+    }
+    double gap = (double)(v.seenAt[1] - v.seenAt[0]) / freq.QuadPart, since = (double)(now.QuadPart - v.seenAt[1]) / freq.QuadPart;
+    if (gap < 0.005) gap = 0.005;
+    if (gap > 0.1) gap = 0.1;   // (standing still a while, then moving: no slow creep)
+    float k = (float)(since / gap);
+    k = k < 0 ? 0 : (k > 1 ? 1 : k);
+    for (int i = 0; i < 3; ++i) eye[i] = v.seen[0][i] + (v.seen[1][i] - v.seen[0][i]) * k + v.eyeOff[i];
+    return true;
+}
+
 // The player pressed the switch (this camera update).
 bool Switched(unsigned char* player, View& v, float dt) {
     auto input = *reinterpret_cast<unsigned char**>(player + kInput);
@@ -225,7 +252,6 @@ void __fastcall Hook_Update(unsigned char* camera, void*, int a, float dt) {
         v.down = false;
         v.sinceTap = 1e9f;
         v.haveEye = false;
-        v.lean[0] = v.lean[1] = 0;
         if (v.on) g_any = 1;
     }
     if (Switched(player, v, dt)) {
@@ -258,25 +284,19 @@ void __fastcall Hook_Update(unsigned char* camera, void*, int a, float dt) {
     // no lag across the ground: the game's camera trails the player as they set off (its own smoothed copy of the point
     // it orbits - 0.6 behind at a run), and their own head and shoulders ran into the view. The point it orbits and the
     // eye moved to where it settles standing - their place, our offsets along the view (side, ahead); the height keeps
-    // the game's smoothing (a jump). Their place: where their neck is over the ground (motion.cpp, last frame's pose -
-    // smoothed), not their feet: setting off they lean ahead, and their shoulders came in under the eye.
+    // the game's smoothing (a jump). The eye kept as an offset from their place: the view is drawn - and their gun
+    // held - from their place as it is when it's drawn (the game draws more often than it updates the camera: from
+    // this update's eye, the view and gun stepped as they moved).
     float* orbit = reinterpret_cast<float*>(player + kOrbit);
     if (auto xf = *reinterpret_cast<const float* const*>(player + 0x38)) {
         float yaw = *reinterpret_cast<float*>(player + kCamYaw), fx = -sinf(yaw), fz = -cosf(yaw);
-        float side = v.offsets[0], ahead = v.offsets[2], head[3];
-        if (p < 4 && MotionHead(p, head)) {
-            float lx = head[0] - xf[12], lz = head[2] - xf[14], k = dt > 0 && dt < 1 ? 1 - expf(-dt * kLeanRate) : 0;
-            if (lx * lx + lz * lz > kLeanMost * kLeanMost) lx = lz = 0;   // (not where it should be: a respawn)
-            v.lean[0] += (lx - v.lean[0]) * k;
-            v.lean[1] += (lz - v.lean[1]) * k;
-        }
-        float px = xf[12] + v.lean[0], pz = xf[14] + v.lean[1];
-        float dx = (px + fx * ahead - fz * side - orbit[0]) * t, dz = (pz + fz * ahead + fx * side - orbit[2]) * t;
+        float side = v.offsets[0], ahead = v.offsets[2];
+        float dx = (xf[12] + fx * ahead - fz * side - orbit[0]) * t, dz = (xf[14] + fz * ahead + fx * side - orbit[2]) * t;
         orbit[0] += dx;
         orbit[2] += dz;
         orbit[6] += dx;
         orbit[8] += dz;
-        memcpy(v.eyeAt, orbit + 6, sizeof(v.eyeAt));
+        for (int i = 0; i < 3; ++i) v.eyeOff[i] = orbit[6 + i] - xf[12 + i];
         v.haveEye = true;
     }
     *pmin = lo;
@@ -384,9 +404,10 @@ void FirstPersonDrawnCamera(int view, float* m) {
     // their view drawn from their eye, the lag taken out (Hook_Update): the drawn camera is the game's own smoothed
     // copy - at a run 1.3 behind the eye, their own shoulders and back in their view
     for (int p = 0; p < 8; ++p) {
-        const View& v = g_view[p];
-        if (v.viewport != view || v.blend <= 0 || !v.haveEye) continue;
-        float dx = v.eyeAt[0] - m[3], dy = v.eyeAt[1] - m[7], dz = v.eyeAt[2] - m[11], t = Eased(v.blend);
+        View& v = g_view[p];
+        float eye[3];
+        if (v.viewport != view || v.blend <= 0 || !EyeNow(v, eye)) continue;
+        float dx = eye[0] - m[3], dy = eye[1] - m[7], dz = eye[2] - m[11], t = Eased(v.blend);
         if (dx * dx + dy * dy + dz * dz > 9) continue;   // (not this view's camera: another pass's)
         m[3] += dx * t;
         m[7] += dy * t;
@@ -485,7 +506,7 @@ void FirstPersonFovFromInput(int player, int code) {
 // point the camera orbits - its pitch too), in the world; and whether they're standing still
 bool FirstPersonArms(int slot, float* eye, float* forward, float* weight, bool* still, float* tans) {
     if (!g_any || slot < 0 || slot >= 4) return false;
-    const View& v = g_view[slot];
+    View& v = g_view[slot];
     float r[4];
     if (!v.on || v.blend <= 0 || !v.player || IndexOf(v.player) != slot || v.viewport < 0 || v.viewport >= 4) return false;
     if (g_pulled[v.viewport].pull > 0 || MotionPlaying(slot) || !SplitViewRect(v.viewport, r)) return false;
@@ -494,11 +515,8 @@ bool FirstPersonArms(int slot, float* eye, float* forward, float* weight, bool* 
     float f[3] = {orbit[0] - orbit[6], orbit[1] - orbit[7], orbit[2] - orbit[8]};
     float len = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
     if (len < 0.02f) return false;
-    if (!v.haveEye) return false;
-    for (int i = 0; i < 3; ++i) {
-        eye[i] = v.eyeAt[i];
-        forward[i] = f[i] / len;
-    }
+    if (!EyeNow(v, eye)) return false;
+    for (int i = 0; i < 3; ++i) forward[i] = f[i] / len;
     *weight = Eased(v.blend);
     *still = *reinterpret_cast<const int*>(v.player + 0x1a34) == 0;   // (its move state: 0 standing, 2 walking)
     // the view's projection (its viewport +0x164: 1 / tan across - negative - and up the diagonal)
