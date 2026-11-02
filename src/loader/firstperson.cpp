@@ -28,6 +28,7 @@ const unsigned char kOffsetsStart[5] = {0x80, 0x7c, 0x24, 0x04, 0x00};
 const uintptr_t kPlayers = 0xbad988;         // the game's player list: -> 8 pointers, the count at +0x20
 const int kCamera = 0xf148, kPlayerIndex = 0xdf8, kViewport = 0xdfc;
 const int kCamSettings = 0x178, kPitchMin = 0x94, kPitchMax = 0x98;
+const int kAssist = 0x334;                   // (the camera's aim assist, this frame: on)
 // (the settings' field of view, +0x88: the game's 1.396 (80 degrees) is about as wide on a 16:9 screen - 77 degrees across)
 const int kFov = 0x88;
 // First person's field of view: SETTINGS > CAMERA's choices, in degrees (0: the game's). Online a player's goes with
@@ -280,6 +281,11 @@ void __fastcall Hook_Update(unsigned char* camera, void*, int a, float dt) {
     *pmin = lo + (-v.pitch - lo) * t;
     *pmax = hi + (v.pitch - hi) * t;
     if (v.fov > 0) *pfov = fov + (v.fov * 3.14159265f / 180 - fov) * t;
+    // no aim assist in first person: the game hands the camera the point on the enemy nearest the aim and a strength
+    // each frame (0x62c110 -> 0x5707a0: camera +0x334 on, +0x338 the point, +0x344 / +0x348 the strength), and its
+    // update pulls the view that way - the crosshair stuck to enemies. Turned off just before it updates (every PC
+    // runs every player's camera, and knows who's in first person).
+    if (v.blend > 0.5f) camera[kAssist] = 0;
     g_real(camera, a, dt);
     // no lag across the ground: the game's camera trails the player as they set off (its own smoothed copy of the point
     // it orbits - 0.6 behind at a run), and their own head and shoulders ran into the view. The point it orbits and the
