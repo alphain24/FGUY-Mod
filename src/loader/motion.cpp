@@ -217,9 +217,18 @@ M3 FromTo(V3 a, V3 b) {
 
 // the gun hand's place from the eye, for a character whose eye is 1.8 up (research: "fpv arms <right> <down> <ahead>
 // <0|1>")
-float g_armRight = 0.22f, g_armDown = 0.3f, g_armAhead = 0.55f;
+float g_armRight = 0.62f, g_armDown = 1.0f, g_armAhead = 1.2f;   // (across and down: of the view's half - the same
+                                                                 //  place on the screen at any width / field of view)
 bool g_armsOn = true;
-float g_armTurn[3] = {10, -50, -15};   // the hand turned after, degrees (tuned on Peter's drill; research: "fpv armsturn")
+// The hand turned after (degrees about the view's right, up, ahead): its gun pointing ahead, a little in toward the
+// middle. By character - their skeleton's size - for the gun they start with (Peter's drill held up, a pistol low);
+// the others: a pistol's.
+struct ArmTurn { int bones; float turn[3]; };
+const ArmTurn kArmTurns[] = {{59, {-20, 10, 0}},    // Peter
+                             {71, {-70, 10, 0}}};   // Brian
+const float kArmTurnElse[3] = {-70, 10, 0};
+float g_armTurn[3] = {0, 0, 0};   // (research, "fpv armsturn": this for everyone)
+bool g_armTurnTest = false;
 
 // a rotation by `deg` degrees about `axis` (unit)
 M3 About(V3 axis, float deg) {
@@ -246,7 +255,8 @@ M3 Limited(const M3& r, float deg) {
 
 // the game's arm doing something else than holding the gun: how far its hand is moved from that (for an eye 1.8 up),
 // turned (degrees); ours out (s), back in (s) after it's been calm (s); a steady other hold learned after (s)
-const float kWildMove = 0.2f, kWildTurn = 45, kFadeOut = 0.12f, kFadeIn = 0.3f, kCalm = 0.25f, kRelearn = 1.0f;
+const float kWildMove = 0.2f, kWildTurn = 45, kFadeOut = 0.12f, kFadeIn = 0.3f, kCalm = 0.25f, kRelearn = 1.5f;
+const float kSteady = 0.4f;   // (s: the hand steady before the hold is taken)
 
 // a player's gun hand in first person, kept between frames: its slow average against the upper arm (turn, place),
 // and its turn in the view
@@ -261,6 +271,7 @@ struct ArmState {
     V3 refAt = {0, 0, 0};
     float fade = 0;                       // (ours, 0..1: out while the game's arm does something else - a swing, a throw)
     double calmSince = 0, heldSince = 0;  // (since when the game's arm is as it holds the gun / steadily held otherwise)
+    double steadySince = 0;               // (since when the hand is steady, standing - the hold taken only then)
 };
 ArmState g_armState[4];
 
@@ -353,7 +364,8 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
     if (slot < 0 || slot >= 4) return false;
     ArmState& st = g_armState[slot];
     if (st.ent != ent) st = ArmState(), st.ent = ent;
-    if (!g_armsOn || !FirstPersonArms(slot, eyeW, fwdW, &w, &still) || w <= 0) {
+    float tans[2];
+    if (!g_armsOn || !FirstPersonArms(slot, eyeW, fwdW, &w, &still, tans) || w <= 0) {
         st.have = false;   // (the slow average afresh next time; the gun's turn kept)
         return false;
     }
@@ -401,7 +413,8 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
     Arm a, a2;
     if (gun < 0 || !FindArm(parent, children, gun, head, place.data(), &a)) return false;
     float k = eye.y / 1.8f;   // (the character's size)
-    V3 target = eye + Rt * (g_armRight * k) - U * (g_armDown * k) + F * (g_armAhead * k);
+    float ahead = g_armAhead * k;
+    V3 target = eye + Rt * (g_armRight * tans[0] * ahead) - U * (g_armDown * tans[1] * ahead) + F * ahead;
     // The hand's turn in the view (B) is held, as a shooter's gun is: the game's hand, its forearm turned to look
     // ahead (then the research turn), taken once as they come into first person. Onto it: the game's quick hand
     // movement - its turn and place against the upper arm, less their slow average (firing's kick, a reload; not the
@@ -425,11 +438,24 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
     }
     double since = now - st.at;
     st.at = now;
-    if (!st.haveTurn) {   // (taken standing still - walking, the forearm swings: until then, the game's arms)
-        if (!still) return false;
+    // the hand steady standing still (no walk swing, no flinch, no shot's kick) - the hold is taken only after a while
+    // of that: taken mid-flinch, the drill pointed at the sky
+    float steadyAng;
+    {
+        float q[4];
+        ToQuat(Q, q);
+        float d = fabsf(q[0] * st.slow[0] + q[1] * st.slow[1] + q[2] * st.slow[2] + q[3] * st.slow[3]);
+        steadyAng = 2 * acosf(d > 1 ? 1 : d) * 57.2958f;
+    }
+    if (!still || Len(P - st.slowAt) > 0.015f * k || steadyAng > 3 || st.steadySince == 0) st.steadySince = now;
+    bool steady = now - st.steadySince > kSteady;
+    if (!st.haveTurn) {   // (until then, the game's arms)
+        if (!steady) return false;
         M3 turn = FromTo(Unit(place[a.hand] - place[a.elbow]), F);
-        if (g_armTurn[0] || g_armTurn[1] || g_armTurn[2])   // (research: then about the view's right, up, ahead)
-            turn = Mul(Mul(Mul(About(F, g_armTurn[2]), About(U, g_armTurn[1])), About(Rt, g_armTurn[0])), turn);
+        const float* by = kArmTurnElse;
+        for (const ArmTurn& t : kArmTurns) if (t.bones == bones) by = t.turn;
+        if (g_armTurnTest) by = g_armTurn;
+        turn = Mul(Mul(Mul(About(F, by[2]), About(U, by[1])), About(Rt, by[0])), turn);
         st.turn = Mul(Transposed(V), Mul(turn, R[a.hand]));
         st.haveTurn = true;
         ToQuat(Q, st.refQ);
@@ -450,7 +476,7 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
     if (wild || aside) st.calmSince = now;
     if (wild) st.fade = st.fade - step / kFadeOut > 0 ? st.fade - step / kFadeOut : 0;
     else if (now - st.calmSince > kCalm || !aside) st.fade = st.fade + step / kFadeIn < 1 ? st.fade + step / kFadeIn : 1;
-    if (!aside || !still || Len(P - st.slowAt) > 0.03f * k) st.heldSince = now;
+    if (!aside || !steady) st.heldSince = now;
     if (now - st.heldSince > kRelearn) { st.haveTurn = false; st.heldSince = now; }   // (taken again next frame)
     w *= st.fade * st.fade * (3 - 2 * st.fade);
     if (w <= 0) return false;
@@ -659,6 +685,7 @@ bool MotionPose(int slot, std::vector<float>& out, int* bones) {
 }
 
 void MotionArmsTurnTest(float pitch, float yaw, float roll) {
+    g_armTurnTest = true;
     g_armTurn[0] = pitch;
     g_armTurn[1] = yaw;
     g_armTurn[2] = roll;

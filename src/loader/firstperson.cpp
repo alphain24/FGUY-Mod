@@ -35,6 +35,7 @@ const int kFov = 0x88;
 const int kFovs[] = {70, 0, 90, 100, 110};
 const int kFovCount = 5;
 const float kGlide = 0.25f;
+const uintptr_t kViewports = 0xb5a9b0, kViewportSize = 0x3c70;   // (the views: splitview.cpp)
 const float kLeanRate = 12, kLeanMost = 1.0f;   // (the eye over their neck: how fast it follows (1/s), how far at most)                  // seconds from one view to the other
 // the eye, of the character's camera height (Peter's 2.2: 1.76 up, 0.22 ahead, 0.4 to the left - the gun, held at the right
 // shoulder as they shoot, comes up at the bottom right of the view instead of across its middle)
@@ -482,7 +483,7 @@ void FirstPersonFovFromInput(int player, int code) {
 // motion.cpp: a player whose gun is brought into their view - in first person (by how far), their view on this
 // screen and drawn from their eyes (not emoting), alive: their eye and which way they look (from the eye to the
 // point the camera orbits - its pitch too), in the world; and whether they're standing still
-bool FirstPersonArms(int slot, float* eye, float* forward, float* weight, bool* still) {
+bool FirstPersonArms(int slot, float* eye, float* forward, float* weight, bool* still, float* tans) {
     if (!g_any || slot < 0 || slot >= 4) return false;
     const View& v = g_view[slot];
     float r[4];
@@ -500,6 +501,14 @@ bool FirstPersonArms(int slot, float* eye, float* forward, float* weight, bool* 
     }
     *weight = Eased(v.blend);
     *still = *reinterpret_cast<const int*>(v.player + 0x1a34) == 0;   // (its move state: 0 standing, 2 walking)
+    // the view's projection (its viewport +0x164: 1 / tan across - negative - and up the diagonal)
+    const float* proj = reinterpret_cast<const float*>(kViewports + v.viewport * kViewportSize + 0x164);
+    tans[0] = 0.79f;
+    tans[1] = 0.45f;
+    if (!IsBadReadPtr(proj, 24) && std::fabs(proj[0]) > 0.1f && std::fabs(proj[5]) > 0.1f) {
+        tans[0] = 1 / std::fabs(proj[0]);
+        tans[1] = 1 / std::fabs(proj[5]);
+    }
     return true;
 }
 

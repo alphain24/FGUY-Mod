@@ -494,6 +494,17 @@ HRESULT DrawIndexedSkinned(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT ba
 // drawn - the game's shells (their shader's: graphics.cpp) or a model's (models.cpp, while g_ownClipped): through the
 // cut, looking down into their opened shoulders, the inside-out black copy showed as a blob.
 bool g_ownClipped = false;
+// a character's piece: skinned on the CPU into the frame's dynamic vertex buffer (the world - the sky, the level -
+// is drawn from static ones)
+bool Skinned(IDirect3DDevice9* dev) {
+    IDirect3DVertexBuffer9* vb = nullptr;
+    UINT off = 0, stride = 0;
+    if (FAILED(dev->GetStreamSource(0, &vb, &off, &stride)) || !vb) return false;
+    D3DVERTEXBUFFER_DESC d{};
+    vb->GetDesc(&d);
+    vb->Release();
+    return (d.Usage & D3DUSAGE_DYNAMIC) != 0;
+}
 struct OwnBody {
     IDirect3DDevice9* dev;
     bool clip = false, skip = false;
@@ -501,14 +512,26 @@ struct OwnBody {
     explicit OwnBody(IDirect3DDevice9* d) : dev(d) {
         float planes[8];
         int count = FirstPersonOwnDraw(g_vsConst, planes);
-        if (count < 0 || (count > 0 && GraphicsDrawingOutline())) { skip = true; return; }
-        if (count == 0) return;
+        if (count == 0 || !Skinned(d)) return;   // (only a character's pieces: the sky dome is at the camera too, and
+                                                 //  above the neck it was cut away - black)
+        if (count < 0 || GraphicsDrawingOutline()) { skip = true; return; }
         dev->GetRenderState(D3DRS_CLIPPLANEENABLE, &was);
-        for (int i = 0; i < count; ++i) dev->SetClipPlane(i, planes + 4 * i);
+        for (int i = 0; i < count; ++i) {   // (the game's own planes kept: put back after - the sky's)
+            dev->GetClipPlane(i, old[i]);
+            dev->SetClipPlane(i, planes + 4 * i);
+        }
+        used = count;
         dev->SetRenderState(D3DRS_CLIPPLANEENABLE, was | (count == 2 ? D3DCLIPPLANE0 | D3DCLIPPLANE1 : D3DCLIPPLANE0));
         clip = g_ownClipped = true;
     }
-    ~OwnBody() { if (clip) { dev->SetRenderState(D3DRS_CLIPPLANEENABLE, was); g_ownClipped = false; } }
+    ~OwnBody() {
+        if (!clip) return;
+        for (int i = 0; i < used; ++i) dev->SetClipPlane(i, old[i]);
+        dev->SetRenderState(D3DRS_CLIPPLANEENABLE, was);
+        g_ownClipped = false;
+    }
+    float old[2][4] = {};
+    int used = 0;
 };
 
 HRESULT STDMETHODCALLTYPE Hook_DrawIndexed(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT base, UINT minIdx,
