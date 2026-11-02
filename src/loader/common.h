@@ -250,6 +250,12 @@ void MotionStop(int slot);             //   (blending back to the game's own)
 bool MotionPlaying(int slot);
 bool MotionPose(int slot, std::vector<float>& out, int* bones);   //   a player's pose this frame (models.cpp)
 bool MotionHead(int slot, float* at);  //   where a player's head is this frame, in the world (firstperson.cpp)
+void MotionArmsTest(float right, float down, float ahead, bool on);   //   research: the gun hand's place in first person
+void MotionArmsTurnTest(float pitch, float yaw, float roll);           //   research: ...and its turn (degrees)
+bool MotionArmsInView(int slot);       //   their gun was brought into their view this frame (their head shrunk away)
+bool FirstPersonArms(int slot, float* eye, float* forward, float* weight, bool* still);   //   motion.cpp: a player's
+                                       //   gun to bring into their view - their eye, which way they look (the world),
+                                       //   how far (0..1), standing still
 struct _XINPUT_STATE;
 void EmotesPad(DWORD pad, _XINPUT_STATE* st);   // emotes.cpp: held Back is the emote wheel     (emotes.cpp)
 bool EmotesMouse(LONG* dx, LONG* dy, LONG* dz);  //   kbm.cpp: the mouse, the keyboard's wheel open (true: taken)

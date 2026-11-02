@@ -34,7 +34,8 @@ const int kFov = 0x88;
 // their input as its index + 1 (KbmRaw.opts bits 4..6; 0: not said - the game's)
 const int kFovs[] = {70, 0, 90, 100, 110};
 const int kFovCount = 5;
-const float kGlide = 0.25f;                  // seconds from one view to the other
+const float kGlide = 0.25f;
+const float kLeanRate = 12, kLeanMost = 1.0f;   // (the eye over their neck: how fast it follows (1/s), how far at most)                  // seconds from one view to the other
 // the eye, of the character's camera height (Peter's 2.2: 1.76 up, 0.22 ahead, 0.4 to the left - the gun, held at the right
 // shoulder as they shoot, comes up at the bottom right of the view instead of across its middle)
 const float kEyeHeight = 0.8f, kEyeAhead = 0.1f, kEyeSide = -0.18f;
@@ -62,12 +63,15 @@ struct View {
     unsigned char* player = nullptr;                     // (the player object it was set up for)
     bool down = false;                                   // (the switch: held last time)
     float sinceTap = 1e9f;                               //   (seconds since the controller button's last press)
-    float height = 0, forward = -1, pitch = 1.4f;      // (0 / -1: from the character's camera - kEyeHeight / kEyeAhead)
+    float height = 0, forward = -99, pitch = 1.4f;     // (0 / -99: from the character's camera - kEyeHeight / kEyeAhead)
     float side = -99;                                    // (to their right; -99: kEyeSide)
     float blend = 0;                                     // 0 third person .. 1 first person
     int fov = 0;                                         // (their field of view in first person, degrees; 0 the game's)
     int viewport = -1;                                   // (their view)
     float offsets[16];                                   // (their camera offsets, 0x647890's)
+    float lean[2] = {0, 0};                              // (their neck from their feet, over the ground - smoothed)
+    float eyeAt[3] = {0, 0, 0};                          // (their eye this update, the lag taken out - the drawn view's)
+    bool haveEye = false;
 };
 View g_view[8];
 volatile LONG g_any = 0;
@@ -104,7 +108,7 @@ const float* __cdecl Offsets(unsigned char* player, const float* game) {
     View& v = g_view[p];
     float t = Eased(v.blend);
     memcpy(v.offsets, game, sizeof(v.offsets));
-    float eye = v.height > 0 ? v.height : game[1] * kEyeHeight, ahead = v.forward >= 0 ? v.forward : game[1] * kEyeAhead;
+    float eye = v.height > 0 ? v.height : game[1] * kEyeHeight, ahead = v.forward > -90 ? v.forward : game[1] * kEyeAhead;
     float side = v.side > -90 ? v.side : game[1] * kEyeSide;
     v.offsets[0] = game[0] + (side - game[0]) * t;
     v.offsets[1] = game[1] + (eye - game[1]) * t;
@@ -219,6 +223,8 @@ void __fastcall Hook_Update(unsigned char* camera, void*, int a, float dt) {
         v.blend = v.on ? 1.0f : 0.0f;
         v.down = false;
         v.sinceTap = 1e9f;
+        v.haveEye = false;
+        v.lean[0] = v.lean[1] = 0;
         if (v.on) g_any = 1;
     }
     if (Switched(player, v, dt)) {
@@ -251,16 +257,26 @@ void __fastcall Hook_Update(unsigned char* camera, void*, int a, float dt) {
     // no lag across the ground: the game's camera trails the player as they set off (its own smoothed copy of the point
     // it orbits - 0.6 behind at a run), and their own head and shoulders ran into the view. The point it orbits and the
     // eye moved to where it settles standing - their place, our offsets along the view (side, ahead); the height keeps
-    // the game's smoothing (a jump).
+    // the game's smoothing (a jump). Their place: where their neck is over the ground (motion.cpp, last frame's pose -
+    // smoothed), not their feet: setting off they lean ahead, and their shoulders came in under the eye.
     float* orbit = reinterpret_cast<float*>(player + kOrbit);
     if (auto xf = *reinterpret_cast<const float* const*>(player + 0x38)) {
         float yaw = *reinterpret_cast<float*>(player + kCamYaw), fx = -sinf(yaw), fz = -cosf(yaw);
-        float side = v.offsets[0], ahead = v.offsets[2];
-        float dx = (xf[12] + fx * ahead - fz * side - orbit[0]) * t, dz = (xf[14] + fz * ahead + fx * side - orbit[2]) * t;
+        float side = v.offsets[0], ahead = v.offsets[2], head[3];
+        if (p < 4 && MotionHead(p, head)) {
+            float lx = head[0] - xf[12], lz = head[2] - xf[14], k = dt > 0 && dt < 1 ? 1 - expf(-dt * kLeanRate) : 0;
+            if (lx * lx + lz * lz > kLeanMost * kLeanMost) lx = lz = 0;   // (not where it should be: a respawn)
+            v.lean[0] += (lx - v.lean[0]) * k;
+            v.lean[1] += (lz - v.lean[1]) * k;
+        }
+        float px = xf[12] + v.lean[0], pz = xf[14] + v.lean[1];
+        float dx = (px + fx * ahead - fz * side - orbit[0]) * t, dz = (pz + fz * ahead + fx * side - orbit[2]) * t;
         orbit[0] += dx;
         orbit[2] += dz;
         orbit[6] += dx;
         orbit[8] += dz;
+        memcpy(v.eyeAt, orbit + 6, sizeof(v.eyeAt));
+        v.haveEye = true;
     }
     *pmin = lo;
     *pmax = hi;
@@ -364,6 +380,17 @@ const float kPullBack = 3.5f, kPullUp = 0.6f, kPullTime = 0.3f;
 
 void FirstPersonDrawnCamera(int view, float* m) {
     if (view < 0 || view >= 4) return;
+    // their view drawn from their eye, the lag taken out (Hook_Update): the drawn camera is the game's own smoothed
+    // copy - at a run 1.3 behind the eye, their own shoulders and back in their view
+    for (int p = 0; p < 8; ++p) {
+        const View& v = g_view[p];
+        if (v.viewport != view || v.blend <= 0 || !v.haveEye) continue;
+        float dx = v.eyeAt[0] - m[3], dy = v.eyeAt[1] - m[7], dz = v.eyeAt[2] - m[11], t = Eased(v.blend);
+        if (dx * dx + dy * dy + dz * dz > 9) continue;   // (not this view's camera: another pass's)
+        m[3] += dx * t;
+        m[7] += dy * t;
+        m[11] += dz * t;
+    }
     Pulled& d = g_pulled[view];
     if (!d.have || memcmp(m, d.out, sizeof(d.out)) != 0) memcpy(d.base, m, sizeof(d.base));   // (a new one: the game's)
     bool emoting = false;
@@ -450,6 +477,30 @@ void FirstPersonFovStep(int by) {
 int FirstPersonFovMine() { return FirstPersonFovIndex() + 1; }
 void FirstPersonFovFromInput(int player, int code) {
     if (player >= 0 && player < 8) g_view[player].fov = code >= 1 && code <= kFovCount ? kFovs[code - 1] : 0;
+}
+
+// motion.cpp: a player whose gun is brought into their view - in first person (by how far), their view on this
+// screen and drawn from their eyes (not emoting), alive: their eye and which way they look (from the eye to the
+// point the camera orbits - its pitch too), in the world; and whether they're standing still
+bool FirstPersonArms(int slot, float* eye, float* forward, float* weight, bool* still) {
+    if (!g_any || slot < 0 || slot >= 4) return false;
+    const View& v = g_view[slot];
+    float r[4];
+    if (!v.on || v.blend <= 0 || !v.player || IndexOf(v.player) != slot || v.viewport < 0 || v.viewport >= 4) return false;
+    if (g_pulled[v.viewport].pull > 0 || MotionPlaying(slot) || !SplitViewRect(v.viewport, r)) return false;
+    if (NetplayPlayerHealth(v.player) <= 0) return false;
+    const float* orbit = reinterpret_cast<const float*>(v.player + kOrbit);
+    float f[3] = {orbit[0] - orbit[6], orbit[1] - orbit[7], orbit[2] - orbit[8]};
+    float len = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    if (len < 0.02f) return false;
+    if (!v.haveEye) return false;
+    for (int i = 0; i < 3; ++i) {
+        eye[i] = v.eyeAt[i];
+        forward[i] = f[i] / len;
+    }
+    *weight = Eased(v.blend);
+    *still = *reinterpret_cast<const int*>(v.player + 0x1a34) == 0;   // (its move state: 0 standing, 2 walking)
+    return true;
 }
 
 bool FirstPersonCrosshair() { return g_crosshair; }
@@ -540,7 +591,7 @@ int FirstPersonOwnDraw(const float (*c)[4], float* planes) {
     planes[1] = 0;
     planes[2] = -g_near / B;
     planes[3] = 1 + g_near * A / B;
-    if (g_hideMode != 1) return 1;
+    if (g_hideMode != 1 || MotionArmsInView(p)) return 1;   // (their head shrunk away: their gun's up there - motion.cpp)
     // the eye in the draw's space: c0, c1, c3 . (x, y, z, 1) = 0 (the fourth row: z = 0 for the system's sake, replaced by
     // the eye's own 1 after)
     float m[4][4], b[4], eye[4];
@@ -579,6 +630,21 @@ void FirstPersonCommand(const char* args) {
         if (!handler) { AddVectoredExceptionHandler(1, WatchReads); handler = true; }
         if (HANDLE t = CreateThread(nullptr, 0, SetWatch, nullptr, 0, nullptr)) CloseHandle(t);
         Log(L"FirstPerson: watch - reads of %#lx on the game's thread", g_watchAt);
+        return;
+    }
+    if (_stricmp(p, "arms") == 0) {   // fpv arms <right> <down> <ahead> <0|1> - the gun hand's place (motion.cpp)
+        float v[3] = {(float)atof(on), 0.32f, 0.42f};
+        char* s = strtok_s(nullptr, " \t", &ctx);
+        if (s) v[1] = (float)atof(s);
+        if ((s = strtok_s(nullptr, " \t", &ctx)) != nullptr) v[2] = (float)atof(s);
+        s = strtok_s(nullptr, " \t", &ctx);
+        MotionArmsTest(v[0], v[1], v[2], !s || atoi(s) != 0);
+        return;
+    }
+    if (_stricmp(p, "armsturn") == 0) {   // fpv armsturn <pitch> <yaw> <roll> - the gun hand turned after (degrees)
+        float v[3] = {(float)atof(on), 0, 0};
+        for (int i = 1; i < 3; ++i) if (char* s = strtok_s(nullptr, " \t", &ctx)) v[i] = (float)atof(s);
+        MotionArmsTurnTest(v[0], v[1], v[2]);
         return;
     }
     if (_stricmp(p, "face") == 0) {   // fpv face <0|1> - their body turned the way they look

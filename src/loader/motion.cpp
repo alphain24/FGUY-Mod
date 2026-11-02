@@ -52,6 +52,7 @@ struct Track {
     std::vector<float> last;              // the pose this frame, as built (models.cpp skins a new model with it)
     int lastBones = 0;
     bool haveHead = false;                // where their head is this frame, in the world (firstperson.cpp)
+    bool armsInView = false;              // first person: their gun brought into their view, their head shrunk away
     float head[3] = {};
 };
 Track g_tracks[4];
@@ -144,6 +145,354 @@ bool HeadPlace(const unsigned char* ent, const float* rot, const float* pos, con
     return true;
 }
 
+// First person: their gun brought into their view (their own view only - a player on another screen or PC sees the
+// game's pose). The gun arm's shoulder is held below and right of the eye and the arm bent so the hand sits low and to
+// the right of the view, turned as it was standing (the gun held level); onto that, the game's own quick hand movement
+// - firing's kick, a reload - capped. While the game's arm does something else (a melee swing, a throw, a jump) it
+// fades back to the game's own; a steady new hold standing still is learned. Their head is shrunk away meanwhile.
+struct V3 { float x, y, z; };
+V3 operator+(V3 a, V3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+V3 operator-(V3 a, V3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+V3 operator*(V3 a, float k) { return {a.x * k, a.y * k, a.z * k}; }
+float Dot(V3 a, V3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+V3 Cross(V3 a, V3 b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
+float Len(V3 a) { return sqrtf(Dot(a, a)); }
+V3 Unit(V3 a) { float l = Len(a); return l > 1e-6f ? a * (1 / l) : V3{0, 0, 0}; }
+
+struct M3 { float m[9]; };   // (row-major rotation)
+M3 Mul(const M3& a, const M3& b) {
+    M3 r;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) r.m[i * 3 + j] = a.m[i * 3] * b.m[j] + a.m[i * 3 + 1] * b.m[3 + j] + a.m[i * 3 + 2] * b.m[6 + j];
+    return r;
+}
+M3 Transposed(const M3& a) {
+    M3 r;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) r.m[i * 3 + j] = a.m[j * 3 + i];
+    return r;
+}
+V3 Mul(const M3& a, V3 v) {
+    return {a.m[0] * v.x + a.m[1] * v.y + a.m[2] * v.z, a.m[3] * v.x + a.m[4] * v.y + a.m[5] * v.z,
+            a.m[6] * v.x + a.m[7] * v.y + a.m[8] * v.z};
+}
+M3 FromQuat(const float* q) {
+    float x = q[0], y = q[1], z = q[2], w = q[3];
+    return {{1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w),
+             2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w),
+             2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)}};
+}
+void ToQuat(const M3& a, float* q) {
+    const float* m = a.m;
+    float t = m[0] + m[4] + m[8];
+    if (t > 0) {
+        float s = sqrtf(t + 1) * 2;
+        q[3] = s / 4; q[0] = (m[7] - m[5]) / s; q[1] = (m[2] - m[6]) / s; q[2] = (m[3] - m[1]) / s;
+    } else if (m[0] > m[4] && m[0] > m[8]) {
+        float s = sqrtf(1 + m[0] - m[4] - m[8]) * 2;
+        q[3] = (m[7] - m[5]) / s; q[0] = s / 4; q[1] = (m[1] + m[3]) / s; q[2] = (m[2] + m[6]) / s;
+    } else if (m[4] > m[8]) {
+        float s = sqrtf(1 + m[4] - m[0] - m[8]) * 2;
+        q[3] = (m[2] - m[6]) / s; q[0] = (m[1] + m[3]) / s; q[1] = s / 4; q[2] = (m[5] + m[7]) / s;
+    } else {
+        float s = sqrtf(1 + m[8] - m[0] - m[4]) * 2;
+        q[3] = (m[3] - m[1]) / s; q[0] = (m[2] + m[6]) / s; q[1] = (m[5] + m[7]) / s; q[2] = s / 4;
+    }
+}
+// the rotation taking direction a to direction b (both unit), the shortest way
+M3 FromTo(V3 a, V3 b) {
+    V3 v = Cross(a, b);
+    float c = Dot(a, b);
+    if (c < -0.9999f) {   // (opposite: half a turn about any axis square to a)
+        V3 axis = Unit(Cross(a, fabsf(a.x) < 0.9f ? V3{1, 0, 0} : V3{0, 1, 0}));
+        return {{2 * axis.x * axis.x - 1, 2 * axis.x * axis.y, 2 * axis.x * axis.z,
+                 2 * axis.y * axis.x, 2 * axis.y * axis.y - 1, 2 * axis.y * axis.z,
+                 2 * axis.z * axis.x, 2 * axis.z * axis.y, 2 * axis.z * axis.z - 1}};
+    }
+    float k = 1 / (1 + c);
+    return {{v.x * v.x * k + c, v.x * v.y * k - v.z, v.x * v.z * k + v.y,
+             v.y * v.x * k + v.z, v.y * v.y * k + c, v.y * v.z * k - v.x,
+             v.z * v.x * k - v.y, v.z * v.y * k + v.x, v.z * v.z * k + c}};
+}
+
+// the gun hand's place from the eye, for a character whose eye is 1.8 up (research: "fpv arms <right> <down> <ahead>
+// <0|1>")
+float g_armRight = 0.22f, g_armDown = 0.3f, g_armAhead = 0.55f;
+bool g_armsOn = true;
+float g_armTurn[3] = {10, -50, -15};   // the hand turned after, degrees (tuned on Peter's drill; research: "fpv armsturn")
+
+// a rotation by `deg` degrees about `axis` (unit)
+M3 About(V3 axis, float deg) {
+    float a = deg * 3.14159265f / 180, c = cosf(a), s = sinf(a), t = 1 - c, x = axis.x, y = axis.y, z = axis.z;
+    return {{t * x * x + c, t * x * y - s * z, t * x * z + s * y,
+             t * x * y + s * z, t * y * y + c, t * y * z - s * x,
+             t * x * z - s * y, t * y * z + s * x, t * z * z + c}};
+}
+
+// the game's quick hand movement let through at most: turned (degrees), moved (for an eye 1.8 up)
+const float kQuickTurn = 12, kQuickMove = 0.05f;
+
+// a rotation no further than `deg` degrees (the same axis)
+M3 Limited(const M3& r, float deg) {
+    float q[4];
+    ToQuat(r, q);
+    if (q[3] < 0) for (float& c : q) c = -c;
+    float half = acosf(q[3] > 1 ? 1 : q[3]), most = deg * 3.14159265f / 360;
+    if (half <= most) return r;
+    float s = sinf(half), k = sinf(most) / (s > 1e-6f ? s : 1);
+    float l[4] = {q[0] * k, q[1] * k, q[2] * k, cosf(most)};
+    return FromQuat(l);
+}
+
+// the game's arm doing something else than holding the gun: how far its hand is moved from that (for an eye 1.8 up),
+// turned (degrees); ours out (s), back in (s) after it's been calm (s); a steady other hold learned after (s)
+const float kWildMove = 0.2f, kWildTurn = 45, kFadeOut = 0.12f, kFadeIn = 0.3f, kCalm = 0.25f, kRelearn = 1.0f;
+
+// a player's gun hand in first person, kept between frames: its slow average against the upper arm (turn, place),
+// and its turn in the view
+struct ArmState {
+    const void* ent = nullptr;            // (whose: a new one - respawned, another character - takes it again)
+    bool have = false, haveTurn = false;
+    double at = 0;
+    float slow[4] = {0, 0, 0, 1};
+    V3 slowAt = {0, 0, 0};
+    M3 turn = {};
+    float refQ[4] = {0, 0, 0, 1};         // (the hand against the upper arm as the gun is held - taken standing)
+    V3 refAt = {0, 0, 0};
+    float fade = 0;                       // (ours, 0..1: out while the game's arm does something else - a swing, a throw)
+    double calmSince = 0, heldSince = 0;  // (since when the game's arm is as it holds the gun / steadily held otherwise)
+};
+ArmState g_armState[4];
+
+// An arm: its collarbone (on the chest), shoulder, elbow (the bone half way along it) and hand.
+struct Arm { int clav = -1, shoulder = -1, elbow = -1, hand = -1; };
+
+// `fingers`: the bone the fingers hang on; `head`: the head (the arm ends at the chain from the head down - the chest).
+// The hand: up from the fingers while their parent branches (Stewie's wrist has the palm and more on it) - what the
+// gun hangs on comes along.
+bool FindArm(const unsigned char* parent, const int* children, int fingers, int head, const V3* at, Arm* arm) {
+    bool spine[255] = {};
+    for (int b = head; b >= 0; b = parent[b] == 0xff ? -1 : parent[b]) spine[b] = true;
+    int hand = fingers;
+    while (parent[hand] != 0xff && !spine[parent[hand]] && children[parent[hand]] >= 2) hand = parent[hand];
+    int chain[16], len = 0;
+    for (int b = hand; b >= 0 && len < 16; b = parent[b] == 0xff ? -1 : parent[b]) {
+        chain[len++] = b;
+        if (parent[b] == 0xff || spine[parent[b]]) break;   // (its parent is the chest)
+    }
+    if (len < 4 || len >= 16 || parent[chain[len - 1]] == 0xff) return false;
+    arm->hand = hand;
+    arm->clav = chain[len - 1];
+    arm->shoulder = chain[len - 2];
+    float total = 0, half = 0;   // (the elbow: the bone nearest half the arm's length from the shoulder)
+    for (int i = len - 2; i > 0; --i) total += Len(at[chain[i - 1]] - at[chain[i]]);
+    arm->elbow = chain[len - 3];
+    float best = 1e9f;
+    for (int i = len - 2; i > 0; --i) {
+        half += Len(at[chain[i - 1]] - at[chain[i]]);
+        if (fabsf(half - total / 2) < best) { best = fabsf(half - total / 2); arm->elbow = chain[i - 1]; }
+    }
+    return arm->elbow != arm->hand && arm->elbow != arm->shoulder;
+}
+
+// Bends an arm (shoulder, elbow) so its hand reaches `target`, its rotation `handRot` (the character's space); `pole`
+// the way its elbow points. R / at: each bone's rotation and place in the character's space (updated down the arm).
+void ReachArm(const unsigned char* parent, int n, const Arm& arm, V3 target, const M3& handRot, V3 pole, float* rot,
+              float* pos, M3* R, V3* at, const V3* shoulderAt = nullptr) {
+    auto local = [&](int b, const M3& model) {   // a bone's new rotation in the character's space -> its local one
+        M3 l = parent[b] == 0xff ? model : Mul(Transposed(R[parent[b]]), model);
+        ToQuat(l, rot + (b + 1) * 4);
+    };
+    auto redo = [&](int from) {   // the bones down from `from` (after it) again from their parents
+        for (int b = from + 1; b < n; ++b) {
+            if (parent[b] == 0xff) continue;
+            int p = parent[b];
+            M3 l = FromQuat(rot + (b + 1) * 4);
+            V3 t = {pos[(b + 1) * 3], pos[(b + 1) * 3 + 1], pos[(b + 1) * 3 + 2]};
+            R[b] = Mul(R[p], l);
+            at[b] = at[p] + Mul(R[p], t);
+        }
+    };
+    if (shoulderAt) {   // (the shoulder held there: the collarbone moved - the walk lifts and swings it)
+        int c = arm.clav, p = parent[c];
+        V3 l = Mul(Transposed(R[p]), *shoulderAt - at[arm.shoulder]);
+        pos[(c + 1) * 3] += l.x; pos[(c + 1) * 3 + 1] += l.y; pos[(c + 1) * 3 + 2] += l.z;
+        redo(p);
+    }
+    V3 S = at[arm.shoulder];
+    float L1 = Len(at[arm.elbow] - S), L2 = Len(at[arm.hand] - at[arm.elbow]), D = Len(target - S);
+    if (L1 < 1e-3f || L2 < 1e-3f) return;
+    if (D > (L1 + L2) * 0.98f) {   // (out of reach: the collarbone forward by what's missing)
+        V3 shift = Unit(target - S) * (D - (L1 + L2) * 0.98f);
+        int c = arm.clav, p = parent[c];
+        V3 l = Mul(Transposed(R[p]), shift);
+        pos[(c + 1) * 3] += l.x; pos[(c + 1) * 3 + 1] += l.y; pos[(c + 1) * 3 + 2] += l.z;
+        redo(p);
+        S = at[arm.shoulder];
+        D = Len(target - S);
+    }
+    V3 x = Unit(target - S);
+    V3 y = Unit(pole - x * Dot(pole, x));
+    float ca = (L1 * L1 + D * D - L2 * L2) / (2 * L1 * D);
+    ca = ca < -1 ? -1 : (ca > 1 ? 1 : ca);
+    V3 E = S + (x * ca + y * sqrtf(1 - ca * ca)) * L1;
+    M3 turn = FromTo(Unit(at[arm.elbow] - S), Unit(E - S));   // the upper arm toward the new elbow
+    local(arm.shoulder, Mul(turn, R[arm.shoulder]));
+    redo(parent[arm.shoulder]);
+    turn = FromTo(Unit(at[arm.hand] - at[arm.elbow]), Unit(target - at[arm.elbow]));   // the forearm to the hand's place
+    local(arm.elbow, Mul(turn, R[arm.elbow]));
+    redo(parent[arm.elbow]);
+    local(arm.hand, handRot);
+    redo(parent[arm.hand]);
+}
+
+// (true: done - their head shrunk away too, so nothing's above their gun to clip: firstperson.cpp asks)
+bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, float* scale, int bones) {
+    float eyeW[3], fwdW[3], w;
+    bool still = false;
+    if (slot < 0 || slot >= 4) return false;
+    ArmState& st = g_armState[slot];
+    if (st.ent != ent) st = ArmState(), st.ent = ent;
+    if (!g_armsOn || !FirstPersonArms(slot, eyeW, fwdW, &w, &still) || w <= 0) {
+        st.have = false;   // (the slow average afresh next time; the gun's turn kept)
+        return false;
+    }
+    auto at = [](const void* p, int off) -> const unsigned char* {
+        if (!p || IsBadReadPtr(static_cast<const unsigned char*>(p) + off, 4)) return nullptr;
+        return *reinterpret_cast<const unsigned char* const*>(static_cast<const unsigned char*>(p) + off);
+    };
+    const unsigned char* parent = at(at(at(at(ent, 0x1d4), 0x80), 0x283c), 0);
+    int n = bones - 1;
+    if (!parent || n < 8 || n > 254 || IsBadReadPtr(parent, n)) return false;
+    int children[255] = {};
+    for (int b = 0; b < n; ++b)
+        if (parent[b] != 0xff) {
+            if (parent[b] >= b) return false;
+            ++children[parent[b]];
+        }
+    // the bones in the character's space (the pose's bone 0, the entity's origin, left out: it's where the
+    // character's space is put in the world - with the entity's transform below)
+    std::vector<M3> R(n);
+    std::vector<V3> place(n);
+    M3 root = FromQuat(rot);
+    V3 rootAt = {pos[0], pos[1], pos[2]};
+    for (int b = 0; b < n; ++b) {
+        M3 l = FromQuat(rot + (b + 1) * 4);
+        V3 t = {pos[(b + 1) * 3], pos[(b + 1) * 3 + 1], pos[(b + 1) * 3 + 2]};
+        const M3& pr = parent[b] == 0xff ? root : R[parent[b]];
+        V3 pa = parent[b] == 0xff ? rootAt : place[parent[b]];
+        R[b] = Mul(pr, l);
+        place[b] = pa + Mul(pr, t);
+    }
+    // the view in the character's space (the entity: rows right / up / forward / place)
+    const float* m = reinterpret_cast<const float*>(ent);
+    V3 ax[3] = {{m[0], m[1], m[2]}, {m[4], m[5], m[6]}, {m[8], m[9], m[10]}}, org = {m[12], m[13], m[14]};
+    V3 e = V3{eyeW[0], eyeW[1], eyeW[2]} - org, f = {fwdW[0], fwdW[1], fwdW[2]};
+    V3 eye = {Dot(e, ax[0]), Dot(e, ax[1]), Dot(e, ax[2])}, F = Unit({Dot(f, ax[0]), Dot(f, ax[1]), Dot(f, ax[2])});
+    V3 Rt = Unit(Cross(F, {0, 1, 0})), U = Cross(Rt, F);   // (the view's right and up; the character's right is -x)
+    // the hands: the bones with five or more on them, but the head (the most); the gun's - the right one (-x)
+    int head = 0;
+    for (int b = 1; b < n; ++b) if (children[b] > children[head]) head = b;
+    int gun = -1, other = -1;
+    for (int b = 0; b < n; ++b) {
+        if (b == head || children[b] < 5) continue;
+        if (gun < 0 || place[b].x < place[gun].x) { other = gun; gun = b; } else other = b;
+    }
+    Arm a, a2;
+    if (gun < 0 || !FindArm(parent, children, gun, head, place.data(), &a)) return false;
+    float k = eye.y / 1.8f;   // (the character's size)
+    V3 target = eye + Rt * (g_armRight * k) - U * (g_armDown * k) + F * (g_armAhead * k);
+    // The hand's turn in the view (B) is held, as a shooter's gun is: the game's hand, its forearm turned to look
+    // ahead (then the research turn), taken once as they come into first person. Onto it: the game's quick hand
+    // movement - its turn and place against the upper arm, less their slow average (firing's kick, a reload; not the
+    // walk's swing, which turned the gun about with it).
+    M3 V = {{Rt.x, U.x, F.x, Rt.y, U.y, F.y, Rt.z, U.z, F.z}};   // (the view's axes in the character's space)
+    M3 Q = Mul(Transposed(R[a.shoulder]), R[a.hand]);
+    V3 P = Mul(Transposed(R[a.shoulder]), place[a.hand] - place[a.shoulder]);
+    double now = Now();
+    if (!st.have || now - st.at > 0.5) {
+        st.have = true;
+        ToQuat(Q, st.slow);
+        st.slowAt = P;
+    } else {
+        float t = 1 - expf(-(float)(now - st.at) * 6);
+        float q[4], d, len = 0;
+        ToQuat(Q, q);
+        d = q[0] * st.slow[0] + q[1] * st.slow[1] + q[2] * st.slow[2] + q[3] * st.slow[3];
+        for (int c = 0; c < 4; ++c) { st.slow[c] += ((d < 0 ? -q[c] : q[c]) - st.slow[c]) * t; len += st.slow[c] * st.slow[c]; }
+        for (int c = 0; c < 4; ++c) st.slow[c] /= sqrtf(len);
+        st.slowAt = st.slowAt + (P - st.slowAt) * t;
+    }
+    double since = now - st.at;
+    st.at = now;
+    if (!st.haveTurn) {   // (taken standing still - walking, the forearm swings: until then, the game's arms)
+        if (!still) return false;
+        M3 turn = FromTo(Unit(place[a.hand] - place[a.elbow]), F);
+        if (g_armTurn[0] || g_armTurn[1] || g_armTurn[2])   // (research: then about the view's right, up, ahead)
+            turn = Mul(Mul(Mul(About(F, g_armTurn[2]), About(U, g_armTurn[1])), About(Rt, g_armTurn[0])), turn);
+        st.turn = Mul(Transposed(V), Mul(turn, R[a.hand]));
+        st.haveTurn = true;
+        ToQuat(Q, st.refQ);
+        st.refAt = P;
+    }
+    float refDev = Len(P - st.refAt) / k, refAng;
+    {
+        float q[4];
+        ToQuat(Q, q);
+        float d = fabsf(q[0] * st.refQ[0] + q[1] * st.refQ[1] + q[2] * st.refQ[2] + q[3] * st.refQ[3]);
+        refAng = 2 * acosf(d > 1 ? 1 : d) * 57.2958f;
+    }
+    // The game's arm far from how it holds the gun - a melee swing, a throw, a jump's flail: ours fades out, the
+    // game's own moves play (the gun leaves the view); back once it's been calm a moment. Held steadily another way
+    // while standing - another weapon, something in hand - that's learned as the hold.
+    bool wild = refDev > kWildMove || refAng > kWildTurn, aside = refDev > kWildMove / 2 || refAng > kWildTurn / 2;
+    float step = (float)(since > 0 && since < 0.5 ? since : 0);
+    if (wild || aside) st.calmSince = now;
+    if (wild) st.fade = st.fade - step / kFadeOut > 0 ? st.fade - step / kFadeOut : 0;
+    else if (now - st.calmSince > kCalm || !aside) st.fade = st.fade + step / kFadeIn < 1 ? st.fade + step / kFadeIn : 1;
+    if (!aside || !still || Len(P - st.slowAt) > 0.03f * k) st.heldSince = now;
+    if (now - st.heldSince > kRelearn) { st.haveTurn = false; st.heldSince = now; }   // (taken again next frame)
+    w *= st.fade * st.fade * (3 - 2 * st.fade);
+    if (w <= 0) return false;
+    M3 quick = Limited(Mul(Transposed(FromQuat(st.slow)), Q), kQuickTurn);
+    M3 handRot = Mul(Mul(V, st.turn), quick);
+    V3 kick = P - st.slowAt;
+    if (Len(kick) > kQuickMove * k) kick = Unit(kick) * (kQuickMove * k);
+    target = target + Mul(R[a.shoulder], kick);
+    // the other hand, if it's on the gun too: along with it (where it is on the gun, the game's)
+    bool both = other >= 0 && Len(place[other] - place[gun]) < 0.35f * k && FindArm(parent, children, other, head, place.data(), &a2);
+    V3 target2 = target;
+    M3 handRot2;
+    if (both) {
+        M3 onGun = Mul(handRot, Transposed(R[a.hand]));
+        target2 = target + Mul(onGun, place[a2.hand] - place[a.hand]);
+        handRot2 = Mul(onGun, R[a2.hand]);
+    }
+    std::vector<float> game(rot, rot + bones * 4), gamePos(pos, pos + bones * 3);
+    // the gun arm's shoulder held below and to the right of the eye, by how far its arm reaches (a shooter's arm
+    // doesn't go up and down with their walk; the upper arm swung into the view)
+    float reach = Len(place[a.elbow] - place[a.shoulder]) + Len(place[a.hand] - place[a.elbow]);
+    V3 shoulderAt = target - F * (reach * 0.75f) - U * (reach * 0.25f) + Rt * (reach * 0.1f);
+    ReachArm(parent, n, a, target, handRot, Rt * 0.6f - U, rot, pos, R.data(), place.data(), &shoulderAt);
+    if (both) ReachArm(parent, n, a2, target2, handRot2, Rt * -0.6f - U, rot, pos, R.data(), place.data());
+    if (w < 1) {   // (easing in and out: from the game's pose toward ours by w)
+        for (int b = 0; b < bones; ++b) {
+            float* q = rot + b * 4;
+            const float* g = &game[b * 4];
+            float d = q[0] * g[0] + q[1] * g[1] + q[2] * g[2] + q[3] * g[3], s = d < 0 ? -1.0f : 1.0f, len = 0;
+            for (int c = 0; c < 4; ++c) { q[c] = g[c] + (s * q[c] - g[c]) * w; len += q[c] * q[c]; }
+            len = len > 0 ? 1 / sqrtf(len) : 1;
+            for (int c = 0; c < 4; ++c) q[c] *= len;
+            for (int c = 0; c < 3; ++c) pos[b * 3 + c] = gamePos[b * 3 + c] + (pos[b * 3 + c] - gamePos[b * 3 + c]) * w;
+        }
+    }
+    // their head (and what's on it: a hat, the face's bones) shrunk to nothing - their gun is where the clip under
+    // the head was (a single skinning for every view: a partner on the same screen sees them without it meanwhile)
+    if (w < 0.5f || children[head] < 6) return false;
+    scale[(head + 1) * 3] = scale[(head + 1) * 3 + 1] = scale[(head + 1) * 3 + 2] = 0;
+    return true;
+}
+
 void __cdecl Hook_PoseBuild(unsigned char* ent, float* rot, float* pos, float* scale, int bones) {
     EnterCriticalSection(&g_lock);
     for (Track& tr : g_tracks) {
@@ -183,6 +532,7 @@ void __cdecl Hook_PoseBuild(unsigned char* ent, float* rot, float* pos, float* s
             }
             Scatter(game.data(), bones, rot, pos, scale);
         }
+        tr.armsInView = ArmsInView(static_cast<int>(&tr - g_tracks), ent, rot, pos, scale, bones);
         tr.last.resize(bones * kFloats);
         Gather(rot, pos, scale, bones, tr.last.data());
         tr.lastBones = bones;
@@ -306,6 +656,31 @@ bool MotionPose(int slot, std::vector<float>& out, int* bones) {
     if (have) { out = g_tracks[slot].last; *bones = g_tracks[slot].lastBones; }
     LeaveCriticalSection(&g_lock);
     return have;
+}
+
+void MotionArmsTurnTest(float pitch, float yaw, float roll) {
+    g_armTurn[0] = pitch;
+    g_armTurn[1] = yaw;
+    g_armTurn[2] = roll;
+    for (ArmState& st : g_armState) st.haveTurn = false;   // (taken again now)
+    Log(L"Motion: test - gun hand turned %.0f / %.0f / %.0f degrees", pitch, yaw, roll);
+}
+
+void MotionArmsTest(float right, float down, float ahead, bool on) {
+    g_armRight = right;
+    g_armDown = down;
+    g_armAhead = ahead;
+    g_armsOn = on;
+    Log(L"Motion: test - gun hand %.2f right, %.2f down, %.2f ahead of the eye (%s)", right, down, ahead, on ? L"on" : L"off");
+}
+
+// firstperson.cpp: a player's gun was brought into their view (their head shrunk away) this frame
+bool MotionArmsInView(int slot) {
+    if (slot < 0 || slot >= 4 || !g_poseOriginal) return false;
+    EnterCriticalSection(&g_lock);
+    bool on = g_tracks[slot].armsInView && g_tracks[slot].ent;
+    LeaveCriticalSection(&g_lock);
+    return on;
 }
 
 // firstperson.cpp: where a player's head is this frame (the world), false: not known
