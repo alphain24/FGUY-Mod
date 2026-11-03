@@ -4,6 +4,9 @@ build/
 *.exp
 *.lib
 
+# Built mod plugins (src\mods\<mod>\build.bat puts them in their mod's folder)
+dist/FGUYMod/mods/*/*.dll
+
 # Local Python environment
 .venv/
 __pycache__/

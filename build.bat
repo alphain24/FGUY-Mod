@@ -15,3 +15,5 @@ cl /nologo /O2 /MT /W4 /EHsc /std:c++17 /DUNICODE /D_UNICODE /LD ^
    /Fobuild\ /Febuild\dinput8.dll ^
    /link /DEF:src\loader\dinput8.def user32.lib kernel32.lib advapi32.lib dxguid.lib || exit /b 1
 echo Built build\dinput8.dll
+rem (our mods' plugins: each into its folder in dist\FGUYMod\mods)
+call src\mods\controllerlook\build.bat || exit /b 1
