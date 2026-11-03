@@ -252,7 +252,6 @@ bool MotionPose(int slot, std::vector<float>& out, int* bones);   //   a player'
 bool MotionHead(int slot, float* at);  //   where a player's head is this frame, in the world (firstperson.cpp)
 void MotionArmsTest(float right, float down, float ahead, bool on);   //   research: the gun hand's place in first person
 void MotionArmsZoomTest(float right, float down);                     //     (zoomed in)
-void MotionArmsTurnTest(float pitch, float yaw, float roll);           //   research: ...and its turn (degrees)
 bool MotionArmsInView(int slot);       //   their gun was brought into their view this frame (their head shrunk away)
 struct ArmsView {                      // a player's gun to bring into their view (FirstPersonArms, for motion.cpp):
     float eye[3], forward[3];          //   their eye and which way they look (the world)

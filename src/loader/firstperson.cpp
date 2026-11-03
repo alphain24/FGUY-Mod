@@ -706,12 +706,6 @@ void FirstPersonCommand(const char* args) {
         MotionArmsZoomTest((float)atof(on), s ? (float)atof(s) : 0.75f);
         return;
     }
-    if (_stricmp(p, "armsturn") == 0) {   // fpv armsturn <pitch> <yaw> <roll> - the gun hand turned after (degrees)
-        float v[3] = {(float)atof(on), 0, 0};
-        for (int i = 1; i < 3; ++i) if (char* s = strtok_s(nullptr, " \t", &ctx)) v[i] = (float)atof(s);
-        MotionArmsTurnTest(v[0], v[1], v[2]);
-        return;
-    }
     if (_stricmp(p, "face") == 0) {   // fpv face <0|1> - their body turned the way they look
         g_face = atoi(on) != 0;
         Log(L"FirstPerson: test - body turned the way they look: %d", g_face);

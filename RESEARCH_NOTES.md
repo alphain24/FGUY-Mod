@@ -892,5 +892,19 @@ ematch_<lobby pid>.txt`), whose lobby then
   meet; the head is the chest's other branch nearest the eye, down its neck.
 - Aiming (`[+0x13cc]+0x50` at 1), the game points any character's gun at the crosshair: the hand's turn then, against the
   view, is the gun's in first person - no per-weapon table needed.
+- **First person's arms, take two (2026-11-03): the game's own animation, moved as one piece.** Bending the arm to hold
+  the gun (IK) looked jagged and lost the game's moves. Now both arms keep the game's exact pose, hung on a chest placed
+  in front of the eye (the chest in the view as the game holds the aiming stance, measured standing still; the whole
+  thing moved so the gun hand comes out low right). The relaxed carry (Peter's drill up beside his head, a pistol at the
+  hip) is useless from the eye, so in it - and on the move, where the game plays its own arm swing over both stances -
+  the arms hold the aiming pose taken then; firing / zooming / reloading (aiming stance), melee / jump / power-up (neither
+  stance, standing) play live. The pose builds every frame (~120/s, as drawn). The view's basis must be left / up /
+  ahead (right / up / ahead is a mirror: quaternions from it are nonsense). Per character: Death low and far (his robe's
+  sleeves), Quagmire further right, Chris's bow in his left hand.
+- One-handed guns (Brian, Meg, Lois, Stewie...): the game's aiming pose keeps the off hand at their side, and none of its
+  moves (reload included) bring it nearer than ~0.9 (eye 1.8) to the gun hand - nothing of its own to copy. The off hand
+  is bent onto the gun instead (the gun hand mirrored across the view, just left of it and under it) whenever the
+  game's own pose has it out of the view; in the view (a reload's hand) the game's. Not for dual pistols (Carter,
+  Cleveland: their second gun sits low, just out of the view - it'd be taken for a free hand).
 - `tools/start_arena.ps1` (`-Enemies` keeps them), `tools/test_fpv_all.ps1` (every character's first person on a
   contact sheet - `tools/re/fpv_frames.py`).
