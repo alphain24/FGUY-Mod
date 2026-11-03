@@ -76,15 +76,16 @@ flowchart LR
 - **Want the reference?** → [Mod structure](mod-structure.md): every file and every `mod.ini` key.
 - **Writing code?** → [Plugins](plugins.md): the full plugin API and the one rule for online play.
 
-## The two mods that come with it
+## The mods that come with it
 
 | Mod | File | What's in it |
 |---|---|---|
 | **FGUY Cosmetics** | `FGUYMod\mods\FGUYCosmetics.fgmod` | Every official skin and outfit (the first: **Peter: Adventurer**) |
 | **FGUY Emotes** | `FGUYMod\mods\FGUYEmotes.fgmod` | The emote wheel's emotes |
+| **FGUY Controller Look** | `FGUYMod\mods\FGUYControllerLook.fgmod` | Right-stick aiming like a modern shooter (a plugin; off until switched on) |
 
-Both are ordinary mods made exactly the way this guide describes. Their sources are in
-[`dist/FGUYMod/mods/`](../dist/FGUYMod/mods/) — open them up to see a real mod.
+They're ordinary mods made exactly the way this guide describes. Their sources are in
+[`dist/FGUYMod/mods/`](../dist/FGUYMod/mods/) (Controller Look's plugin code: [`src/mods/controllerlook/`](../src/mods/controllerlook/)) — open them up to see a real mod.
 
 ## Glossary
 

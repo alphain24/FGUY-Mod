@@ -48,6 +48,11 @@ there's a new version, and installs it for you.
   the left stick or the mouse (LB / RB or the mouse wheel: more), let go to play it. Only the joints an emote moves
   leave the game's own animation, so a wave works while walking. Online, everyone sees it.
 
+**FGUY Controller Look** (on the MODS page, off until you switch it on): the right stick aims like a modern shooter.
+The game ignores the first half of the stick's travel and builds the turn up over half a second; with this mod the
+deadzone is small and round, small pushes turn slowly for fine aim, the view turns at once, and holding the stick at
+the edge speeds the turn up. It changes aiming, so online everyone in a lobby needs it.
+
 **PC fixes**
 - Runs on **Vulkan** ([DXVK](https://github.com/doitsujin/dxvk), the translation Valve's Proton uses) for
   smoother, more reliable play on modern PCs. A PC without Vulkan 1.3 falls back to DirectX 9 by itself; to always

@@ -832,3 +832,25 @@ ematch_<lobby pid>.txt`), whose lobby then
   scribbles round the characters.
 - Research scripts: the session's fpv_probe / fpv_find / fpv_ptrs / fpv_scan / fpv_copy / ptrscan (camera dump, value
   search, struct pointers, settings scan by poking, private copy test, every pointer into a range).
+
+## Controller look: how the right stick turns the camera (2026-11-03)
+- **The sticks as floats**: a controller's poll `0x4b5670` (XInputGetState) hands the four shorts LX LY RX RY to
+  `0x4b4ec0` (cdecl: out = device state +0x14, the shorts, count 2, center 0, min -32768, max 32767, -7849, 7849 - the
+  pushes at `0x4b56cd`); each axis through `0x4bba80`: within +-7849 zero, beyond it stretched, `(v - 7849) / 24918`
+  (24919 below zero). A square deadzone, a quarter of the travel, on both sticks. Per stick 7 floats: x, y, the
+  direction (2), length, -, angle.
+- **The camera's look, `0x581d40`** (a camera method, vtable +0x68 of zFGUYCamThirdPerson - the camera at player
+  `+0xf148`; 0x588c40 calls it every frame, then +0x64 = `0x580ab0`): the stick at camera `+0xc0` / `+0xc4`, clipped to
+  the unit circle, times `a*m + b*m^2 + c*m^3` (settings `[camera+0x34c]` +0x88 / +0x8c / +0x90: **0, 0, 1 - a cube**);
+  then `0x55cc60` per axis: the speed moves toward value * top (+0x7c yaw **3.84 rad/s** / +0x84 pitch 2.09, times
+  `0x4fd070` - the aim sensitivity 0xbad810 through 0.75 / 1 / 1.25, lower when zoomed) by accel * dt a frame (+0x78
+  **5.76 rad/s^2** / +0x80 3.14, times `0x4fce40`: 0.5 / 1 / 2) - and goes to 0 at once when the curved value is under
+  **0.05** (0xadb16c). Out: turn speeds at camera `+0x2c8` (pitch, yaw), which `0x580ab0` adds to the orbit yaw / pitch
+  (times camera `+0xcc` and dt). Camera `+0xc8` set: keyboard / mouse (another branch); `+0x300`: held still.
+- Measured (the arena, Peter, sensitivity factor 1.25): the cube under 0.05 means **no turn at all below ~52% of the
+  stick's travel** (raw 17000); 73% turns 47 deg/s; full push builds up to 275 deg/s over ~0.5 s.
+- The **FGUY Controller Look** mod (`src/mods/controllerlook`, a plugin) hooks both: the right stick's shorts remapped so
+  the game's own sums give a round deadzone of 8% (left stick untouched), and the look's speeds written over (the game's
+  top speed and sensitivity, `t^2`, no build-up, a speed-up held at the edge). Same steps: 30% 17 deg/s, 49% 57, 73%
+  148, full 267 at once easing up to ~500 after 0.5 s; zoomed 0.82 of it (the game's own). Its mod.ini `Log=1` logs the
+  speeds and how fast the view turned, `Bypass=1` (with Log) the game's own look, to measure it.
