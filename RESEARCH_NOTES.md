@@ -901,6 +901,18 @@ ematch_<lobby pid>.txt`), whose lobby then
   stance, standing) play live. The pose builds every frame (~120/s, as drawn). The view's basis must be left / up /
   ahead (right / up / ahead is a mirror: quaternions from it are nonsense). Per character: Death low and far (his robe's
   sleeves), Quagmire further right, Chris's bow in his left hand.
+- **First person as a shooter's viewmodel (2026-11-03)**: the arms and gun drawn in front of everything - their
+  draws' viewport depth squeezed to 0..0.02 (a wall never cuts into them; among themselves still in order) - and with
+  a field of view of their own (clip space x, y - c0, c1 - scaled by the view's tan / 0.79: the same size at any FOV,
+  zoomed too). The gun is a model of its own (static vertex buffer, c4..c6 its place, near the gun hand); the sky dome
+  sits at the eye too, told apart by its size. The rest of the body is hidden by shrinking the skeleton's top bones to
+  0.001 at the chest (the arms' roots grown back by the inverse): **the game's pose build (0x4fac80) leaves the pose's
+  root entry 0 out** - scaling it did nothing; a bone's matrix is scale x rotation + translation, times its parent's
+  (row vectors), so a child's translation is scaled by its parents' scale. Hidden, the player is still hit (enemies
+  killed Peter in 31 s). Split screen keeps the body (one pose for every view). Each character's aiming hold saved in
+  FGUYMod\fpv_holds.dat (key: bones x 256 + gun hand bone): arms there from spawn.
+- Test copies: other sessions may use FGUY-Research / FGUY-Look at the same time (their stop_tests closes ours, their
+  pad commands reached ours): first-person tests run in A:\Games\FGUY-FPV (same layout).
 - One-handed guns (Brian, Meg, Lois, Stewie...): the game's aiming pose keeps the off hand at their side, and none of its
   moves (reload included) bring it nearer than ~0.9 (eye 1.8) to the gun hand - nothing of its own to copy. The off hand
   is bent onto the gun instead (the gun hand mirrored across the view, just left of it and under it) whenever the

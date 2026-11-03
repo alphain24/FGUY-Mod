@@ -554,6 +554,11 @@ bool FirstPersonArms(int slot, ArmsView* out) {
         out->aim = a > 0 ? (a < 1 ? a : 1) : 0;
         out->rest = b > 0 ? (b < 1 ? b : 1) : 0;
     }
+    out->alone = true;
+    for (int i = 0; i < 4; ++i) {
+        float o[4];
+        if (i != v.viewport && SplitViewRect(i, o)) out->alone = false;
+    }
     // the weapon's zoom: the view narrower than it is when not aiming (zooming eases the aiming stance in first; the
     // game narrows the view's projection itself, not the camera's field of view) - all the way at a fifth narrower
     if (out->aim <= 0 || v.wideAs <= 0) v.wideAs = out->tans[0];
@@ -632,6 +637,34 @@ bool Solve4(float m[4][4], float b[4], float* x) {
 //    model, its outline black). The height: their head bone's (motion.cpp - it goes down and ahead with their head as
 //    they set off at a run), or g_above below the eye, the lower; the eye is where clip space x, y and w are all 0. The
 //    plane, world height <= that, taken through c0..c3 to clip space.
+// First person's arms and gun, drawn as a shooter's are (motion.cpp hides the rest of their body away): in front of
+// everything (cosmetics.cpp squeezes their depth to the front), and with a field of view of their own (kArmTan) - their
+// clip space x and y scaled by `scale`. Their arms are skinned on the CPU (their draws: a skinned one of theirs); the gun
+// is a model of its own, at their gun hand (c4..c6: its place). c0..c3 must be a projection (z = A w + B).
+bool FirstPersonViewmodel(const float (*c)[4], bool skinned, float* scale) {
+    if (!g_any) return false;
+    int view = SplitViewDrawing();
+    if (view < 0 || view >= 4 || g_pulled[view].pull > 0.05f) return false;
+    int p = CosmeticsDrawPlayer();
+    float hand[3];
+    if (p < 0 || p >= 8 || g_view[p].viewport != view || g_view[p].blend < 0.5f || !MotionViewmodel(p, hand)) return false;
+    if (!skinned) {   // (the gun: a model near their gun hand, not a big one - the sky dome is at the eye too)
+        float d[3] = {c[4][3] - hand[0], c[5][3] - hand[1], c[6][3] - hand[2]};
+        float big = c[4][0] * c[4][0] + c[4][1] * c[4][1] + c[4][2] * c[4][2];
+        if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > 0.8f * 0.8f || big > 9) return false;
+    }
+    const float* c2 = c[2];
+    const float* c3 = c[3];
+    int k = 0;
+    for (int i = 1; i < 3; ++i) if (std::fabs(c3[i]) > std::fabs(c3[k])) k = i;
+    if (std::fabs(c3[k]) < 1e-6f) return false;
+    float A = c2[k] / c3[k];
+    for (int i = 0; i < 3; ++i) if (std::fabs(c2[i] - A * c3[i]) > 1e-3f * (std::fabs(c2[i]) + 1)) return false;
+    const float* proj = reinterpret_cast<const float*>(kViewports + view * kViewportSize + 0x164);
+    *scale = IsBadReadPtr(proj, 4) || std::fabs(proj[0]) < 0.1f ? 1.0f : 1 / std::fabs(proj[0]) / kArmTan;
+    return true;
+}
+
 int FirstPersonOwnDraw(const float (*c)[4], float* planes) {
     if (!g_any || !g_hideMode) return 0;
     int view = SplitViewDrawing();
@@ -701,6 +734,7 @@ void FirstPersonCommand(const char* args) {
         MotionArmsTest(v[0], v[1], v[2], !s || atoi(s) != 0);
         return;
     }
+    if (_stricmp(p, "body") == 0) { MotionArmsBodyTest(atoi(on) == 0); return; }   // fpv body <0|1> - 1: shown
     if (_stricmp(p, "armszoom") == 0) {   // fpv armszoom <right> <down> - the gun hand's place zoomed in
         char* s = strtok_s(nullptr, " \t", &ctx);
         MotionArmsZoomTest((float)atof(on), s ? (float)atof(s) : 0.75f);

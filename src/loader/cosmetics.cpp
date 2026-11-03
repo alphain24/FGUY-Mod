@@ -505,11 +505,32 @@ bool Skinned(IDirect3DDevice9* dev) {
     vb->Release();
     return (d.Usage & D3DUSAGE_DYNAMIC) != 0;
 }
+// First person's arms and gun (firstperson.cpp FirstPersonViewmodel): drawn in front of everything - their depth squeezed
+// into the front kFront of the depth range (a wall in front of the eye never cuts into them; among themselves they're
+// in order still) - and with their own field of view (clip space x, y scaled). Their outlines too.
+const float kFront = 0.02f;
 struct OwnBody {
     IDirect3DDevice9* dev;
-    bool clip = false, skip = false;
+    bool clip = false, skip = false, front = false;
     DWORD was = 0;
+    D3DVIEWPORT9 vp{};
+    float c01[2][4];
     explicit OwnBody(IDirect3DDevice9* d) : dev(d) {
+        float scale = 1;
+        if (FirstPersonViewmodel(g_vsConst, Skinned(d), &scale)) {
+            if (FAILED(dev->GetViewport(&vp))) return;
+            D3DVIEWPORT9 v = vp;
+            v.MinZ = 0;
+            v.MaxZ = kFront;
+            dev->SetViewport(&v);
+            memcpy(c01, g_vsConst, sizeof(c01));
+            float s[2][4];
+            for (int i = 0; i < 2; ++i)
+                for (int j = 0; j < 4; ++j) s[i][j] = c01[i][j] * scale;
+            Real_SetVSConstF(dev, 0, s[0], 2);
+            front = true;
+            return;
+        }
         float planes[8];
         int count = FirstPersonOwnDraw(g_vsConst, planes);
         if (count == 0 || !Skinned(d)) return;   // (only a character's pieces: the sky dome is at the camera too, and
@@ -525,6 +546,11 @@ struct OwnBody {
         clip = g_ownClipped = true;
     }
     ~OwnBody() {
+        if (front) {
+            dev->SetViewport(&vp);
+            Real_SetVSConstF(dev, 0, c01[0], 2);
+            return;
+        }
         if (!clip) return;
         for (int i = 0; i < used; ++i) dev->SetClipPlane(i, old[i]);
         dev->SetRenderState(D3DRS_CLIPPLANEENABLE, was);

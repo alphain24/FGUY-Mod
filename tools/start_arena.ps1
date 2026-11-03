@@ -11,10 +11,15 @@ powershell -ExecutionPolicy Bypass -File tools\stop_tests.ps1 -GameDir $GameDir 
 Copy-Item "$root\build\dinput8.dll" "$GameDir\dinput8.dll" -Force
 powershell -ExecutionPolicy Bypass -File tools\wait_gpu.ps1 -Seconds 240 | Out-Null
 $env:FGUYMOD_TEST_ARENA = if ($Enemies) { "0" } else { "1" }
-$h = & tools\start_test.ps1 -GameDir $GameDir -Res $Res
+foreach ($try in 1..3) {   # (now and then the copy doesn't come up - no log after a while: started again)
+    $h = & tools\start_test.ps1 -GameDir $GameDir -Res $Res
+    $log = "$GameDir\FGUYMod\FGUYMod_$h.log"
+    $until = (Get-Date).AddSeconds(20); while ((Get-Date) -lt $until -and -not (Test-Path $log)) { Start-Sleep 1 }
+    if (Test-Path $log) { break }
+    Stop-Process -Id $h -Force -ErrorAction SilentlyContinue; Start-Sleep 5
+}
 Remove-Item Env:FGUYMOD_TEST_ARENA
-Start-Sleep 28
-$log = "$GameDir\FGUYMod\FGUYMod_$h.log"
+Start-Sleep 18
 function Pad($b) { & tools\pad.ps1 -Id $h $b | Out-Null }
 foreach ($b in "a", "start", "a") { Pad $b; Start-Sleep 4 }; Start-Sleep 2
 foreach ($b in "down", "a", "down", "a", "a") { Pad $b; Start-Sleep 3 }   # (Multiplayer, Multiverse Madness, join)
