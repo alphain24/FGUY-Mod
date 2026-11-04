@@ -64,6 +64,7 @@ struct Settings {
     float rampEdge = 0.95f;               // how far the stick counts as "at the edge"
     bool log = false;
     bool bypass = false;                  // research: the game's own look (with Log: to measure it)
+    float trace = 0;                      // research: seconds of frame-by-frame trace (Trace)
 } g_set;
 
 float Pct(const wchar_t* key, int def) { return g_api->Setting(key, def) / 100.0f; }
@@ -82,6 +83,7 @@ void ReadSettings() {
     g_set.rampEdge = Pct(L"RampEdge", 95);
     g_set.log = g_api->Setting(L"Log", 0) != 0;
     g_set.bypass = g_api->Setting(L"Bypass", 0) != 0;
+    g_set.trace = (float)g_api->Setting(L"Trace", 0);
     // (sane limits: a bad mod.ini mustn't spin the view or freeze it)
     auto clamp = [](float& v, float lo, float hi) { v = v < lo ? lo : v > hi ? hi : v; };
     clamp(g_set.inner, 0, 0.5f);
@@ -153,6 +155,8 @@ void __cdecl Sticks(void* out, short* sticks, int count, int center, int min, in
     g_origSticks(out, s, count, center, min, max, negDz, dz);
 }
 
+void Trace(void* cam, float m, float dt);
+
 void __fastcall Look(void* cam, void* edx, float dt, void* a, void* b, float* out) {
     g_origLook(cam, edx, dt, a, b, out);
     if (!cam || !out || At<char>(cam, kMouseMode) || At<char>(cam, kHeld)) return;
@@ -220,6 +224,85 @@ void __fastcall Look(void* cam, void* edx, float dt, void* a, void* b, float* ou
                  At<float>(set, 0x80), reinterpret_cast<Sens_t>(kSensSpeed)(cam));
         }
     }
+    Trace(cam, m, dt);
+}
+
+// ---- research: a frame-by-frame trace (mod.ini Trace=<seconds>) ---------------------------------------------------
+// Pushing the right stick past half (after it rested a second) records, for that many seconds, every camera update
+// ('L': the game thread, its dt) and every frame drawn ('F': the render thread, after Present): the time, the camera's
+// yaw / pitch and eye, the first player's place. Then trace_<n>.csv in the mod's folder.
+struct TraceRow { char kind; LONGLONG at; float dt, yaw, pitch, eye[3], pos[3]; };
+const int kTraceRows = 8192;
+TraceRow g_trace[kTraceRows];
+volatile LONG g_traceN = 0;
+void* volatile g_traceCam = nullptr;
+LONGLONG g_traceFrom = 0, g_traceUntil = 0, g_restSince = 0;
+int g_traceFiles = 0;
+
+LONGLONG Qpc() { LARGE_INTEGER t; QueryPerformanceCounter(&t); return t.QuadPart; }
+LONGLONG QpcFreq() { static LONGLONG f = 0; if (!f) { LARGE_INTEGER t; QueryPerformanceFrequency(&t); f = t.QuadPart; } return f; }
+
+void TraceAdd(char kind, void* cam, float dt) {
+    LONG i = InterlockedIncrement(&g_traceN) - 1;
+    if (i >= kTraceRows) return;
+    TraceRow& r = g_trace[i];
+    r.kind = kind;
+    r.at = Qpc();
+    r.dt = dt;
+    r.yaw = At<float>(cam, kOrbitYaw);
+    r.pitch = At<float>(cam, kOrbitYaw + 4);
+    for (int k = 0; k < 3; ++k) r.eye[k] = At<float>(cam, kOrbitYaw + 0xc + k * 4);
+    void* players[8];
+    const float* xf = nullptr;
+    if (g_api->GetPlayers(players, 8) > 0 && players[0]) xf = At<const float*>(players[0], 0x38);
+    for (int k = 0; k < 3; ++k) r.pos[k] = xf ? xf[12 + k] : 0;
+}
+
+void TraceWrite() {
+    wchar_t path[MAX_PATH];
+    swprintf_s(path, L"%s\\trace_%d.csv", g_api->modFolder, ++g_traceFiles);
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path, L"w") || !f) return;
+    fprintf(f, "kind,ms,dt,yaw,pitch,eye_x,eye_y,eye_z,pos_x,pos_y,pos_z\n");
+    LONG n = g_traceN < kTraceRows ? g_traceN : kTraceRows;
+    for (LONG i = 0; i < n; ++i) {
+        const TraceRow& r = g_trace[i];
+        fprintf(f, "%c,%.3f,%.5f,%.6f,%.6f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n", r.kind,
+                (r.at - g_traceFrom) * 1000.0 / QpcFreq(), r.dt, r.yaw, r.pitch, r.eye[0], r.eye[1], r.eye[2], r.pos[0],
+                r.pos[1], r.pos[2]);
+    }
+    fclose(f);
+    Logf(L"trace: %ld rows -> %s", n, path);
+}
+
+void Trace(void* cam, float m, float dt) {
+    if (g_set.trace <= 0) return;
+    LONGLONG now = Qpc();
+    if (g_traceCam) {
+        if (cam != g_traceCam) return;
+        TraceAdd('L', cam, dt);
+        if (now >= g_traceUntil) {
+            g_traceCam = nullptr;
+            TraceWrite();
+            g_restSince = 0;
+        }
+        return;
+    }
+    if (m < 0.1f) {
+        if (!g_restSince) g_restSince = now;
+    } else if (m > 0.5f && g_restSince && now - g_restSince > QpcFreq()) {
+        g_traceN = 0;
+        g_traceFrom = now;
+        g_traceUntil = now + (LONGLONG)(g_set.trace * QpcFreq());
+        g_traceCam = cam;
+        TraceAdd('L', cam, dt);
+    } else if (m >= 0.1f) {
+        g_restSince = 0;
+    }
+}
+
+void TraceFrame(void*) {
+    if (void* cam = g_traceCam) TraceAdd('F', cam, 0);
 }
 
 }  // namespace
@@ -240,6 +323,7 @@ extern "C" __declspec(dllexport) int FGUYModInit(const FGUYModAPI* api) {
         api->Log(L"couldn't hook the camera's stick look (0x581d40) - not this game's version?");
         return 0;
     }
+    if (g_set.trace > 0) api->OnFrame(TraceFrame, nullptr);
     Logf(L"on: deadzone %.0f%% / %.0f%%, curve %.2f, speed %.0f%% (pitch %.0f%%), ramp after %.0f ms over %.0f ms to "
          L"%.0f%% (pitch %.0f%%)", g_set.inner * 100, g_set.outer * 100, g_set.curve, g_set.speed * 100,
          g_set.pitch * 100, g_set.rampDelay * 1000, g_set.rampTime * 1000, g_set.rampBoost * 100,

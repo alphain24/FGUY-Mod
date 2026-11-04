@@ -9,7 +9,8 @@
 //   without vsync and paces frames ourselves. "vsync" in windowed/borderless waits for the desktop
 //   compositor (no tearing); in exclusive fullscreen it keeps the game's own vsync. "uncapped" still
 //   stops at 500 fps: some of the game's timers (e.g. the legal screen at boot) never finish when
-//   frames take under a millisecond.
+//   frames take under a millisecond. Offline, while playing, a rate the PC can't hold gives way to the highest
+//   of the screen's own it can ([Display] SteadyFrames=1, the default: see "steady frames" below, steady.cpp).
 // * Crash fix: the game sometimes fails to create its device at startup and then crashes using it
 //   (FGUY.exe +0x876e9). We retry CreateDevice - for up to 90 s, also through a fresh Direct3D object (right
 //   after another copy of the game closed, the driver can refuse new devices for a while, and the game's own
@@ -330,6 +331,107 @@ DwmFlush_t g_dwmFlush = nullptr;
 
 volatile ULONGLONG g_hudShownAt = 0;   // the level's HUD last said it shows (0: hidden)
 
+// ---- steady frames ([Display] SteadyFrames, offline, while playing) -----------------------------------------------
+// A rate the PC can't reach gives frames of uneven length, and the motion in them uneven from frame to frame
+// (measured: the view's turn uneven by 19% at ~140 fps against 240 - by 6% capped at 120, held). So the rate paced is
+// the highest of the screen's own the PC holds: 4, 3, 2 or 1 times its refresh, or a half or a third of it - up to
+// the one chosen ("vsync": the refresh). Down a step once frames miss it (4 of the last 60 over by 8%); up a step
+// once the PC has had room for the next one up for a while (95% of the last 120 frames inside 70% of it): three
+// seconds, twice as long each time a step up failed within ten seconds (up to a minute; frames paced at the lower
+// rate look quicker than they are at the higher - it went 180, 120, 180... every two seconds), and after a failed one
+// only once frames are a fifth quicker than they were then (a lighter scene: 3840x2400 held 30, and each try at 60
+// was a hitch).
+// steady.cpp gives the game's clock the interval held, so the game's dt is the frames' own.
+int ScreenRefresh() {
+    static int hz = 0;
+    if (!hz) {
+        DEVMODEW dm = {};
+        dm.dmSize = sizeof(dm);
+        auto enumModes = Real_EnumDisplaySettingsW ? Real_EnumDisplaySettingsW : EnumDisplaySettingsW;
+        if (enumModes(nullptr, ENUM_CURRENT_SETTINGS, &dm) && dm.dmDisplayFrequency > 1)
+            hz = (int)dm.dmDisplayFrequency + (dm.dmDisplayFrequency % 10 == 9 ? 1 : 0);   // (59: 59.94 - 60)
+        else
+            hz = 60;
+        Log(L"D3D: the screen refreshes %d times a second", hz);
+    }
+    return hz;
+}
+
+struct SteadyRates {
+    int cap = -1;                 // (the cap they're for)
+    int rates[8] = {};
+    int count = 0, at = 0;        // the rates, highest first; the one paced now
+    float busy[120] = {};         // the last frames' own times (ms): from the last frame's release to this one's arrival
+    int filled = 0, pos = 0;
+    bool missed[60] = {};
+    int misses = 0, missPos = 0;
+    int since = 0;                // frames at this rate
+    int upWait = 3;               // seconds of room before a step up
+    ULONGLONG upAt = 0;           // (when the last step up was)
+    float upP95 = 0;              // (frames' 95th percentile at the last step up)
+    float failP95[8] = {};        // (by rate: frames' 95th percentile when a step up to it last failed)
+} g_steady;
+
+void SteadyReset() {
+    g_steady.filled = g_steady.pos = g_steady.misses = g_steady.missPos = g_steady.since = 0;
+    memset(g_steady.missed, 0, sizeof(g_steady.missed));
+}
+
+// The rate to pace this frame at, for a cap (fps), given how long this frame took (ms).
+int SteadyRate(int cap, float busyMs) {
+    SteadyRates& s = g_steady;
+    if (cap != s.cap) {
+        s.cap = cap;
+        s.count = 0;
+        int hz = ScreenRefresh();
+        for (int m = 4; m >= 1; --m)
+            if (hz * m <= cap) s.rates[s.count++] = hz * m;
+        for (int d = 2; d <= 3; ++d)
+            if (hz / d >= 20 && hz / d <= cap) s.rates[s.count++] = hz / d;
+        if (!s.count) s.rates[s.count++] = cap;
+        s.at = 0;
+        s.upWait = 3;
+        s.upAt = 0;
+        s.upP95 = 0;
+        memset(s.failP95, 0, sizeof(s.failP95));
+        SteadyReset();
+    }
+    float frame = 1000.0f / s.rates[s.at];
+    bool miss = busyMs > frame * 1.08f;
+    s.misses += (int)miss - (int)s.missed[s.missPos];
+    s.missed[s.missPos] = miss;
+    s.missPos = (s.missPos + 1) % 60;
+    s.busy[s.pos] = busyMs;
+    s.pos = (s.pos + 1) % 120;
+    if (s.filled < 120) ++s.filled;
+    ++s.since;
+    if (s.misses >= 4 && s.at < s.count - 1) {
+        if (s.upAt && GetTickCount64() - s.upAt < 10000) {   // (that step up failed)
+            if (s.upWait < 64) s.upWait *= 2;
+            s.failP95[s.at] = s.upP95;
+        }
+        ++s.at;
+        Log(L"D3D: steady frames - %d fps (the PC didn't hold %d)", s.rates[s.at], s.rates[s.at - 1]);
+        SteadyReset();
+    } else if (s.at > 0 && s.filled >= 120 && s.since >= s.upWait * s.rates[s.at]) {
+        float sorted[120];
+        memcpy(sorted, s.busy, sizeof(sorted));
+        std::sort(sorted, sorted + 120);
+        float p95 = sorted[113];
+        float failed = s.failP95[s.at - 1];
+        if (p95 < 0.7f * 1000.0f / s.rates[s.at - 1] && (failed <= 0 || p95 < 0.8f * failed)) {
+            --s.at;
+            s.upAt = GetTickCount64();
+            s.upP95 = p95;
+            Log(L"D3D: steady frames - %d fps (the PC has room for it)", s.rates[s.at]);
+            SteadyReset();
+        } else {
+            s.since = 0;   // (look again later)
+        }
+    }
+    return s.rates[s.at];
+}
+
 void PaceFrame() {
     // Netplay runs the game on a fixed 1/60 s clock, so real time must match: always 60 fps - except while an
     // online session boots hidden (title, menus, level load: nobody watches), which runs as fast as the PCs
@@ -349,7 +451,19 @@ void PaceFrame() {
     if (!playing && (fps <= 0 || fps > 60)) fps = 60;
     if (OnlineStartingMatch() && (fps <= 0 || fps > 60)) fps = 60;   // only the loading screen: leave the GPU to
                                                                     // the match's game, booting meanwhile
-    if (fps == 0 && !g_fullscreen && g_dwmFlush) {
+    bool vsync = fps == 0 && !g_fullscreen && g_dwmFlush;
+    if (playing && SteadyClockOn() && (fps > 0 || vsync)) {   // steady frames (above)
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        float busy = (float)((now.QuadPart - g_lastFrame.QuadPart) * 1000.0 / g_freq.QuadPart);
+        int rate = SteadyRate(vsync ? ScreenRefresh() : fps, busy);
+        if (!vsync || rate != ScreenRefresh()) {
+            fps = rate;   // (vsync the PC can't hold: half the refresh, paced here)
+            vsync = false;
+        }
+    }
+    SteadySetInterval(vsync ? g_freq.QuadPart / ScreenRefresh() : fps > 0 ? g_freq.QuadPart / fps : 0);
+    if (vsync) {
         g_dwmFlush();  // vsync in windowed modes: wait for the compositor's next frame
     } else if (fps > 0) {
         LARGE_INTEGER now;
