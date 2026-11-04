@@ -22,6 +22,8 @@
 // (controller only) its speeds are written over: the same top speed and sensitivity, our curve, no build-up, the ramp
 // at the edge. The stick and dt are the game's own (online: the match's synced input, the same on every PC) and the
 // settings come from mod.ini (the same on everyone's in a lobby: Type=gameplay) - every PC turns every camera alike.
+//
+// And the third-person camera moves in front of scenery smoothly (any input; "the camera in front of scenery" below).
 #include <windows.h>
 
 #include <cmath>
@@ -65,6 +67,9 @@ struct Settings {
     bool log = false;
     bool bypass = false;                  // research: the game's own look (with Log: to measure it)
     float trace = 0;                      // research: seconds of frame-by-frame trace (Trace)
+    bool ease = true;                     // the camera eases in front of scenery (CameraEase)
+    float easeIn = 0.08f, easeOut = 0.25f;   // seconds, about how long it takes in / back out
+    float lookAhead = 0.25f;              // seconds: how far ahead it looks for scenery
 } g_set;
 
 float Pct(const wchar_t* key, int def) { return g_api->Setting(key, def) / 100.0f; }
@@ -84,6 +89,10 @@ void ReadSettings() {
     g_set.log = g_api->Setting(L"Log", 0) != 0;
     g_set.bypass = g_api->Setting(L"Bypass", 0) != 0;
     g_set.trace = (float)g_api->Setting(L"Trace", 0);
+    g_set.ease = g_api->Setting(L"CameraEase", 1) != 0;
+    g_set.easeIn = Ms(L"CameraEaseIn", 80);
+    g_set.easeOut = Ms(L"CameraEaseOut", 250);
+    g_set.lookAhead = Ms(L"CameraLookAhead", 250);
     // (sane limits: a bad mod.ini mustn't spin the view or freeze it)
     auto clamp = [](float& v, float lo, float hi) { v = v < lo ? lo : v > hi ? hi : v; };
     clamp(g_set.inner, 0, 0.5f);
@@ -96,6 +105,9 @@ void ReadSettings() {
     clamp(g_set.rampBoost, 1, 4);
     clamp(g_set.rampPitch, 1, 4);
     clamp(g_set.rampEdge, 0.5f, 1);
+    clamp(g_set.easeIn, 0.02f, 1);
+    clamp(g_set.easeOut, 0.02f, 2);
+    clamp(g_set.lookAhead, 0, 0.5f);
 }
 
 void Logf(const wchar_t* fmt, ...) {
@@ -227,11 +239,138 @@ void __fastcall Look(void* cam, void* edx, float dt, void* a, void* b, float* ou
     Trace(cam, m, dt);
 }
 
+// ---- the camera in front of scenery ---------------------------------------------------------------------------------
+// The game's camera, once turned (0x580ab0), is kept out of the scenery by 0x581ff0 (a camera method, vtable +0x70): a
+// box swept from the camera's pivot to where the eye should be (0x580320) - where it hits, the eye goes at once; back
+// out it eases. Turning or running past a wall, the hit point moves frame to frame in uneven steps and the view lurches
+// in (measured: 6.7 to 1.9 m behind in a quarter second, 24 / 34 / 29 / 54 / 70 m/s frame to frame). Here the game's
+// sweep runs, then a second one where the eye will be a moment ahead (the turn and the move so far carried on), and the
+// distance moves smoothly (a critically damped spring) toward the nearer of the two - starting in before the wall is
+// there, never nearer the wall than the game's own. All from the camera's own values: every PC eases every camera alike.
+// (Measured at 60 fps, running and turning past a wall: the pull-in's speed changed by up to 37 m/s from one frame to
+//  the next, 14 with this; standing still the camera stays where the game has it.)
+const uintptr_t kCollide = 0x581ff0;   // DWORD __thiscall (camera, float dt, 8 x ?, state, float* block, ?, char* out)
+const uintptr_t kSweep = 0x580320;     // char __cdecl (float* from, float* to, float* frac): frac (in 1) cut to the hit
+const int kMinDist = 0xc;              // settings: the nearest the camera comes
+// The orbit block: pivot [0..2], yaw [3], pitch [4], distance [5] (in: the one wanted; out: kept out of the scenery),
+// eye [6..8] (from the pivot, yaw, pitch and distance).
+
+using Collide_t = DWORD(__fastcall*)(void* cam, void* edx, float dt, DWORD a2, DWORD a3, DWORD a4, DWORD a5, DWORD a6,
+                                     DWORD a7, DWORD a8, DWORD a9, void* state, float* blk, DWORD a12, char* out);
+using Sweep_t = char(__cdecl*)(float* from, float* to, float* frac);
+Collide_t g_origCollide = nullptr;
+
+struct Ease { void* cam; bool on; float d, v, yaw, pitch, pivot[3]; };
+Ease g_eases[16];
+
+Ease& EaseOf(void* cam) {
+    for (Ease& e : g_eases)
+        if (e.cam == cam) return e;
+    for (Ease& e : g_eases)
+        if (!e.cam) { e = {cam}; return e; }
+    static int next = 0;
+    Ease& e = g_eases[next++ % 16];
+    e = {cam};
+    return e;
+}
+
+float Wrap(float a) {
+    while (a > 3.14159265f) a -= 6.2831853f;
+    while (a < -3.14159265f) a += 6.2831853f;
+    return a;
+}
+
+// Moves x (speed v) toward `to`, critically damped, settling in about `time`.
+void Spring(float& x, float& v, float to, float time, float dt) {
+    float w = 2.0f / time, k = w * dt;
+    float decay = 1.0f / (1.0f + k + 0.48f * k * k + 0.235f * k * k * k);
+    float off = x - to, t = (v + w * off) * dt;
+    v = (v - w * t) * decay;
+    x = to + (off + t) * decay;
+}
+
+DWORD __fastcall Collide(void* cam, void* edx, float dt, DWORD a2, DWORD a3, DWORD a4, DWORD a5, DWORD a6, DWORD a7,
+                         DWORD a8, DWORD a9, void* state, float* blk, DWORD a12, char* out) {
+    float want = blk ? blk[5] : 0, eye0[3] = {};
+    if (blk) for (int k = 0; k < 3; ++k) eye0[k] = blk[6 + k];
+    DWORD r = g_origCollide(cam, edx, dt, a2, a3, a4, a5, a6, a7, a8, a9, state, blk, a12, out);
+    unsigned char* set = cam ? At<unsigned char*>(cam, kSettings) : nullptr;
+    if (!g_set.ease || !blk || !set || !(want > 0.05f)) return r;
+    float hard = blk[5], nearest = At<float>(set, kMinDist);
+
+    // Which way the eye lies from the pivot, as the game turned it this frame (before the scenery).
+    float* pivot = blk;
+    float dir[3] = {(eye0[0] - pivot[0]) / want, (eye0[1] - pivot[1]) / want, (eye0[2] - pivot[2]) / want};
+    float yaw = atan2f(dir[0], dir[2]), pitch = asinf(dir[1] < -1 ? -1 : dir[1] > 1 ? 1 : dir[1]);
+
+    Ease& e = EaseOf(cam);
+    float moved = sqrtf((pivot[0] - e.pivot[0]) * (pivot[0] - e.pivot[0]) + (pivot[1] - e.pivot[1]) * (pivot[1] - e.pivot[1]) +
+                        (pivot[2] - e.pivot[2]) * (pivot[2] - e.pivot[2]));
+    bool fresh = !e.on || !(dt > 0) || dt > 0.25f || moved > 3.0f;   // (new, paused, or a respawn / teleport)
+    float target = hard;
+    if (!fresh && g_set.lookAhead > 0) {
+        float turn = Wrap(yaw - e.yaw) / dt, tilt = (pitch - e.pitch) / dt;   // rad/s
+        float vel[3] = {(pivot[0] - e.pivot[0]) / dt, (pivot[1] - e.pivot[1]) / dt, (pivot[2] - e.pivot[2]) / dt};
+        const float taus[3] = {g_set.lookAhead / 3, g_set.lookAhead * 2 / 3, g_set.lookAhead};
+        for (float tau : taus) {
+            // (the turn ahead at most 0.4 rad: spun fast, a wall a quarter turn round isn't where the camera goes)
+            float dy = turn * tau, dp = tilt * tau;
+            dy = dy > 0.4f ? 0.4f : dy < -0.4f ? -0.4f : dy;
+            dp = dp > 0.4f ? 0.4f : dp < -0.4f ? -0.4f : dp;
+            float y = yaw + dy, p = pitch + dp;
+            if (p > 1.5f) p = 1.5f;
+            if (p < -1.5f) p = -1.5f;
+            float d2[3] = {sinf(y) * cosf(p), sinf(p), cosf(y) * cosf(p)};
+            float then[3] = {pivot[0] + vel[0] * tau, pivot[1] + vel[1] * tau, pivot[2] + vel[2] * tau};
+            float to[3] = {then[0] + d2[0] * want, then[1] + d2[1] * want, then[2] + d2[2] * want};
+            float from[3] = {pivot[0], pivot[1], pivot[2]}, frac = 1;   // (from the pivot as it is: it's out of the walls)
+            if (!reinterpret_cast<Sweep_t>(kSweep)(from, to, &frac) || !(frac < 1)) continue;
+            // Where it hit, along the camera's line from where the pivot will be.
+            float ahead = 0;
+            for (int k = 0; k < 3; ++k) ahead += (from[k] + (to[k] - from[k]) * frac - then[k]) * d2[k];
+            if (ahead < 0) ahead = 0;
+            if (ahead < target) target = ahead;
+        }
+        if (target < nearest) target = nearest;
+    }
+
+    if (fresh) {
+        e.d = hard;
+        e.v = 0;
+    } else {
+        Spring(e.d, e.v, target, target < e.d ? g_set.easeIn : g_set.easeOut, dt);
+        if (e.d > hard) { e.d = hard; if (e.v > 0) e.v = 0; }   // (never nearer the wall than the game has it)
+        if (e.d < nearest) { e.d = nearest; if (e.v < 0) e.v = 0; }
+    }
+    e.on = true;
+    e.yaw = yaw;
+    e.pitch = pitch;
+    for (int k = 0; k < 3; ++k) e.pivot[k] = pivot[k];
+
+    if (hard > 0.001f && e.d < hard) {   // the eye along the game's own line, at our distance
+        float s = e.d / hard;
+        for (int k = 0; k < 3; ++k) blk[6 + k] = pivot[k] + (blk[6 + k] - pivot[k]) * s;
+        blk[5] = e.d;
+    }
+
+    if (g_set.log) {
+        static DWORD last = 0;
+        DWORD now = GetTickCount();
+        if (now - last >= 250 && (hard < want - 0.01f || e.d < want - 0.01f)) {
+            last = now;
+            Logf(L"cam %p: distance wanted %.2f, the game's %.2f, ahead %.2f, ours %.2f (%.1f m/s)", cam, want, hard,
+                 target, e.d, e.v);
+        }
+    }
+    return r;
+}
+
 // ---- research: a frame-by-frame trace (mod.ini Trace=<seconds>) ---------------------------------------------------
 // Pushing the right stick past half (after it rested a second) records, for that many seconds, every camera update
 // ('L': the game thread, its dt) and every frame drawn ('F': the render thread, after Present): the time, the camera's
 // yaw / pitch and eye, the first player's place. Then trace_<n>.csv in the mod's folder.
-struct TraceRow { char kind; LONGLONG at; float dt, yaw, pitch, eye[3], pos[3]; };
+struct TraceRow { char kind; LONGLONG at; float dt, yaw, pitch, eye[3], pos[3], dist, view[3]; };
+const int kViewEye = 0x1f0;   // camera: the eye it's drawn from (eased after the orbit block's)
 const int kTraceRows = 8192;
 TraceRow g_trace[kTraceRows];
 volatile LONG g_traceN = 0;
@@ -252,6 +391,8 @@ void TraceAdd(char kind, void* cam, float dt) {
     r.yaw = At<float>(cam, kOrbitYaw);
     r.pitch = At<float>(cam, kOrbitYaw + 4);
     for (int k = 0; k < 3; ++k) r.eye[k] = At<float>(cam, kOrbitYaw + 0xc + k * 4);
+    r.dist = At<float>(cam, kOrbitYaw + 8);
+    for (int k = 0; k < 3; ++k) r.view[k] = At<float>(cam, kViewEye + k * 4);
     void* players[8];
     const float* xf = nullptr;
     if (g_api->GetPlayers(players, 8) > 0 && players[0]) xf = At<const float*>(players[0], 0x38);
@@ -263,13 +404,13 @@ void TraceWrite() {
     swprintf_s(path, L"%s\\trace_%d.csv", g_api->modFolder, ++g_traceFiles);
     FILE* f = nullptr;
     if (_wfopen_s(&f, path, L"w") || !f) return;
-    fprintf(f, "kind,ms,dt,yaw,pitch,eye_x,eye_y,eye_z,pos_x,pos_y,pos_z\n");
+    fprintf(f, "kind,ms,dt,yaw,pitch,eye_x,eye_y,eye_z,pos_x,pos_y,pos_z,dist,view_x,view_y,view_z\n");
     LONG n = g_traceN < kTraceRows ? g_traceN : kTraceRows;
     for (LONG i = 0; i < n; ++i) {
         const TraceRow& r = g_trace[i];
-        fprintf(f, "%c,%.3f,%.5f,%.6f,%.6f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n", r.kind,
+        fprintf(f, "%c,%.3f,%.5f,%.6f,%.6f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n", r.kind,
                 (r.at - g_traceFrom) * 1000.0 / QpcFreq(), r.dt, r.yaw, r.pitch, r.eye[0], r.eye[1], r.eye[2], r.pos[0],
-                r.pos[1], r.pos[2]);
+                r.pos[1], r.pos[2], r.dist, r.view[0], r.view[1], r.view[2]);
     }
     fclose(f);
     Logf(L"trace: %ld rows -> %s", n, path);
@@ -323,6 +464,10 @@ extern "C" __declspec(dllexport) int FGUYModInit(const FGUYModAPI* api) {
         api->Log(L"couldn't hook the camera's stick look (0x581d40) - not this game's version?");
         return 0;
     }
+    // (Collide starts cmp byte [esp+0c],0 / mov eax,[esp+34])
+    if (!api->Hook(reinterpret_cast<void*>(kCollide), 0, reinterpret_cast<void*>(&Collide),
+                   reinterpret_cast<void**>(&g_origCollide)))
+        api->Log(L"couldn't hook the camera's scenery check (0x581ff0) - the camera isn't eased");
     if (g_set.trace > 0) api->OnFrame(TraceFrame, nullptr);
     Logf(L"on: deadzone %.0f%% / %.0f%%, curve %.2f, speed %.0f%% (pitch %.0f%%), ramp after %.0f ms over %.0f ms to "
          L"%.0f%% (pitch %.0f%%)", g_set.inner * 100, g_set.outer * 100, g_set.curve, g_set.speed * 100,

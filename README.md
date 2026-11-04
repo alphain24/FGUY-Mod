@@ -51,7 +51,9 @@ there's a new version, and installs it for you.
 **FGUY Controller Look** (on the MODS page, off until you switch it on): the right stick aims like a modern shooter.
 The game ignores the first half of the stick's travel and builds the turn up over half a second; with this mod the
 deadzone is small and round, small pushes turn slowly for fine aim, the view turns at once, and holding the stick at
-the edge speeds the turn up. It changes aiming, so online everyone in a lobby needs it.
+the edge speeds the turn up. The camera behind you also moves in front of walls smoothly (the game jumps it in) - it
+looks a moment ahead for them and never goes nearer a wall than the game has it. It changes aiming, so online everyone in
+a lobby needs it.
 
 **PC fixes**
 - Runs on **Vulkan** ([DXVK](https://github.com/doitsujin/dxvk), the translation Valve's Proton uses) for

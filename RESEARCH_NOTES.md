@@ -871,3 +871,15 @@ ematch_<lobby pid>.txt`), whose lobby then
 - **The third-person "lurch"** isn't the run's start: setting off straight is smooth (the eye eases out from 6.0 to
   7.0 behind over ~1 s). Turning while running, the camera met the scenery behind and pulled in from 6.7 to 1.9 in a
   quarter second, in uneven jumps (24 / 34 / 29 / 54 / 70 m/s frame to frame): the camera's collision.
+- **The camera's collision, `0x581ff0`** (camera vtable +0x70, from the update 0x588c40 right after the look and the
+  turn; thiscall, 13 stack args, ret 0x34: dt first, a state block 10th - camera `+0x22c` - and the orbit block 11th, a
+  copy on the stack: pivot [0..2], yaw, pitch, distance [5], eye [6..8]; the 13th a flag it sets). It sweeps a box from
+  the pivot to the eye (`0x580320`, cdecl (from, to, frac*): frac, in 1, cut to the first hit; "TtCastCameraDepthDepen-
+  Collision"): nearer than the state's distance (+0x14) it goes there at once; farther, it eases out (dt-scaled, capped
+  speed). The settings' +0xc is the nearest it comes. Its result goes on through the camera's own easing of the eye
+  (camera +0x2a8, then +0x1f0, the eye drawn), which follows it closely: the jumps reach the screen.
+- **Eased** (Controller Look, `CameraEase=1`): after the game's sweep, three more where the eye will be 1/3, 2/3 and all
+  of 0.25 s ahead (the turn so far, capped at 0.4 rad, and the pivot's move carried on; the hit measured along the line
+  from where the pivot will be), and the distance follows the nearest on a critically damped spring (80 ms in, 250 ms
+  out), never past the game's. Measured at 60 fps, running and turning past a wall: the pull-in's speed changed by up to
+  37 m/s frame to frame, 13-14 eased; spinning in place with no wall about, the camera stays at 6.0.
