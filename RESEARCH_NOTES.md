@@ -976,3 +976,54 @@ ematch_<lobby pid>.txt`), whose lobby then
   Cleveland: their second gun sits low, just out of the view - it'd be taken for a free hand).
 - `tools/start_arena.ps1` (`-Enemies` keeps them), `tools/test_fpv_all.ps1` (every character's first person on a
   contact sheet - `tools/re/fpv_frames.py`).
+
+## Controller look: how the right stick turns the camera (2026-11-03)
+- **The sticks as floats**: a controller's poll `0x4b5670` (XInputGetState) hands the four shorts LX LY RX RY to
+  `0x4b4ec0` (cdecl: out = device state +0x14, the shorts, count 2, center 0, min -32768, max 32767, -7849, 7849 - the
+  pushes at `0x4b56cd`); each axis through `0x4bba80`: within +-7849 zero, beyond it stretched, `(v - 7849) / 24918`
+  (24919 below zero). A square deadzone, a quarter of the travel, on both sticks. Per stick 7 floats: x, y, the
+  direction (2), length, -, angle.
+- **The camera's look, `0x581d40`** (a camera method, vtable +0x68 of zFGUYCamThirdPerson - the camera at player
+  `+0xf148`; 0x588c40 calls it every frame, then +0x64 = `0x580ab0`): the stick at camera `+0xc0` / `+0xc4`, clipped to
+  the unit circle, times `a*m + b*m^2 + c*m^3` (settings `[camera+0x34c]` +0x88 / +0x8c / +0x90: **0, 0, 1 - a cube**);
+  then `0x55cc60` per axis: the speed moves toward value * top (+0x7c yaw **3.84 rad/s** / +0x84 pitch 2.09, times
+  `0x4fd070` - the aim sensitivity 0xbad810 through 0.75 / 1 / 1.25, lower when zoomed) by accel * dt a frame (+0x78
+  **5.76 rad/s^2** / +0x80 3.14, times `0x4fce40`: 0.5 / 1 / 2) - and goes to 0 at once when the curved value is under
+  **0.05** (0xadb16c). Out: turn speeds at camera `+0x2c8` (pitch, yaw), which `0x580ab0` adds to the orbit yaw / pitch
+  (times camera `+0xcc` and dt). Camera `+0xc8` set: keyboard / mouse (another branch); `+0x300`: held still.
+- Measured (the arena, Peter, sensitivity factor 1.25): the cube under 0.05 means **no turn at all below ~52% of the
+  stick's travel** (raw 17000); 73% turns 47 deg/s; full push builds up to 275 deg/s over ~0.5 s.
+- The **FGUY Controller Look** mod (`src/mods/controllerlook`, a plugin) hooks both: the right stick's shorts remapped so
+  the game's own sums give a round deadzone of 8% (left stick untouched), and the look's speeds written over (the game's
+  top speed and sensitivity, `t^2`, no build-up, a speed-up held at the edge). Same steps: 30% 17 deg/s, 49% 57, 73%
+  148, full 267 at once easing up to ~500 after 0.5 s; zoomed 0.82 of it (the game's own). Its mod.ini `Log=1` logs the
+  speeds and how fast the view turned, `Bypass=1` (with Log) the game's own look, to measure it.
+- **Why turning looks jagged** (the mod's `Trace=4`: every camera update and every frame drawn, 1280x720 window): one
+  camera update a frame, its turn exactly rate * dt (1-2%) - but the game's dt doesn't follow each frame's own time (it
+  matches on average; frame to frame +-1.2 ms off, no lag fits better), and frames come unevenly when the PC can't reach
+  the cap (240: ~140 fps, frames 4.5-10 ms). The turn seen frame to frame varied 19%; the view sat off a steady turn
+  by 1.8 ms of turning (sd; up to 6.7 - at 500 deg/s 0.9 deg, up to 3.4). Capped at a rate the PC holds (120: frames
+  8.33 ms, p95 8.4): 6%. The player's place moved on every frame (no 22-a-second steps here, third person, standing
+  start in the arena). The user's PC: 3840x2400 borderless on integrated graphics runs a level at ~22-40 fps.
+- **Steady frames** (loader: `src/loader/steady.cpp`, d3d9.cpp "steady frames"; `[Display] SteadyFrames=1`, offline):
+  the main thread's QPC reads give the tick's own time, last tick's + the interval the pacing holds; the pacing holds
+  the highest of the screen's rates (4/3/2/1 x refresh, 1/2, 1/3) the PC can, up to the one chosen. The game's dt then
+  is the frames' own (-0.3..+0.4 ms). Measured, 1280x720, FrameRate=240: settles at 120 - the turn frame to frame
+  even to 1% (was 19%), the camera eye 1%; 3840x2400: 30 held, 0%. A rate tried up and failed is tried again only once
+  frames are a fifth quicker than then (frames paced lower look quicker than they are higher: it went 180 / 120 every
+  two seconds, then 60 / 30). The game's dt is QueryPerformanceCounter's (its millisecond clocks not needed).
+- **The third-person "lurch"** isn't the run's start: setting off straight is smooth (the eye eases out from 6.0 to
+  7.0 behind over ~1 s). Turning while running, the camera met the scenery behind and pulled in from 6.7 to 1.9 in a
+  quarter second, in uneven jumps (24 / 34 / 29 / 54 / 70 m/s frame to frame): the camera's collision.
+- **The camera's collision, `0x581ff0`** (camera vtable +0x70, from the update 0x588c40 right after the look and the
+  turn; thiscall, 13 stack args, ret 0x34: dt first, a state block 10th - camera `+0x22c` - and the orbit block 11th, a
+  copy on the stack: pivot [0..2], yaw, pitch, distance [5], eye [6..8]; the 13th a flag it sets). It sweeps a box from
+  the pivot to the eye (`0x580320`, cdecl (from, to, frac*): frac, in 1, cut to the first hit; "TtCastCameraDepthDepen-
+  Collision"): nearer than the state's distance (+0x14) it goes there at once; farther, it eases out (dt-scaled, capped
+  speed). The settings' +0xc is the nearest it comes. Its result goes on through the camera's own easing of the eye
+  (camera +0x2a8, then +0x1f0, the eye drawn), which follows it closely: the jumps reach the screen.
+- **Eased** (Controller Look, `CameraEase=1`): after the game's sweep, three more where the eye will be 1/3, 2/3 and all
+  of 0.25 s ahead (the turn so far, capped at 0.4 rad, and the pivot's move carried on; the hit measured along the line
+  from where the pivot will be), and the distance follows the nearest on a critically damped spring (80 ms in, 250 ms
+  out), never past the game's. Measured at 60 fps, running and turning past a wall: the pull-in's speed changed by up to
+  37 m/s frame to frame, 13-14 eased; spinning in place with no wall about, the camera stays at 6.0.

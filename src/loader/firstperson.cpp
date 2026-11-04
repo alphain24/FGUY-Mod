@@ -591,12 +591,12 @@ bool FirstPersonArms(int slot, ArmsView* out) {
         if (g_layerDump > 0) {   // (research: the upper body's blend block, as words)
             --g_layerDump;
             wchar_t line[1400];
-            int len = swprintf_s(line, L"FirstPerson: layer");
-            for (int o = 0; o < 0x110 && len < 1300; o += 4) {
-                DWORD w = *reinterpret_cast<const DWORD*>(layer + o);
-                float f = *reinterpret_cast<const float*>(layer + o);
-                if (std::fabs(f) > 1e-4f && std::fabs(f) < 1e5f) len += swprintf_s(line + len, 1400 - len, L" %x:%.3g", o, f);
-                else len += swprintf_s(line + len, 1400 - len, L" %x:%lx", o, w);
+            int at = swprintf_s(line, L"FirstPerson: layer");
+            for (int o = 0; o < 0x110 && at < 1300; o += 4) {
+                DWORD word = *reinterpret_cast<const DWORD*>(layer + o);
+                float as = *reinterpret_cast<const float*>(layer + o);
+                if (std::fabs(as) > 1e-4f && std::fabs(as) < 1e5f) at += swprintf_s(line + at, 1400 - at, L" %x:%.3g", o, as);
+                else at += swprintf_s(line + at, 1400 - at, L" %x:%lx", o, word);
             }
             Log(L"%s", line);
         }

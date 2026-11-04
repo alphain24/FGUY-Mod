@@ -64,6 +64,10 @@ void OnDirectInputCreated(void* directInput);
 void InitD3D9(HMODULE exe);            // resolutions, frame rate, crash fix   (d3d9.cpp)
 int VideoFrameRateIndex();             //   Options > Screen > Frame Rate support
 void VideoSetFrameRate(int index);
+void InitSteadyClock(HMODULE exe);     // offline: the game's clock one frame a tick (steady.cpp)
+bool SteadyClockOn();
+void SteadyTick();                     //   a controller poll (the first of a tick starts it)
+void SteadySetInterval(LONGLONG counts);   //   the frame interval the pacing holds (d3d9.cpp)
 void VideoRequestQuit();               //   exit cleanly at the end of the next frame (test tools)
 void VideoRequestShot(const wchar_t* path);   // test tools: save the next frame as a .bmp
 void VideoRequestShots(int frames, const wchar_t* folder);   //   ...the next n, every one, small (frame_<i>.bmp, times.txt)

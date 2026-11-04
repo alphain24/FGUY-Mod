@@ -892,8 +892,8 @@ bool ArmsInViewOnce(int slot, const unsigned char* ent, float* rot, float* pos, 
             bool rest = view.still && st.stillFor > kStillFor && view.idle <= 0 && view.aim < 0.01f;
             if (!st.haveHeadRest) st.headRest = hd, st.haveHeadRest = true;
             else if (rest && step > 0) st.headRest = st.headRest + (hd - st.headRest) * (1 - expf(-step / 0.3f));
-            V3 d = Mul(Transposed(V), hd - st.headRest);   // (the view's left, up, ahead)
-            V3 to = {d.x * g_gameBob[1], d.y * g_gameBob[0], 0};
+            V3 off = Mul(Transposed(V), hd - st.headRest);   // (the view's left, up, ahead)
+            V3 to = {off.x * g_gameBob[1], off.y * g_gameBob[0], 0};
             float lim = 0.06f * k;
             if (Len(to) > lim) to = to * (lim / Len(to));
             if (step > 0) {

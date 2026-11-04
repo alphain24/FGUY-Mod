@@ -87,6 +87,7 @@ void Init() {
     InitSounds();
     InitDisplay(exe);
     InitD3D9(exe);
+    InitSteadyClock(exe);
     InitDirectInput();
     InitNetSpy(exe);
     InitVirtualPad(exe);
