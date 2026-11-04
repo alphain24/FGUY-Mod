@@ -514,20 +514,17 @@ struct OwnBody {
     bool clip = false, skip = false, front = false;
     DWORD was = 0;
     D3DVIEWPORT9 vp{};
-    float c01[2][4];
+    float c01[4][4];
     explicit OwnBody(IDirect3DDevice9* d) : dev(d) {
-        float scale = 1;
-        if (FirstPersonViewmodel(g_vsConst, Skinned(d), &scale)) {
+        float s[4][4];
+        if (FirstPersonViewmodel(g_vsConst, Skinned(d), s)) {
             if (FAILED(dev->GetViewport(&vp))) return;
             D3DVIEWPORT9 v = vp;
             v.MinZ = 0;
             v.MaxZ = kFront;
             dev->SetViewport(&v);
             memcpy(c01, g_vsConst, sizeof(c01));
-            float s[2][4];
-            for (int i = 0; i < 2; ++i)
-                for (int j = 0; j < 4; ++j) s[i][j] = c01[i][j] * scale;
-            Real_SetVSConstF(dev, 0, s[0], 2);
+            Real_SetVSConstF(dev, 0, s[0], 4);
             front = true;
             return;
         }
@@ -548,7 +545,7 @@ struct OwnBody {
     ~OwnBody() {
         if (front) {
             dev->SetViewport(&vp);
-            Real_SetVSConstF(dev, 0, c01[0], 2);
+            Real_SetVSConstF(dev, 0, c01[0], 4);
             return;
         }
         if (!clip) return;

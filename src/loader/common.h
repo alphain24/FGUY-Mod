@@ -253,6 +253,12 @@ bool MotionHead(int slot, float* at);  //   where a player's head is this frame,
 void MotionArmsTest(float right, float down, float ahead, bool on);   //   research: the gun hand's place in first person
 void MotionArmsZoomTest(float right, float down);                     //     (zoomed in)
 void MotionArmsBodyTest(bool hide);                                   //   research: the rest of the body hidden or not
+void MotionGunAimTest(bool on);                                       //   research: a two-handed gun pointed at the crosshair
+void MotionOffHandTest(bool on);                                    //   research: the off hand put on a one-handed gun
+void MotionArmsTraceTest(int frames);                               //   research: the arms' pose against each frame drawn
+void MotionArmsTrace(int slot, const float* eyeDraw, const float* fwDraw);   //     (firstperson.cpp: this frame's camera)
+void MotionArmsScaleTest(float s);                                //   research: the arms shrunk toward the eye
+void MotionArmsDevTest(float mix, bool log);                        //   research: the gun hand kept on its hold between stances
 bool MotionArmsInView(int slot);       //   their gun was brought into their view this frame (their head shrunk away)
 struct ArmsView {                      // a player's gun to bring into their view (FirstPersonArms, for motion.cpp):
     float eye[3], forward[3];          //   their eye and which way they look (the world)
@@ -269,9 +275,11 @@ bool FirstPersonArms(int slot, ArmsView* out);
 const float kArmTan = 0.79f;           // first person's arms drawn with a field of view of their own: tan across (the
                                        //   game's 80 degrees at 16:9) - the same size at any field of view, zoomed too
 bool MotionViewmodel(int slot, float* hand);   //   render thread: their arms drawn as first person's (their body hidden
-                                               //   away) - their gun hand in the world
-bool FirstPersonViewmodel(const float (*c)[4], bool skinned, float* scale);   //   cosmetics.cpp: this draw is first
-                                       //   person's arms or gun - drawn in front of all, its clip space x / y by `scale`
+                                               //   away) - their gun hand in the world, [3] how far shrunk to the eye,
+                                               //   [4..9] the eye and the view's way ahead they were posed for
+bool FirstPersonViewmodel(const float (*c)[4], bool skinned, float (*out)[4]);   //   cosmetics.cpp: this draw is
+                                       //   first person's arms or gun - drawn in front of all, with `out` for c0..c3 (with
+                                       //   the camera, their own field of view, the near plane nearer)
 struct _XINPUT_STATE;
 void EmotesPad(DWORD pad, _XINPUT_STATE* st);   // emotes.cpp: held Back is the emote wheel     (emotes.cpp)
 bool EmotesMouse(LONG* dx, LONG* dy, LONG* dz);  //   kbm.cpp: the mouse, the keyboard's wheel open (true: taken)

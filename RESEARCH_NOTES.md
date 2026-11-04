@@ -911,6 +911,42 @@ ematch_<lobby pid>.txt`), whose lobby then
   (row vectors), so a child's translation is scaled by its parents' scale. Hidden, the player is still hit (enemies
   killed Peter in 31 s). Split screen keeps the body (one pose for every view). Each character's aiming hold saved in
   FGUYMod\fpv_holds.dat (key: bones x 256 + gun hand bone): arms there from spawn.
+- **What made the gun jump while walking (2026-11-03)**: not the game's walk - aiming on the move its gun hand stays
+  within ~1 degree / 0.01 of its standing hold. While walking the upper body's weights are aim 0, relaxed 0.05 (the
+  rest: the move's own arm swing); the arms were held on the aiming pose by `still ? relaxed : 1 - aim` - so at every
+  stop (relaxed comes back over ~0.2 s) and whenever "still" flickered on mid-walk, for a moment the game's walking
+  carry showed: Peter's drill swung up 60 degrees. Now the move's swing is held out until they've stood still 0.35 s,
+  and while the game eases between aiming and relaxed (its arms between its two holds, the hand up to 25 degrees
+  off) the gun hand is kept on its hold (both arms moved together - the off hand keeps its own moves).
+- **The gun's draw (Peter's drill)**: a model of its own on the hand bone (unskinned; it and its outline shell drawn
+  with the same c4..c6), but its own place is well off the hand - 1.3 at full size - so "near the gun hand (0.8)"
+  never found it: it was drawn as part of the world, at the world's depth and field of view. Stood against a door the
+  drill (an arm's length ahead of the eye) was behind it - hidden, the hand left alone; zoomed in or running (the
+  view's field of view changed, the arms' not) its outline shell came out bigger than the drill - a black blob. Now the
+  arms are shrunk toward the eye (0.35: the same on the screen, never through a wall) and the gun is found by that:
+  an unskinned draw of the player's, shrunk by the same (its rows' length), within 2 x 0.35 of the hand. The sky dome
+  (unskinned, at the eye, full size) is told apart by its size - taken for a gun, the sky went black. For the arms'
+  draws the near plane is 10x nearer (c2.w: z = A w + B -> A w + 0.1 B): a reload swings the drill past the eye. A
+  player's skinned draws have c4..c6 = identity at their feet.
+- **A bone near the camera: the game doesn't draw the character at all** (none of their skinned draws). Stewie (eye
+  0.96 up, 0.64 aiming): drawn with his nearest bone 0.17 from the eye, not at 0.10. So the arms are shrunk only as
+  far as keeps every arm bone 0.22 from the eye (more or less makes no difference on the screen), and the hidden body
+  stays at an arm's length (shrunk in at the eye too, Stewie wasn't drawn standing either).
+- **Why the arms shook walking (2026-11-04)**: the pose is built 0.1-10 ms before its frame is drawn (traced: `fpv
+  armstrace <frames>`), the eye on the move by then - 1-3 cm walking, at the hand's half a metre 6% of it, different
+  every frame (the hand's frame-to-frame unevenness on the screen p95 0.027 of the half width, up to 0.087). Moving the
+  arms' draws with the camera fixed it but left their outlines behind: a character's outline shells are drawn in a
+  pass of their own, later, unskinned, at the world's origin - nothing says whose (Death's sleeves showed black). So
+  instead the view is drawn from the very eye the arms were posed for (FirstPersonDrawnCamera): p95 0.00026; the world
+  a few ms off is nothing at metres. The old bob (|cos| - a kink at each step's bottom, a fixed rate) is a stride's
+  figure of eight by the distance actually gone, its size by the speed. The character's size (eye height / 1.8) is
+  taken standing in first person, not aiming (the eye drops aiming - Stewie's by a third; going in it's higher -
+  Quagmire's arms came out small).
+- **Two-handed holds**: the game's relaxed carry has the off hand on the gun (Quagmire 0.44 from the gun hand, Lois
+  0.36; Chris's bow string 0.42 - left out): that grip (against the gun hand) is where OffHand puts it, unless the game's
+  moves take the gun hand 12+ degrees off its hold (a reload). Quagmire's aiming hold is how he zooms - the Tommy gun
+  stood up by his face: his barrel (gun hand to grip) is turned to point at the crosshair 20 ahead. Zoomed in, the
+  gun hand is kept on its hold (the game's raise to the eye not let through).
 - Test copies: other sessions may use FGUY-Research / FGUY-Look at the same time (their stop_tests closes ours, their
   pad commands reached ours): first-person tests run in A:\Games\FGUY-FPV (same layout).
 - One-handed guns (Brian, Meg, Lois, Stewie...): the game's aiming pose keeps the off hand at their side, and none of its

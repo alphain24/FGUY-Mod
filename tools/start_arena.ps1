@@ -2,13 +2,14 @@
 # (FGUYMOD_TEST_ARENA=1, research.cpp), one player, full screen: a quiet place to look at things. Prints the copy's
 # process id. -Right: how many characters to the right of the first one on the character select (0 Peter).
 # -Enemies: the match's own enemies come as usual (something to shoot at).
-#   start_arena.ps1 [-GameDir <research copy>] [-Right <n>] [-FirstPerson] [-Enemies]
+# -KeepDll: the copy's own dinput8.dll as it is (not this build's).
+#   start_arena.ps1 [-GameDir <research copy>] [-Right <n>] [-FirstPerson] [-Enemies] [-KeepDll]
 param([string]$GameDir = "A:\Games\FGUY-Research", [int]$Right = 0, [switch]$FirstPerson, [switch]$Enemies,
-      [string]$Res = "1920x1080")
+      [string]$Res = "1920x1080", [switch]$KeepDll)
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 powershell -ExecutionPolicy Bypass -File tools\stop_tests.ps1 -GameDir $GameDir | Out-Null; Set-Location $root
-Copy-Item "$root\build\dinput8.dll" "$GameDir\dinput8.dll" -Force
+if (-not $KeepDll) { Copy-Item "$root\build\dinput8.dll" "$GameDir\dinput8.dll" -Force }
 powershell -ExecutionPolicy Bypass -File tools\wait_gpu.ps1 -Seconds 240 | Out-Null
 $env:FGUYMOD_TEST_ARENA = if ($Enemies) { "0" } else { "1" }
 foreach ($try in 1..3) {   # (now and then the copy doesn't come up - no log after a while: started again)

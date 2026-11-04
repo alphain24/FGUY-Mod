@@ -13,7 +13,8 @@ foreach ($n in $From..$To) {
     python "$root\tools\re\fpv_frames.py" $h "$Out\char_$n.png" "third=fpv 0 0@1200" "first=fpv 0 1@2500" `
         "aiming=hold 0 1800 lt=255@1600" "standing=-@1500" "fire=hold 0 100 rt=255@120,400" `
         "zoom=hold 0 2500 lt=255@1500" "zfire=hold 0 600 lt=255 rt=255@150" "reload=hold 0 100 x@400,1000" `
-        "run=hold 0 1500 ly=32767@900" "melee=hold 0 100 b@300"
+        "run=hold 0 1500 ly=32767@900" "stop=-@150,400" "walkreload=hold 0 1800 ly=14000 x@600,1200" `
+        "melee=hold 0 100 b@300"
     "character $n -> $Out\char_$n.png"
 }
 & "$root\tools\stop_tests.ps1" -GameDir $GameDir | Out-Null
