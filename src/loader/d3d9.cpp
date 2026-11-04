@@ -444,9 +444,90 @@ void SaveShot(IDirect3DDevice9* dev, const wchar_t* path) {
     Log(L"D3D: screenshot %s %s", ok ? L"saved to" : L"failed:", path);
 }
 
+// Test tools' burst (VideoRequestShots): every frame of the next n, a quarter size each - shrunk on the card (StretchRect)
+// and read back small, kept in memory and written out after the last (writing as it goes would stall the frames).
+int g_burstLeft = 0;
+wchar_t g_burstDir[1024] = L"";
+std::vector<std::vector<unsigned char>> g_burst;
+std::vector<double> g_burstAt;
+int g_burstW = 0, g_burstH = 0;
+IDirect3DSurface9 *g_burstRt = nullptr, *g_burstMem = nullptr;
+
+void BurstFrame(IDirect3DDevice9* dev) {
+    IDirect3DSurface9* back = nullptr;
+    D3DSURFACE_DESC d;
+    if (FAILED(dev->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &back)) || FAILED(back->GetDesc(&d))) {
+        if (back) back->Release();
+        return;
+    }
+    int w = (int)d.Width / 4, h = (int)d.Height / 4;
+    if (!g_burstRt || w != g_burstW || h != g_burstH) {
+        if (g_burstRt) g_burstRt->Release(), g_burstRt = nullptr;
+        if (g_burstMem) g_burstMem->Release(), g_burstMem = nullptr;
+        g_burstW = w, g_burstH = h;
+        dev->CreateRenderTarget(w, h, D3DFMT_X8R8G8B8, D3DMULTISAMPLE_NONE, 0, FALSE, &g_burstRt, nullptr);
+        dev->CreateOffscreenPlainSurface(w, h, D3DFMT_X8R8G8B8, D3DPOOL_SYSTEMMEM, &g_burstMem, nullptr);
+    }
+    LARGE_INTEGER now, freq;
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&freq);
+    if (g_burstRt && g_burstMem && SUCCEEDED(dev->StretchRect(back, nullptr, g_burstRt, nullptr, D3DTEXF_LINEAR)) &&
+        SUCCEEDED(dev->GetRenderTargetData(g_burstRt, g_burstMem))) {
+        D3DLOCKED_RECT lr;
+        if (SUCCEEDED(g_burstMem->LockRect(&lr, nullptr, D3DLOCK_READONLY))) {
+            std::vector<unsigned char> px((size_t)w * h * 3);
+            for (int y = 0; y < h; ++y) {
+                const unsigned char* s = static_cast<const unsigned char*>(lr.pBits) + (size_t)y * lr.Pitch;
+                for (int x = 0; x < w; ++x) memcpy(&px[((size_t)y * w + x) * 3], s + x * 4, 3);
+            }
+            g_burstMem->UnlockRect();
+            g_burst.push_back(std::move(px));
+            g_burstAt.push_back((double)now.QuadPart / freq.QuadPart);
+        }
+    }
+    back->Release();
+    if (--g_burstLeft > 0) return;
+    int row = (w * 3 + 3) & ~3;
+    for (size_t i = 0; i < g_burst.size(); ++i) {   // (the frames as .bmp, bottom-up rows)
+        std::vector<unsigned char> img(54 + (size_t)row * h, 0);
+        unsigned char* hd = img.data();
+        hd[0] = 'B'; hd[1] = 'M';
+        *reinterpret_cast<DWORD*>(hd + 2) = (DWORD)img.size();
+        *reinterpret_cast<DWORD*>(hd + 10) = 54;
+        *reinterpret_cast<DWORD*>(hd + 14) = 40;
+        *reinterpret_cast<LONG*>(hd + 18) = w;
+        *reinterpret_cast<LONG*>(hd + 22) = h;
+        *reinterpret_cast<WORD*>(hd + 26) = 1;
+        *reinterpret_cast<WORD*>(hd + 28) = 24;
+        for (int y = 0; y < h; ++y) memcpy(hd + 54 + (size_t)(h - 1 - y) * row, &g_burst[i][(size_t)y * w * 3], (size_t)w * 3);
+        wchar_t path[1100];
+        swprintf_s(path, L"%s\\frame_%03zu.bmp", g_burstDir, i);
+        HANDLE f = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+        DWORD put = 0;
+        if (f != INVALID_HANDLE_VALUE) { WriteFile(f, img.data(), (DWORD)img.size(), &put, nullptr); CloseHandle(f); }
+    }
+    wchar_t path[1100];
+    swprintf_s(path, L"%s\\times.txt", g_burstDir);
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path, L"w") == 0 && f) {
+        for (double t : g_burstAt) fprintf(f, "%.5f\n", t);
+        fclose(f);
+    }
+    Log(L"D3D: burst - %zu frames saved to %s", g_burst.size(), g_burstDir);
+    g_burst.clear();
+    g_burstAt.clear();
+}
+
 HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, const RECT* dst, HWND wnd,
                                        const RGNDATA* dirty) {
     GraphicsPresent(self);   // (graphics.cpp: anti-aliasing, sharpening, brightness)
+    if (g_burstLeft > 0) BurstFrame(self);
+    if (MotionOrderTrace() > 0) {
+        LARGE_INTEGER n, f;
+        QueryPerformanceCounter(&n);
+        QueryPerformanceFrequency(&f);
+        Log(L"Order: %.5f present (thread %lu)", (double)n.QuadPart / f.QuadPart, GetCurrentThreadId());
+    }
     if (g_shotInit && g_shotPath[0]) {
         wchar_t path[1024];
         EnterCriticalSection(&g_shotLock);
@@ -815,6 +896,14 @@ void SaveFrameRate() {
 }  // namespace
 
 void VideoRequestQuit() { g_quitRequested = true; }
+void VideoRequestShots(int frames, const wchar_t* folder) {
+    CreateDirectoryW(folder, nullptr);
+    wcsncpy_s(g_burstDir, folder, _TRUNCATE);
+    g_burst.clear();
+    g_burstAt.clear();
+    g_burstLeft = frames > 0 && frames <= 600 ? frames : 0;
+    Log(L"D3D: burst - the next %d frames to %s", g_burstLeft, folder);
+}
 void VideoRequestShot(const wchar_t* path) {
     if (!g_shotInit) { InitializeCriticalSection(&g_shotLock); g_shotInit = true; }
     EnterCriticalSection(&g_shotLock);

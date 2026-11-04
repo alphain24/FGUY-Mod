@@ -66,6 +66,7 @@ int VideoFrameRateIndex();             //   Options > Screen > Frame Rate suppor
 void VideoSetFrameRate(int index);
 void VideoRequestQuit();               //   exit cleanly at the end of the next frame (test tools)
 void VideoRequestShot(const wchar_t* path);   // test tools: save the next frame as a .bmp
+void VideoRequestShots(int frames, const wchar_t* folder);   //   ...the next n, every one, small (frame_<i>.bmp, times.txt)
 void QuitGame();                       //   exit now (the game's own exit-time crash is skipped)
 void InitUi();                         // menu movie patches + menu calls      (ui.cpp)
 void InitResearch();                   // optional research hooks              (research.cpp)
@@ -254,7 +255,12 @@ void MotionArmsTest(float right, float down, float ahead, bool on);   //   resea
 void MotionArmsZoomTest(float right, float down);                     //     (zoomed in)
 void MotionArmsBodyTest(bool hide);                                   //   research: the rest of the body hidden or not
 void MotionGunAimTest(bool on);                                       //   research: a two-handed gun pointed at the crosshair
-void MotionOffHandTest(bool on);                                    //   research: the off hand put on a one-handed gun
+void MotionOrderTest(int n);                                          //   research: poses and frames in order
+int MotionOrderTrace();
+void MotionGameBobTest(float up, float side);                       //   research: the gun's bob from the head's
+void MotionArmsWhyTest(bool on);                                      //   research: why the arms aren't first person's
+void MotionBobTraceTest(int poses, bool view);                                 //   research: the game's own bounce, each pose
+void MotionOffHandTest(bool on);                                  //   research: the off hand put on a one-handed gun
 void MotionArmsTraceTest(int frames);                               //   research: the arms' pose against each frame drawn
 void MotionArmsTrace(int slot, const float* eyeDraw, const float* fwDraw);   //     (firstperson.cpp: this frame's camera)
 void MotionArmsScaleTest(float s);                                //   research: the arms shrunk toward the eye
@@ -270,13 +276,21 @@ struct ArmsView {                      // a player's gun to bring into their vie
     float aim, rest;                   //   the game's upper body: its aiming stance's weight, its relaxed one's (both
                                        //   low: something else - a melee swing, a jump, a power-up)
     bool alone;                        //   theirs the only view on the screen (split screen: the partner sees them)
+    int action = -1;                   //   the upper body's action played over its stances ([+0x13cc]+0x78; -1 none)
+    float idle = 0;                    //   an idle fidget's weight (stood still a while: 0..1)
+    int layer90 = 0;                   //   (research: its state)
 };
 bool FirstPersonArms(int slot, ArmsView* out);
+int FirstPersonArmsNoWhy();            //   research: why FirstPersonArms last said no (0: it didn't)
 const float kArmTan = 0.79f;           // first person's arms drawn with a field of view of their own: tan across (the
                                        //   game's 80 degrees at 16:9) - the same size at any field of view, zoomed too
 bool MotionViewmodel(int slot, float* hand);   //   render thread: their arms drawn as first person's (their body hidden
                                                //   away) - their gun hand in the world, [3] how far shrunk to the eye,
-                                               //   [4..9] the eye and the view's way ahead they were posed for
+                                               //   [4..9] the eye and the view's way ahead they were posed for,
+                                               //   [10..12] the sway and bob posed (the view's: left, up, ahead)
+bool MotionOffsetAt(int slot, double t, float* out);   //   ...their sway and bob at time t (the PC's clock, s)
+bool FirstPersonShell(const float (*c)[4], float (*inner)[4], float* nearPlane, float* farPlane);   //   cosmetics.cpp:
+                                       //   an outline shell, split at first person's arms' reach (FirstPersonShell)
 bool FirstPersonViewmodel(const float (*c)[4], bool skinned, float (*out)[4]);   //   cosmetics.cpp: this draw is
                                        //   first person's arms or gun - drawn in front of all, with `out` for c0..c3 (with
                                        //   the camera, their own field of view, the near plane nearer)

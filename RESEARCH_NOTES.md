@@ -942,6 +942,26 @@ ematch_<lobby pid>.txt`), whose lobby then
   figure of eight by the distance actually gone, its size by the speed. The character's size (eye height / 1.8) is
   taken standing in first person, not aiming (the eye drops aiming - Stewie's by a third; going in it's higher -
   Quagmire's arms came out small).
+- **The pops walking and standing (2026-11-04)**, measured with every frame of a burst (test pipe `shots <n> <folder>`,
+  `tools/re/fpv_burst.py`, `fpv_drill.py`, `fpv_flow.py`):
+  - *The idle fidget*: stood still ~6 s, the game plays a fidget over the relaxed stance for ~3 s - its weight
+    (`[player+0x13cc]+0x104`) to 0.02 - and the arms let "neither stance" through as for a melee swing: the drill turned
+    64 degrees and back. The fidget's own weight is **`+0x48` (float, eased 0..1; `+0x90` 2 while it plays, 3 otherwise)**
+    - 0 firing, in a jump, a swing: held out by it.
+  - *Threads*: the pose is built on the game's thread (~200 a second) and the frame drawn on the render thread at
+    their own times; a frame shows the newest pose - one pose twice, or one skipped. Drawing the view from the pose's eye
+    stood the view still on frames without a new pose (15 of 119 strafing); now the view is the game's (smooth) and the
+    arms' draws are moved by camera-drawn x pose-camera^-1, each draw from its own c0..c3 (its eye solved, c3 its way
+    ahead) - an outline shell is drawn in a pass of its own. The pose's numbers taken once a frame (FrameArms): a gun drawn
+    from one pose and its outline from the next were a turn apart spinning (its outline's inside over the drill's face).
+  - *Outline shells* (unskinned, at the world's origin, nothing says whose): split at 1 m from the eye - within, drawn as
+    the arms (moved, in front); beyond, as the game. The arms' depth is their own (0.02..3 m into the front 2%): the
+    game's near plane brought 10x nearer was too coarse there.
+  - *The bob*: the old one was 0.4 degrees - the drill didn't move running (0.01 px p95). Now it's the game's: the head's
+    bounce against where it stands, 0.25 of it (walking the head goes 8.5 cm up and down twice a stride, 5 cm side to
+    side once; running 27-29 cm at 3.1 a second), held to 0.25 m/s and eased twice (the run's pose jumps up to 12 cm),
+    kept with its time and drawn at the frame's (`MotionOffsetAt`, 12 ms behind): 0.8 deg walking, 1 deg running, its
+    change frame to frame p95 30% of a step. Without a bob, running, the drill stays within 0.1 x 0.2 px.
 - **Two-handed holds**: the game's relaxed carry has the off hand on the gun (Quagmire 0.44 from the gun hand, Lois
   0.36; Chris's bow string 0.42 - left out): that grip (against the gun hand) is where OffHand puts it, unless the game's
   moves take the gun hand 12+ degrees off its hold (a reload). Quagmire's aiming hold is how he zooms - the Tommy gun

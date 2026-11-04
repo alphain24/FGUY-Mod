@@ -223,6 +223,13 @@ void HandleCommand(char* line) {
         }, nullptr, 0, nullptr));
         return;
     }
+    if (cmd && _stricmp(cmd, "shots") == 0) {   // test tools: shots <n> <folder> - the next n frames, every one, small
+        char* n = strtok_s(nullptr, " ", &ctx);
+        char* path = strtok_s(nullptr, "\r\n", &ctx);
+        wchar_t w[1024];
+        if (n && path && MultiByteToWideChar(CP_UTF8, 0, path, -1, w, 1024)) VideoRequestShots(atoi(n), w);
+        return;
+    }
     if (cmd && _stricmp(cmd, "shot") == 0) {   // test tools: shot <file.bmp> - the next frame (d3d9.cpp)
         char* path = strtok_s(nullptr, "\r\n", &ctx);
         while (path && *path == ' ') ++path;

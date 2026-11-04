@@ -56,8 +56,9 @@ struct Track {
     bool armsInView = false;              // first person: their gun brought into their view, their head shrunk away
     float head[3] = {};
     bool viewmodel = false;               // first person: only their arms left (their body hidden away), and their gun
-    float gunHand[10] = {};               //   hand in the world, how far shrunk, the eye and the way the view looks they
-                                          //   were posed for - drawn as a shooter's (firstperson.cpp)
+    float gunHand[13] = {};               //   hand in the world, how far shrunk, the eye and the way the view looks they
+                                          //   were posed for, the sway and bob in it - drawn as a shooter's
+                                          //   (firstperson.cpp)
 };
 Track g_tracks[4];
 volatile bool g_palArm[4];
@@ -254,6 +255,7 @@ M3 About(V3 axis, float deg) {
 
 const float kSteady = 0.4f;   // (s: standing steady before a stance's hold is taken)
 
+const int kOffsets = 32;   // (the last poses' sway and bob kept - ArmState::offsets)
 // a player's arms in first person, kept between frames: their hands and head, and how the game holds the arms in each
 // stance (relaxed, aiming) - the chest they hang on, in the view's space, and the gun hand against the chest
 struct ArmState {
@@ -286,6 +288,14 @@ struct ArmState {
     V3 poseEye = {0, 0, 0}, poseOrg = {0, 0, 0}, poseHand = {0, 0, 0}, poseFw = {0, 0, 1};   // (research: the trace)
     double poseAt = 0;
     float stillFor = 0, moving = 1;       // (s stood still; 0..1 on the move - eased)
+    float lastArmS = 0;                   // (research: armswhy)
+    V3 headRest = {0, 0, 0}, gameBob = {0, 0, 0};   // (the head standing - the character's space; the bob - the view's)
+    V3 gameBobIn = {0, 0, 0}, gameBobMid = {0, 0, 0};   //   (... held to a rate; half eased)
+    bool haveHeadRest = false;
+    float gameBobOn = 0;
+    V3 offset = {0, 0, 0};                // (this pose's sway and bob, the view's space; the last poses' with their times)
+    struct Timed { double t; V3 v; } offsets[kOffsets];
+    int offsetsAt = 0, offsetsN = 0;
 };
 const float kStillFor = 0.35f;   // (s: stood still this long before the game's own moves of the arms are shown again)
 // (a two-handed hold: the off hand within this of the gun hand in the game's relaxed carry - for an eye 1.8 up; let go
@@ -298,6 +308,13 @@ bool g_gunAim = true;       // (research: "fpv gunaim <0|1>")
 float g_devMix = 1;
 bool g_devLog = false;
 bool g_offHandOn = true;   // (research: "fpv offhand <0|1>")
+int g_bobTrace = 0;        // (research: "fpv bobtrace <poses>" - the game's own bounce, each pose)
+int g_orderTrace = 0;      // (research: "fpv order <n>" - when poses are built and frames drawn, which thread)
+bool g_bobView = false;    //   (... "fpv bobtrace <poses> 1": the bob given the gun instead)
+// how much of the head's bounce the gun's bob is: up and down, side to side (research: "fpv gamebob <up> <side>"); how
+// fast it follows (s)
+float g_gameBob[2] = {0.25f, 0.25f};
+const float kGameBobEase = 0.04f, kGameBobRate = 0.25f;   // (s, each of two; the most a second, for an eye 1.8 up)
 // the sway (for an eye 1.8 up): how far a radian a second of turning moves the arms, the most, how fast it eases (/s);
 // the bob: how far a stride (two steps) goes, how fast a run is (a second - both for an eye 1.8 up), its side to side
 // and up and down at a run
@@ -593,16 +610,41 @@ void OffHand(ArmState& st, const ArmsView& view, const unsigned char* parent, in
     }
 }
 
+bool ArmsInViewOnce(int slot, const unsigned char* ent, float* rot, float* pos, float* scale, int bones, bool* viewmodel,
+                    float* gunHand, int* why);
+// (research, "fpv armswhy <0|1>": why a player's arms aren't first person's this pose - logged as it changes)
+bool g_armsWhyLog = false;
+int g_armsWhy[4] = {-1, -1, -1, -1};
 bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, float* scale, int bones, bool* viewmodel,
                 float* gunHand) {
+    int why = 0;
+    bool on = ArmsInViewOnce(slot, ent, rot, pos, scale, bones, viewmodel, gunHand, &why);
+    if (slot >= 0 && slot < 4 && g_armsWhyLog && why != g_armsWhy[slot]) {
+        static const wchar_t* kWhy[] = {L"first person's", L"not in first person (FirstPersonArms)", L"no skeleton",
+                                        L"no hands found", L"no arms found", L"no aiming hold yet", L"a new entity"};
+        static const wchar_t* kNo[] = {L"weight 0", L"first person off", L"not their view", L"view pulled back",
+                                       L"emoting", L"no view on the screen", L"dead", L"no look", L"no eye"};
+        if (why >= 10) Log(L"Motion: player %d's arms - not first person's: %s", slot, why - 10 < 9 ? kNo[why - 10] : L"?");
+        else Log(L"Motion: player %d's arms - %s", slot, why >= 0 && why < 7 ? kWhy[why] : L"?");
+        g_armsWhy[slot] = why;
+    }
+    return on;
+}
+bool ArmsInViewOnce(int slot, const unsigned char* ent, float* rot, float* pos, float* scale, int bones, bool* viewmodel,
+                    float* gunHand, int* why) {
     if (slot < 0 || slot >= 4) return false;
     ArmState& st = g_armState[slot];
-    if (st.ent != ent) st = ArmState(), st.ent = ent;
+    if (st.ent != ent) {
+        if (g_armsWhyLog) Log(L"Motion: player %d's arms - a new entity %p (was %p)", slot, ent, st.ent);
+        st = ArmState(), st.ent = ent;
+    }
     ArmsView view;
     if (!g_armsOn || !FirstPersonArms(slot, &view) || view.weight <= 0) {
         st.at = 0;   // (the steadiness measured afresh next time; the holds kept)
+        *why = 10 + FirstPersonArmsNoWhy();   // (10 + FirstPersonArms' reason - 10: in, but its weight 0)
         return false;
     }
+    *why = 2;
     float w = view.weight;
     auto at = [](const void* p, int off) -> const unsigned char* {
         if (!p || IsBadReadPtr(static_cast<const unsigned char*>(p) + off, 4)) return nullptr;
@@ -647,6 +689,7 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
         if (!st.found) {
             if (!st.told) Log(L"Motion: player %d (%d bones): no hands found - the game's arms", slot, bones);
             st.told = true;
+            *why = 3;
             return false;
         }
     }
@@ -666,10 +709,17 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
         if (!st.told) Log(L"Motion: player %d (%d bones): no arms found (hands %d, %d, head %d) - the game's arms", slot,
                           bones, gun, other, st.head);
         st.told = true;
+        *why = 4;
         return false;
     }
     int roots[2] = {a.clav >= 0 ? a.clav : a.shoulder, a2.clav >= 0 ? a2.clav : a2.shoulder};
     int chest = parent[roots[0]];
+    if (g_bobTrace > 0 && !g_bobView) {   // (research: the game's own bounce - the chest and head against their place)
+        --g_bobTrace;
+        V3 c = place[chest], hd = st.head >= 0 ? place[st.head] : V3{0, 0, 0};
+        Log(L"Motion: bob %.4f - chest %.4f %.4f %.4f, head %.4f %.4f %.4f, still %d rest %.2f aim %.2f", Now(), c.x, c.y,
+            c.z, hd.x, hd.y, hd.z, view.still ? 1 : 0, view.rest, view.aim);
+    }
     // the chest in the view's space (V: the view's axes in the character's space - left, up, ahead: a turn; right, up,
     // ahead would be a mirror), and the gun hand against the chest
     M3 V = {{-Rt.x, U.x, F.x, -Rt.y, U.y, F.y, -Rt.z, U.z, F.z}};
@@ -749,8 +799,10 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
         st.aimPos = mem.pos;
         st.have[1] = true;
     }
+    *why = 5;
     if (!st.have[1] || st.aimRot.empty()) return false;   // (until then, the game's arms - their relaxed carry, about
                                                           //  their head or hip, out of the view or across it)
+    *why = 0;
     // In the relaxed stance - standing about, running - the game's relaxed carry (Peter's drill up beside his head,
     // a pistol at the hip) is out of or across the view: their arms hold the gun as the game does aiming instead,
     // ready, steady. Firing, zooming, reloading (the aiming stance), a melee swing, a jump, a power-up's throw (neither
@@ -767,9 +819,12 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
     st.stillFor = view.still ? st.stillFor + stepDt : 0;
     float movingWant = view.still && st.stillFor > kStillFor ? 0.0f : 1.0f;
     st.moving = movingWant > st.moving ? movingWant : st.moving + (movingWant - st.moving) * (1 - expf(-stepDt / 0.1f));
-    float act = 1 - view.aim - view.rest;   // (neither stance: a melee swing, a power-up's throw - or the move's swing)
-    act = act < 0 ? 0 : act;
-    float held = st.aimRot.size() == (size_t)bones * 4 ? view.rest + act * st.moving : 0;
+    float act = 1 - view.aim - view.rest;   // (neither stance: a melee swing, a power-up's throw - or the move's swing,
+    act = act < 0 ? 0 : act;                //  or an idle fidget: held out, eased - it came in over ~0.2 s)
+    // (the fidget's weight is the game's own, eased: as much of the rest held out - the most of 1 at its full)
+    float idleOut = view.idle * 4 < 1 ? view.idle * 4 : 1;
+    float heldOut = st.moving > idleOut ? st.moving : idleOut;
+    float held = st.aimRot.size() == (size_t)bones * 4 ? view.rest + act * heldOut : 0;
     if (held > 0) {
         for (int b = 0; b < n; ++b) {
             if (!armBone[b]) continue;
@@ -828,9 +883,47 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
         st.fw = fw;
         st.haveFw = true;
         st.lastEye = {view.eye[0], view.eye[1], view.eye[2]};
-        float b = st.bobOn * (1 - z);
-        want = want + st.sway +
-               V3{sinf(st.bobPhase) * kBobSide * k * b, -0.5f * (1 - cosf(2 * st.bobPhase)) * kBobUp * k * b, 0};
+        // The bob is the game's own: their head's bounce in its walk and run (against where it is standing - in the
+        // view's terms: side to side, up and down), a part of it, smoothed (the run's pose jumps 1 cm now and then).
+        // Its steps and speed as the game plays them: walking ~8 cm up and down twice a stride, running ~28 cm.
+        V3 bob = {0, 0, 0};
+        if (st.head >= 0 && st.head < n) {
+            V3 hd = place[st.head];
+            bool rest = view.still && st.stillFor > kStillFor && view.idle <= 0 && view.aim < 0.01f;
+            if (!st.haveHeadRest) st.headRest = hd, st.haveHeadRest = true;
+            else if (rest && step > 0) st.headRest = st.headRest + (hd - st.headRest) * (1 - expf(-step / 0.3f));
+            V3 d = Mul(Transposed(V), hd - st.headRest);   // (the view's left, up, ahead)
+            V3 to = {d.x * g_gameBob[1], d.y * g_gameBob[0], 0};
+            float lim = 0.06f * k;
+            if (Len(to) > lim) to = to * (lim / Len(to));
+            if (step > 0) {
+                // (the game's head jumps now and then - its run 1-12 cm from one pose to the next: the target held to
+                // kGameBobRate, then eased twice - its speed smooth too, no kink at a jump)
+                V3 dv = to - st.gameBobIn;
+                float most = kGameBobRate * k * step;
+                if (Len(dv) > most) dv = dv * (most / Len(dv));
+                st.gameBobIn = st.gameBobIn + dv;
+                float t = 1 - expf(-step / kGameBobEase);
+                st.gameBobMid = st.gameBobMid + (st.gameBobIn - st.gameBobMid) * t;
+                st.gameBob = st.gameBob + (st.gameBobMid - st.gameBob) * t;
+            }
+            float on = view.still ? 0.0f : 1.0f;   // (standing: none - a turn on the spot bends the neck)
+            st.gameBobOn += (on - st.gameBobOn) * (step > 0 ? 1 - expf(-step / 0.15f) : 1);
+            bob = st.gameBob * (st.gameBobOn * (1 - z));
+        }
+        if (g_bobTrace > 0 && g_bobView) {
+            --g_bobTrace;
+            Log(L"Motion: gamebob %.4f %.4f %.4f (step %.4f, head %.4f %.4f %.4f)", Now(), bob.x, bob.y, step,
+                st.head >= 0 ? place[st.head].x : 0, st.head >= 0 ? place[st.head].y : 0, st.head >= 0 ? place[st.head].z : 0);
+        }
+        // (the sway and bob given the pose, kept with its time: the frames draw them as they are at their own time -
+        // the pose is built on the game's thread at its own times, a frame showing one pose twice or none: a bob in
+        // steps. firstperson.cpp FrameArms takes this pose's out and puts in the frame's - MotionOffsetAt)
+        st.offset = st.sway + bob;
+        st.offsets[st.offsetsAt] = {now, st.offset};
+        st.offsetsAt = (st.offsetsAt + 1) % kOffsets;
+        if (st.offsetsN < kOffsets) ++st.offsetsN;
+        want = want + st.offset;
     }
     M3 chestNew = Mul(V, H);
     V3 chestNewAt = eye + Mul(V, hAt + want - hand);
@@ -856,7 +949,7 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
         HandOn(parent, roots[0], a.hand, lq[0], lAt[0], rot, pos, &gR, &gP);
         HandOn(parent, roots[0], a.hand, st.rootQ[0], st.rootAt[0], st.aimRot.data(), st.aimPos.data(), &hR, &hP);
         V3 dr = RotVec(Mul(gR, Transposed(hR))), dp = (gP - hP) * (1 / k);
-        float otherHold = view.rest + act * st.moving;   // (the other hold: relaxed, or the move's swing - held out)
+        float otherHold = view.rest + act * heldOut;   // (the other hold: relaxed, or the move's swing - held out)
         float mix = 4 * view.aim * (otherHold > 1 ? 1 : otherHold) * g_devMix;
         // (zoomed in, the gun held steady where it's placed - the game's own raising it to the eye, Quagmire's Tommy gun
         // stood up by his face, pointed it at the sky)
@@ -868,8 +961,9 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
             st.devMost = shown > st.devMost ? shown : st.devMost;
             if (now - st.devLogAt > 0.1) {
                 st.devLogAt = now;
-                Log(L"Motion: dev aim %.2f rest %.2f still %d moving %.2f held %.2f - hand %.3f turn %.1f deg, pass %.2f, shown most %.1f deg",
-                    view.aim, view.rest, view.still ? 1 : 0, st.moving, held, Len(dp), Len(dr) * 57.3f, pass, st.devMost);
+                Log(L"Motion: dev aim %.2f rest %.2f still %d moving %.2f idle %.2f [%d] held %.2f - hand %.3f turn %.1f deg, pass %.2f, shown most %.1f deg",
+                    view.aim, view.rest, view.still ? 1 : 0, st.moving, view.idle, view.layer90, held, Len(dp),
+                    Len(dr) * 57.3f, pass, st.devMost);
                 st.devMost = 0;
             }
         }
@@ -926,6 +1020,13 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
             if (armBone[b] || b == roots[0] || b == roots[1]) nearest = fminf(nearest, Len(place[b] - eye));
         armS = g_armScale;
         if (nearest * armS < kArmNearest) armS = nearest > kArmNearest ? kArmNearest / nearest : 1;
+        if (g_armsWhyLog && fabsf(armS - st.lastArmS) > 0.02f) {
+            int nb = -1;
+            for (int b = 0; b < n; ++b)
+                if ((armBone[b] || b == roots[0] || b == roots[1]) && fabsf(Len(place[b] - eye) - nearest) < 1e-5f) nb = b;
+            Log(L"Motion: player %d's arms shrunk %.2f (bone %d %.3f from the eye; size %.2f)", slot, armS, nb, nearest, k);
+            st.lastArmS = armS;
+        }
         for (int i = 0; i < 2; ++i) {
             int r = roots[i], p = parent[r];
             V3 l = Mul(Transposed(R[p]), eye + (place[r] - eye) * armS - place[p]);
@@ -934,8 +1035,7 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
             pos[(r + 1) * 3 + 2] = l.z;
             for (int c = 0; c < 3; ++c) scale[(r + 1) * 3 + c] *= armS;
         }
-        hc = eye + (hc - eye) * armS;   // (the hidden body left where it was, at an arm's length: shrunk in at the eye too,
-                                     //  the game stopped drawing Stewie altogether - the camera inside him)
+        hc = eye + (hc - eye) * armS;
         Posed(parent, n, rot, pos, R.data(), place.data());   // (the roots' places: the arms' bones beyond, unscaled)
     }
     {   // (their gun hand, in the world - firstperson.cpp finds the gun's draw by it; hiding the body leaves it there)
@@ -945,6 +1045,7 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
         gunHand[2] = hw.z;
         gunHand[3] = armS;
         for (int c = 0; c < 3; ++c) gunHand[4 + c] = view.eye[c], gunHand[7 + c] = view.forward[c];
+        gunHand[10] = st.offset.x * armS, gunHand[11] = st.offset.y * armS, gunHand[12] = st.offset.z * armS;
         st.poseEye = {view.eye[0], view.eye[1], view.eye[2]};
         st.poseOrg = org;
         st.poseHand = hw;
@@ -960,8 +1061,11 @@ bool ArmsInView(int slot, const unsigned char* ent, float* rot, float* pos, floa
         V3 ra[2];
         for (int i = 0; i < 2; ++i) { rr[i] = R[roots[i]]; ra[i] = place[roots[i]]; }
         // (the skeleton's top bones - the game's pose leaves its own root entry, 0, out - shrunk, at the chest)
+        // (kept behind the eye and below it, out of sight: at an arm's length ahead, the dot of outline it still has
+        // peeked out by the gun hand; at the eye, the game stopped drawing Stewie altogether - the camera inside him)
         M3 base = FromQuat(rot);
-        V3 baseAt = {pos[0], pos[1], pos[2]}, top = Mul(Transposed(base), chestNewAt - baseAt);
+        V3 hideAt = eye + Mul(V, V3{0, -0.3f * k, -0.8f * k});
+        V3 baseAt = {pos[0], pos[1], pos[2]}, top = Mul(Transposed(base), hideAt - baseAt);
         for (int b = 0; b < n; ++b)
             if (parent[b] == 0xff) {
                 pos[(b + 1) * 3] = top.x;
@@ -1088,6 +1192,11 @@ void __cdecl Hook_PoseBuild(unsigned char* ent, float* rot, float* pos, float* s
         }
         tr.viewmodel = false;
         ArmsInView(static_cast<int>(&tr - g_tracks), ent, rot, pos, scale, bones, &tr.viewmodel, tr.gunHand);
+        if (g_orderTrace > 0 && &tr == g_tracks) {
+            --g_orderTrace;
+            Log(L"Order: %.5f pose (thread %lu) - eye %.4f %.4f %.4f", Now(), GetCurrentThreadId(), tr.gunHand[4],
+                tr.gunHand[5], tr.gunHand[6]);
+        }
         tr.armsInView = HeadAway(static_cast<int>(&tr - g_tracks), ent, scale, bones);
         tr.last.resize(bones * kFloats);
         Gather(rot, pos, scale, bones, tr.last.data());
@@ -1241,6 +1350,15 @@ void MotionArmsTrace(int slot, const float* eyeDraw, const float* fwDraw) {
         Now(), (Now() - st.poseAt) * 1000, Len(e - st.poseEye), raw.x, raw.y, raw.z, fixed.x, fixed.y, fixed.z);
 }
 void MotionOffHandTest(bool on) { g_offHandOn = on; }
+void MotionOrderTest(int n) { g_orderTrace = n; }
+int MotionOrderTrace() { return g_orderTrace; }
+void MotionBobTraceTest(int poses, bool view) { g_bobTrace = poses; g_bobView = view; }
+void MotionGameBobTest(float up, float side) {
+    g_gameBob[0] = up;
+    g_gameBob[1] = side;
+    Log(L"Motion: test - the gun's bob %.2f of the head's up and down, %.2f side to side", up, side);
+}
+void MotionArmsWhyTest(bool on) { g_armsWhyLog = on; }
 void MotionGunAimTest(bool on) { g_gunAim = on; }
 void MotionArmsScaleTest(float s) {
     g_armScale = s > 0.01f ? s : 1;
@@ -1264,6 +1382,34 @@ bool MotionArmsInView(int slot) {
     bool on = g_tracks[slot].armsInView && g_tracks[slot].ent;
     LeaveCriticalSection(&g_lock);
     return on;
+}
+
+// firstperson.cpp: a player's arms' sway and bob at time t (the PC's clock, s; the view's space: left, up, ahead) - from
+// the poses' either side of it, kept with their times; false: none kept
+bool MotionOffsetAt(int slot, double t, float* out) {
+    if (slot < 0 || slot >= 4 || !g_poseOriginal) return false;
+    EnterCriticalSection(&g_lock);
+    const ArmState& st = g_armState[slot];
+    bool have = st.offsetsN > 0;
+    if (have) {
+        const ArmState::Timed* a = nullptr;   // (the newest at or before t, and the one after it)
+        const ArmState::Timed* b = nullptr;
+        for (int i = 0; i < st.offsetsN; ++i) {
+            const ArmState::Timed& o = st.offsets[(st.offsetsAt - 1 - i + 2 * kOffsets) % kOffsets];
+            if (o.t <= t) { a = &o; break; }
+            b = &o;
+        }
+        V3 v;
+        if (!a) v = b->v;                   // (older than all kept: the oldest)
+        else if (!b) v = a->v;              // (newer than all: the newest)
+        else {
+            double k = b->t > a->t ? (t - a->t) / (b->t - a->t) : 1;
+            v = a->v + (b->v - a->v) * (float)k;
+        }
+        out[0] = v.x, out[1] = v.y, out[2] = v.z;
+    }
+    LeaveCriticalSection(&g_lock);
+    return have;
 }
 
 // firstperson.cpp: a player's arms are first person's this frame (the rest of them hidden away) - their gun hand, and

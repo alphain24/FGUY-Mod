@@ -3,11 +3,12 @@
 #   test_fpv_all.ps1 [-Out <folder>] [-From 0] [-To 15]
 # -From / -To: characters by their place on the character select (0 Peter, then to the right). The sheets are
 # <Out>\char_<n>.png; the research copy is closed after.
-param([string]$Out = "$env:TEMP\fpv_all", [int]$From = 0, [int]$To = 15, [string]$GameDir = "A:\Games\FGUY-Research")
+param([string]$Out = "$env:TEMP\fpv_all", [int]$From = 0, [int]$To = 15, [string]$GameDir = "A:\Games\FGUY-Research",
+      [string]$Res = "1920x1080")
 $root = Split-Path -Parent $PSScriptRoot
 New-Item -ItemType Directory -Force $Out | Out-Null
 foreach ($n in $From..$To) {
-    $h = & "$root\tools\start_arena.ps1" -GameDir $GameDir -Right $n -FirstPerson | Select-Object -Last 1
+    $h = & "$root\tools\start_arena.ps1" -GameDir $GameDir -Right $n -FirstPerson -Res $Res | Select-Object -Last 1
     Start-Sleep 3   # (the gun's hold is taken once they've stood still a moment)
     # ("first" is the gun's guess from the relaxed stance; zoomed in a moment, it's taken from the game's own aim)
     python "$root\tools\re\fpv_frames.py" $h "$Out\char_$n.png" "third=fpv 0 0@1200" "first=fpv 0 1@2500" `

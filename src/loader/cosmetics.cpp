@@ -509,6 +509,7 @@ bool Skinned(IDirect3DDevice9* dev) {
 // into the front kFront of the depth range (a wall in front of the eye never cuts into them; among themselves they're
 // in order still) - and with their own field of view (clip space x, y scaled). Their outlines too.
 const float kFront = 0.02f;
+bool g_drawSkinned = false;   // (this draw's: a character's piece - CosmeticsDrawSkinned)
 struct OwnBody {
     IDirect3DDevice9* dev;
     bool clip = false, skip = false, front = false;
@@ -517,7 +518,8 @@ struct OwnBody {
     float c01[4][4];
     explicit OwnBody(IDirect3DDevice9* d) : dev(d) {
         float s[4][4];
-        if (FirstPersonViewmodel(g_vsConst, Skinned(d), s)) {
+        g_drawSkinned = Skinned(d);
+        if (FirstPersonViewmodel(g_vsConst, g_drawSkinned, s)) {
             if (FAILED(dev->GetViewport(&vp))) return;
             D3DVIEWPORT9 v = vp;
             v.MinZ = 0;
@@ -526,6 +528,17 @@ struct OwnBody {
             memcpy(c01, g_vsConst, sizeof(c01));
             Real_SetVSConstF(dev, 0, s[0], 4);
             front = true;
+            return;
+        }
+        // (an outline shell while someone's arms are first person's: drawn twice - as the game draws it beyond their
+        // arms' reach (this draw), and within it as their arms are drawn (Second))
+        if (FirstPersonShell(g_vsConst, shellNear, shellPlanes[0], shellPlanes[1])) {
+            dev->GetRenderState(D3DRS_CLIPPLANEENABLE, &was);
+            dev->GetClipPlane(0, old[0]);
+            dev->SetClipPlane(0, shellPlanes[1]);
+            dev->SetRenderState(D3DRS_CLIPPLANEENABLE, was | D3DCLIPPLANE0);
+            used = 1;
+            clip = shell = true;
             return;
         }
         float planes[8];
@@ -542,19 +555,33 @@ struct OwnBody {
         dev->SetRenderState(D3DRS_CLIPPLANEENABLE, was | (count == 2 ? D3DCLIPPLANE0 | D3DCLIPPLANE1 : D3DCLIPPLANE0));
         clip = g_ownClipped = true;
     }
+    // an outline shell's second draw: the part within their arms' reach, as the arms are drawn (false: none)
+    bool Second() {
+        if (!shell || front || FAILED(dev->GetViewport(&vp))) return false;
+        D3DVIEWPORT9 v = vp;
+        v.MinZ = 0;
+        v.MaxZ = kFront;
+        dev->SetViewport(&v);
+        memcpy(c01, g_vsConst, sizeof(c01));
+        Real_SetVSConstF(dev, 0, shellNear[0], 4);
+        dev->SetClipPlane(0, shellPlanes[0]);
+        front = true;
+        return true;
+    }
     ~OwnBody() {
         if (front) {
             dev->SetViewport(&vp);
             Real_SetVSConstF(dev, 0, c01[0], 4);
-            return;
         }
         if (!clip) return;
         for (int i = 0; i < used; ++i) dev->SetClipPlane(i, old[i]);
         dev->SetRenderState(D3DRS_CLIPPLANEENABLE, was);
-        g_ownClipped = false;
+        if (!shell) g_ownClipped = false;
     }
     float old[2][4] = {};
     int used = 0;
+    bool shell = false;
+    float shellNear[4][4], shellPlanes[2][4];
 };
 
 HRESULT STDMETHODCALLTYPE Hook_DrawIndexed(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT base, UINT minIdx,
@@ -567,6 +594,7 @@ HRESULT STDMETHODCALLTYPE Hook_DrawIndexed(IDirect3DDevice9* self, D3DPRIMITIVET
         if (ModelsDraw(self, DrawPlayer(), reinterpret_cast<ModelsRealDraw>(Real_DrawIndexed), &hr, &putBack)) return hr;
     }
     HRESULT hr = DrawIndexedSkinned(self, type, base, minIdx, verts, start, prims);
+    if (own.Second()) DrawIndexedSkinned(self, type, base, minIdx, verts, start, prims);
     if (putBack) self->SetIndices(putBack);
     return hr;
 }
@@ -785,6 +813,7 @@ IDirect3DTexture9* CosmeticsTextureFromDds(IDirect3DDevice9* dev, const std::vec
     return MakeTexture(dev, t);
 }
 int CosmeticsDrawPlayer() { return DrawPlayer(); }
+bool CosmeticsDrawSkinned() { return g_drawSkinned; }
 bool CosmeticsOwnBodyClipped() { return g_ownClipped; }
 
 void CosmeticsDeviceCreated(IDirect3DDevice9* dev) {
