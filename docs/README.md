@@ -82,7 +82,7 @@ flowchart LR
 |---|---|---|
 | **FGUY Cosmetics** | `FGUYMod\mods\FGUYCosmetics.fgmod` | Every official skin and outfit (the first: **Peter: Adventurer**) |
 | **FGUY Emotes** | `FGUYMod\mods\FGUYEmotes.fgmod` | The emote wheel's emotes |
-| **FGUY Controller Look** | `FGUYMod\mods\FGUYControllerLook.fgmod` | Right-stick aiming like a modern shooter (a plugin; off until switched on) |
+| **FGUY Controller Look** | `FGUYMod\mods\FGUYControllerLook.fgmod` | Right-stick aiming like a modern shooter, the camera eased in front of walls (a plugin; off until switched on) |
 
 They're ordinary mods made exactly the way this guide describes. Their sources are in
 [`dist/FGUYMod/mods/`](../dist/FGUYMod/mods/) (Controller Look's plugin code: [`src/mods/controllerlook/`](../src/mods/controllerlook/)) — open them up to see a real mod.
