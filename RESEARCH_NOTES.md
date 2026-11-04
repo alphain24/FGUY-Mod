@@ -854,3 +854,20 @@ ematch_<lobby pid>.txt`), whose lobby then
   top speed and sensitivity, `t^2`, no build-up, a speed-up held at the edge). Same steps: 30% 17 deg/s, 49% 57, 73%
   148, full 267 at once easing up to ~500 after 0.5 s; zoomed 0.82 of it (the game's own). Its mod.ini `Log=1` logs the
   speeds and how fast the view turned, `Bypass=1` (with Log) the game's own look, to measure it.
+- **Why turning looks jagged** (the mod's `Trace=4`: every camera update and every frame drawn, 1280x720 window): one
+  camera update a frame, its turn exactly rate * dt (1-2%) - but the game's dt doesn't follow each frame's own time (it
+  matches on average; frame to frame +-1.2 ms off, no lag fits better), and frames come unevenly when the PC can't reach
+  the cap (240: ~140 fps, frames 4.5-10 ms). The turn seen frame to frame varied 19%; the view sat off a steady turn
+  by 1.8 ms of turning (sd; up to 6.7 - at 500 deg/s 0.9 deg, up to 3.4). Capped at a rate the PC holds (120: frames
+  8.33 ms, p95 8.4): 6%. The player's place moved on every frame (no 22-a-second steps here, third person, standing
+  start in the arena). The user's PC: 3840x2400 borderless on integrated graphics runs a level at ~22-40 fps.
+- **Steady frames** (loader: `src/loader/steady.cpp`, d3d9.cpp "steady frames"; `[Display] SteadyFrames=1`, offline):
+  the main thread's QPC reads give the tick's own time, last tick's + the interval the pacing holds; the pacing holds
+  the highest of the screen's rates (4/3/2/1 x refresh, 1/2, 1/3) the PC can, up to the one chosen. The game's dt then
+  is the frames' own (-0.3..+0.4 ms). Measured, 1280x720, FrameRate=240: settles at 120 - the turn frame to frame
+  even to 1% (was 19%), the camera eye 1%; 3840x2400: 30 held, 0%. A rate tried up and failed is tried again only once
+  frames are a fifth quicker than then (frames paced lower look quicker than they are higher: it went 180 / 120 every
+  two seconds, then 60 / 30). The game's dt is QueryPerformanceCounter's (its millisecond clocks not needed).
+- **The third-person "lurch"** isn't the run's start: setting off straight is smooth (the eye eases out from 6.0 to
+  7.0 behind over ~1 s). Turning while running, the camera met the scenery behind and pulled in from 6.7 to 1.9 in a
+  quarter second, in uneven jumps (24 / 34 / 29 / 54 / 70 m/s frame to frame): the camera's collision.
