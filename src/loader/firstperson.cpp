@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -33,8 +34,11 @@ const int kAssist = 0x334;                   // (the camera's aim assist, this f
 const int kFov = 0x88;
 // First person's field of view: SETTINGS > CAMERA's choices, in degrees (0: the game's). Online a player's goes with
 // their input as its index + 1 (KbmRaw.opts bits 4..6; 0: not said - the game's)
-const int kFovs[] = {70, 0, 90, 100, 110};
-const int kFovCount = 5;
+// the field of view's slider: kFovMin..kFovMax degrees by kFovStep (kFovGame: the game's own, kept as 0). Online each
+// value has a code in the player's input: its place here + 1 (0: not said) - the first five are the old choices' codes.
+const int kFovMin = 60, kFovMax = 120, kFovStep = 5, kFovGame = 80;
+const int kFovs[] = {70, 0, 90, 100, 110, 60, 65, 75, 85, 95, 105, 115, 120};
+const int kFovCount = 13;
 const float kGlide = 0.25f;                  // seconds from one view to the other
 const float kZoomed = 0.2f;                  // (a weapon's zoom: the view this much narrower is "all the way")
 const uintptr_t kViewports = 0xb5a9b0, kViewportSize = 0x3c70;   // (the views: splitview.cpp)
@@ -57,7 +61,7 @@ int g_key = 'V';
 WORD g_padButton = kBack;
 bool g_default = false;                      // [Camera] FirstPerson: players start in first person
 bool g_crosshair = true;                     // [Camera] Crosshair: one in the middle of a view in first person
-int g_fov = 0;                               // [Camera] FirstPersonFOV: degrees (0: the game's) - kFovs' choices
+int g_fov = 0;                               // [Camera] FirstPersonFOV: degrees (0: the game's) - the slider's
 bool g_mineOnline = false;                   // online: my player in first person (my PC's - it goes with my input)
 
 struct View {
@@ -67,6 +71,7 @@ struct View {
     float sinceTap = 1e9f;                               //   (seconds since the controller button's last press)
     float height = 0, forward = -99, pitch = 1.4f;     // (0 / -99: from the character's camera - kEyeHeight / kEyeAhead)
     float side = -99;                                    // (to their right; -99: kEyeSide)
+    bool reloading = false;                              // (the game's upper body: FirstPersonArms)
     float blend = 0;                                     // 0 third person .. 1 first person
     int fov = 0;                                         // (their field of view in first person, degrees; 0 the game's)
     float wideAs = 0;                                    // (their view's width not aiming, tan across - FirstPersonArms)
@@ -78,7 +83,7 @@ struct View {
     bool haveEye = false;
     float drawnEye[3] = {}, drawnFw[3] = {};             // (the frame being drawn: its camera's eye and which way it
     bool haveDrawn = false;                              //  looks - FirstPersonViewmodel)
-    float frameArms[13] = {};                            // (their arms' pose as this frame's first draw of them found
+    float frameArms[26] = {};                            // (their arms' pose as this frame's first draw of them found
     bool haveFrameArms = false;                          //  it - the same for all its draws: FrameArms)
 };
 View g_view[8];
@@ -376,8 +381,15 @@ void __fastcall Hook_UpdateWatching(unsigned char* camera, void* edx, int a, flo
 void InitFirstPerson() {
     g_default = SettingInt(L"Camera", L"FirstPerson", L"FGUYMOD_FIRSTPERSON", 0) != 0;
     g_crosshair = SettingInt(L"Camera", L"Crosshair", nullptr, 1) != 0;
+    MotionArmMoves(SettingInt(L"Camera", L"FirstPersonMoves", L"FGUYMOD_FPV_MOVES", 0), 0, false);
+    MotionArmSize(SettingInt(L"Camera", L"FirstPersonArmSize", L"FGUYMOD_FPV_ARMSIZE", 100) / 100.0f);
+    MotionArmFlat(SettingInt(L"Camera", L"FirstPersonArmFlat", L"FGUYMOD_FPV_ARMFLAT", 100) / 100.0f);
     int fov = SettingInt(L"Camera", L"FirstPersonFOV", nullptr, 0);
-    for (int f : kFovs) if (f == fov) g_fov = f;
+    if (fov) {   // (to the nearest place on the slider)
+        fov = (fov + kFovStep / 2) / kFovStep * kFovStep;
+        fov = fov < kFovMin ? kFovMin : fov > kFovMax ? kFovMax : fov;
+        g_fov = fov == kFovGame ? 0 : fov;
+    }
     g_mineOnline = g_default;
     wchar_t key[16];
     SettingString(L"Camera", L"FirstPersonKey", nullptr, L"V", key, 16);
@@ -414,6 +426,11 @@ bool FirstPersonAny() { return g_any != 0; }
 // A player in first person who's emoting (motion.cpp - online it starts at different times on each PC, so it never
 // touches the game's camera): their view is drawn from behind them while it plays - the place the game hands the
 // view's camera (splitview.cpp, its +0x94: 3 x 4, the axes in the columns, the place last), moved back along the view.
+// The game's taunt (T, D-pad down; action 48): the gun put away, a routine of the whole body for 7 s - firing or moving cuts it short, the
+// gun back by itself. Nothing an arm's view can show: their view goes behind them for it, as for an emote. [player+0x22e0]: 1 while it
+// plays, 0 walking, firing, in a punch. (While it played the arms were held as for the idle fidget, whose layer it uses: a hand frozen
+// in the air, no gun.)
+bool Taunting(const View& v) { return v.player && *reinterpret_cast<const DWORD*>(v.player + 0x22e0) != 0; }
 struct Pulled { float base[12], out[12]; bool have; float pull; ULONGLONG at; };
 Pulled g_pulled[4];
 const float kPullBack = 3.5f, kPullUp = 0.6f, kPullTime = 0.3f;
@@ -425,6 +442,36 @@ double OrderNow() {   // (research, "fpv order": the PC's clock, seconds)
     return (double)n.QuadPart / f.QuadPart;
 }
 
+// (research: "fpv vmcount 1" - how many pieces of the gun each frame drew as the arms, left out, or couldn't place: a line
+// whenever that changes from the frame before. A piece gone for a frame is a flicker)
+bool g_vmCount = false;
+int g_vmParts = 0, g_vmOutlines = 0, g_vmLeft = 0, g_vmNoArms = 0, g_vmFrames = 0;
+int g_vmLast[4] = {-1, -1, -1, -1};
+float g_vmLeftD = 0, g_vmLeftBig = 0, g_vmLeftS = 0;
+float g_vmPiece[8][4];   // (this frame's pieces: how far from the gun hand, and how far in the view - ahead, right, up - from the eye)
+int g_vmPieces = 0;
+int g_vmSkin[3] = {}, g_vmSkinLast = -1;   // (a frame's skinned draws: all, a player's, drawn as the arms)
+void VmCountFrame() {
+    ++g_vmFrames;
+    if (g_vmSkin[2] != g_vmSkinLast && (g_vmSkin[2] == 0 || g_vmSkinLast == 0)) {
+        float h[26] = {};
+        bool got = MotionViewmodel(0, h);
+        Log(L"FirstPerson: skinned frame %d: all %d, a player's %d, as the arms %d (arms %d; hand %.2f %.2f %.2f eye %.2f %.2f %.2f s %.3f)", g_vmFrames, g_vmSkin[0],
+            g_vmSkin[1], g_vmSkin[2], got ? 1 : 0, h[0], h[1], h[2], h[4], h[5], h[6], h[3]);
+    }
+    g_vmSkinLast = g_vmSkin[2];
+    g_vmSkin[0] = g_vmSkin[1] = g_vmSkin[2] = 0;
+    int now[4] = {g_vmParts, g_vmOutlines, g_vmLeft, g_vmNoArms};
+    if (memcmp(now, g_vmLast, sizeof(now)) != 0) {
+        Log(L"FirstPerson: vmcount frame %d: parts %d outlines %d left out %d (d %.3f big %.4f s %.3f) no arms %d", g_vmFrames, now[0],
+            now[1], now[2], g_vmLeftD, g_vmLeftBig, g_vmLeftS, now[3]);
+        for (int i = 0; i < g_vmPieces; ++i)
+            Log(L"FirstPerson: vmpiece %d: %.3f from the hand; ahead %.3f right %.3f up %.3f", i, g_vmPiece[i][0], g_vmPiece[i][1], g_vmPiece[i][2], g_vmPiece[i][3]);
+        memcpy(g_vmLast, now, sizeof(now));
+    }
+    g_vmParts = g_vmOutlines = g_vmLeft = g_vmNoArms = g_vmPieces = 0;
+}
+void FirstPersonFrameEnd() { if (g_vmCount) VmCountFrame(); }   // (d3d9.cpp: a frame's been drawn)
 void FirstPersonDrawnCamera(int view, float* m) {
     if (view < 0 || view >= 4) return;
     // their view drawn from their eye, the lag taken out (Hook_Update): the drawn camera is the game's own smoothed
@@ -450,7 +497,7 @@ void FirstPersonDrawnCamera(int view, float* m) {
     if (!d.have || memcmp(m, d.out, sizeof(d.out)) != 0) memcpy(d.base, m, sizeof(d.base));   // (a new one: the game's)
     bool emoting = false;
     for (int p = 0; p < 8; ++p)
-        if (g_view[p].viewport == view && g_view[p].blend > 0.5f) emoting = MotionPlaying(p);
+        if (g_view[p].viewport == view && g_view[p].blend > 0.5f) emoting = MotionPlaying(p) || Taunting(g_view[p]);
     ULONGLONG now = GetTickCount64();
     float dt = d.at ? (now - d.at) / 1000.0f : 0;
     d.at = now;
@@ -510,28 +557,32 @@ void FirstPersonSetDefault(bool on) {
     WritePrivateProfileStringW(L"Camera", L"FirstPerson", on ? L"1" : L"0", path);
 }
 
-// SETTINGS > CAMERA's field of view: which of kFovs (cycled by `by`), its name
-int FirstPersonFovIndex() {
-    for (int i = 0; i < kFovCount; ++i) if (kFovs[i] == g_fov) return i;
-    return 1;
-}
-const char* FirstPersonFovName() {
-    static char name[24];
-    if (g_fov) sprintf_s(name, "%d DEGREES", g_fov);
-    else strcpy_s(name, "THE GAME'S (80)");
-    return name;
+// SETTINGS > CAMERA's field of view: the slider's row ("<percent along>|<degrees>"), a step along it
+const char* FirstPersonFovSlider() {
+    static char row[16];
+    int degrees = g_fov ? g_fov : kFovGame;
+    sprintf_s(row, "%d|%d", (degrees - kFovMin) * 100 / (kFovMax - kFovMin), degrees);
+    return row;
 }
 void FirstPersonFovStep(int by) {
-    g_fov = kFovs[(FirstPersonFovIndex() + (by < 0 ? -1 : 1) + kFovCount) % kFovCount];
+    int degrees = (g_fov ? g_fov : kFovGame) + (by < 0 ? -kFovStep : kFovStep);
+    degrees = degrees < kFovMin ? kFovMin : degrees > kFovMax ? kFovMax : degrees;
+    g_fov = degrees == kFovGame ? 0 : degrees;
     wchar_t path[MAX_PATH], val[8];
     swprintf_s(path, L"%s\\FGUYMod.ini", g_modDir);
     swprintf_s(val, L"%d", g_fov);
     WritePrivateProfileStringW(L"Camera", L"FirstPersonFOV", val, path);
 }
-// online: mine as it goes with my input (its index + 1), and a player's from theirs (every PC, the same tick)
-int FirstPersonFovMine() { return FirstPersonFovIndex() + 1; }
+// online: mine as it goes with my input (its code), and a player's from theirs (every PC, the same tick)
+int FirstPersonFovMine() {
+    for (int i = 0; i < kFovCount; ++i) if (kFovs[i] == g_fov) return i + 1;
+    return 2;   // (research's "fpv fov": off the slider - the game's)
+}
 void FirstPersonFovFromInput(int player, int code) {
-    if (player >= 0 && player < 8) g_view[player].fov = code >= 1 && code <= kFovCount ? kFovs[code - 1] : 0;
+    if (player < 0 || player >= 8) return;
+    int fov = code >= 1 && code <= kFovCount ? kFovs[code - 1] : 0;
+    if (fov != g_view[player].fov) Log(L"FirstPerson: player %d's field of view is %d (0: the game's)", player, fov);
+    g_view[player].fov = fov;
 }
 
 // motion.cpp: a player whose gun is brought into their view - in first person (by how far), their view on this
@@ -540,9 +591,10 @@ void FirstPersonFovFromInput(int player, int code) {
 // weapon's zoom and the game's upper-body stance
 int g_armsNoWhy = 0;   // (research: the last reason FirstPersonArms said no - "fpv armswhy" logs it)
 int g_layerDump = 0;   // (research: "fpv layer <n>" - the upper body's blend block, the next n times)
+bool g_armsRaw = false;   // (research: "fpv armsraw 1" - their arms as the game has them, none of ours: the truth to match)
 bool FirstPersonArms(int slot, ArmsView* out) {
     g_armsNoWhy = 1;
-    if (!g_any || slot < 0 || slot >= 4) return false;
+    if (!g_any || slot < 0 || slot >= 4 || g_armsRaw) return false;
     View& v = g_view[slot];
     float r[4];
     g_armsNoWhy = 2;
@@ -586,6 +638,9 @@ bool FirstPersonArms(int slot, ArmsView* out) {
         // ~3 s, Peter's drill turned 64 degrees. Its own weight: +0x48, eased 0..1 (0 standing, firing, in a jump); +0x90
         // 2 while it plays, 3 otherwise)
         out->layer90 = *reinterpret_cast<const int*>(layer + 0x90);
+        out->clip = *reinterpret_cast<const int*>(layer + 0x60);
+        out->moveClip = *reinterpret_cast<const int*>(layer + 0x5c);
+        v.reloading = out->clip >= 4 && out->clip <= 6;
         float iw = *reinterpret_cast<const float*>(layer + 0x48);
         out->idle = iw > 0 ? (iw < 1 ? iw : 1) : 0;
         if (g_layerDump > 0) {   // (research: the upper body's blend block, as words)
@@ -603,6 +658,9 @@ bool FirstPersonArms(int slot, ArmsView* out) {
         out->aim = a > 0 ? (a < 1 ? a : 1) : 0;
         out->rest = b > 0 ? (b < 1 ? b : 1) : 0;
     }
+    // (their gun: +0xef58, 0 from the moment a melee swing starts until they aim or fire. Whether it's drawn wouldn't do:
+    // lowered out of the view the game stops drawing it, and it would look gone for good)
+    out->gunOut = *reinterpret_cast<const DWORD*>(v.player + 0xef58) != 0;
     out->alone = true;
     for (int i = 0; i < 4; ++i) {
         float o[4];
@@ -780,6 +838,7 @@ void FollowX(const float (*c)[4], const View& v, const float* hand, float (*X)[4
         T[i][3] = ew[i] - (T[i][0] * hand[4] + T[i][1] * hand[5] + T[i][2] * hand[6]);
         // (and the sway and bob as at this frame's time for the pose's: hand[10..12], the view's left, up, ahead)
         T[i][3] += -bd[i][0] * hand[10] + bd[i][1] * hand[11] + bd[i][2] * hand[12];
+        T[i][3] -= bd[i][2] * hand[16];   // (kept ahead of the eye: drawn as from there - motion.cpp g_rig)
     }
     if (g_vmSeq > 0)
         Log(L"FirstPerson: seq   follow - %s, %s, eye %.3f from the frame's, moved %.3f", GraphicsDrawingOutline()
@@ -812,13 +871,18 @@ void FollowX(const float (*c)[4], const View& v, const float* hand, float (*X)[4
 // kArmDepth[0] to far kArmDepth[1] across the depth (cosmetics.cpp draws them into the front kFront of it). The game's
 // near plane would cut into the arms shrunk toward the eye; brought nearer, its depth was too coarse there - an outline
 // shell's inside showed through a gun turned the camera's way (black over the drill's face).
+// Then zoomed by hand[13] about their spot on the screen, hand[14..15]: x' = m x + (1 - m) S w - arms drawn from afar for
+// their flat perspective, as big as ever on the screen.
 const float kArmDepth[2] = {0.02f, 3.0f};
-void Followed(const float (*c)[4], const float (*X)[4], float scale, float (*out)[4]) {
+void Followed(const float (*c)[4], const float (*X)[4], float scale, const float* hand, float (*out)[4]) {
     for (int r = 0; r < 4; ++r) {
         for (int j = 0; j < 4; ++j)
             out[r][j] = c[r][0] * X[0][j] + c[r][1] * X[1][j] + c[r][2] * X[2][j] + (j == 3 ? c[r][3] : 0);
         if (r < 2) for (int j = 0; j < 4; ++j) out[r][j] *= scale;
     }
+    float zoom = hand[13] > 0 ? hand[13] : 1;
+    for (int r = 0; r < 2; ++r)
+        for (int j = 0; j < 4; ++j) out[r][j] = zoom * out[r][j] + (1 - zoom) * hand[14 + r] * out[3][j];
     float n = kArmDepth[0], f = kArmDepth[1], A = f / (f - n), B = -n * f / (f - n);   // (z = A w + B: 0 at n, 1 at f)
     for (int j = 0; j < 4; ++j) out[2][j] = A * out[3][j] + (j == 3 ? B : 0);
 }
@@ -829,6 +893,11 @@ bool ViewmodelDraw(const float (*c)[4], bool skinned, float (*out)[4]);
 int g_vmSeq = 0;            // (research: "fpv vmseq <n>" - the next n draws, in order)
 bool FirstPersonViewmodel(const float (*c)[4], bool skinned, float (*out)[4]) {
     bool vm = ViewmodelDraw(c, skinned, out);
+    if (skinned) {
+        ++g_vmSkin[0];
+        if (CosmeticsDrawPlayer() >= 0) ++g_vmSkin[1];
+        if (vm) ++g_vmSkin[2];
+    }
     if (g_vmSeq > 0) {
         --g_vmSeq;
         bool origin = c[4][3] == 0 && c[5][3] == 0 && c[6][3] == 0;
@@ -837,12 +906,18 @@ bool FirstPersonViewmodel(const float (*c)[4], bool skinned, float (*out)[4]) {
     }
     return vm;
 }
+// (a reload's old drum: let go by the game at the gun, near the eye with the shrunk arm - but at its full size, a wall of black
+// across the view with its inside showing. Not drawn while that near; it's seen falling from there)
+const float kDropNear = 1.2f;
+bool g_skipDraw = false;
+bool FirstPersonSkipDraw() { return g_skipDraw; }
 bool ViewmodelDraw(const float (*c)[4], bool skinned, float (*out)[4]) {
+    g_skipDraw = false;
     if (!g_any) return false;
     int view = SplitViewDrawing();
     if (view < 0 || view >= 4 || g_pulled[view].pull > 0.05f) return false;
     int p = CosmeticsDrawPlayer();
-    float hand[13];
+    float hand[26];
     if (g_vmDump > 0 && MotionViewmodel(0, hand) && (GraphicsDrawingOutline() || (p == 0 && !skinned))) {
         --g_vmDump;
         Log(L"FirstPerson: vm dump - %s%s player %d at %.2f %.2f %.2f (hand %.2f %.2f %.2f) rows %.2f %.2f %.2f / %.2f "
@@ -872,13 +947,24 @@ bool ViewmodelDraw(const float (*c)[4], bool skinned, float (*out)[4]) {
             last = GetTickCount(), seen = 0, mine = 0, nearest[0] = nearest[1] = 1e9f;
         }
     }
-    if (p < 0 || p >= 8 || g_view[p].viewport != view || g_view[p].blend < 0.5f || p >= 4 || !FrameArms(p, hand)) return false;
+    if (p < 0 || p >= 8 || g_view[p].viewport != view || g_view[p].blend < 0.5f || p >= 4) return false;
+    if (!FrameArms(p, hand)) {
+        if (!skinned) ++g_vmNoArms;
+        return false;
+    }
     if (!skinned) {   // (a gun: a model on their gun hand, shrunk with it - its own place can be well off the hand,
                       //  Peter's drill's 1.3 at full size; the sky dome is at the eye too, full size and unturned)
         float d[3] = {c[4][3] - hand[0], c[5][3] - hand[1], c[6][3] - hand[2]};
         float big = c[4][0] * c[4][0] + c[4][1] * c[4][1] + c[4][2] * c[4][2], s = hand[3];
         bool unturned = std::fabs(c[4][0] - 1) < 1e-3f && std::fabs(c[5][1] - 1) < 1e-3f && std::fabs(c[6][2] - 1) < 1e-3f;
-        if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > 4 * s * s || big > 2.25f * s * s || unturned) {
+        // (as far as the off hand goes: what it holds in a reload is a model on it - left out, it floated by itself)
+        if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > 36 * s * s || big > 2.25f * s * s || unturned) {
+            if (!unturned) {
+                ++g_vmLeft;
+                g_vmLeftD = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]), g_vmLeftBig = big, g_vmLeftS = s;
+            }
+            float e[3] = {c[4][3] - hand[4], c[5][3] - hand[5], c[6][3] - hand[6]};
+            if (!unturned && g_view[p].reloading && e[0] * e[0] + e[1] * e[1] + e[2] * e[2] < kDropNear * kDropNear) g_skipDraw = true;
             static DWORD lastOut = 0;
             if (g_vmLog && !unturned && GetTickCount() - lastOut > 50) {
                 lastOut = GetTickCount();
@@ -891,6 +977,19 @@ bool ViewmodelDraw(const float (*c)[4], bool skinned, float (*out)[4]) {
                     s, sqrtf(big), unturned ? L", unturned" : L"", GraphicsDrawingOutline() ? L", outline" : L"");
             }
             return false;
+        }
+        ++(GraphicsDrawingOutline() ? g_vmOutlines : g_vmParts);
+        if (g_vmCount && !GraphicsDrawingOutline() && g_vmPieces < 8) {
+            const float* f = hand + 7;
+            float r[3] = {-f[2], 0, f[0]}, lr = sqrtf(r[0] * r[0] + r[2] * r[2]);
+            if (lr > 1e-6f) r[0] /= lr, r[2] /= lr;
+            float u[3] = {r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]};
+            float e[3] = {c[4][3] - hand[4], c[5][3] - hand[5], c[6][3] - hand[6]};
+            float* q = g_vmPiece[g_vmPieces++];
+            q[0] = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+            q[1] = e[0] * f[0] + e[1] * f[1] + e[2] * f[2];
+            q[2] = e[0] * r[0] + e[1] * r[1] + e[2] * r[2];
+            q[3] = e[0] * u[0] + e[1] * u[1] + e[2] * u[2];
         }
         static DWORD lastAxes = 0;
         if (g_vmLog && g_view[p].haveDrawn && GetTickCount() - lastAxes > 300) {   // (the gun's axes in the view)
@@ -908,6 +1007,14 @@ bool ViewmodelDraw(const float (*c)[4], bool skinned, float (*out)[4]) {
             }
             Log(L"FirstPerson: gun axes in the view (right up ahead) - x %.2f %.2f %.2f, y %.2f %.2f %.2f, z %.2f %.2f %.2f",
                 ax[0][0], ax[0][1], ax[0][2], ax[1][0], ax[1][1], ax[1][2], ax[2][0], ax[2][1], ax[2][2]);
+            {   // (and in the hand's: columns of G = H^T A, H the hand's axes in the view, A the gun's - left, up, ahead)
+                const float* Hm = hand + 17;
+                float G[3][3];
+                for (int r = 0; r < 3; ++r)
+                    for (int c = 0; c < 3; ++c)
+                        G[r][c] = Hm[0 * 3 + r] * -ax[c][0] + Hm[1 * 3 + r] * ax[c][1] + Hm[2 * 3 + r] * ax[c][2];
+                Log(L"FirstPerson: gun in hand %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", G[0][0], G[0][1], G[0][2], G[1][0], G[1][1], G[1][2], G[2][0], G[2][1], G[2][2]);
+            }
         }
     }
     const float* c2 = c[2];
@@ -921,7 +1028,7 @@ bool ViewmodelDraw(const float (*c)[4], bool skinned, float (*out)[4]) {
     float scale = IsBadReadPtr(proj, 4) || std::fabs(proj[0]) < 0.1f ? 1.0f : 1 / std::fabs(proj[0]) / kArmTan;
     float X[3][4];
     FollowX(c, g_view[p], hand, X);
-    Followed(c, X, scale, out);
+    Followed(c, X, scale, hand, out);
     return true;
 }
 
@@ -935,7 +1042,7 @@ bool FirstPersonShell(const float (*c)[4], float (*inner)[4], float* nearPlane, 
     if (!g_any || !g_shellSplit || !GraphicsDrawingOutline() || c[4][3] != 0 || c[5][3] != 0 || c[6][3] != 0) return false;
     int view = SplitViewDrawing();
     if (view < 0 || view >= 4 || g_pulled[view].pull > 0.05f) return false;
-    float hand[13];
+    float hand[26];
     int p = 0;
     for (; p < 4; ++p)
         if (g_view[p].viewport == view && g_view[p].blend >= 0.5f && FrameArms(p, hand)) break;
@@ -954,7 +1061,7 @@ bool FirstPersonShell(const float (*c)[4], float (*inner)[4], float* nearPlane, 
     // the eye: an arm's length ahead it came out over the gun, black)
     float X[3][4];
     FollowX(c, g_view[p], hand, X);
-    Followed(c, X, scale, inner);
+    Followed(c, X, scale, hand, inner);
     // (clip planes, in clip space: q . (x, y, z, w) >= 0 kept; with z = A w + B, depth w - d >= 0 is (0, 0, -d / B,
     // 1 + d A / B) - and d - w >= 0 its negative. Within: as the arms' own depth draws it.)
     float an = kArmDepth[1] / (kArmDepth[1] - kArmDepth[0]), bn = -kArmDepth[0] * an;
@@ -967,9 +1074,19 @@ bool FirstPersonShell(const float (*c)[4], float (*inner)[4], float* nearPlane, 
     return true;
 }
 
+const float kPullHide = 0.6f;
 int FirstPersonOwnDraw(const float (*c)[4], float* planes) {
     if (!g_any || !g_hideMode) return 0;
     int view = SplitViewDrawing();
+    // (the view going behind them or coming back: through their head, the inside of a hat filling the screen, black - theirs not drawn
+    // until it's clear of them. -2: left out, whatever it is. The sky dome's at the camera too: unturned, full size)
+    if (view >= 0 && view < 4 && g_pulled[view].pull > 0.05f && g_pulled[view].pull < kPullHide) {
+        if (GraphicsDrawingOutline()) return -2;
+        int mine = CosmeticsDrawPlayer();
+        bool sky = std::fabs(c[4][0] - 1) < 1e-3f && std::fabs(c[5][1] - 1) < 1e-3f && std::fabs(c[6][2] - 1) < 1e-3f;
+        if (mine >= 0 && mine < 8 && g_view[mine].viewport == view && !sky) return -2;
+        return 0;
+    }
     if (view < 0 || view >= 4 || g_pulled[view].pull > 0.05f) return 0;   // (drawn from behind: all of them)
     int p = CosmeticsDrawPlayer();
     if (p < 0 || p >= 8 || g_view[p].viewport != view || g_view[p].blend < 0.5f) return 0;
@@ -1011,6 +1128,31 @@ int FirstPersonOwnDraw(const float (*c)[4], float* planes) {
 }
 
 // Test pipe: fpv <player> <0|1> [height] [forward] [pitch limit]   /   fpv hide <0|1|2|3> [near] [below the eyes] [neck]
+// (research: "fpv snap <0..3>" keeps player 0's memory, "fpv diff" logs what's the same in 0 and 2, the same in 1 and 3, and
+// differs between them - a state that goes with what was done between the snaps)
+const size_t kSnapSize = 0x12000;
+std::vector<unsigned char> g_snap[4];
+void SnapTake(int i) {
+    auto player = g_view[0].player;
+    if (i < 0 || i > 3 || !player) return;
+    g_snap[i].assign(kSnapSize, 0);
+    for (size_t o = 0; o < kSnapSize; o += 0x100)
+        if (!IsBadReadPtr(player + o, 0x100)) memcpy(g_snap[i].data() + o, player + o, 0x100);
+    Log(L"FirstPerson: snap %d taken", i);
+}
+void SnapDiff() {
+    for (auto& s : g_snap) if (s.size() != kSnapSize) return;
+    int shown = 0;
+    for (size_t o = 0; o < kSnapSize && shown < 80; o += 4) {
+        DWORD v[4];
+        for (int i = 0; i < 4; ++i) memcpy(&v[i], g_snap[i].data() + o, 4);
+        if (v[0] == v[2] && v[1] == v[3] && v[0] != v[1]) {
+            Log(L"FirstPerson: snap +%04zx %08lx -> %08lx", o, v[0], v[1]);
+            ++shown;
+        }
+    }
+    Log(L"FirstPerson: snap diff done (%d)", shown);
+}
 // /   fpv face <0|1>   /   fpv fov <degrees>   /   fpv watch <hex address>
 void FirstPersonCommand(const char* args) {
     char buf[128];
@@ -1047,6 +1189,90 @@ void FirstPersonCommand(const char* args) {
     }
     if (_stricmp(p, "order") == 0) { MotionOrderTest(atoi(on)); return; }   // fpv order <poses>
     if (_stricmp(p, "layer") == 0) { g_layerDump = atoi(on); return; }   // fpv layer <n>
+    if (_stricmp(p, "snap") == 0) { SnapTake(atoi(on)); return; }   // fpv snap <0..3>
+    if (_stricmp(p, "diff") == 0) { SnapDiff(); return; }   // fpv diff
+    if (_stricmp(p, "vmcount") == 0) { g_vmCount = atoi(on) != 0; return; }   // fpv vmcount <0|1>
+    if (_stricmp(p, "offbones") == 0) { MotionOffBones(); return; }   // fpv offbones 1
+    if (_stricmp(p, "rig") == 0) {   // fpv rig <hands ahead> <shoulder right> <down> <ahead> <shrink> <kept ahead>
+        float values[6] = {(float)atof(on), 0, 0, 0, 0, 0};
+        int count = 1;
+        while (count < 6) {
+            char* v = strtok_s(nullptr, " \t", &ctx);
+            if (!v) break;
+            values[count++] = (float)atof(v);
+        }
+        MotionRig(values, count);
+        return;
+    }
+    if (_stricmp(p, "fingers") == 0) {   // fpv fingers <relaxed> <tip> <grip> <tip> <fist> <tip>
+        float values[6] = {(float)atof(on), 0, 0, 0, 0, 0};
+        int count = 1;
+        while (count < 6) {
+            char* v = strtok_s(nullptr, " \t", &ctx);
+            if (!v) break;
+            values[count++] = (float)atof(v);
+        }
+        MotionFingers(values, count);
+        return;
+    }
+    if (_stricmp(p, "less") == 0) {   // fpv less <reload> <walk>
+        char* w = strtok_s(nullptr, " \t", &ctx);
+        MotionLess((float)atof(on), w ? (float)atof(w) : 0);
+        return;
+    }
+    if (_stricmp(p, "thumb") == 0) {   // fpv thumb <x y z> <x y z>: on the grip, in the left hand's axes
+        float values[6] = {(float)atof(on), 0, 0, 0, 0, 0};
+        for (int i = 1; i < 6; ++i) {
+            char* v = strtok_s(nullptr, " \t", &ctx);
+            if (!v) break;
+            values[i] = (float)atof(v);
+        }
+        MotionGripThumb(values);
+        return;
+    }
+    if (_stricmp(p, "hidedown") == 0) {   // fpv hidedown <y> <ahead>
+        char* a = strtok_s(nullptr, " \t", &ctx);
+        MotionHideDown((float)atof(on), a ? (float)atof(a) : 0.4f);
+        return;
+    }
+    if (_stricmp(p, "punch") == 0) {   // fpv punch <up> <in> <twist> <thumb +-1>
+        float values[4] = {(float)atof(on), 0, 0, 0};
+        int count = 1;
+        while (count < 4) {
+            char* v = strtok_s(nullptr, " \t", &ctx);
+            if (!v) break;
+            values[count++] = (float)atof(v);
+        }
+        MotionPunchAim(values, count);
+        return;
+    }
+    if (_stricmp(p, "ink") == 0) {   // fpv ink <px at 720 lines> <depth bias> <slope>
+        char* b = strtok_s(nullptr, " \t", &ctx);
+        char* s = strtok_s(nullptr, " \t", &ctx);
+        CosmeticsArmInkTest((float)atof(on), b ? (float)atof(b) : 3e-5f, s ? (float)atof(s) : 3);
+        return;
+    }
+    if (_stricmp(p, "armsraw") == 0) { g_armsRaw = atoi(on) != 0; return; }   // fpv armsraw <0|1>
+    if (_stricmp(p, "armflat") == 0) { MotionArmFlat((float)atof(on)); return; }   // fpv armflat <1: their own>
+    if (_stricmp(p, "armsize") == 0) { MotionArmSize((float)atof(on)); return; }   // fpv armsize <1: as set>
+    if (_stricmp(p, "calm") == 0) { MotionArmCalm((float)atof(on)); return; }   // fpv calm <0..1>
+    if (_stricmp(p, "pose") == 0) {   // fpv pose <0 relaxed, 1 aiming, 2 zoomed, 3 reloading, 4 hands empty> <right> <down> <pitch> <yaw> <roll> [off x, y, way]
+        float values[13];
+        int count = 0;
+        while (count < 13) {
+            char* s = strtok_s(nullptr, " \t", &ctx);
+            if (!s) break;
+            values[count++] = (float)atof(s);
+        }
+        MotionArmPose(atoi(on), values, count);
+        return;
+    }
+    if (_stricmp(p, "moves") == 0) {   // fpv moves <0|1|2> [<swing>] [<log 0|1>] - their arms on the move
+        char* s1 = strtok_s(nullptr, " \t", &ctx);
+        char* s2 = s1 ? strtok_s(nullptr, " \t", &ctx) : nullptr;
+        MotionArmMoves(atoi(on), s1 ? (float)atof(s1) : 0, s2 && atoi(s2) != 0);
+        return;
+    }
     if (_stricmp(p, "armswhy") == 0) { MotionArmsWhyTest(atoi(on) != 0); return; }   // fpv armswhy <0|1>
     if (_stricmp(p, "followmask") == 0) { g_followMask = atoi(on); return; }   // fpv followmask <bits>
     if (_stricmp(p, "bobtrace") == 0) {   // fpv bobtrace <poses> [1: the gun's bob]

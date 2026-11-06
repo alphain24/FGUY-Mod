@@ -510,6 +510,76 @@ bool Skinned(IDirect3DDevice9* dev) {
 // in order still) - and with their own field of view (clip space x, y scaled). Their outlines too.
 const float kFront = 0.02f;
 bool g_drawSkinned = false;   // (this draw's: a character's piece - CosmeticsDrawSkinned)
+// First person's arms in ink. A character's lines are made for the game's camera, in its view, and a player's own are left out
+// in first person (firstperson.cpp OwnLinesShow): the arms came out flat - one pink shape, no fingers. So each piece of the arms
+// is drawn first in black, a line's width off in eight directions and a little behind, then as itself over that: what's left
+// of the black is a line round the arm and, wherever a finger lies over the palm, round the finger too. In pixels on the screen,
+// so as thick at any distance and however the arms are zoomed.
+float g_armInk[3] = {2.0f, 3e-5f, 3.0f};   // (the line's width in pixels at 720 lines; how far behind: its depth bias, its slope -
+                                           //  more and the lines between the fingers go, none and the black covers the arm)
+bool g_armInkNow = false;                  // (this draw's: a piece of the arms, c0..c3 in g_armInkC)
+float g_armInkC[4][4];
+IDirect3DPixelShader9* g_blackPs = nullptr;
+IDirect3DDevice9* g_blackPsDev = nullptr;
+DWORD g_blackVersion = 0;
+void ArmInkDraw(IDirect3DDevice9* dev, D3DPRIMITIVETYPE type, INT base, UINT minIdx, UINT verts, UINT start, UINT prims) {
+    if (g_armInk[0] <= 0) return;
+    DWORD write = 0, colour = 0;
+    dev->GetRenderState(D3DRS_ZWRITEENABLE, &write);
+    dev->GetRenderState(D3DRS_COLORWRITEENABLE, &colour);
+    if (!write || !colour) return;   // (their solid pass: the soft shading goes over it without depth)
+    D3DVIEWPORT9 vp;
+    IDirect3DPixelShader9* ps = nullptr;
+    dev->GetPixelShader(&ps);
+    if (!ps || FAILED(dev->GetViewport(&vp)) || !vp.Width || !vp.Height) { if (ps) ps->Release(); return; }
+    // (black, of the shader model of the game's own: a vs_3_0 goes only with a ps_3_0)
+    DWORD version = 0;
+    UINT size = 0;
+    if (SUCCEEDED(ps->GetFunction(nullptr, &size)) && size >= 4) {
+        std::vector<DWORD> code(size / 4);
+        if (SUCCEEDED(ps->GetFunction(code.data(), &size))) version = code[0];
+    }
+    if (g_blackPsDev != dev || g_blackVersion != version) {
+        DWORD code[] = {version,                                           // ps_x_x
+                        0x05000051, 0xa00f0000, 0, 0, 0, 0x3f800000,       // def c0, 0, 0, 0, 1
+                        0x02000001, 0x800f0800, 0xa0e40000,                // mov oC0, c0
+                        0x0000ffff};
+        if (g_blackPs) g_blackPs->Release();
+        g_blackPs = nullptr;
+        g_blackPsDev = dev;
+        g_blackVersion = version;
+        if (FAILED(dev->CreatePixelShader(code, &g_blackPs))) Log(L"Cosmetics: no black shader - first person's arms have no ink");
+    }
+    if (!g_blackPs) { ps->Release(); return; }
+    DWORD bias = 0, slope = 0, blend = 0;
+    dev->GetRenderState(D3DRS_DEPTHBIAS, &bias);
+    dev->GetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, &slope);
+    dev->GetRenderState(D3DRS_ALPHABLENDENABLE, &blend);
+    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+    dev->SetPixelShader(g_blackPs);
+    dev->SetRenderState(D3DRS_DEPTHBIAS, *reinterpret_cast<const DWORD*>(&g_armInk[1]));
+    dev->SetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, *reinterpret_cast<const DWORD*>(&g_armInk[2]));
+    float dy = g_armInk[0] * 2 / 720, dx = dy * vp.Height / vp.Width;   // (clip space: the picture's height 2)
+    for (int i = 0; i < 8; ++i) {
+        float a = i * 0.785398f, ox = cosf(a) * dx, oy = sinf(a) * dy, c[2][4];
+        for (int j = 0; j < 4; ++j) {
+            c[0][j] = g_armInkC[0][j] + ox * g_armInkC[3][j];
+            c[1][j] = g_armInkC[1][j] + oy * g_armInkC[3][j];
+        }
+        Real_SetVSConstF(dev, 0, c[0], 2);
+        Real_DrawIndexed(dev, type, base, minIdx, verts, start, prims);
+    }
+    Real_SetVSConstF(dev, 0, g_armInkC[0], 2);
+    dev->SetRenderState(D3DRS_DEPTHBIAS, bias);
+    dev->SetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, slope);
+    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, blend);
+    dev->SetPixelShader(ps);
+    ps->Release();
+}
+HRESULT __stdcall InkedDraw(IDirect3DDevice9* dev, int type, int base, unsigned minIdx, unsigned verts, unsigned start, unsigned prims) {
+    if (g_armInkNow) ArmInkDraw(dev, (D3DPRIMITIVETYPE)type, base, minIdx, verts, start, prims);
+    return Real_DrawIndexed(dev, (D3DPRIMITIVETYPE)type, base, minIdx, verts, start, prims);
+}
 struct OwnBody {
     IDirect3DDevice9* dev;
     bool clip = false, skip = false, front = false;
@@ -528,8 +598,13 @@ struct OwnBody {
             memcpy(c01, g_vsConst, sizeof(c01));
             Real_SetVSConstF(dev, 0, s[0], 4);
             front = true;
+            if (g_drawSkinned && !GraphicsDrawingOutline() && !GraphicsDrawingInk()) {
+                memcpy(g_armInkC, s, sizeof(g_armInkC));
+                g_armInkNow = true;
+            }
             return;
         }
+        if (FirstPersonSkipDraw()) { skip = true; return; }
         // (an outline shell while someone's arms are first person's: drawn twice - as the game draws it beyond their
         // arms' reach (this draw), and within it as their arms are drawn (Second))
         if (FirstPersonShell(g_vsConst, shellNear, shellPlanes[0], shellPlanes[1])) {
@@ -543,6 +618,7 @@ struct OwnBody {
         }
         float planes[8];
         int count = FirstPersonOwnDraw(g_vsConst, planes);
+        if (count == -2) { skip = true; return; }
         if (count == 0 || !Skinned(d)) return;   // (only a character's pieces: the sky dome is at the camera too, and
                                                  //  above the neck it was cut away - black)
         if (count < 0 || GraphicsDrawingOutline()) { skip = true; return; }
@@ -569,6 +645,7 @@ struct OwnBody {
         return true;
     }
     ~OwnBody() {
+        g_armInkNow = false;
         if (front) {
             dev->SetViewport(&vp);
             Real_SetVSConstF(dev, 0, c01[0], 4);
@@ -591,8 +668,9 @@ HRESULT STDMETHODCALLTYPE Hook_DrawIndexed(IDirect3DDevice9* self, D3DPRIMITIVET
     if (own.skip) return D3D_OK;
     if (ModelsWorn()) {   // (a player wearing a new character: theirs drawn as ours - models.cpp)
         HRESULT hr = D3D_OK;
-        if (ModelsDraw(self, DrawPlayer(), reinterpret_cast<ModelsRealDraw>(Real_DrawIndexed), &hr, &putBack)) return hr;
+        if (ModelsDraw(self, DrawPlayer(), InkedDraw, &hr, &putBack)) return hr;
     }
+    if (g_armInkNow) ArmInkDraw(self, type, base, minIdx, verts, start, prims);
     HRESULT hr = DrawIndexedSkinned(self, type, base, minIdx, verts, start, prims);
     if (own.Second()) DrawIndexedSkinned(self, type, base, minIdx, verts, start, prims);
     if (putBack) self->SetIndices(putBack);
@@ -815,6 +893,8 @@ IDirect3DTexture9* CosmeticsTextureFromDds(IDirect3DDevice9* dev, const std::vec
 int CosmeticsDrawPlayer() { return DrawPlayer(); }
 bool CosmeticsDrawSkinned() { return g_drawSkinned; }
 bool CosmeticsOwnBodyClipped() { return g_ownClipped; }
+bool CosmeticsArmInk() { return g_armInkNow; }
+void CosmeticsArmInkTest(float px, float bias, float slope) { g_armInk[0] = px, g_armInk[1] = bias, g_armInk[2] = slope; }
 
 void CosmeticsDeviceCreated(IDirect3DDevice9* dev) {
     if (void* o = Patch(dev, 65, (void*)Hook_SetTexture)) Real_SetTexture = (SetTexture_t)o;

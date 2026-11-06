@@ -31,7 +31,7 @@
 namespace {
 
 struct Vert { float pos[3], nrm[3], uv[2]; unsigned char bone[4], weight[4]; };
-struct Part { unsigned first, count, texture; };
+struct Part { unsigned first, count, texture; bool stretched = false; };   // (stretched: part of it on a hidden body - Skin)
 struct Run { unsigned first, count; };   // (indices with an outline)
 struct Hide { unsigned verts = 0, indices = 0; std::vector<unsigned> tris; };   // (tris: first, count, first, count...)
 struct Model {
@@ -375,13 +375,15 @@ bool Skin(int slot, Model* m) {
     float* nrm = pos + V * 3;
     void* ph = nullptr;
     float* hull = m->hull && SUCCEEDED(m->hull->Lock(0, 0, &ph, 0)) ? static_cast<float*>(ph) : nullptr;
+    std::vector<unsigned char> hidden(V);
     for (UINT i = 0; i < V; ++i) {
         const Vert& v = m->verts[i];
-        float op[3] = {}, on[3] = {};
+        float op[3] = {}, on[3] = {}, size = 0;
         for (int k = 0; k < 4; ++k) {
             if (!v.weight[k] || v.bone[k] >= m->skel) continue;
             const float* M = &skin[(size_t)v.bone[k] * 12];
             float w = v.weight[k] / 255.0f;
+            size += w * std::sqrt(M[0] * M[0] + M[4] * M[4] + M[8] * M[8]);
             for (int r = 0; r < 3; ++r) {
                 op[r] += w * (M[r * 4] * v.pos[0] + M[r * 4 + 1] * v.pos[1] + M[r * 4 + 2] * v.pos[2] + M[r * 4 + 3]);
                 on[r] += w * (M[r * 4] * v.nrm[0] + M[r * 4 + 1] * v.nrm[1] + M[r * 4 + 2] * v.nrm[2]);
@@ -389,13 +391,23 @@ bool Skin(int slot, Model* m) {
         }
         memcpy(pos + i * 3, op, 12);
         memcpy(nrm + i * 3, on, 12);
+        hidden[i] = size < 0.02f;
         if (hull) {
-            float len = std::sqrt(on[0] * on[0] + on[1] * on[1] + on[2] * on[2]), k = len > 1e-6f ? kOutline / len : 0;
+            // (as wide as the bones it's on are big: first person's arms are shrunk toward the eye - the same width there
+            // stood out from the sleeves in black slabs)
+            float len = std::sqrt(on[0] * on[0] + on[1] * on[1] + on[2] * on[2]), k = len > 1e-6f ? kOutline * size / len : 0;
             for (int r = 0; r < 3; ++r) hull[i * 3 + r] = op[r] + on[r] * k;
         }
     }
     m->skinned->Unlock();
     if (hull) m->hull->Unlock();
+    // (a piece of it partly on the arms, partly on a body hidden away - a vest's side: stretched from one to the other, a brown slab along
+    // the forearm. First person's arms go without it: Hook_Draw's CosmeticsArmInk)
+    for (Part& pt : m->parts) {
+        unsigned on = 0;
+        for (unsigned k = pt.first; k < pt.first + pt.count; ++k) on += hidden[m->idx[k]];
+        pt.stretched = on * 20 > pt.count;
+    }
     return true;
 }
 
@@ -600,6 +612,7 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     int partNo = 0;
     for (const Part& p : m->parts) {
         if ((skipParts >> partNo++ & 1) || p.count < 3) continue;   // (count 0: painted into another - MergeLayers)
+        if (p.stretched && CosmeticsArmInk()) continue;
         if (p.texture < m->tex.size() && m->tex[p.texture]) {   // (stage 2 too: the outfit's material has its color
             dev->SetTexture(1, m->tex[p.texture]);              //  texture there again - read with our uvs, it showed
             if (oldTex2) dev->SetTexture(2, m->tex[p.texture]); //  through in stripes)
@@ -610,7 +623,7 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     //  in first person - cut open there by the clip, its inside showed black)
     DWORD cull = D3DCULL_NONE;
     dev->GetRenderState(D3DRS_CULLMODE, &cull);
-    if (m->hull && g_black && cull != D3DCULL_NONE && !CosmeticsOwnBodyClipped()) {
+    if (m->hull && g_black && cull != D3DCULL_NONE && !CosmeticsOwnBodyClipped() && !CosmeticsArmInk()) {
         dev->SetStreamSource(0, m->hull, 0, 12);
         dev->SetTexture(1, g_black);
         if (oldTex2) dev->SetTexture(2, g_black);

@@ -215,6 +215,8 @@ const char* CosmeticsHeadIcon(int player);   // cosmetics.cpp, FGUYMOD_HeadIcon:
 IDirect3DTexture9* CosmeticsTextureFromDds(IDirect3DDevice9* dev, const std::vector<unsigned char>& dds);   // cosmetics.cpp
 int CosmeticsDrawPlayer();             //   which player this draw is of (-1 none)
 bool CosmeticsOwnBodyClipped();        //   this draw is a player's own body in first person, clipped (no outline)
+bool CosmeticsArmInk();                //   this draw is first person's arms, inked (no outline of its own)
+void CosmeticsArmInkTest(float px, float bias, float slope);   //   research: "fpv ink <px> <bias> <slope>"
 // models.cpp: new characters (the FGUY Cosmetics mod's models)
 using ModelsRealDraw = HRESULT(__stdcall*)(IDirect3DDevice9*, int, int, unsigned, unsigned, unsigned, unsigned);
 void ModelsLoad(int slot, const std::vector<unsigned char>& pack, const wchar_t* name);   // a player wears a model ({}: none)
@@ -234,9 +236,9 @@ void FirstPersonDrawnCamera(int view, float* m);   //   splitview.cpp: a view's 
 bool FirstPersonNoLines(float x, float y, float z);   //   models.cpp: no ink lines for what's there, in the view drawing now
 bool MotionPlaying(int slot);          //   (motion.cpp)
 void FirstPersonSetDefault(bool on);   //     (kept in FGUYMod.ini)
-const char* FirstPersonFovName();      //   graphics.cpp (SETTINGS > CAMERA): first person's field of view
-void FirstPersonFovStep(int by);       //     the next / previous (kept in FGUYMod.ini)
-int FirstPersonFovMine();              //   onlinesettings.cpp: mine, as it goes with my input (1..5)
+const char* FirstPersonFovSlider();    //   graphics.cpp (SETTINGS > CAMERA): first person's field of view, its slider's row
+void FirstPersonFovStep(int by);       //     a step along it (kept in FGUYMod.ini)
+int FirstPersonFovMine();              //   onlinesettings.cpp: mine, as it goes with my input (its code, 1..13)
 void FirstPersonFovFromInput(int player, int code);   //   ...and a player's from theirs
 bool FirstPersonCrosshair();           //   graphics.cpp (SETTINGS > CAMERA): a crosshair in first person
 void FirstPersonSetCrosshair(bool on); //     (kept in FGUYMod.ini)
@@ -262,7 +264,19 @@ void MotionGunAimTest(bool on);                                       //   resea
 void MotionOrderTest(int n);                                          //   research: poses and frames in order
 int MotionOrderTrace();
 void MotionGameBobTest(float up, float side);                       //   research: the gun's bob from the head's
-void MotionArmsWhyTest(bool on);                                      //   research: why the arms aren't first person's
+void MotionArmMoves(int mode, float swing, bool log);                 //   [Camera] FirstPersonMoves: their arms on the move
+void MotionArmSize(float size);                                       //   [Camera] FirstPersonArmSize: how big they look (1: as set)
+void MotionArmFlat(float flat);                                       //   [Camera] FirstPersonArmFlat: their perspective (1: their own)
+void MotionArmCalm(float calm);                                       //   third person's arms on the move: how calm (0..1)
+void MotionOffBones();                                                //   research: the off hand's bones, logged once
+void MotionRig(const float* values, int count);                       //   research: "fpv rig <hands ahead> <shoulder right> <down> <ahead> <shrink> <kept ahead>"
+void MotionFingers(const float* values, int count);                   //   research: "fpv fingers <relaxed> <tip> <grip> <tip> <fist> <tip>"
+void MotionLess(float reload, float walk);                            //   research: "fpv less <reload> <walk>"
+void MotionGripThumb(const float* v);                                 //   research: "fpv thumb <x y z> <x y z>"
+void MotionHideDown(float y, float ahead);                                         //   research: "fpv hidedown <y>"
+void MotionPunchAim(const float* values, int count);                  //   research: "fpv punch <up> <in> <twist> <thumb +-1>"
+void MotionArmPose(int stance, const float* values, int count);       //   research: Peter's pose for a stance (motion.cpp g_peterPose)
+void MotionArmsWhyTest(bool on);                            //   research: why the arms aren't first person's
 void MotionBobTraceTest(int poses, bool view);                                 //   research: the game's own bounce, each pose
 void MotionOffHandTest(bool on);                                  //   research: the off hand put on a one-handed gun
 void MotionArmsTraceTest(int frames);                               //   research: the arms' pose against each frame drawn
@@ -283,6 +297,9 @@ struct ArmsView {                      // a player's gun to bring into their vie
     int action = -1;                   //   the upper body's action played over its stances ([+0x13cc]+0x78; -1 none)
     float idle = 0;                    //   an idle fidget's weight (stood still a while: 0..1)
     int layer90 = 0;                   //   (research: its state)
+    int clip = 0;                      //   the upper body's clip ([+0x13cc]+0x60: 0 none, 0xb aiming, 4..6 reloading)
+    int moveClip = 0;                  //   ...and what's under it (+0x5c: 0 standing, 2 walking, 4 running, 0x16 in the air)
+    bool gunOut = true;                //   their gun's out (not: a melee swing, the hands empty after one)
 };
 bool FirstPersonArms(int slot, ArmsView* out);
 int FirstPersonArmsNoWhy();            //   research: why FirstPersonArms last said no (0: it didn't)
@@ -291,8 +308,11 @@ const float kArmTan = 0.79f;           // first person's arms drawn with a field
 bool MotionViewmodel(int slot, float* hand);   //   render thread: their arms drawn as first person's (their body hidden
                                                //   away) - their gun hand in the world, [3] how far shrunk to the eye,
                                                //   [4..9] the eye and the view's way ahead they were posed for,
-                                               //   [10..12] the sway and bob posed (the view's: left, up, ahead)
+                                               //   [10..12] the sway and bob posed (the view's: left, up, ahead),
+                                               //   [13..15] the zoom they're drawn at and its spot on the screen
 bool MotionOffsetAt(int slot, double t, float* out);   //   ...their sway and bob at time t (the PC's clock, s)
+void FirstPersonFrameEnd();             //   d3d9.cpp: a frame's been drawn (research: the gun's pieces counted)
+bool FirstPersonSkipDraw();             //   render thread (cosmetics.cpp), after FirstPersonViewmodel: this draw's left out
 bool FirstPersonShell(const float (*c)[4], float (*inner)[4], float* nearPlane, float* farPlane);   //   cosmetics.cpp:
                                        //   an outline shell, split at first person's arms' reach (FirstPersonShell)
 bool FirstPersonViewmodel(const float (*c)[4], bool skinned, float (*out)[4]);   //   cosmetics.cpp: this draw is
@@ -467,9 +487,9 @@ struct KbmRaw {            // one player's raw keyboard and mouse for one tick (
     BYTE buttons;          //   mouse buttons (bit 0 left, 1 right, 2 middle, 3/4 side)
     SHORT cursorX, cursorY; //   mouse cursor in the window, 0..32767 across / down (every PC's window differs)
     BYTE flags;            //   bit 0: this player's level HUD is up (every player's: keyboard mode starts)
-    BYTE aim;              //   this player's aim sensitivity, 0..100 (onlinesettings.cpp)
+    BYTE aim;              //   this player's aim sensitivity, 0..100 (onlinesettings.cpp); bit 7: the top of opts' code
     BYTE opts;             //   bit 0 invert look, bit 1 reticles, bit 7: aim / opts set; bit 2 first person (bit 3: said),
-                           //   bits 4..6 its field of view (firstperson.cpp)
+                           //   bits 4..6 its field of view's code (firstperson.cpp; aim's bit 7 above them)
     BYTE pace;             //   frames per second this player's PC manages right now (0: not known) - netplay.cpp
     BYTE sync;             //   (the host) 1: everyone takes the host's random numbers at this tick - netplay.cpp
 };

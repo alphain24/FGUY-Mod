@@ -1,4 +1,4 @@
-# Family Guy: Back to the Multiverse (PC) — Research Notes
+# Family Guy: Back to the Multiverse (PC) Ã¢â‚¬â€ Research Notes
 
 Survey date: 2026-10-08. All findings from read-only inspection of the installed game.
 
@@ -8,7 +8,7 @@ Survey date: 2026-10-08. All findings from read-only inspection of the installed
 - Not packed or encrypted (normal section entropy, no SteamStub `.bind` section).
   Imports `steam_api.dll` normally: the Steam build of the game.
 - Contains C++ RTTI class names (e.g. `.?AVNetworkModule@IO@@`) and source paths
-  (`C:\branches\FGUY\main\NG\Source\Engine\...`) — very helpful for reverse engineering in Ghidra.
+  (`C:\branches\FGUY\main\NG\Source\Engine\...`) Ã¢â‚¬â€ very helpful for reverse engineering in Ghidra.
 - Uses: Direct3D 9 + D3DX9_43, DirectInput8 + XInput 1.3, FMOD Ex (audio), Bink (video),
   Havok 2010.1 (physics), Scaleform (menus/UI), Winsock (`WS2_32.dll`: TCP + UDP).
 
@@ -29,7 +29,7 @@ Unknown yet: whether this code is complete/working, a dev-only test harness, or 
 ## Embedded default config (`fguy.ini` / `boot.ini`)
 The exe embeds a default `<game>.ini` and references `fguy.ini` and `boot.ini`. If the PC build reads
 an external `fguy.ini`, these settings could be overridden without patching code. Notable keys:
-- `BOOT = /FGUY/Levels/Level_FRXX/FRXX` — level to boot into (useful for testing custom levels)
+- `BOOT = /FGUY/Levels/Level_FRXX/FRXX` Ã¢â‚¬â€ level to boot into (useful for testing custom levels)
 - `ShowMenuOnBoot`, `NoCutscenes`, `SkippableCutscenes`
 - `EnableDebugControls = 1`, `AllowMasterCheats = 1`, `NoDamage = 0`
 - `HostIP = 0`, `HostPort = 1000`, `IsServer = 0`, `EnableNetworkPlay = 0`, `NetworkLatency = 1`
@@ -47,7 +47,7 @@ The install also has `automenu.ini` / `autotweaks.ini`, the save state of an in-
 - Our loader hides the resource and redirects `./fguy.ini` to `FGUYMod\<name>.ini`. **Confirmed working:**
   `ShowMenuOnBoot = 0` boots straight into FRXX.
 - Key/value readers: `0x4eae30` = get int(ini, key, default), `0x4eaea0` = get string. The big settings
-  parser is the function around `0x99d3a0`–`0x99db3c`.
+  parser is the function around `0x99d3a0`Ã¢â‚¬â€œ`0x99db3c`.
 - Network-related keys parsed (and where they're stored):
   | Key | Default | Stored at | Notes |
   |---|---|---|---|
@@ -64,11 +64,11 @@ The install also has `automenu.ini` / `autotweaks.ini`, the save state of an in-
 
 ## Network play test results (2026-10-08)
 - **Correction (2026-10-09):** the network module starts on *every* launch, even with
-  `EnableNetworkPlay = 0` — the first runs just didn't log sockets yet. So `EnableNetworkPlay` controls
+  `EnableNetworkPlay = 0` Ã¢â‚¬â€ the first runs just didn't log sockets yet. So `EnableNetworkPlay` controls
   something else (still unknown).
 - The game opens **TCP listen on 0.0.0.0:7534** and sends a **25-byte UDP broadcast
   to 255.255.255.255:7533 once per second** (LAN "I'm here" beacon). Game keeps running normally.
-- Beacon bytes: `19 00 00 00 | 0a 0b 00 00 | 00 | 6e 1d (=7534) | 00 ... 01 ...` — length, message id,
+- Beacon bytes: `19 00 00 00 | 0a 0b 00 00 | 00 | 6e 1d (=7534) | 00 ... 01 ...` Ã¢â‚¬â€ length, message id,
   then the TCP port to connect to.
 - The ports come from the network system constructor at `0x747f70` (`+0x9c = 7534`, `+0xa0 = 7533`).
 - Every copy behaves the same (peer-to-peer; `IsServer` does nothing). A second copy on the same PC
@@ -90,43 +90,43 @@ The install also has `automenu.ini` / `autotweaks.ini`, the save state of an in-
 - **Local multiplayer join screen accepts virtual pads:** with virtual pad 1 plugged in, pressing A on it
   joined as player 2. This is the basis for "host + remote input" online play.
 - **Crash:** skipping the intro logo movie (A press during it) crashed in `XAudio2_7.dll`
-  (offset `0x3da72`). Skipping the attract-mode trailer was fine. To investigate (Bink → XAudio2 teardown).
+  (offset `0x3da72`). Skipping the attract-mode trailer was fine. To investigate (Bink Ã¢â€ â€™ XAudio2 teardown).
 
 ## Menu flow (controller mode, 2026-10-09)
-Intro movies → attract trailer (if idle) → title "press start" → **Select Save** (3 slots; X = delete!,
-B = "quit to title?") → **Main Menu**: Story Mode, Multiplayer, Challenge Mode, Options, Store,
+Intro movies Ã¢â€ â€™ attract trailer (if idle) Ã¢â€ â€™ title "press start" Ã¢â€ â€™ **Select Save** (3 slots; X = delete!,
+B = "quit to title?") Ã¢â€ â€™ **Main Menu**: Story Mode, Multiplayer, Challenge Mode, Options, Store,
 Bonus Materials, Exit Game.
 - **Multiplayer**: Deathmatch, Multiverse Madness, Capture the Greased-Up Deaf Guy, Infiltration!
   (level suffixes DM / HD / CF / IN). No network/online entry in the vanilla menu.
-- **Match setup** (Deathmatch): Map, Time Limit, Winning Score, Teams/FFA, Friendly Fire → Next.
+- **Match setup** (Deathmatch): Map, Time Limit, Winning Score, Teams/FFA, Friendly Fire Ã¢â€ â€™ Next.
 - **Join screen**: 4 panels, "Press A to join" per controller, then Select Team (Good/Evil).
 - The game autosaves the selected slot on menu transitions ("Saving..." icon).
 
 ## Menus: Scaleform GFx 3.x (2026-10-09)
 - Menus are Scaleform GFX movies (Flash 10 / **ActionScript 2**), uncompressed inside the `.ho` packages.
   `main_menu.gfx` (290,635 bytes + 1 pad byte) is in `Global_Scenes/MNUS.ho`. Other movies seen:
-  pause_menu, stats_screen, objective_screen, Dialog, trcMessageBox, start_screen, credits, icons, cursors…
+  pause_menu, stats_screen, objective_screen, Dialog, trcMessageBox, start_screen, credits, icons, cursorsÃ¢â‚¬Â¦
 - `Scaleform::FileOpener::OpenFile(url, flags, mode)` = vtable `0x9fe670` slot 1 (`0x4421d0`); returns a
   `Scaleform::GSFMemoryFile` (vtable `0x9fe61c`; +0x08 path, +0x0C data, +0x10 pos, +0x14 length).
-- Menu → C++ calls: `ExternalInterface.call("CATEGORY_Name", ...)` →
+- Menu Ã¢â€ â€™ C++ calls: `ExternalInterface.call("CATEGORY_Name", ...)` Ã¢â€ â€™
   `Scaleform::ExternalInterfaceHandler::Callback(movie, name, args, argc)` = vtable `0x9fe56c` slot 1
   (`0x454190`). Return values go through the movie's vtable slot 50 (`SetExternalInterfaceRetVal`).
   `GFxValue` = { objectInterface*, type (2 bool, 3 number, 4 string; 0x40 managed), 8-byte value }.
 - Categories seen: GRFX (graphics), OPTN, MENU, SCEN, SAVE, CTRL, PROF, SYST, LOKR, STOR, MULT, PLYR,
   FGUY, and **NETW** (`NETW_IsServer`, `NETW_SetActiveMenu`, `NETW_OnScreenEntered` are called by the
-  main menu — the network layer is wired into the menus).
+  main menu Ã¢â‚¬â€ the network layer is wired into the menus).
 - Tools: `tools/re/swf.py` (tags), `tools/re/as2.py` (AS2 disassembler), `tools/ui/gfxpatch.py`
   (assembler + patch writer), `tools/ui/make_menu_patch.py` (the Borderless menu patch).
 - Options > Screen script: `OnOptionsScreenEnter`, `GetDisplayModeValue`, `OnDisplayModeValueChanged`,
-  `OnOptionsScreenNextButtonPressed` → `GRFX_ChangeResolution(width, height, windowed)`.
+  `OnOptionsScreenNextButtonPressed` Ã¢â€ â€™ `GRFX_ChangeResolution(width, height, windowed)`.
 
 ## Window procedure and screen size
 - Game window proc `0x483920` handles only WM_DESTROY, WM_ACTIVATE, WM_CLOSE, **WM_WINDOWPOSCHANGED**.
   On WINDOWPOSCHANGED in windowed mode it sets the screen size globals (`0xb06360` width,
-  `0xb0635c` height, `0xb06354` windowed flag) from the window's client size — even for SWP_NOSIZE.
+  `0xb0635c` height, `0xb06354` windowed flag) from the window's client size Ã¢â‚¬â€ even for SWP_NOSIZE.
 - `0x419680(windowed, x, y, w, h)` applies a resolution (called from `0x4cac63`); the Options page has a
   "keep this resolution?" timer that reverts after ~16 s.
-- DirectInput keyboard cooperative level is `0x16` (includes DISCL_NOWINKEY → Windows key blocked).
+- DirectInput keyboard cooperative level is `0x16` (includes DISCL_NOWINKEY Ã¢â€ â€™ Windows key blocked).
 - Intermittent startup crash at `+0x876e9` (NULL D3D device). Loader now retries `CreateDevice`.
 
 ## Leftover netcode verdict (2026-10-09)
@@ -137,15 +137,15 @@ sent. The TCP 7534 / UDP 7533 beacon is most likely the developers' editor link 
 
 ## Players
 - Class `zFamilyGuyPlayer`, vtable `0xa1af14` (167 slots); base/sibling `zNetCommonPlayer` (`0xa8e49c`).
-- `+0xdf8` player index, `+0x38` → transform, position at transform `+0x30` (x, y, z floats).
+- `+0xdf8` player index, `+0x38` Ã¢â€ â€™ transform, position at transform `+0x30` (x, y, z floats).
 - Story level FRXX has 3 player objects (index 0 Stewie, 1 Brian AI partner, 2 unknown/inactive).
 
 ## Determinism / lockstep findings
 - Random: `srand` seeded from QPC at startup (`0x4ca150`); more RNGs: Mersenne Twister (`0x4f6790`,
   `0x49ed60`), LCGs (`0x41f260`, `0x4f67e0`, `0x6fab40`, `0x8601b0`, `0x8c3050`).
-- Time: QPC used 108×, GetTickCount 12×, timeGetTime 4×; `LockFramerate = 0` (variable dt).
+- Time: QPC used 108Ãƒâ€”, GetTickCount 12Ãƒâ€”, timeGetTime 4Ãƒâ€”; `LockFramerate = 0` (variable dt).
 - Threads (2026-10-10): the MAIN thread (the one that loads dinput8) runs game logic. Each tick:
-  wait for the render thread's go-ahead, poll XInput pads 0..18 itself (`0x4cc4a0` → `0x4b5670`;
+  wait for the render thread's go-ahead, poll XInput pads 0..18 itself (`0x4cc4a0` Ã¢â€ â€™ `0x4b5670`;
   keyboard/mouse `0x450930`), update (handing jobs to `_beginthreadex` workers, start `0x74B7E0`),
   then hand the frame to the render thread, which draws/presents while main starts the next tick.
   DirectInput joystick loop `0x47b080` (Sleep 15). The game pauses itself at level start.
@@ -164,7 +164,7 @@ Registry `HKCU\Software\Heavy Iron Studios Inc.\Family Guy\Settings`: `ScreenWid
 `ScreenWindowed`, `ScreenMonitor` (4-byte REG_BINARY), `Language`, `IsKeyboardMouseInput`, `KeyConfig`,
 `MainWindowPlacement`. The loader can override these per run (see README).
 
-Changing the size (2026-10-30): `GRFX_ChangeResolution` queues `0x44f920` → render thread `0x4cac40(w, h, windowed)` →
+Changing the size (2026-10-30): `GRFX_ChangeResolution` queues `0x44f920` Ã¢â€ â€™ render thread `0x4cac40(w, h, windowed)` Ã¢â€ â€™
 `0x447950` (same windowed state) / `0x419680` (windowed toggle): they fill the present parameters (`0xaf3418`), set
 "reset asked" `0xb06c12` and call the device reset `0x420880` (resources let go, TestCooperativeLevel, Reset through
 `0x48b760`, made again), keeping its answer in `0xaf35a1` (the frame `0x44da30` retries while it's 1). Scaleform's
@@ -178,11 +178,11 @@ All game data is opened via `CreateFileW` with relative paths like `./FGUY/Level
 loader can redirect individual files to modded copies later. The game also probes `./boot.ini` (not present).
 
 ## Data files (`FGUY\`)
-- `.ho` — main asset/level packages (69 files, ~2.5 GB). Magic `HEL\x1a`, version 1, build timestamp
+- `.ho` Ã¢â‚¬â€ main asset/level packages (69 files, ~2.5 GB). Magic `HEL\x1a`, version 1, build timestamp
   at 0x10, data begins ~0x400. Contents are **uncompressed** (readable strings, Havok `hk_2010.1.0-r1`
   physics blobs, AI behavior-tree names, tool tag `GoodEditor:PackView.GEPlugin`).
-- `.fsb` / `.fev` — FMOD sound banks / event files (standard, existing tools can open them).
-- `FMV\*.BIK` — Bink videos.
+- `.fsb` / `.fev` Ã¢â‚¬â€ FMOD sound banks / event files (standard, existing tools can open them).
+- `FMV\*.BIK` Ã¢â‚¬â€ Bink videos.
 
 ### Level naming
 `<2-letter world><mode>`. Worlds: AM, AP, BP, CH, CT, FR, GC, MC, PI, SS, TF.
@@ -962,6 +962,39 @@ ematch_<lobby pid>.txt`), whose lobby then
     side once; running 27-29 cm at 3.1 a second), held to 0.25 m/s and eased twice (the run's pose jumps up to 12 cm),
     kept with its time and drawn at the frame's (`MotionOffsetAt`, 12 ms behind): 0.8 deg walking, 1 deg running, its
     change frame to frame p95 30% of a step. Without a bob, running, the drill stays within 0.1 x 0.2 px.
+- **The game's own arm moves on the move (2026-11-05)**, `[Camera] FirstPersonMoves` (test pipe `fpv moves <0|1|2>
+  [<swing>] [<log>]`): 0 the aiming hold, steady; 2 the game's arms as it plays them - its walk and run are the relaxed
+  carry's: the gun hand 69 degrees off the aiming hold on average, at a run Peter's drill on its side along the bottom of
+  the view, flipping back at each stop (range 23 x 62 px of 320 x 180, a frame's worst jump 9.7); 1 the hold and the
+  game's swing on it: the gun hand against its average over 0.35 s (the rhythm and size of the stride, not the carry it
+  swings about - 6.7 degrees and 5 cm on average, up to 14), half of it, the average caught up first for 0.3 s after
+  setting off, eased in and out (range 8 x 19, worst 3.3; walking as even as the hold).
+- **Small arms (2026-11-05)**: a stance's hold measured while the view was still blending in (just switched to first
+  person, aiming: the eye still behind them) had the chest 5-6 ahead of the eye, not 0: the arms came out at 19% of their
+  size, same spot on the screen, until the hold was taken again. Holds are taken only all the way in first person now; the
+  character's size only all the way relaxed (easing back from aiming, Peter's came out 0.80, not 0.98). The user liked the
+  game's moves from there but not the size: `[Camera] FirstPersonArmFlat` (percent: the arms that much farther off at the
+  same spot on the screen, shrunk toward the eye by as much more, so no nearer a wall - a flat perspective, no gun
+  swung past a lens) and `FirstPersonArmSize` (how big they look: clip x, y zoomed about that spot, x' = m x + (1 - m) S w,
+  m = size / flat; bob and swing as far on the screen). What the off hand holds in a reload is a model on it, up to 6 x
+  the shrink from the gun hand - nearer than that taken for the gun's, or it floats unzoomed.
+- **Third person's arms (`FirstPersonMoves=3`, 2026-11-05, tuned on Peter only)**: the game's pose of both arms left as it is,
+  no aiming hold, the off hand free, on a steady chest - the relaxed hold, going to the aiming one by the game's own aim
+  weight (the hand higher aiming when flat: a gun pointing ahead has no perspective drawing it up the view). On the move
+  the arms go 0.8 of the way toward the relaxed carry (`fpv calm`): the rhythm kept, the run's gun on its side gone.
+  Zoomed, the gun hand is kept on its aiming hold. The relaxed carry is saved after the aiming holds in fpv_holds.dat
+  ("FPR1" section; older files have none) - until it's measured the gun stood at a tilt, uncalmed, for the first seconds.
+  The hidden body sits below the screen in this mode: behind the eye, the shoulders stretched to it fanned out black
+  over the bottom corner. Arm bones no nearer the eye than 0.4: at 0.22 Brian aiming wasn't drawn at all (0 skinned draws).
+  The character's size is the highest eye seen relaxed: pressing to aim, the eye starts down before the stance does.
+  Peter tuned further: aiming, the gun turned in (pitch 10, yaw 30, roll 10; straight ahead and flat, all that showed was its
+  back end, filling the view) at arm size 70. The off arm hangs under the view: moved up as it is, its hand at (-0.5, -0.6) of
+  the screen, turned so shoulder to hand runs at 118 degrees (the shoulder under the screen - in the corner its stretch
+  showed black spikes), from the relaxed and aiming poses by the stance, let go by the hands' distance (a reload reaches the
+  gun). The hidden body's place worked out through the zoom, under the middle of the screen. The worst pop was the zoom, not
+  the stance: the gun in under the crosshair at the game's lens speed (time constant ~40 ms) moved 44 px of 320 in a frame;
+  eased over 0.14 s, 5. The stance: the chest goes with the pose at once (eased, the aiming pose hung off the relaxed chest
+  and swung wide), the gun held as shown and eased onto it, the zoom spot and the gun's turn eased.
 - **Two-handed holds**: the game's relaxed carry has the off hand on the gun (Quagmire 0.44 from the gun hand, Lois
   0.36; Chris's bow string 0.42 - left out): that grip (against the gun hand) is where OffHand puts it, unless the game's
   moves take the gun hand 12+ degrees off its hold (a reload). Quagmire's aiming hold is how he zooms - the Tommy gun
@@ -977,6 +1010,99 @@ ematch_<lobby pid>.txt`), whose lobby then
 - `tools/start_arena.ps1` (`-Enemies` keeps them), `tools/test_fpv_all.ps1` (every character's first person on a
   contact sheet - `tools/re/fpv_frames.py`).
 
+## First person: Peter's poses, what the game says about its moves (2026-11-06)
+
+- **The truth to match**: `fpv armsraw 1` (none of ours) + `fpv hide 0` + `fpv 0 1 1.3 -3.2 1.4 0` (the eye behind him) + `fpv fov 30`
+  + `fpv face 0` (his body stays, the view turns): holding the right stick orbits the camera round the game's own Peter.
+- **His grip isn't broken**: fingers are never touched by us. The game's fist on the ribbed grip is what first person showed,
+  from along the barrel - the gun's drum in front of the hand. Peter's forearm runs in line with the barrel, so turning the
+  arm to point the barrel ahead points the forearm at the eye. Turned as one (pitch, yaw, roll about the gun hand) with a roll
+  of -40, the gun's side, the label and the forearm show.
+- **A pose per stance** (`g_peterPose`, motion.cpp; `fpv pose <n> <right> <down> <pitch> <yaw> <roll> <off x> <off y> <off way>`):
+  0 relaxed, 1 aiming, 2 zoomed, 3 reloading, 4 hands empty, 5 hands empty and not swinging. The relaxed carry has the barrel up
+  (pitch +40) and aiming ahead (pitch -40) for the same look on the screen: firing no longer moves the gun across the view.
+- **The upper body's block** ([player+0x13cc]): +0x60 the clip - 0 none, 0xb aiming, **4, 5, 6 the three parts of a reload**
+  (matching 4 alone let go of the pose with the hand 0.63 off its hold, the gun under the screen for half a second);
+  +0x5c what's under it - 0 standing, 2 walking, 4 running, 0x16 in the air. Landing: +0x5c is 0 again, but +0x104 (relaxed)
+  stays ~0.06 for half a second - the arms are held until it's back.
+- **The gun out**: [player+0xef58], the gun; 0 from the moment a melee swing starts until they aim or fire (it doesn't come back by
+  itself). A swing is no upper-body action (+0x104 stays 1). Whether the gun was drawn wouldn't do: lowered out of the view the
+  game stops drawing it, and it looked gone for good. Found with `fpv snap <0..3>` / `fpv diff 1`: what's the same in 0 and 2,
+  the same in 1 and 3, and differs between them.
+- **Reload's old drum**: let go at the gun - near the eye, the arm being shrunk - at full size: a black wall across the view.
+  Left out within 1.2 of the eye while reloading (FirstPersonSkipDraw).
+- **The black slabs by the sleeves** were a worn model's own outline (models.cpp): a fixed width, however small the bones - 14 times
+  too wide on arms shrunk to 0.07. Not the game's outline shells: `fpv shells 0` changed nothing. Now by the bones' size.
+- **Field of view**: a slider (60-120 by 5; 80 the game's, kept as 0). Its code in the input: opts bits 4..6, and the top bit in
+  `aim`'s bit 7 (aim is 0..100) - the size of the input unchanged, the old five choices their old codes. Checked in a match at 115:
+  every PC has it, aim sensitivity read right.
+- **The arms' ink** (2026-11-06): the game's strokes are made for its camera, in view space, and a player's own are left out in first
+  person, so the arms were flat colour: one pink shape, no fingers. Now each piece of the arms is drawn first in black, 2 px (at 720
+  lines) off in eight directions and a little behind (depth bias 1e-5, slope 4), then as itself (cosmetics.cpp ArmInkDraw): a line round
+  the arm and round a finger over the palm. More bias and the lines between the fingers go; none and the black covers the arm. Two traps:
+  the black shader has to be the game's shader model (its VS are vs_3_0: a ps_2_0 draws nothing, no error) and characters draw with
+  ALPHABLENDENABLE on (ONE, ZERO), so that says nothing about the pass; ZWRITEENABLE does. `fpv ink <px> <bias> <slope>`.
+- **The idle fidget, third person's arms**: stood still it plays every few seconds, and only moving was held out in mode 3: the off arm
+  thrown straight up, the gun swung 52-68 degrees, the off arm and most of the gun gone at its height. Held out now by its own weight.
+  Tests of the first few seconds never see it: stand still 15 s.
+- **Arms gone for a few frames of every punch**: the game drew none of the character (`fpv vmcount 1`: 155 skinned draws to 148, the
+  player's 7 missing). A punch lunges them forward at 17 m/s (the eye 1.44 m in 5 frames) and the hidden body, 0.4 ahead, comes too near the
+  camera: a frame's 0.28 m at 60 fps, half that at 120, so **720p at 120 fps never showed it - test at 1080p too**. Peter's hidden
+  body is now far below (`fpv hidedown <y> <ahead>`, -12 0.4; others -3 0.4). Same punches, one launch, alternating, complete bursts: 33
+  of 1500 frames with no arms at -3, none at -12. Farther ahead (1.2) worked too but what's stretched from the shoulders then lay over
+  the sleeves. Ruled out on the way: moving it only a little within the view (-1.6: 1 and 12 frames against 15 and 13).
+- **A punch, hands empty**: the gun arm is aimed like the off arm (`fpv punch <up> <in> <twist> <thumb>`, 35 25 12 -1: the right hand is the left's mirror, fingers -x, thumb -z, palm +y; +z turned the fist over, palm out) about the hand, its
+  path the game's: it swung past the lens, on end and then lying across the view, and left a handless sleeve for half a second. Pushed
+  ahead as the off arm is. The off arm's hold hands empty: where it's been lately (kOffFollow), plus what's between that and its
+  look at rest with the gun - the game holds it elsewhere then, and it stayed high, hand up.
+- **Peter's arm rig, rebuilt** (2026-11-06; what's above about poses, wrists and the off arm's push was for the flat rig this replaces).
+  The tilt, the arm's visible end and the punch out of its socket had one cause: a third-person arm turned rigidly about the hand and
+  drawn from afar (5 units, zoomed 3.5x). In flat perspective a gun pointing ahead shows only its back, so it had to lean; nothing tied the
+  arm to a shoulder. Now (motion.cpp g_rig, ArmIk; `fpv rig <hands ahead> <shoulder right> <down> <ahead> <shrink> <kept ahead>`):
+  - *True perspective*: hands 1.3 ahead of the eye at their own size. Not a person's arm's length: the arm is 0.58 (0.284 + 0.298) but the
+    drill as long as his body - at 0.42 the view was inside it.
+  - *Kept off the camera*: a bone near the camera and the game draws none of the character. What's drawn is shrunk 0.1 and put 0.7 ahead of
+    the eye, the draw's eye moved up the same (hand[16], FollowX): the same on the screen, every bone 0.79+ from the camera, all within
+    kShellNear. The muzzle's flash, placed by the game, comes out near the crosshair.
+  - *Two-bone IK* (ArmIk): the hand stays where the pose has it, the shoulder goes to its place (0.5 right, 0.5 down, 0.9 ahead: off the
+    screen), nearer the hand if it wouldn't reach - nothing stretches - and the elbow bends down and out. Forearm and upper arm keep the
+    twist the game's pose has to the hand. Hands empty (and the off hand) lined up with the forearm.
+  - *The gun aimed by its own axes*: g_gunInHand (measured: `fpv vmlog 1`, "gun in hand"; its +z the barrel). Each frame the stance's hold,
+    between relaxed and aiming as the game eases, is turned to the pose's pitch, yaw, roll from straight ahead; all the game does from the
+    hold comes through on top (a reload at 55%, a punch at 70%). Relaxed and aiming are the same pose: firing doesn't move the gun.
+  - FirstPersonArmSize / ArmFlat no longer apply to Peter. A worn model's parts partly on the hidden body aren't drawn with the arms
+    (Part.stretched: the vest's side made a brown slab along the forearm).
+  - *Fingers* (HandShape, g_fingers; `fpv fingers <relaxed> <tip> <grip> <tip> <step> <fan>`): the game's hands are made to be seen small -
+    each relaxed finger curled its own way, on the grip the middle and ring at 50 degrees and the first straight. Posed by bone now (the
+    hand, then a finger's two bones three times, the thumb's two, the palm). Alike and parallel they closed into a mitten: each finger
+    curls 12 degrees more than the last and they fan 0.2. A punch keeps the game's fist, which is better than one posed.
+    The grip is thicker than his fingers go round: even the game's own hand has two tips out of its far side and the thumb through it
+    into the gun, unseen on a small character. Curled 35 + 25 the fingers lie round its front edge, the thumb along its outside
+    (g_gripThumb, `fpv thumb`). Look at it from all sides: `fpv rig 0.8 0.5 0.5 0.4`, then `fpv pose 0` with yaw 75, -60 and pitch 55.
+  - Ink at this rig: bias 3e-5, slope 3 (at 1e-5 thin dashes ran along the forearm).
+  - *A reload*: 90% of the game's swing taken out of the gun (`fpv less <reload> <walk>`): it swung over the crosshair. The off hand moves by
+    what the gun arm's moved by, so it keeps its work on the gun: the old drum off, the new one seated. Its shoulder then goes under the hand,
+    below the view: reaching across from its own side it wouldn't reach, and the shoulder was drawn into the view, a hump of sleeve.
+  - *The walk*: 70% of the game's swing taken out of the off hand, by st.moving: it went off the bottom of the view.
+  - *Aiming, the off arm*: kept as it is relaxed (rot, pos and root toward its relaxed hold, with its look at rest), unless reloading or
+    throwing: the game's aiming arm is elsewhere and it jumped up at every shot. Its "reaching for the gun" is off then too.
+  - *Clips*: firing and zooming are action 4 too (clips 11, 2); a reload 4, 5, 6; a power-up used or a weapon changed 7..10 - their swing of
+    the gun taken down 80% (st.actionNow). Going by the action alone it counted every shot.
+  - The muzzle's flash needed nothing: the barrel points at the crosshair, so the flash, placed by the game near the middle, is at its tip.
+  - The swing trail is left as the game's: it shows the swing, behind the arm.
+  - Rough: the gun sits lower running. The first second of a reload, the off hand is below the view.
+- **The taunt** (2026-11-06): keyboard T = action 48 (keys `0xadc294 + action * 8`); the pad's binding (`0xadbac8 + action * 8`) is 0x20, D-pad
+  down - the "gesture" of the power-up notes. Peter puts the gun away and does a routine of the whole body for 7.2 s; firing or moving cuts it
+  short and the gun comes back by itself. **`[player+0x22e0]`: 1 exactly while it plays** (0 walking, firing, in a punch; +0x4f68 follows
+  the gun, 0 in a punch too; found with `fpv snap` / `fpv diff`). It plays in the idle fidget's layer, so the arms were held: a hand frozen
+  in the air, no gun. Now the view goes behind them as for an emote (Taunting, firstperson.cpp). Going and coming back, through their
+  head, the inside of the hat filled the screen: theirs not drawn while the pull is 0.05..0.6 (FirstPersonOwnDraw -2; outlines too).
+- Still open: the off hand is the game's open hand, placed; no emote pack for Peter to test emoting with; the game's swing trail is drawn
+  through the arm; the ink is on every character's arms, tested on Peter only.
+
+- **Wrists** (2026-11-06): each pose also bends each hand at its wrist (`fpv pose`, values 9-14: gun hand, off hand; pitch, yaw, roll in the view). The arm stays where the forearm shows, the hand levels the gun: rolling the whole arm tilted it. Fingers and gun are on the hand, so the grip stays the game's. Arms are zoomed about the middle of the screen, not the gun hand: the game culls each piece from where it really is, and shrunk at the hand's spot the gun's pieces sat at the view's edge.
+- **Gun pieces**: `fpv vmcount 1` logs the gun's draws per frame. They go 4 to 2 now and then (looking down, running); frame-by-frame pixel checks (600 frames, both arm modes, before and after the middle-of-screen change) found no visible dip, so what the user saw is not reproduced. T (the taunt): untested - test copies run in pad mode and a keyboard-mode copy didn't get as far as drawing.
+- **The off arm** (2026-11-06): spinning the hanging arm round the view to raise it turned the hand wrong way round, the back of it flat at the eye; the wrist can't undo a twisted arm. `fpv offbones 1` logs the hand's bones: in its axes the fingers are +x, the thumb +z, the palm -y. Now the forearm (elbow to hand) and thumb are aimed: two vectors give the whole turn, from each stance's arm (pose values: up, in, twist; 35, 25, 40). Reaching ahead puts the shoulder near the eye, and the nearest bone sets both arms' shrink (the gun jumped, the hand went): the arm is pushed ahead by its own length along the view.
 ## Controller look: how the right stick turns the camera (2026-11-03)
 - **The sticks as floats**: a controller's poll `0x4b5670` (XInputGetState) hands the four shorts LX LY RX RY to
   `0x4b4ec0` (cdecl: out = device state +0x14, the shorts, count 2, center 0, min -32768, max 32767, -7849, 7849 - the

@@ -77,11 +77,11 @@ function FGUYDrawGfx(ui) {
         FGUYText(ui, 104, y + 48, 840, 28, r.hint, false, 16, FGUYC.muted2, 'left');
         var vx = 940, vw = 560, vy = y + 19;
         FGUYRect(ui, vx, vy, vw, 48, 14, FGUYC.ink, 100, hot ? FGUYC.yellow : FGUYC.glow, 100, 2);
-        if (r.kind == 's') {   // a slider: the bar, its value
-            var v = Number(r.value), bx = vx + 70, bw = vw - 220;
+        if (r.kind == 's') {   // a slider: the bar, its value ("<0-100>|<what to show>" if that's not the number itself)
+            var at = r.value.split('|'), v = Number(at[0]), bx = vx + 70, bw = vw - 220;
             FGUYRect(ui, bx, vy + 19, bw, 10, 5, FGUYC.deep, 100, FGUYC.rowLine, 100, 1);
             FGUYRect(ui, bx, vy + 19, Math.max(10, bw * v / 100), 10, 5, FGUYC.yellow, 100, FGUYC.yellow, 100, 1);
-            FGUYText(ui, vx + vw - 140, vy + 8, 90, 32, String(v), false, 22, FGUYC.white, 'center');
+            FGUYText(ui, vx + vw - 140, vy + 8, 90, 32, at.length > 1 ? at[1] : String(v), false, 22, FGUYC.white, 'center');
         } else {
             FGUYText(ui, vx + 50, vy + 8, vw - 100, 32, r.value, false, 20, hot ? FGUYC.yellow : FGUYC.white, 'center');
         }

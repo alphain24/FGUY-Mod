@@ -964,8 +964,8 @@ void GraphicsPresent(IDirect3DDevice9* dev) {
 }
 
 // ---- the SETTINGS page (the main menu: src/ui/lobby.as2js FGUYDrawGfx) -------------------------------------------
-// Four pages of rows: FGUYMOD_GfxRows(page) -> "label~value~kind~hint\n..." (kind: c a choice, s a 0-100 slider,
-// l a link - A opens the game's own page for it), FGUYMOD_GfxChange(page, row, delta: -1 / +1 / 0 for A) -> what the
+// Four pages of rows: FGUYMOD_GfxRows(page) -> "label~value~kind~hint\n..." (kind: c a choice, s a 0-100 slider - its
+// value "<0-100>|<what to show>" if that's not the number itself, l a link - A opens the game's own page for it), FGUYMOD_GfxChange(page, row, delta: -1 / +1 / 0 for A) -> what the
 // menu does then: 0 nothing, 1 the game's Screen page, 2 the game's Options. Changes show at once and are saved.
 namespace {
 std::string g_rows;
@@ -1026,7 +1026,7 @@ const char* GraphicsMenuRows(int page) {
     } else {
         row("First person", FirstPersonDefault() ? "ON" : "OFF", 'c',
             "Play through your character's eyes. In a match: V, or Back twice on a controller, switches");
-        row("Field of view", FirstPersonFovName(), 'c', "In first person: how wide you see. Wider shows more around you");
+        row("Field of view", FirstPersonFovSlider(), 's', "In first person: how wide you see, in degrees. 80 is the game's own");
         row("Crosshair", FirstPersonCrosshair() ? "ON" : "OFF", 'c', "In first person: a mark in the middle of your view, where your shots go");
     }
     return g_rows.c_str();
@@ -1057,7 +1057,7 @@ int GraphicsMenuChange(int page, int row, int delta) {
         if (row == 1) return 2;
     } else {
         if (row == 0) FirstPersonSetDefault(!FirstPersonDefault());
-        if (row == 1) FirstPersonFovStep(dir);
+        if (row == 1 && delta) FirstPersonFovStep(delta);
         if (row == 2) FirstPersonSetCrosshair(!FirstPersonCrosshair());
     }
     return 0;

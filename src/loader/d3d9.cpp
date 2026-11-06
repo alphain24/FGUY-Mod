@@ -636,6 +636,7 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, 
                                        const RGNDATA* dirty) {
     GraphicsPresent(self);   // (graphics.cpp: anti-aliasing, sharpening, brightness)
     if (g_burstLeft > 0) BurstFrame(self);
+    FirstPersonFrameEnd();
     if (MotionOrderTrace() > 0) {
         LARGE_INTEGER n, f;
         QueryPerformanceCounter(&n);

@@ -120,7 +120,9 @@ void OnlineSettingsStamp(KbmRaw* k) {
         k->opts = (BYTE)((g_mine.invert ? 1 : 0) | (g_mine.reticles ? 2 : 0) | 0x80);
     }
     k->opts |= (BYTE)(0x08 | (FirstPersonMine() ? 0x04 : 0));   // (bit 3: bit 2 is first person - firstperson.cpp)
-    k->opts |= (BYTE)((FirstPersonFovMine() & 7) << 4);         // (bits 4..6: its field of view)
+    int fov = FirstPersonFovMine();                             // (its field of view's code: bits 4..6, the top in aim's bit 7)
+    k->opts |= (BYTE)((fov & 7) << 4);
+    k->aim |= (BYTE)(fov >> 3 << 7);
 }
 
 // Every tick on every PC, before the game runs it: every player's own aim settings onto their player.
@@ -136,12 +138,15 @@ void OnlineSettingsApply(const KbmRaw* bySlot, int players) {
         const KbmRaw& k = bySlot[slot];
         if (k.opts & 0x08) {
             FirstPersonFromInput(slot, (k.opts & 0x04) != 0);
-            FirstPersonFovFromInput(slot, (k.opts >> 4) & 7);
+            FirstPersonFovFromInput(slot, ((k.opts >> 4) & 7) | (k.aim >> 7 << 3));
         }
         if (!(k.opts & 0x80)) continue;
         float& aim = *reinterpret_cast<float*>(kAimSensitivity + i * 4);
-        float want = k.aim / 100.0f;
-        if (aim != want) aim = want;
+        float want = (k.aim & 0x7f) / 100.0f;
+        if (aim != want) {
+            aim = want;
+            Log(L"Settings: player %d's aim sensitivity is %.2f", slot, want);
+        }
         int view = *reinterpret_cast<int*>(p + 0xdfc);
         if (view >= 0 && view < 4) {
             BYTE& inv = *reinterpret_cast<BYTE*>(kInvertAt + view * kViewSize);

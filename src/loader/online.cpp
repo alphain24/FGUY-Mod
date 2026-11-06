@@ -82,7 +82,7 @@ std::string g_serverHost;
 int g_serverPort = 7650;
 std::string g_serverSetting;        // FGUYMod.ini's [Online] Server
 bool g_modServer = true;            //   empty or one of the mod's own: the mod's server, wherever server.txt says
-const char* kServer = "91.226.56.14:7650";   // the mod's lobby server if GitHub was never reachable
+const char* kServer = "91.226.56.31:7650";   // the mod's lobby server if GitHub was never reachable
 std::string g_name;
 std::string g_saveB64;              // the host's save, received before START
 std::string g_rejoin;               // "<code> <token> <slot>": the lobby to go back to after a match
@@ -772,7 +772,7 @@ void OnlineEnter() {
     // mod's server too, wherever it is now)
     g_serverSetting = Narrow(server);
     g_modServer = g_serverSetting.empty();
-    for (const char* mod : {"91.226.56.14", "145.79.134.160", "87.76.191.217"})
+    for (const char* mod : {"91.226.56.31", "91.226.56.14", "145.79.134.160", "87.76.191.217"})
         if (g_serverSetting.rfind(mod, 0) == 0) g_modServer = true;
     DWORD len = 64;
     wchar_t user[64] = L"Player";
