@@ -17,6 +17,7 @@
 //   AntiAliasing     = 0 off | 1 FXAA   (FGUYMOD_GFX_AA)
 //   Sharpening       = 0..100           (FGUYMOD_GFX_SHARPEN)
 //   Brightness       = 0..100, 50 the game's   (FGUYMOD_GFX_BRIGHT)
+//   DepthOfField     = 0 off | 1 the game's blur while aiming   (FGUYMOD_GFX_DOF)
 
 #include "common.h"
 
@@ -26,11 +27,13 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string>
 
 namespace {
 
 volatile int g_sharp = 1, g_filter = 16, g_aa = 0, g_sharpen = 0, g_bright = 50;
 volatile int g_lines = 0;   // (the ink lines' width: 0 auto - as on the console at any resolution - or 100-300 %)
+volatile bool g_dof = false;   // (the aimed view's blur: the game's with it on - near blur never in first person)
 volatile bool g_hdChars = true;   // (the characters' textures at twice their size - cosmetics.cpp)
 volatile bool g_statesDirty = false;   // (a filtering setting changed: every stage again, on the render thread)
 IDirect3DDevice9* g_dev = nullptr;
@@ -418,6 +421,14 @@ bool PatchInkShader(const DWORD* in, std::vector<DWORD>& out) {
     return true;
 }
 
+// The aimed view's final pass (bloom and depth of field: constants BloomSampler, BlurryScreenSampler, DepthSampler, focusPoints,
+// ScreenSampler; the game sets focusPoints = 666.667 -1.33333 -25 3 before each such draw): in first person its near half
+// (z, w) is left at 0. With it, for the first frames of each shot's flash, the picture came out without the arms, the gun and
+// the flash's core, the wall behind inside their outlines, and without any glow - the black flashes. Aimed shots only: the
+// hip's view has no depth of field. Nothing near the eye is the world's in first person, so nothing wanted from it there.
+std::vector<std::pair<IDirect3DPixelShader9*, UINT>> g_focusPs;
+bool g_aimNearBlur = false;   // (research: "fpv nearblur 1" - the game's)
+
 HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* self, const DWORD* code, IDirect3DPixelShader9** out) {
     if (code && CtabNames(code) == "FogColor,diffuseMap,lightMap") {
         std::vector<DWORD> patched;
@@ -433,6 +444,8 @@ HRESULT STDMETHODCALLTYPE Hook_CreatePixelShader(IDirect3DDevice9* self, const D
     if (SUCCEEDED(hr) && code && out && *out && g_psTrace) g_psNames.push_back({*out, CtabNames(code)});
     UINT outlineReg;   // (the characters' outline shells: inside-out black copies - FogColor, outlineColor)
     if (SUCCEEDED(hr) && code && out && *out && CtabRegister(code, "outlineColor", &outlineReg)) g_outlinePs.push_back(*out);
+    UINT focusReg;
+    if (SUCCEEDED(hr) && code && out && *out && CtabRegister(code, "focusPoints", &focusReg)) g_focusPs.push_back({*out, focusReg});
     UINT skipReg;   // (a name, or "=" and a shader's whole list of constant names as the trace prints it)
     if (SUCCEEDED(hr) && code && out && *out && g_psSkip[0] &&
         (g_psSkip[0] == '=' ? CtabNames(code) == g_psSkip + 1 : CtabRegister(code, g_psSkip, &skipReg)))
@@ -477,6 +490,13 @@ HRESULT STDMETHODCALLTYPE Hook_SetPSConstF(IDirect3DDevice9* self, UINT start, c
     HRESULT hr = Real_SetPSConstF(self, start, data, count);
     if (start <= kInk && start + count > kInk && g_curPs && std::find(g_inkPs.begin(), g_inkPs.end(), g_curPs) != g_inkPs.end())
         Real_SetPSConstF(self, kInk, g_inkConst, 1);   // (the game's own over ours: ours again)
+    if (!g_aimNearBlur && (!g_dof || FirstPersonAny()))
+        for (const auto& f : g_focusPs)
+            if (f.first == g_curPs && f.second >= start && f.second < start + count) {
+                const float* given = data + (f.second - start) * 4;
+                float v[4] = {g_dof ? given[0] : 0, g_dof ? given[1] : 0, 0, 0};   // (far blur x, y; near blur z, w)
+                Real_SetPSConstF(self, f.second, v, 1);
+            }
     for (const PsWatch& w : g_psWatch) {
         if (w.ps != g_curPs || w.reg < start || w.reg >= start + count) continue;
         PsConst& c = g_psConst[w.which];
@@ -591,7 +611,54 @@ void DumpShaders(IDirect3DDevice9* dev) {
     Log(L"Graphics test: shaders written to %s", path);
 }
 
+// research (with FGUYMOD_TEST_PSTRACE): fpv framelog <frames> - each frame's pixel shaders in order, "index*draws", and at each
+// change of render target its width: a frame that draws differently from its neighbours shows in the log
+int g_frameLog = 0, g_fDraws = 0, g_fRun = 0;
+IDirect3DPixelShader9* g_fLast = nullptr;
+UINT g_fWidth = 0;
+std::string g_fSeq;
+std::vector<IDirect3DPixelShader9*> g_fKnown;
+
+void FrameLogDraw(IDirect3DDevice9* dev) {
+    ++g_fDraws;
+    IDirect3DSurface9* rt = nullptr;
+    D3DSURFACE_DESC d = {};
+    if (SUCCEEDED(dev->GetRenderTarget(0, &rt)) && rt) { rt->GetDesc(&d); rt->Release(); }
+    if (g_curPs == g_fLast && d.Width == g_fWidth) { ++g_fRun; return; }
+    if (g_fRun) g_fSeq += "*" + std::to_string(g_fRun) + " ";
+    if (d.Width != g_fWidth) { g_fSeq += "@" + std::to_string(d.Width) + " "; g_fWidth = d.Width; }
+    size_t i = std::find(g_fKnown.begin(), g_fKnown.end(), g_curPs) - g_fKnown.begin();
+    if (i == g_fKnown.size()) {
+        g_fKnown.push_back(g_curPs);
+        const char* name = "?";
+        for (auto& n : g_psNames) if (n.first == g_curPs) name = n.second.c_str();
+        Log(L"Graphics frames: shader %d = %S", (int)i, name);
+    }
+    g_fSeq += std::to_string(i);
+    g_fLast = g_curPs;
+    g_fRun = 1;
+}
+
+void FrameLogEnd() {
+    if (g_frameLog <= 0) return;
+    --g_frameLog;
+    if (g_fRun) g_fSeq += "*" + std::to_string(g_fRun);
+    Log(L"Graphics frame %d: %d draws: %S", g_frame, g_fDraws, g_fSeq.c_str());
+    g_fSeq.clear();
+    g_fDraws = g_fRun = 0;
+    g_fLast = nullptr;
+    g_fWidth = 0;
+}
+
 bool SkipDraw(IDirect3DDevice9* dev) {
+    if (g_frameLog > 0) FrameLogDraw(dev);
+    if (g_frameLog > 0)
+        for (const PsWatch& w : g_psWatch) {
+            if (w.ps != g_curPs) continue;
+            float v[4] = {};
+            dev->GetPixelShaderConstantF(w.reg, v, 1);
+            Log(L"Graphics frame %d:    %S = %g %g %g %g", g_frame, g_psConst[w.which].name, v[0], v[1], v[2], v[3]);
+        }
     if (g_psTrace && g_frame % 1000 == 999 && g_curPs != g_loggedPs) {
         g_loggedPs = g_curPs;
         if (g_dumpShader[0] && !g_shaderDumped)
@@ -858,6 +925,7 @@ void GraphicsLoadSettings() {
     int l = SettingInt(L"Graphics", L"LineThickness", L"FGUYMOD_GFX_LINES", 0);
     g_lines = l <= 0 ? 0 : l < 100 ? 100 : l > 300 ? 300 : l;
     g_hdChars = SettingInt(L"Graphics", L"HDCharacters", L"FGUYMOD_GFX_HD", 1) != 0;
+    g_dof = SettingInt(L"Graphics", L"DepthOfField", L"FGUYMOD_GFX_DOF", 0) != 0;
     Log(L"Graphics: sharp picture %s, texture filtering %d, anti-aliasing %s, sharpening %d, brightness %d, line thickness %d%s, "
         L"HD character textures %s", g_sharp ? L"on" : L"off", g_filter, g_aa ? L"FXAA" : L"off", g_sharpen, g_bright, g_lines,
         g_lines ? L"%" : L" (auto)", g_hdChars ? L"on" : L"off");
@@ -903,6 +971,9 @@ void GraphicsDeviceCreated(IDirect3DDevice9* dev, UINT w, UINT h) {
     ResetStages(dev);
 }
 
+void GraphicsFrameLog(int frames) { g_frameLog = frames; }
+void GraphicsAimNearBlur(bool on) { g_aimNearBlur = on; }
+
 void GraphicsBeforeReset() { ReleaseTargets(); }
 
 void GraphicsAfterReset(IDirect3DDevice9* dev, UINT w, UINT h) {
@@ -917,6 +988,7 @@ void GraphicsPresent(IDirect3DDevice9* dev) {
     static int frames = 0;
     if (++frames == 600) Log(L"Graphics: %d of %d vertex shaders have the half-pixel fix", g_vsPatched, g_vsSeen);
     g_frame = frames;
+    FrameLogEnd();
     if (g_statesDirty && Real_SetSamplerState) {
         g_statesDirty = false;
         for (int s = 0; s < kStages; ++s) {
@@ -1028,6 +1100,7 @@ const char* GraphicsMenuRows(int page) {
             "Play through your character's eyes. In a match: V, or Back twice on a controller, switches");
         row("Field of view", FirstPersonFovSlider(), 's', "In first person: how wide you see, in degrees. 80 is the game's own");
         row("Crosshair", FirstPersonCrosshair() ? "ON" : "OFF", 'c', "In first person: a mark in the middle of your view, where your shots go");
+        row("Depth of field", g_dof ? "ON" : "OFF", 'c', "The blur on things far off while aiming. Off: everything stays sharp");
     }
     return g_rows.c_str();
 }
@@ -1059,6 +1132,7 @@ int GraphicsMenuChange(int page, int row, int delta) {
         if (row == 0) FirstPersonSetDefault(!FirstPersonDefault());
         if (row == 1 && delta) FirstPersonFovStep(delta);
         if (row == 2) FirstPersonSetCrosshair(!FirstPersonCrosshair());
+        if (row == 3) { g_dof = !g_dof; Save(L"Graphics", L"DepthOfField", g_dof); }
     }
     return 0;
 }

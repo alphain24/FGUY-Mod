@@ -271,6 +271,12 @@ float g_punchAim[4] = {35, 25, 12, -1};   // (the right hand's a mirror of the l
 // frames of every punch at 60 fps, none at 120. Peter's is far below instead, as far from the eye but out of a lunge's way: the same
 // punches in one launch, 33 frames of 1500 with no arms under the view, none here. (Farther ahead did it too, but what's stretched
 // from his shoulders to it then lay over the sleeves.)
+// A shot's kick, Peter's: the game's own is taken out zoomed in (the gun held on the crosshair) and small otherwise. Each round fired - the
+// clip going down - throws the gun back and up, alternately to each side, and it comes back: how far back, up (for an eye 1.8 up), the
+// barrel up and aside (degrees). "fpv kick <back> <up> <pitch> <yaw>"
+float g_kick[4] = {0.16f, 0.025f, 5, 1.5f};
+const float kKickIn = 0.012f, kKickOut = 0.085f;   // (s: how fast it's thrown; how fast it comes back)
+bool g_shotLog = false;
 float g_hideAhead = 0.4f;
 float g_hideDown = -3.43f;
 // Peter's arms as a shooter's. Placed in the view at their own size, as a person's are - the hand half an arm's length ahead, the
@@ -281,8 +287,9 @@ float g_hideDown = -3.43f;
 // How far ahead the hands are; the shoulder right, down, ahead of the eye (for an eye 1.8 up); the shrink; how far ahead it's kept.
 // (his drill's as long as his body: at a person's arm's length the view was inside it. The arm's 0.58 - the shoulder comes forward
 // with the hand, wide and low enough to stay off the screen. Kept within kShellNear of the eye, gun and all: its outline's split there)
-float g_rig[6] = {1.3f, 0.5f, 0.5f, 0.9f, 0.1f, 0.7f};
+float g_rig[6] = {1.3f, 0.5f, 0.5f, 0.9f, 0.1f, 1.2f};
 M3 g_gunInHand = {{-0.0271f, 0.0270f, -0.9993f, 0.9292f, -0.3680f, -0.0351f, -0.3686f, -0.9295f, -0.0152f}};   // (the gun's axes in the hand's)
+const float kAirLess = 0.85f;   // (in the air: the game's arms flung about, the gun down at the bottom of the view)
 const float kPunchLess = 0.3f, kActionLess = 0.8f;   // (a punch's; an upper-body action's - a power-up used, a weapon changed: the gun flung over the view)
 // (how much of the game's own move is taken out: of a reload's from the gun - the off hand keeps its work on the gun, the two moved
 // as one - and of the walk's from the off hand, which it swung off the bottom of the view. Research: "fpv less <reload> <walk>")
@@ -300,7 +307,7 @@ void ArmAim(float upDeg, float inDeg, float twistDeg, float inward, V3* t1, V3* 
     V3 tUp = Unit(V3{0, 1, 0} - *t1 * t1->y), tRight = Unit(Cross(*t1, tUp));
     *t2 = tUp * cosf(tw) - tRight * (inward * sinf(tw));
 }
-const float kReloadEase = 0.08f, kEmptyEase = 0.06f, kEmptyDownEase = 0.14f, kAirEase = 0.08f, kAirOut = 0.12f;
+const float kReloadEase = 0.08f, kEmptyEase = 0.06f, kEmptyDownEase = 0.14f, kAirEase = 0.03f, kAirOut = 0.12f;
 const float kSwingSpeed = 1.2f;   // (their gun hand moving this fast against the chest, a second, in their size: a swing -
 const float kSwingFor = 0.3f;     //  and for this long after it. What a swing is once the gun's gone: no action says so)
 bool g_swingLog = false;
@@ -368,6 +375,9 @@ struct ArmState {
     float offHoldQ[4] = {};               // (...hands empty: the turn that aims it and where its hand's been lately)
     V3 offHoldAt = {0, 0, 0};
     bool haveOffHold = false;
+    int rounds = 0;                       // (the clip, for each shot's kick; how far kicked, where it's going, which way aside)
+    bool haveRounds = false;
+    float kickNow = 0, kickTo = 0, kickSide = 1;
     float actionNow = 0;                  // (an upper-body action going on, eased)
     float offFixQ[4] = {};                // (...what's between its turn with the gun and that one, at rest)
     V3 offFixAt = {0, 0, 0};
@@ -1102,7 +1112,9 @@ bool ArmsInViewOnce(int slot, const unsigned char* ent, float* rot, float* pos, 
     // (in the air all the way: the game's jump has the arms flung about - the gun out of the view, the off hand up across it)
     // (and landing: half a second with the relaxed stance still away, its dip took the gun out of the view too)
     bool landing = st.airNow > 0.05f && view.rest < 0.5f && view.aim < 0.01f;
-    float inAir = view.moveClip == 0x16 || landing ? 1.0f : 0.0f;
+    // (0x16 a jump standing, 0x17 on the move; 0x14 and 0x15 the falls they go on to after 3/4 s: the arms flung out of the view,
+    // the off hand turned)
+    float inAir = (view.moveClip >= 0x14 && view.moveClip <= 0x17) || landing ? 1.0f : 0.0f;
     st.airNow += (inAir - st.airNow) * (stepDt > 0 ? 1 - expf(-stepDt / (inAir > 0 ? kAirEase : kAirOut)) : 1);
     float calmed = act * st.moving * g_armCalm;
     // (the idle fidget too, third person's arms: stood still it threw the off arm straight up and the gun about every few seconds -
@@ -1164,6 +1176,16 @@ bool ArmsInViewOnce(int slot, const unsigned char* ent, float* rot, float* pos, 
         bool reloading = view.clip >= 4 && view.clip <= 6;
         st.reloadNow += ((reloading ? 1.0f : 0.0f) - st.reloadNow) * (stepDt > 0 ? 1 - expf(-stepDt / kReloadEase) : 1);
         st.emptyNow += ((view.gunOut ? 0.0f : 1.0f) - st.emptyNow) * (stepDt > 0 ? 1 - expf(-stepDt / kEmptyEase) : 1);
+        if (st.haveRounds && view.rounds < st.rounds) {
+            st.kickTo = st.kickTo + 1 > 1.4f ? 1.4f : st.kickTo + 1;
+            st.kickSide = -st.kickSide;
+            if (g_shotLog) Log(L"Motion: shot - %d rounds, aim %.2f rest %.2f clip %d gun %d", view.rounds, view.aim, view.rest, view.clip, view.gunOut ? 1 : 0);
+        }
+        st.rounds = view.rounds, st.haveRounds = true;
+        if (stepDt > 0) {
+            st.kickNow += (st.kickTo - st.kickNow) * (1 - expf(-stepDt / kKickIn));
+            st.kickTo *= expf(-stepDt / kKickOut);
+        }
         // (a power-up used, a weapon changed: clips 7..10. Not the action alone: firing and zooming are action 4 too, clips 11 and 2)
         bool tossing = view.clip >= 7 && view.clip <= 10;
         st.actionNow += ((tossing ? 1.0f : 0.0f) - st.actionNow) * (stepDt > 0 ? 1 - expf(-stepDt / kReloadEase) : 1);
@@ -1204,6 +1226,7 @@ bool ArmsInViewOnce(int slot, const unsigned char* ent, float* rot, float* pos, 
     float depth = (hand.z > ahead0 * k ? hand.z : ahead0 * k) * armFar;
     if (posed) depth = g_rig[0] * k;
     V3 want = {-side * right * av.tans[0] * depth, -down * av.tans[1] * depth, depth};   // (x: to the left)
+    if (posed) want = want + V3{0, g_kick[1] * k * st.kickNow, -g_kick[0] * k * st.kickNow};
     // Sway and bob, as a shooter's gun has: turning, the arms lag a little behind the view (and settle); on the move, a
     // gentle bob of their own (the game's run swing is held out - above).
     {
@@ -1392,14 +1415,20 @@ bool ArmsInViewOnce(int slot, const unsigned char* ent, float* rot, float* pos, 
                 HandOn(parent, roots[0], a.hand, st.relaxRootQ[0], st.relaxRootAt[0], st.relaxRot.data(), st.relaxPos.data(), &relR, &relP);
                 ToQuat(relR, qRel);
                 Toward(qRel, qHold, s, qHold);
+            } else {
+                // (no relaxed hold yet - it's taken standing steady and looking level, 34 s into a first game: the gun 65 degrees off and
+                // the hand out of the view until then. Held as it's held aiming till there is one. The game's own relaxed hand wouldn't do:
+                // it's on another chest, the gun came out huge and turned)
+                Tr = hR;
+                Tp = hP;
             }
             // (a reload swings the gun past the view, the drill being what it is, and a punch's fist goes across it: less of them)
-            float less = (1 - g_reloadLess * st.reloadNow) * (1 - kPunchLess * st.emptyNow) * (1 - kActionLess * st.actionNow), qNow[4];
+            float less = (1 - g_reloadLess * st.reloadNow) * (1 - kPunchLess * st.emptyNow) * (1 - kActionLess * st.actionNow) * (1 - kAirLess * st.airNow), qNow[4];
             ToQuat(Tr, qNow);
             Toward(qHold, qNow, less, qNow);
             Tr = FromQuat(qNow);
             Tp = hHand + (Tp - hHand) * less;
-            M3 Rv0 = Mul(Mul(About({0, 0, 1}, pp.roll), About({0, 1, 0}, pp.yaw)), About({1, 0, 0}, pp.pitch));
+            M3 Rv0 = Mul(Mul(About({0, 0, 1}, pp.roll), About({0, 1, 0}, pp.yaw + g_kick[3] * st.kickSide * st.kickNow)), About({1, 0, 0}, pp.pitch - g_kick[2] * st.kickNow));
             M3 Rv = Mul(Rv0, Transposed(Mul(Mul(H, FromQuat(qHold)), g_gunInHand)));
             M3 Rc = Mul(Mul(Transposed(H), Rv), H);
             Tr = Mul(Rc, Tr);
@@ -1506,11 +1535,14 @@ bool ArmsInViewOnce(int slot, const unsigned char* ent, float* rot, float* pos, 
             if (st.haveOffFix) ToQuat(Mul(FromQuat(st.offFixQ), FromQuat(st.offHoldQ)), qHold);
             Toward(qTurn, qHold, st.emptyNow, qTurn);
             lp = lp + (st.offHoldAt - st.offFixAt - lp) * st.emptyNow;
-            if (relaxed > 0.001f && st.haveOffFix) {   // (kept relaxed: to the look it has at rest, as above)
+            // (kept relaxed: to the look it has at rest, as above. In the air too - the arm's put on its hold there, and aimed exactly it
+            // turned to the side)
+            float kept = relaxed > calm ? relaxed : calm;
+            if (kept > 0.001f && st.haveOffFix) {
                 float qLook[4];
                 ToQuat(Mul(FromQuat(st.offFixQ), FromQuat(qTurn)), qLook);
-                Toward(qTurn, qLook, relaxed, qTurn);
-                lp = lp - st.offFixAt * relaxed;
+                Toward(qTurn, qLook, kept, qTurn);
+                lp = lp - st.offFixAt * kept;
             }
         }
         V3 lv = hAt + want - hand + Mul(H, lp);
@@ -2006,6 +2038,8 @@ void MotionOffHandTest(bool on) { g_offHandOn = on; }
 void MotionArmCalm(float calm) { g_armCalm = calm; }
 void MotionOffBones() { g_offBones = true; }
 void MotionHideDown(float y, float ahead) { g_hideDown = y, g_hideAhead = ahead; }
+void MotionKick(const float* values, int count) { for (int i = 0; i < count && i < 4; ++i) g_kick[i] = values[i]; }
+void MotionShotLog(bool on) { g_shotLog = on; }
 void MotionGripThumb(const float* v) { g_gripThumb[0] = {v[0], v[1], v[2]}, g_gripThumb[1] = {v[3], v[4], v[5]}; }
 void MotionLess(float reload, float walk) { g_reloadLess = reload, g_walkLess = walk; }
 void MotionFingers(const float* values, int count) { for (int i = 0; i < count && i < 6; ++i) g_fingers[i] = values[i]; }

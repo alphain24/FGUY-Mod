@@ -5,7 +5,7 @@
 # -KeepDll: the copy's own dinput8.dll as it is (not this build's).
 #   start_arena.ps1 [-GameDir <research copy>] [-Right <n>] [-FirstPerson] [-Enemies] [-KeepDll]
 param([string]$GameDir = "A:\Games\FGUY-Research", [int]$Right = 0, [switch]$FirstPerson, [switch]$Enemies,
-      [string]$Res = "1920x1080", [switch]$KeepDll)
+      [string]$Res = "1920x1080", [switch]$KeepDll, [int]$Map = 0)
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 powershell -ExecutionPolicy Bypass -File tools\stop_tests.ps1 -GameDir $GameDir | Out-Null; Set-Location $root
@@ -23,7 +23,9 @@ Remove-Item Env:FGUYMOD_TEST_ARENA
 Start-Sleep 18
 function Pad($b) { & tools\pad.ps1 -Id $h $b | Out-Null }
 foreach ($b in "a", "start", "a") { Pad $b; Start-Sleep 4 }; Start-Sleep 2
-foreach ($b in "down", "a", "down", "a", "a") { Pad $b; Start-Sleep 3 }   # (Multiplayer, Multiverse Madness, join)
+foreach ($b in "down", "a", "down", "a") { Pad $b; Start-Sleep 3 }   # (Multiplayer, Multiverse Madness)
+for ($i = 0; $i -lt $Map; ++$i) { Pad right; Start-Sleep 1 }   # (the map: 0 Santa's Workshop, 1 Space Station, 2 Airport)
+Pad a; Start-Sleep 3   # (join)
 foreach ($i in 1..$Right) { if ($Right -gt 0) { Pad right; Start-Sleep 1 } }
 Pad a; Start-Sleep 3   # (the character)
 Pad start

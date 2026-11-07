@@ -274,7 +274,7 @@ void HandleCommand(char* line) {
         if (k) {
             static int vk;
             static DWORD hold;
-            vk = atoi(k) & 0xff;
+            vk = atoi(k) & 0x1ff;   // (0x100 on: the mouse's buttons, in the game's bindings)
             hold = ms ? (DWORD)atoi(ms) : 500;
             CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
                 auto wnd = *reinterpret_cast<unsigned char**>(0xad39e8);

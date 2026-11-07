@@ -86,6 +86,7 @@ unsigned char* g_device[4];                 // one keyboard / mouse device per k
 
 // ---- the raw poll: ours in sessions --------------------------------------------------------------------
 const KbmRaw* g_feed = nullptr;             // set while we poll a keyboard player's device
+volatile LONG g_testButtons = -1;           // test ("kbm buttons <bits>"): the mouse's buttons offline, nothing real pressed
 KbmRaw g_menuKeys;                          // every keyboard player's keys this tick (DirectInput keyboard)
 BYTE g_slotKeys[4][32], g_slotKeysBefore[4][32];   // each keyboard player's, this tick and the one before
 bool g_menuKeysLive = false;
@@ -119,6 +120,7 @@ bool __cdecl Hook_RawPoll() {
             *gMouseDy = dy;
             *gMouseDz = dz;
         }
+        if (g_testButtons >= 0) { *gMouseButtons = g_testButtons; return true; }
         return r;
     }
     if (!g_feed && g_menuFeedReady) {       // the game's own slot polls at the start of each tick
@@ -556,6 +558,23 @@ void KbmTestCommand(const char* what, int a, int b, int c) {
     else if (!strcmp(what, "mouse")) { g_testDx = a; g_testDy = b; g_testMoveTicks = c > 0 ? c : 1; }
     else if (!strcmp(what, "click")) g_testClickUntil = now + (a > 0 ? a : 100);
     else if (!strcmp(what, "cursor")) { g_testCursorX = a; g_testCursorY = b; }
+    else if (!strcmp(what, "buttons")) g_testButtons = a;
+    else if (!strcmp(what, "offline")) {   // test: player 1 on the keyboard / mouse controller, offline, as if chosen at the start
+        unsigned char* pls[8];
+        auto table = *reinterpret_cast<unsigned char***>(kControllerTable);
+        int count = *reinterpret_cast<int*>(kControllerCount), found = -1;
+        for (int i = 0; table && i < count; ++i) {
+            Log(L"Input: test - controller %d: %p, type %d", i, table[i], table[i] ? *reinterpret_cast<int*>(table[i] + 8) : -1);
+            if (found < 0 && table[i] && *reinterpret_cast<int*>(table[i] + 8) == 8) found = i;
+        }
+        if (GamePlayers(pls, 8) > 0 && found >= 0) {
+            auto input = *reinterpret_cast<unsigned char**>(pls[0] + 0x101c);
+            *reinterpret_cast<unsigned char**>(input + 0x30) = table[found];
+            *reinterpret_cast<int*>(input + 0x34) = found;
+            *reinterpret_cast<unsigned char*>(kKbmFlag) = 1;
+            Log(L"Input: test - player 1 on controller %d", found);
+        } else Log(L"Input: test - no keyboard / mouse controller (of %d)", count);
+    }
     LeaveCriticalSection(&g_testLock);
     Log(L"Input: test %S %d %d %d", what, a, b, c);
 }

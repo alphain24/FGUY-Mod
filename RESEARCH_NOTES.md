@@ -1061,8 +1061,8 @@ ematch_<lobby pid>.txt`), whose lobby then
   arm to a shoulder. Now (motion.cpp g_rig, ArmIk; `fpv rig <hands ahead> <shoulder right> <down> <ahead> <shrink> <kept ahead>`):
   - *True perspective*: hands 1.3 ahead of the eye at their own size. Not a person's arm's length: the arm is 0.58 (0.284 + 0.298) but the
     drill as long as his body - at 0.42 the view was inside it.
-  - *Kept off the camera*: a bone near the camera and the game draws none of the character. What's drawn is shrunk 0.1 and put 0.7 ahead of
-    the eye, the draw's eye moved up the same (hand[16], FollowX): the same on the screen, every bone 0.79+ from the camera, all within
+  - *Kept off the camera*: a bone near the camera and the game draws none of the character. What's drawn is shrunk 0.1 and put 1.2 ahead of
+    the eye, the draw's eye moved up the same (hand[16], FollowX): the same on the screen, every bone well away from the camera, past
     kShellNear. The muzzle's flash, placed by the game, comes out near the crosshair.
   - *Two-bone IK* (ArmIk): the hand stays where the pose has it, the shoulder goes to its place (0.5 right, 0.5 down, 0.9 ahead: off the
     screen), nearer the hand if it wouldn't reach - nothing stretches - and the elbow bends down and out. Forearm and upper arm keep the
@@ -1091,6 +1091,53 @@ ematch_<lobby pid>.txt`), whose lobby then
   - The muzzle's flash needed nothing: the barrel points at the crosshair, so the flash, placed by the game near the middle, is at its tip.
   - The swing trail is left as the game's: it shows the swing, behind the arm.
   - Rough: the gun sits lower running. The first second of a reload, the off hand is below the view.
+- **From a recording of a real match** (2026-11-06; the empty arena hides most of this - test with enemies, `start_arena.ps1 -Enemies`):
+  - *Field of view*: set outright, +0x88 killed zoom at every value but the game's: zooming narrows that very setting. Now scaled by the slider's
+    share of 80. All 13 values checked hip and zoomed: the arms the same, the world and zoom right.
+  - *Shots*: measured, pad, pulls against rounds, first and third person alike: all fire at 250 ms apart or more, half at 150 - the drill's rate.
+    An empty clip doesn't reload by itself ([R] RELOAD). A pull right after a punch or in a taunt fires. Count rounds with +0x4ffc.
+  - *Recoil* (g_kick, `fpv kick`): each round (the clip going down) throws the gun back and up, alternately aside, 12 ms in, 85 ms back. Zoomed
+    the game's own is held out. Measured zoomed: 9% of the screen across, 4% up, 28% bigger at its height.
+  - *No relaxed hold yet* (new players; each new character): it's taken standing steady and looking level, 34 s into a first game. Till then
+    the gun's held as aiming. (The game's relaxed hand stood in at first: on another chest, the gun huge and turned.) The off arm's out of view meanwhile.
+  - *Muzzle flash*: placed by the game at the real muzzle and sized for far away, a third of the screen. It isn't one of the models about the
+    gun (`vm` draws are the gun's). The rig kept 1.2 ahead, not 0.7, for a smaller one - real distance is all that sizes it.
+  - *Outline shells*: the arms' and the gun's left out (FirstPersonShellInner, FirstPersonInked): ink instead, the gun's too. Their damage flash is the game's: whole arms solid red.
+  - *The black flashes* (arms and gun near black for a moment on shooting, a black hexagon at the flash; the emblems' glow gone): aimed shots only.
+    The aimed view's final pass is its own shader, with depth of field (BloomSampler, BlurryScreenSampler, DepthSampler, ScreenSampler, focusPoints;
+    the hip's has no depth). For the first 4 frames of a shot's flash the picture came out without the arms, the gun and the flash's core - the
+    flat "dark fill" was the wall behind, inside their outlines - and without glow. The draws are all there, 1 projected shadow and 2 of the flash
+    more than the frames after; focusPoints, HDRParams and the threshold don't change (666.667 -1.33333 -25 3; 0.4 0.5). Holding focusPoints' z, w at 0 (near
+    blur off) ends it: Hook_SetPSConstF does that in first person. One launch, alternating, 300 frames each: off 5 of 5 shots dark, 4 frames each
+    (`fpv nearblur 1`); on none, at the spawn and at a wall. Why only under a flash isn't known. Hip fire had looked clean for days: test aimed too.
+    Tested on the Space Station only. On the way: the video repeats frames (3 of about 21 shots caught). Left out with FGUYMOD_TEST_PSSKIP, still dark:
+    the projected shadow; the flash's own shader (2 dark frames of 4 left). `fpv framelog <n>` (with FGUYMOD_TEST_PSTRACE=1): each frame's
+    shaders in order; `FGUYMOD_TEST_PSCONST` values are logged with it. tools/start_arena.ps1 -Map 1: the Space Station, 2: the Airport.
+  - *In the air the off hand turned to the side*: there the arm's put on its aiming hold, and its look kept for rest and for relaxed was missing: now
+    kept = max(relaxed, calm). kAirLess .85: less of the game's flung arms in the air.
+    *Still turning after a while in the air* (user: "for a long time", the Space Station): `+0x5c` isn't 0x16 for the whole jump. Standing 0x16, on the move
+    0x17; after 3/4 s the game goes on to its fall, 0x14 and 0x15. Only 0x16 counted as the air, so the arms left the view in the fall and the off hand
+    came back up on landing. Now 0x14..0x17. kAirEase .03, not .08: at takeoff the off hand flicked up before the air had eased in. Tested with
+    `teleport` 45 m up and standing and running jumps, every frame. Left open: in that 45 m fall the arms go for about 10 frames just as the view
+    drops past a floor plate at 25+ m/s, near the landing; not seen in the jumps. Why isn't known.
+  - *Depth of field*: [Graphics] DepthOfField, 0 by default, Main Menu > OPTIONS > CAMERA (the GRAPHICS page is full: 6 rows of 100 and the footer). Off: all of
+    focusPoints 0, in both views. On: the game's far blur, the near half still 0 in first person. Aimed at the spawn, edge strength (mean of neighbouring
+    pixels' difference) 5.3 off, 3.0 on in first person, 4.8 and 2.8 in third. Black flashes again, one launch, alternating (burstflat's dark list; its "flashes" count stays 0 at
+    this size, the dark list is what counts): the game's near blur 5 of 5 shots dark twice, the fix none twice, off and on alike, 48 aimed rounds.
+  - *Left and right mouse together, shots missed* (user, keyboard and mouse): not reproduced with the pad - every combination 10 of 10 in both views, about
+    4 rounds a second hip and aimed. [Debug] ShotLog=1 logs both mouse buttons and each round, for a real session. Its first version logged no clicks at all: the
+    buttons aren't in the key table but the raw poll's 0xaefae8 (bit 1 left, 2 right); it read the keys' previous half. Its motion half was never switched on either.
+    `kbm offline` puts player 1 on the keyboard / mouse controller in a pad-started match (device type 8, keyboard mode on), `kbm buttons <bits>` feeds the raw poll
+    with nothing really pressed: rounds the same in both views for tapping left, left then right, both together, left with right held (6 of 6 each). Held left fired
+    1 round in both views, with `winkey 256` too, while the user's own held bursts run at 0.217 s: the feed doesn't cover how a real held press reads, so it says nothing about
+    holding. Real clicks (mouse_event) only with the user away from the PC: the test copy has to be in front, and they were using it.
+  - *The tiny gun* (in places on any map: the hand empty, the gun tiny by the crosshair, flickering): whose a draw is goes by the player's feet,
+    within 3 (DrawPlayer), and the gun, kept 1.2 ahead of the eye, is 2.2 from them and more: past 3 it was nobody's and stayed at its real place.
+    Now an unskinned draw at a hand is that player's, whatever the feet say (`fpv gunbyhand 0` is the old way). Shown with the rig at 2.4 ahead:
+    the old way the same picture everywhere, the new way none. Why those places go past 3 at 1.2 isn't known. Ruled out on the way: a gun's
+    c0..c3 are the world's (its eye solves to the camera's) - not its own space; forced there the gun's gone. That check held across 81 places;
+    a gun is taken as in the world now regardless. Each 5 s at most the log says what by the gun hand was left out.
+  - Keyboard mode can't be driven to a match by the test tools (winkey doesn't get past the title; it falls into the demo). `winkey 256` is the left button.
 - **The taunt** (2026-11-06): keyboard T = action 48 (keys `0xadc294 + action * 8`); the pad's binding (`0xadbac8 + action * 8`) is 0x20, D-pad
   down - the "gesture" of the power-up notes. Peter puts the gun away and does a routine of the whole body for 7.2 s; firing or moving cuts it
   short and the gun comes back by itself. **`[player+0x22e0]`: 1 exactly while it plays** (0 walking, firing, in a punch; +0x4f68 follows

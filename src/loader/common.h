@@ -196,6 +196,8 @@ void SkinBuildFrom(std::vector<unsigned char> px, unsigned w, unsigned h, _D3DFO
                    std::vector<unsigned char>& dds);   //   a skin's texture from the game's pixels (any thread)
 void SkinUpscaleDds(const std::vector<unsigned char>& rgba, unsigned w, unsigned h, _D3DFORMAT fmt, unsigned mips,
                     std::vector<unsigned char>& dds);   //   ... twice its size, as a DDS (any thread)
+void GraphicsFrameLog(int frames);   // research: each frame's shaders in order (with FGUYMOD_TEST_PSTRACE)
+void GraphicsAimNearBlur(bool on);   // research: the aimed view's near blur left on in first person
 bool GraphicsHdCharacters();   // graphics.cpp: Graphics > HD character textures
 bool GraphicsDrawingInk();     //   the ink strokes' shader is the one set
 bool GraphicsDrawingOutline(); //   a character's outline shell's shader is the one set
@@ -273,6 +275,8 @@ void MotionRig(const float* values, int count);                       //   resea
 void MotionFingers(const float* values, int count);                   //   research: "fpv fingers <relaxed> <tip> <grip> <tip> <fist> <tip>"
 void MotionLess(float reload, float walk);                            //   research: "fpv less <reload> <walk>"
 void MotionGripThumb(const float* v);                                 //   research: "fpv thumb <x y z> <x y z>"
+void MotionKick(const float* values, int count);                      //   research: "fpv kick <back> <up> <pitch> <yaw>"
+void MotionShotLog(bool on);                                          //   research: "fpv shots 1"
 void MotionHideDown(float y, float ahead);                                         //   research: "fpv hidedown <y>"
 void MotionPunchAim(const float* values, int count);                  //   research: "fpv punch <up> <in> <twist> <thumb +-1>"
 void MotionArmPose(int stance, const float* values, int count);       //   research: Peter's pose for a stance (motion.cpp g_peterPose)
@@ -299,7 +303,8 @@ struct ArmsView {                      // a player's gun to bring into their vie
     int layer90 = 0;                   //   (research: its state)
     int clip = 0;                      //   the upper body's clip ([+0x13cc]+0x60: 0 none, 0xb aiming, 4..6 reloading)
     int moveClip = 0;                  //   ...and what's under it (+0x5c: 0 standing, 2 walking, 4 running, 0x16 in the air)
-    bool gunOut = true;                //   their gun's out (not: a melee swing, the hands empty after one)
+    bool gunOut = true;                //   their gun's out (not: a melee swing, the hands empty after one)
+    int rounds = 0;                        // (the clip: player +0x4ffc)
 };
 bool FirstPersonArms(int slot, ArmsView* out);
 int FirstPersonArmsNoWhy();            //   research: why FirstPersonArms last said no (0: it didn't)
@@ -312,6 +317,8 @@ bool MotionViewmodel(int slot, float* hand);   //   render thread: their arms dr
                                                //   [13..15] the zoom they're drawn at and its spot on the screen
 bool MotionOffsetAt(int slot, double t, float* out);   //   ...their sway and bob at time t (the PC's clock, s)
 void FirstPersonFrameEnd();             //   d3d9.cpp: a frame's been drawn (research: the gun's pieces counted)
+bool FirstPersonShellInner();          //   render thread (cosmetics.cpp): a shell's part within the arms' reach is drawn as them
+bool FirstPersonInked();               //   ...this draw's arms and gun have ink of their own, no shells
 bool FirstPersonSkipDraw();             //   render thread (cosmetics.cpp), after FirstPersonViewmodel: this draw's left out
 bool FirstPersonShell(const float (*c)[4], float (*inner)[4], float* nearPlane, float* farPlane);   //   cosmetics.cpp:
                                        //   an outline shell, split at first person's arms' reach (FirstPersonShell)

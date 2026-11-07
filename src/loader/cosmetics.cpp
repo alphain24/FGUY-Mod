@@ -598,7 +598,9 @@ struct OwnBody {
             memcpy(c01, g_vsConst, sizeof(c01));
             Real_SetVSConstF(dev, 0, s[0], 4);
             front = true;
-            if (g_drawSkinned && !GraphicsDrawingOutline() && !GraphicsDrawingInk()) {
+            bool inked = FirstPersonInked();
+            if (GraphicsDrawingOutline() && inked) skip = true;   // (the gun's shell: its ink's its outline)
+            else if ((g_drawSkinned || inked) && !GraphicsDrawingOutline() && !GraphicsDrawingInk()) {
                 memcpy(g_armInkC, s, sizeof(g_armInkC));
                 g_armInkNow = true;
             }
@@ -633,7 +635,7 @@ struct OwnBody {
     }
     // an outline shell's second draw: the part within their arms' reach, as the arms are drawn (false: none)
     bool Second() {
-        if (!shell || front || FAILED(dev->GetViewport(&vp))) return false;
+        if (!shell || front || !FirstPersonShellInner() || FAILED(dev->GetViewport(&vp))) return false;
         D3DVIEWPORT9 v = vp;
         v.MinZ = 0;
         v.MaxZ = kFront;
