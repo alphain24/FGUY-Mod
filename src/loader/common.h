@@ -197,6 +197,8 @@ void SkinBuildFrom(std::vector<unsigned char> px, unsigned w, unsigned h, _D3DFO
 void SkinUpscaleDds(const std::vector<unsigned char>& rgba, unsigned w, unsigned h, _D3DFORMAT fmt, unsigned mips,
                     std::vector<unsigned char>& dds);   //   ... twice its size, as a DDS (any thread)
 void GraphicsFrameLog(int frames);   // research: each frame's shaders in order (with FGUYMOD_TEST_PSTRACE)
+void FirstPersonPoseStart(unsigned char* entity);   // their pose about to be built: turned the way they look, for the drawing
+void FirstPersonUnturn();   // a tick starts: the game's own transforms back (first person turned them for the drawing)
 void GraphicsAimNearBlur(bool on);   // research: the aimed view's near blur left on in first person
 bool GraphicsHdCharacters();   // graphics.cpp: Graphics > HD character textures
 bool GraphicsDrawingInk();     //   the ink strokes' shader is the one set

@@ -1837,6 +1837,7 @@ bool HeadAway(int slot, const unsigned char* ent, float* scale, int bones) {
 }
 
 void __cdecl Hook_PoseBuild(unsigned char* ent, float* rot, float* pos, float* scale, int bones) {
+    FirstPersonPoseStart(ent);
     EnterCriticalSection(&g_lock);
     for (Track& tr : g_tracks) {
         if (!ent || tr.ent != ent || bones <= 0 || bones > 255) continue;

@@ -86,6 +86,7 @@ unsigned char* g_device[4];                 // one keyboard / mouse device per k
 
 // ---- the raw poll: ours in sessions --------------------------------------------------------------------
 const KbmRaw* g_feed = nullptr;             // set while we poll a keyboard player's device
+volatile LONG g_testTurn = 0;               // test ("kbm turn <dx>"): the mouse moved this much each poll, offline
 volatile LONG g_testButtons = -1;           // test ("kbm buttons <bits>"): the mouse's buttons offline, nothing real pressed
 KbmRaw g_menuKeys;                          // every keyboard player's keys this tick (DirectInput keyboard)
 BYTE g_slotKeys[4][32], g_slotKeysBefore[4][32];   // each keyboard player's, this tick and the one before
@@ -109,6 +110,7 @@ using RawPoll_t = bool(__cdecl*)();
 RawPoll_t g_rawOriginal = nullptr;
 
 bool __cdecl Hook_RawPoll() {
+    FirstPersonUnturn();
     if (!g_session) {
         bool r = g_rawOriginal ? g_rawOriginal() : false;
         LONG dx = *gMouseDx, dy = *gMouseDy, dz = *gMouseDz;
@@ -120,6 +122,7 @@ bool __cdecl Hook_RawPoll() {
             *gMouseDy = dy;
             *gMouseDz = dz;
         }
+        if (g_testTurn) { *gMouseDx = g_testTurn; *gMouseSumX += g_testTurn; }
         if (g_testButtons >= 0) { *gMouseButtons = g_testButtons; return true; }
         return r;
     }
@@ -558,7 +561,8 @@ void KbmTestCommand(const char* what, int a, int b, int c) {
     else if (!strcmp(what, "mouse")) { g_testDx = a; g_testDy = b; g_testMoveTicks = c > 0 ? c : 1; }
     else if (!strcmp(what, "click")) g_testClickUntil = now + (a > 0 ? a : 100);
     else if (!strcmp(what, "cursor")) { g_testCursorX = a; g_testCursorY = b; }
-    else if (!strcmp(what, "buttons")) g_testButtons = a;
+    else if (!strcmp(what, "buttons")) { g_testButtons = a; LeaveCriticalSection(&g_testLock); return; }
+    else if (!strcmp(what, "turn")) g_testTurn = a;
     else if (!strcmp(what, "offline")) {   // test: player 1 on the keyboard / mouse controller, offline, as if chosen at the start
         unsigned char* pls[8];
         auto table = *reinterpret_cast<unsigned char***>(kControllerTable);

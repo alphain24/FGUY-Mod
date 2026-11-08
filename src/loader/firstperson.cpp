@@ -96,6 +96,11 @@ float g_near = 0.3f;  //   (how far ahead of the eyes it's clipped)
 float g_above = 0.15f; //   (and how far below the eyes from above - a hat's brim dips with the head as they walk)
 float g_neck = -0.15f; //   (or from a little under their head bone, when that's lower: their head lunges as they set
                        //    off - the bone is at the neck, their chin and mouth below it)
+int g_faceParts = 1;   // (research: "fpv faceparts <bits>": 1 the transform +0x38, 2 +0x5c, 4 the heading)
+// (+0x38 as it was before FaceView turned it: put back at the next tick's start)
+float* g_facedAt[4] = {};
+float g_faceBy[4] = {};   // (the camera's blend into first person, this frame: FirstPersonPoseStart turns them by it)
+float g_faced[4][12];
 bool g_face = true;   // their body turned the way they look (research: "fpv face 0" not)
 const int kCamYaw = 0xf3b4;   // (the player's camera's yaw, radians)
 const int kOrbit = 0xf3a8;    // (the camera's orbit block: the point it orbits, x y z, ...; its eye at +0x18)
@@ -220,7 +225,11 @@ bool Switched(unsigned char* player, View& v, float dt) {
 // transforms (+0x38, +0x5c: rows right / up / forward / place) turned about up to match; their camera's yaw (+0xf3b4)
 // looks along (-sin, -cos) on the ground. It's done as their camera updates: every PC runs every player's, from the
 // same inputs.
-void FaceView(unsigned char* player, float t) {
+// For the drawing only: the transform's put back before the next tick's game logic (FirstPersonUnturn), and the heading is
+// left alone. On the move the game turns them toward where they go and fires only once they've got there; with the heading or
+// +0x38 set every frame they never did, and strafing in first person fired 1 round in 99 (third person 87). (+0x5c alone
+// doesn't hold fire back, but the arms hang on +0x38.)
+void FaceView(unsigned char* player, float t, int parts = g_faceParts, bool keep = true) {
     auto first = *reinterpret_cast<float**>(player + 0x38);
     if (!first || IsBadWritePtr(first, 0x30)) return;
     float yaw = *reinterpret_cast<float*>(player + kCamYaw);
@@ -231,7 +240,7 @@ void FaceView(unsigned char* player, float t) {
     by *= t;
     if (std::fabs(by) < 1e-5f) return;
     auto heading = *reinterpret_cast<float**>(player + 0x5c);
-    if (heading && !IsBadWritePtr(heading, 0x80)) {
+    if ((parts & 4) && heading && !IsBadWritePtr(heading, 0x80)) {
         float h = now + by;
         while (h >= 6.2831853f) h -= 6.2831853f;
         while (h < 0) h += 6.2831853f;
@@ -240,8 +249,14 @@ void FaceView(unsigned char* player, float t) {
     }
     float c = cosf(by), s = sinf(by);
     for (int at : {0x38, 0x5c}) {
+        if (!(parts & (at == 0x38 ? 1 : 2))) continue;
         auto m = *reinterpret_cast<float**>(player + at);
         if (!m || IsBadWritePtr(m, 0x30)) continue;
+        int who = at == 0x38 && keep ? IndexOf(player) : -1;
+        if (who >= 0 && who < 4 && !g_facedAt[who]) {
+            memcpy(g_faced[who], m, sizeof(g_faced[who]));
+            g_facedAt[who] = m;
+        }
         for (int row = 0; row < 3; ++row) {
             float* v = m + row * 4;
             float x = v[0], z = v[2];
@@ -250,6 +265,52 @@ void FaceView(unsigned char* player, float t) {
         }
     }
 }
+
+// While their camera updates, turned all the way too - heading and transforms - and put back straight after: the game's camera
+// swings round behind them as they turn, so strafing, with their body going the game's own way, the view went round by itself.
+struct Faced {
+    float heading[2], at38[12], at5c[12];
+    float *h, *m38, *m5c;
+};
+void FaceForCamera(unsigned char* player, float t, Faced* f) {
+    f->h = *reinterpret_cast<float**>(player + 0x5c);
+    f->m38 = *reinterpret_cast<float**>(player + 0x38);
+    f->m5c = f->h;
+    if (!f->m38 || !f->h || IsBadWritePtr(f->m38, 0x30) || IsBadWritePtr(f->h, 0x80)) { f->m38 = nullptr; return; }
+    f->heading[0] = f->h[0x58 / 4];
+    f->heading[1] = f->h[0x78 / 4];
+    memcpy(f->at38, f->m38, sizeof(f->at38));
+    memcpy(f->at5c, f->m5c, sizeof(f->at5c));
+    FaceView(player, t, 7, false);
+}
+void UnfaceAfterCamera(const Faced& f) {
+    if (!f.m38) return;
+    memcpy(f.m38, f.at38, sizeof(f.at38));
+    memcpy(f.m5c, f.at5c, sizeof(f.at5c));
+    f.h[0x58 / 4] = f.heading[0];
+    f.h[0x78 / 4] = f.heading[1];
+}
+
+}  // namespace
+
+// Their pose about to be built (motion.cpp): the game's logic is done for the frame - turned for the drawing now.
+void FirstPersonPoseStart(unsigned char* entity) {
+    for (int i = 0; i < 4; ++i) {
+        unsigned char* player = g_view[i].player;
+        if (player && g_faceBy[i] > 0 && *reinterpret_cast<unsigned char**>(player + 0x38) == entity) FaceView(player, g_faceBy[i]);
+    }
+}
+
+// The start of a tick (kbm.cpp, the input poll): the game's own transforms back for its logic.
+void FirstPersonUnturn() {
+    for (int i = 0; i < 4; ++i)
+        if (float* m = g_facedAt[i]) {
+            g_facedAt[i] = nullptr;
+            if (!IsBadWritePtr(m, sizeof(g_faced[i]))) memcpy(m, g_faced[i], sizeof(g_faced[i]));
+        }
+}
+
+namespace {
 
 void __fastcall Hook_Update(unsigned char* camera, void*, int a, float dt) {
     unsigned char* player = camera - kCamera;
@@ -302,7 +363,10 @@ void __fastcall Hook_Update(unsigned char* camera, void*, int a, float dt) {
     // update pulls the view that way - the crosshair stuck to enemies. Turned off just before it updates (every PC
     // runs every player's camera, and knows who's in first person).
     if (v.blend > 0.5f) camera[kAssist] = 0;
+    Faced faced = {};
+    if (g_face) FaceForCamera(player, t, &faced);
     g_real(camera, a, dt);
+    if (g_face) UnfaceAfterCamera(faced);
     // no lag across the ground: the game's camera trails the player as they set off (its own smoothed copy of the point
     // it orbits - 0.6 behind at a run), and their own head and shoulders ran into the view. The point it orbits and the
     // eye moved to where it settles standing - their place, our offsets along the view (side, ahead) and up (the game's
@@ -329,7 +393,7 @@ void __fastcall Hook_Update(unsigned char* camera, void*, int a, float dt) {
     *pmax = hi;
     *pfov = fov + (*pfov - ours);   // (the game's own change in the update kept - a weapon's zoom easing in and out:
                                     //  put back as it was, it never finished zooming out)
-    if (g_face) FaceView(player, t);
+    if (p < 4) g_faceBy[p] = g_face ? t : 0;
 }
 
 // (research: which code reads an address - a read watchpoint on the game's thread only; the places found are kept in
@@ -456,6 +520,11 @@ void ShotLog() {
     buttons = held;
     int rounds = *reinterpret_cast<const int*>(pls[0] + 0x4ffc);
     if (last >= 0 && rounds < last) Log(L"Shot: %d left in the clip (aim %.2f clip %d move %d)", rounds, aim, clip, move);
+    // (the upper body's clip and action, the gun out or not: what a press with nothing fired met)
+    static int seen[4] = {-2, -2, -2, -2};
+    int state[4] = {clip, layer ? *reinterpret_cast<const int*>(layer + 0x78) : -1, *reinterpret_cast<const DWORD*>(pls[0] + 0xef58) != 0, move};
+    if (memcmp(seen, state, sizeof(seen))) Log(L"Shot: state clip %d action %d gun %d rounds %d aim %.2f move %d", state[0], state[1], state[2], rounds, aim, move);
+    memcpy(seen, state, sizeof(seen));
     last = rounds;
 }
 struct Pulled { float base[12], out[12]; bool have; float pull; ULONGLONG at; };
@@ -1304,6 +1373,7 @@ void FirstPersonCommand(const char* args) {
         return;
     }
     if (_stricmp(p, "shots") == 0) { MotionShotLog(atoi(on) != 0); return; }
+    if (_stricmp(p, "faceparts") == 0) { g_faceParts = atoi(on); return; }
     if (_stricmp(p, "shotwatch") == 0) { g_shotLog = atoi(on) != 0; MotionShotLog(g_shotLog); return; }
     if (_stricmp(p, "nearblur") == 0) { GraphicsAimNearBlur(atoi(on) != 0); return; }   // fpv nearblur <0|1>
     if (_stricmp(p, "framelog") == 0) { GraphicsFrameLog(atoi(on)); return; }   // fpv framelog <frames>

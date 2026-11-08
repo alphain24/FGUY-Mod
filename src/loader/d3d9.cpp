@@ -341,6 +341,11 @@ volatile ULONGLONG g_hudShownAt = 0;   // the level's HUD last said it shows (0:
 // rate look quicker than they are at the higher - it went 180, 120, 180... every two seconds), and after a failed one
 // only once frames are a fifth quicker than they were then (a lighter scene: 3840x2400 held 30, and each try at 60
 // was a hitch).
+// Under the screen's own rate it's another matter: a step down from it halves everything - the picture, the fire rate (a gun's
+// cooldown ends on a frame: 0.217 s at 60, 0.233 at 30) - and a press that comes before it ends fires nothing. So below
+// the refresh only once a quarter of the frames miss (15 of 60), and back up to it once 95% are inside 90% of it. By the
+// rules above a PC at 83 fps, spamming fire and aim, fell from 60 to 30 on a moment's hitch and stayed: 12 ms frames were
+// never inside 70% of 16.7. 100 rounds in 30 s became 85, with presses that fired nothing.
 // steady.cpp gives the game's clock the interval held, so the game's dt is the frames' own.
 int ScreenRefresh() {
     static int hz = 0;
@@ -405,7 +410,9 @@ int SteadyRate(int cap, float busyMs) {
     s.pos = (s.pos + 1) % 120;
     if (s.filled < 120) ++s.filled;
     ++s.since;
-    if (s.misses >= 4 && s.at < s.count - 1) {
+    int hz = ScreenRefresh();
+    bool belowScreen = s.at < s.count - 1 && s.rates[s.at + 1] < hz;
+    if (s.misses >= (belowScreen ? 15 : 4) && s.at < s.count - 1) {
         if (s.upAt && GetTickCount64() - s.upAt < 10000) {   // (that step up failed)
             if (s.upWait < 64) s.upWait *= 2;
             s.failP95[s.at] = s.upP95;
@@ -419,7 +426,8 @@ int SteadyRate(int cap, float busyMs) {
         std::sort(sorted, sorted + 120);
         float p95 = sorted[113];
         float failed = s.failP95[s.at - 1];
-        if (p95 < 0.7f * 1000.0f / s.rates[s.at - 1] && (failed <= 0 || p95 < 0.8f * failed)) {
+        float room = s.rates[s.at - 1] <= hz ? 0.9f : 0.7f;
+        if (p95 < room * 1000.0f / s.rates[s.at - 1] && (failed <= 0 || p95 < 0.8f * failed)) {
             --s.at;
             s.upAt = GetTickCount64();
             s.upP95 = p95;

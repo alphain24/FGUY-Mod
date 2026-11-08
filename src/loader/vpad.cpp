@@ -527,6 +527,61 @@ void HandleCommand(char* line) {
         if (what) KbmTestCommand(what, a ? atoi(a) : 0, b ? atoi(b) : 0, c ? atoi(c) : 0);
         return;
     }
+    if (cmd && _stricmp(cmd, "spam") == 0) {   // research: spam <pad> <seconds> <press ms> <gap ms> [flags] - fire and aim in turn (b together, f fire only, h aim held, w walking, o as a player clicks both, m on the mouse),
+        char* a = strtok_s(nullptr, " \t\r\n", &ctx);   // each press logged ("Shot: press ...", against the rounds of ShotLog)
+        char* b = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* c = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* d = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* e = strtok_s(nullptr, " \t\r\n", &ctx);
+        static DWORD pad, press, gap;
+        static ULONGLONG until;
+        static bool both, fireOnly, aimHeld, walk, overlap, mouse;
+        pad = a ? (DWORD)atoi(a) & 3 : 0;
+        until = GetTickCount64() + (b ? (ULONGLONG)atoi(b) * 1000 : 0);
+        press = c ? (DWORD)atoi(c) : 100;
+        gap = d ? (DWORD)atoi(d) : 10;
+        both = e && strchr(e, 'b');
+        fireOnly = e && strchr(e, 'f');
+        aimHeld = e && strchr(e, 'h');
+        walk = e && strchr(e, 'w');
+        overlap = e && strchr(e, 'o');
+        mouse = e && strchr(e, 'm');
+        CloseHandle(CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
+            int n = 0;
+            auto put = [](bool rt, bool lt, DWORD ms) {
+                if (mouse) { KbmTestCommand("buttons", (rt ? 1 : 0) | (lt ? 2 : 0), 0, 0); return; }
+                Hold h = {GetTickCount64() + ms};
+                h.rt = rt ? 255 : 0;
+                h.lt = lt ? 255 : 0;
+                if (walk) h.ly = 32000, h.rx = 7000;   // (round in a circle: no wall stops them)
+                std::lock_guard<std::mutex> lock(g_lock);
+                g_padActive[pad] = true;
+                g_hold[pad] = h;
+            };
+            while (GetTickCount64() < until) {
+                if (overlap) {   // (a player's left and right in turn, as logged: left down, right up 50 ms on, left up, right down)
+                    const bool phases[4][2] = {{true, true}, {true, false}, {false, false}, {false, true}};
+                    for (int i = 0; i < 4; ++i) {
+                        put(phases[i][0], phases[i][1], 90);
+                        if (i == 0) Log(L"Shot: press fire");
+                        Sleep(50);
+                    }
+                    ++n;
+                    continue;
+                }
+                bool fire = both || fireOnly || aimHeld || (n & 1) == 0;
+                put(fire, both || aimHeld || !fire, press + 20);
+                Log(L"Shot: press %s", both ? L"both" : fire ? L"fire" : L"aim");
+                Sleep(press);
+                if (walk || aimHeld) put(false, aimHeld, gap + 40);
+                Sleep(gap);
+                ++n;
+            }
+            Log(L"Shot: spam over, %d presses", n);
+            return 0;
+        }, nullptr, 0, nullptr));
+        return;
+    }
     if (cmd && _stricmp(cmd, "hold") == 0) {   // research: hold <pad> <ms> [lx=.. ly=.. rx=.. ry=.. lt=.. rt=..] [buttons]
         char* padStr = strtok_s(nullptr, " \t\r\n", &ctx);
         char* ms = strtok_s(nullptr, " \t\r\n", &ctx);
