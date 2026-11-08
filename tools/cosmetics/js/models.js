@@ -29,9 +29,9 @@ export async function modelPackGroup(bytes) {
   const idx = new Uint16Array(I);
   for (let i = 0; i < I; i++, o += 2) idx[i] = d.getUint16(o, true);
   const texs = [];
-  for (const path of info.textures || []) {
+  for (const [k, path] of (info.textures || []).entries()) {
     const t = new THREE.CanvasTexture(await createImageBitmap(new Blob([files[path]], {type: 'image/png'})));
-    t.flipY = false; t.colorSpace = THREE.SRGBColorSpace;
+    t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; applyWrap(t, info.wrap?.[k] || 'rr');   // (a pack from before "wrap": the game repeats)
     texs.push(t);
   }
   const group = new THREE.Group();
@@ -45,6 +45,12 @@ export async function modelPackGroup(bytes) {
   }
   return {group, info};
 }
+
+// A texture's wrap mode, across and down, as two letters - r repeat, c clamp ("Extend" in Blender), m mirror: from the .glb's sampler,
+// kept in model.json's "wrap" (one per texture) so the game draws it the same. UVs past 0..1 are how some models tile a body texture.
+const WRAPS = {r: THREE.RepeatWrapping, c: THREE.ClampToEdgeWrapping, m: THREE.MirroredRepeatWrapping};
+const wrapCode = w => w === THREE.MirroredRepeatWrapping ? 'm' : w === THREE.ClampToEdgeWrapping ? 'c' : 'r';
+function applyWrap(t, code) { if (code) { t.wrapS = WRAPS[code[0]]; t.wrapT = WRAPS[code[1]]; } }
 
 export function createModelEditor({holder, $, setStatus, download, outfitsOf, textureFor}) {
   const ed = {outfit: null, pieces: null, skel: null, rig: null, src: null, view: null, posed: false};
@@ -116,7 +122,8 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
           let boneOf = null;
           if (o.isSkinnedMesh) boneOf = o.skeleton.bones.map(b => (/^bone(\d+)$/.exec(b.name) || [])[1]).map(x => (x === undefined ? -1 : +x));
           parts.push({geo, start: gr.start, count: gr.count, color: m?.color ? m.color.clone() : new THREE.Color(1, 1, 1),
-            map: m?.map?.image || null, boneOf: boneOf && boneOf.every(x => x >= 0) ? boneOf : null});
+            map: m?.map?.image || null, wrap: m?.map ? wrapCode(m.map.wrapS) + wrapCode(m.map.wrapT) : null,
+            boneOf: boneOf && boneOf.every(x => x >= 0) ? boneOf : null});
         }
       });
       if (!parts.length) throw new Error('no meshes in it');
@@ -461,7 +468,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
   function prepare() {
     const P = placer(), rigged = ed.src.parts.every(p => p.boneOf);
     const G = rigged ? null : charGrid(charBox().getSize(new THREE.Vector3()).y / 40);
-    const verts = [], idx = [], parts = [], textures = [], palette = [];
+    const verts = [], idx = [], parts = [], textures = [], wraps = [], palette = [];
     const seenGeo = new Map();   // (a geometry's vertices once, its groups each a part)
     const pieces = [];           // (each geometry's vertices: [from, to])
     for (const sp of ed.src.parts) {
@@ -499,8 +506,8 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
       const base = seenGeo.get(sp.geo);
       let tex;
       if (sp.map) {   // (its own picture)
-        tex = textures.indexOf(sp.map);
-        if (tex < 0) { textures.push(sp.map); tex = textures.length - 1; }
+        tex = textures.findIndex((t, k) => t === sp.map && wraps[k] === sp.wrap);   // (the same picture, wrapped another way: one more)
+        if (tex < 0) { textures.push(sp.map); wraps.push(sp.wrap); tex = textures.length - 1; }
       } else {        // (no picture: its colors on the palette - texture "palette")
         tex = 'palette';
       }
@@ -535,12 +542,12 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     // (the palette: a color an 8 x 8 cell, 32 a row - the game's 4 x 4 compressed blocks and smaller mip levels keep it)
     if (palette.length > 1024) throw new Error('too many colors (' + palette.length + ') - 1,024 at most without a texture');
     if (palette.length) {
-      textures.push('palette');
+      textures.push('palette'); wraps.push('cc');
       for (const v of verts) if (v.paletteOf !== undefined) v.uv = [((v.paletteOf % 32) + 0.5) / 32, (Math.floor(v.paletteOf / 32) + 0.5) / 32];
     }
     for (const p of parts) p.texture = p.tex === 'palette' ? textures.length - 1 : p.tex;
     for (const v of verts) v.uv = v.uv || [0, 0];
-    return {verts, idx, parts, textures, palette};
+    return {verts, idx, parts, textures, wraps, palette};
   }
 
   // a texture as a canvas (a picture: up to 1024, a power of two; the palette: 256 x 256)
@@ -570,7 +577,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     try { m = prepare(); } catch (err) { setStatus(err.message); return; }
     ed.prepared = m;
     const view = new THREE.Group();
-    const texs = m.textures.map(t => { const tx = new THREE.CanvasTexture(textureCanvas(t, m.palette)); tx.flipY = false; tx.colorSpace = THREE.SRGBColorSpace; return tx; });
+    const texs = m.textures.map((t, k) => { const tx = new THREE.CanvasTexture(textureCanvas(t, m.palette)); tx.flipY = false; tx.colorSpace = THREE.SRGBColorSpace; applyWrap(tx, m.wraps[k]); return tx; });
     const n = m.verts.length, pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3), uv = new Float32Array(n * 2);
     const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
     m.verts.forEach((v, i) => {
@@ -720,7 +727,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     }
     const o2 = ed.outfit, name = ($('modelName').value || 'My model').trim();
     const manifest = {format: 1, name, character: o2.character, models: outfitsOf(o2.character).map(x => [x.model.lo, x.model.hi]),
-      bones: S + 1, textures: pngs, over: $('modelOver').checked, tool: 'FGUY Skin Studio'};
+      bones: S + 1, textures: pngs, wrap: m.wraps, over: $('modelOver').checked, tool: 'FGUY Skin Studio'};
     if (manifest.over)   // (the character's triangles under it, by piece - its vertex and index counts - and number)
       manifest.hide = hiddenUnder(m).map(h => ({verts: h.verts, indices: h.indices, tris: h.ranges.flat()}));
     files['model.json'] = [strToU8(JSON.stringify(manifest)), {level: 0}];

@@ -47,6 +47,7 @@ struct Model {
     std::vector<unsigned short> idx;
     std::vector<std::vector<unsigned char>> pngs;
     struct Pixels { std::vector<unsigned char> rgba; unsigned w = 0, h = 0; };
+    std::vector<std::string> wrap;         // (each texture's wrap across and down: r repeat, c clamp, m mirror - model.json; none in older packs)
     std::vector<Pixels> painted;           // (a texture painted here, in place of its PNG - MergeLayers)
     // (the render thread's)
     std::vector<IDirect3DTexture9*> tex;
@@ -232,6 +233,13 @@ Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
             std::vector<unsigned char> png;
             ZipRead(pack, js.substr(q1 + 1, q2 - q1 - 1), png);
             m->pngs.push_back(std::move(png));
+            q1 = js.find('"', q2 + 1);
+        }
+    at = js.find("\"wrap\"");   // (the texture wrap modes: "wrap": ["rr", "cc", ...])
+    if (at != std::string::npos)
+        for (size_t q1 = js.find('"', js.find('[', at) + 1); q1 != std::string::npos && q1 < js.find(']', at); ) {
+            size_t q2 = js.find('"', q1 + 1);
+            m->wrap.push_back(js.substr(q1 + 1, q2 - q1 - 1));
             q1 = js.find('"', q2 + 1);
         }
     MergeLayers(m);
@@ -610,14 +618,32 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     static int skipParts = -1;   // (research: FGUYMOD_TEST_MODELSKIP=<bits> - those parts not drawn)
     if (skipParts < 0) { wchar_t v[12] = L""; GetEnvironmentVariableW(L"FGUYMOD_TEST_MODELSKIP", v, 12); skipParts = _wtoi(v); }
     int partNo = 0;
+    // (a model's UVs can run past 0..1 - a tiled body texture: its own wrap modes, the game's put back after)
+    DWORD oldAddr[2][2];
+    for (DWORD st = 0; st < 2; ++st) {
+        dev->GetSamplerState(st + 1, D3DSAMP_ADDRESSU, &oldAddr[st][0]);
+        dev->GetSamplerState(st + 1, D3DSAMP_ADDRESSV, &oldAddr[st][1]);
+    }
+    static bool saidAddr = false;
+    if (!saidAddr) { saidAddr = true; Log(L"Models: the game's texture addressing here is %lu, %lu (1 wrap, 2 mirror, 3 clamp)", oldAddr[0][0], oldAddr[0][1]); }
+    auto addr = [](char c) -> DWORD { return c == 'm' ? D3DTADDRESS_MIRROR : c == 'c' ? D3DTADDRESS_CLAMP : D3DTADDRESS_WRAP; };
     for (const Part& p : m->parts) {
         if ((skipParts >> partNo++ & 1) || p.count < 3) continue;   // (count 0: painted into another - MergeLayers)
         if (p.stretched && CosmeticsArmInk()) continue;
         if (p.texture < m->tex.size() && m->tex[p.texture]) {   // (stage 2 too: the outfit's material has its color
             dev->SetTexture(1, m->tex[p.texture]);              //  texture there again - read with our uvs, it showed
             if (oldTex2) dev->SetTexture(2, m->tex[p.texture]); //  through in stripes)
+            if (p.texture < m->wrap.size() && m->wrap[p.texture].size() >= 2)
+                for (DWORD st = 1; st <= 2; ++st) {
+                    dev->SetSamplerState(st, D3DSAMP_ADDRESSU, addr(m->wrap[p.texture][0]));
+                    dev->SetSamplerState(st, D3DSAMP_ADDRESSV, addr(m->wrap[p.texture][1]));
+                }
         }
         *hr = real(dev, (int)D3DPT_TRIANGLELIST, 0, 0, V, p.first, p.count / 3);
+    }
+    for (DWORD st = 0; st < 2; ++st) {
+        dev->SetSamplerState(st + 1, D3DSAMP_ADDRESSU, oldAddr[st][0]);
+        dev->SetSamplerState(st + 1, D3DSAMP_ADDRESSV, oldAddr[st][1]);
     }
     // (its outline: inside out - only when the game culls a side, else it would cover it; and not on a player's own body
     //  in first person - cut open there by the clip, its inside showed black)

@@ -193,6 +193,9 @@ Little endian:
 | vertices | × V | position `float[3]`, normal `float[3]`, uv `float[2]`, bones `uint8[4]`, weights `uint8[4]` (adding up to 255) |
 | indices | `uint16` × I | triangle list |
 
+`model.json` can carry `"wrap"`: for each texture two letters, across and down (`r` repeat, `c` clamp - Blender's *Extend* - `m` mirror), read
+from the `.glb`'s texture settings. A model whose UVs run past 0..1 needs it; a pack without it is drawn with the game's own setting.
+
 Positions are in the character's space (its feet at y = 0, facing +z; Peter is about 1.9 units tall). A vertex's bone numbers are
 **skeleton** bones (the game's bone n + 1).
 

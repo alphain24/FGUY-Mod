@@ -70,6 +70,8 @@ def main():
                 parent[joints.index(c)] = i
     verts, idx, parts = [], [], []
     textures = []   # (image index -> texture number)
+    wraps = {}      # (image index -> its wrap across and down: r repeat, c clamp, m mirror - the glTF sampler's)
+    code = {10497: 'r', 33071: 'c', 33648: 'm'}
     for node in gl['nodes']:
         if 'mesh' not in node or 'skin' not in node:
             continue
@@ -88,6 +90,8 @@ def main():
             t = mat.get('pbrMetallicRoughness', {}).get('baseColorTexture')
             if t is not None:
                 img = gl['textures'][t['index']]['source']
+                smp = gl.get('samplers', [{}])[gl['textures'][t['index']]['sampler']] if 'sampler' in gl['textures'][t['index']] else {}
+                wraps.setdefault(img, code.get(smp.get('wrapS', 10497), 'r') + code.get(smp.get('wrapT', 10497), 'r'))
             if img not in textures:
                 textures.append(img)
             base = len(verts)
@@ -130,7 +134,7 @@ def main():
         files['textures/%d.png' % k] = data
         pngs.append('textures/%d.png' % k)
     manifest = {'format': 1, 'name': name, 'character': character, 'models': models, 'bones': S + 1, 'textures': pngs,
-                'tool': 'glb2fgmodel.py'}
+                'wrap': [wraps.get(img, 'rr') for img in textures], 'tool': 'glb2fgmodel.py'}
     with zipfile.ZipFile(dst, 'w', zipfile.ZIP_STORED) as z:
         z.writestr('model.json', json.dumps(manifest))
         for k, v in files.items():
