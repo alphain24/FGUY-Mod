@@ -37,7 +37,7 @@
 namespace {
 
 const int kProto = 3;
-const char* kModVersion = "0.9.8";
+const char* kModVersion = "0.9.9";
 
 struct Member {
     std::string name, character = "Peter", costume = "0", team = "0", input = "c";  // input: k keyboard, c controller
