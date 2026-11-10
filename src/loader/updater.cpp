@@ -321,6 +321,56 @@ int CopyTree(const std::wstring& from, const std::wstring& rel, std::string* err
     return n;
 }
 
+// A file by Windows' own curl.exe (Windows 10 on): GitHub's file server has several addresses, and on some connections WinHTTP
+// stays on one that doesn't answer until it times out, where curl goes on to the next. What's fetched is checked against its checksum.
+bool CurlGet(const std::wstring& url, std::vector<unsigned char>& out, std::string* error) {
+    wchar_t sys[MAX_PATH];
+    if (!GetSystemDirectoryW(sys, MAX_PATH) || url.find(L'"') != std::wstring::npos) return false;
+    std::wstring exe = std::wstring(sys) + L"\\curl.exe", dir = std::wstring(g_modDir) + L"\\update", tmp = dir + L"\\download.tmp";
+    if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) return false;
+    CreateDirectoryW(dir.c_str(), nullptr);
+    DeleteFileW(tmp.c_str());
+    std::wstring cmd = L"\"" + exe + L"\" -sSfL --connect-timeout 10 --max-time 280 -o \"" + tmp + L"\" \"" + url + L"\"";
+    STARTUPINFOW si = {sizeof(si)};
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessW(exe.c_str(), &cmd[0], nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) return false;
+    DWORD code = 1;
+    if (WaitForSingleObject(pi.hProcess, 300000) == WAIT_OBJECT_0) GetExitCodeProcess(pi.hProcess, &code);
+    else TerminateProcess(pi.hProcess, 1);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    bool ok = false;
+    if (code == 0) {
+        HANDLE f = CreateFileW(tmp.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (f != INVALID_HANDLE_VALUE) {
+            DWORD size = GetFileSize(f, nullptr), got = 0;
+            if (size != INVALID_FILE_SIZE && size <= 200u * 1024 * 1024) {
+                out.resize(size);
+                ok = ReadFile(f, out.data(), size, &got, nullptr) && got == size;
+            }
+            CloseHandle(f);
+        }
+    }
+    DeleteFileW(tmp.c_str());
+    if (!ok) *error = "couldn't reach the server";
+    return ok;
+}
+
+// A release's file: twice as ever, then by curl.
+bool GetFile(const std::wstring& url, std::vector<unsigned char>& out, std::string* error) {
+    for (int tries = 0; tries < 2; ++tries) {
+        out.clear();
+        if (Get(url, out, error)) { error->clear(); return true; }
+        Log(L"Update: try %d didn't work (%S)", tries + 1, error->c_str());
+    }
+    out.clear();
+    Log(L"Update: trying curl");
+    bool ok = CurlGet(url, out, error);
+    Log(L"Update: curl %s", ok ? L"worked" : L"didn't work either");
+    if (ok) error->clear();
+    return ok;
+}
+
 DWORD WINAPI InstallThread(LPVOID) {
     std::string zipUrl, shaUrl, version, error;
     {
@@ -331,7 +381,8 @@ DWORD WINAPI InstallThread(LPVOID) {
     }
     Set("downloading", "Downloading " + version + "...");
     std::vector<unsigned char> zip, sha;
-    if (!Get(Wide(shaUrl), sha, &error) || !Get(Wide(zipUrl), zip, &error)) {
+    if (!GetFile(Wide(shaUrl), sha, &error) || !GetFile(Wide(zipUrl), zip, &error)) {
+        Log(L"Update: the download failed (%S)", error.c_str());
         Set("failed", "The download failed (" + error + ")");
         g_busy = false;
         return 0;
