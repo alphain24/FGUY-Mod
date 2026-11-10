@@ -69,7 +69,7 @@ int g_chatSeq = 0;
 std::vector<LobbyInfo> g_lobbies;
 std::string g_conf = "DM|FR|0|0|0";  // mode|map|time|score|ff, as the menu uses it
 std::string g_confRate = "0";        // the match's frames per second (0 = auto: the lowest monitor among us)
-std::string g_confNet = "1";         // the match's netcode: 0 classic (lockstep), 1 new (free-running - the default)
+std::string g_confNet = "1";         // the match's netcode: always 1, free-running (classic lockstep is retired; the field stays in the lobby's settings)
 bool g_newLobby = false;              // (a lobby I just made: the new netcode set in it - the server's default is classic)
 std::string g_own;                  // the host's characters and costumes: Peter:0.1.3;Lois:0.2 (the session
                                     // plays on the host's save, so everyone picks from it)
@@ -313,11 +313,11 @@ void HandleLine(const std::string& line) {
     } else if (cmd == "CONF" && f.size() >= 6) {
         g_conf = f[1] + "|" + f[2] + "|" + f[3] + "|" + f[4] + "|" + f[5];
         g_confRate = f.size() >= 7 ? CleanToken(f[6]) : "0";
-        g_confNet = f.size() >= 8 && f[7] == "1" ? "1" : "0";
-        if (g_newLobby && g_mySlot == 0) {   // (my new lobby: the new netcode, unless I pick classic)
+        std::string serverNet = f.size() >= 8 && f[7] == "1" ? "1" : "0";
+        g_confNet = "1";
+        if (g_newLobby && g_mySlot == 0) {   // (my new lobby: the server's told, if it says otherwise)
             g_newLobby = false;
-            if (g_confNet != "1") {
-                g_confNet = "1";
+            if (serverNet != "1") {
                 std::string send = "CONF";
                 for (auto& v : Split(g_conf, '|')) send += " " + v;
                 SendLine(send + " " + g_confRate + " " + g_confNet);
@@ -668,11 +668,12 @@ void StartSession(const std::vector<std::string>& f) {
     if (GetEnvironmentVariableA("FGUYMOD_TEST_RATE", testRate, sizeof(testRate))) set(L"FGUYMOD_NET_RATE", testRate);
     set(L"FGUYMOD_NET_LANG", f[6]);
     set(L"FGUYMOD_SESSION", f[7] + "|" + f[8]);  // conf: mode,map,time,score,ff | picks: char:costume:team;...
-    {   // the netcode the host picked (conf's 7th field): the new one runs the match free (netplay.cpp) - test knob
-        auto conf = Split(f[7], ',');   // FGUYMOD_TEST_NETFREE=1 forces it (every copy of a test alike)
+    {   // every match runs free (netplay.cpp)
+        auto conf = Split(f[7], ',');
         char forced[8] = "";
-        bool free = (conf.size() > 6 && conf[6] == "1") || GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", forced, sizeof(forced)) > 0;
-        bool anyMode = free && strcmp(forced, "all") == 0;   // (research: FGUYMOD_TEST_NETFREE=all - any mode)
+        GetEnvironmentVariableA("FGUYMOD_TEST_NETFREE", forced, sizeof(forced));
+        bool free = true;
+        bool anyMode = strcmp(forced, "all") == 0;   // (research: FGUYMOD_TEST_NETFREE=all - any mode)
         if ((conf.empty() || (conf[0] != "DM" && conf[0] != "HD" && conf[0] != "IN" && conf[0] != "CF" && conf[0] != "ST")) && !anyMode)
             free = false;   // (every mode: the multiplayer ones and story co-op)
         set(L"FGUYMOD_NET_FREE", free ? "1" : "0");
@@ -910,11 +911,6 @@ void LobbyDo(const char* command, const char* a, const char* b, const char* c, c
         if (!text.empty()) SendLine("SAY " + text);
     } else if (cmd == "rate" && g_state == State::InLobby && g_mySlot == 0) {   // the match's frame rate (0 auto)
         g_confRate = CleanToken(a);
-        std::string line = "CONF";
-        for (auto& v : Split(g_conf, '|')) line += " " + v;
-        SendLine(line + " " + g_confRate + " " + g_confNet);
-    } else if (cmd == "net" && g_state == State::InLobby && g_mySlot == 0) {   // the match's netcode (0 classic, 1 new)
-        g_confNet = a && a[0] == '1' ? "1" : "0";
         std::string line = "CONF";
         for (auto& v : Split(g_conf, '|')) line += " " + v;
         SendLine(line + " " + g_confRate + " " + g_confNet);
