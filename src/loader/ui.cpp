@@ -275,6 +275,8 @@ const char* ArgString(const GFxValue* args, unsigned argc, unsigned i) {
     return args[i].string;
 }
 
+volatile LONG g_testWeapon = -1;   // (research: pipe "wpn")
+int g_testWeaponPlayer = 0;
 void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, const GFxValue* args,
                               unsigned argc) {
     // The supply crates' store in a free-running match (netplay.cpp): someone else's store opens here too (from their
@@ -312,6 +314,31 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
     // (research: FGUYMOD_TEST_UNLOCKED=1 - every outfit's challenge counts as done, so the Store sells it)
     static const bool allUnlocked = [] { char v[4] = {}; return GetEnvironmentVariableA("FGUYMOD_TEST_UNLOCKED", v, 4) && v[0] == '1'; }();
     if (allUnlocked && name && strcmp(name, "STOR_IsCostumeUnlocked") == 0) { ReturnBool(movie, true); return; }
+    // (research: FGUYMOD_TEST_ALLWEAPONS=1 - every weapon open on the wheel, the ids it asks about logged; pipe "wpn <player> <id>" equips one)
+    static const bool allWeapons = [] { char v[4] = {}; return GetEnvironmentVariableA("FGUYMOD_TEST_ALLWEAPONS", v, 4) && v[0] == '1'; }();
+    if (allWeapons && name) {
+        LONG w = InterlockedExchange(&g_testWeapon, -1);
+        if (w >= 0) {
+            GFxValue a[2] = {};
+            a[0].type = kNumber; a[0].number = g_testWeaponPlayer;
+            a[1].type = kNumber; a[1].number = w;
+            if (w >= 1000) {   // (wpnsel: as the mouse does it, on the open wheel)
+                a[1].number = w - 1000;
+                Real_Callback(self, movie, "PLYR_SetSelectedSlotToWeapon", a, 2);
+                Real_Callback(self, movie, "PLYR_ConfirmWeaponWheelSelection", a, 1);
+            } else
+            for (int who = 0; who < 2; ++who) { GFxValue b[2] = {}; b[0].type = kNumber; b[0].number = who; b[1] = a[1]; Real_Callback(self, movie, "STOR_SetMultiplayerWeaponBought", b, 2); }
+            Log(L"UI: test - player %d given weapon %d", g_testWeaponPlayer, (int)w);
+        }
+        if (strstr(name, "Weapon")) {
+            static std::set<std::string> asked;
+            char key[120];
+            sprintf_s(key, "%s %g %g", name, ArgNumber(args, argc, 0), ArgNumber(args, argc, 1));
+            if (asked.size() < 400 && asked.insert(key).second) Log(L"UI: asked %S", key);
+        }
+        if (strcmp(name, "LOKR_IsWeaponLocked") == 0) { ReturnBool(movie, false); return; }
+        if (strcmp(name, "STOR_IsMultiplayerWeaponBought") == 0) { ReturnBool(movie, true); return; }
+    }
     if (name && strncmp(name, "FGUYPLUGIN_", 11) == 0) {   // (a mod's plugin's own menu call - modloader.cpp)
         std::vector<std::string> a;
         for (unsigned i = 0; i < argc && i < 16; ++i) {
@@ -701,6 +728,7 @@ bool PatchSlot(uintptr_t vtable, int slot, uintptr_t expected, void* hook, void*
 }
 
 }  // namespace
+void UiTestWeapon(int player, int weapon) { g_testWeaponPlayer = player; InterlockedExchange(&g_testWeapon, weapon); }
 
 // The mod's own menu command (the game thread): as a menu would send it - through the last command's handler.
 bool UiRunCommand(const char* command, const char* args) {

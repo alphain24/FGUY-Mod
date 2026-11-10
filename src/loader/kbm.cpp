@@ -110,7 +110,6 @@ using RawPoll_t = bool(__cdecl*)();
 RawPoll_t g_rawOriginal = nullptr;
 
 bool __cdecl Hook_RawPoll() {
-    FirstPersonUnturn();
     if (!g_session) {
         bool r = g_rawOriginal ? g_rawOriginal() : false;
         LONG dx = *gMouseDx, dy = *gMouseDy, dz = *gMouseDz;
@@ -549,7 +548,7 @@ bool g_testInit = false;
 ULONGLONG g_testKeyUntil[256];
 LONG g_testDx = 0, g_testDy = 0;
 int g_testMoveTicks = 0;
-ULONGLONG g_testClickUntil = 0;
+ULONGLONG g_testClickUntil = 0, g_testRightUntil = 0;   // (test: "kbm click <ms>", "kbm rclick <ms>" - the left and right buttons, online)
 int g_testCursorX = -1, g_testCursorY = -1;   // test: the cursor, 0..32767 of the window
 }  // namespace
 
@@ -560,6 +559,7 @@ void KbmTestCommand(const char* what, int a, int b, int c) {
     if (!strcmp(what, "key") && a > 0 && a < 256) g_testKeyUntil[a] = now + (b > 0 ? b : 100);
     else if (!strcmp(what, "mouse")) { g_testDx = a; g_testDy = b; g_testMoveTicks = c > 0 ? c : 1; }
     else if (!strcmp(what, "click")) g_testClickUntil = now + (a > 0 ? a : 100);
+    else if (!strcmp(what, "rclick")) g_testRightUntil = now + (a > 0 ? a : 100);
     else if (!strcmp(what, "cursor")) { g_testCursorX = a; g_testCursorY = b; }
     else if (!strcmp(what, "buttons")) { g_testButtons = a; LeaveCriticalSection(&g_testLock); return; }
     else if (!strcmp(what, "turn")) g_testTurn = a;
@@ -617,6 +617,7 @@ void KbmCaptureRaw(KbmRaw* out) {
             if (g_testKeyUntil[k] > now) out->keys[k >> 3] |= (BYTE)(1 << (k & 7));
         if (g_testMoveTicks > 0) { dx += g_testDx; dy += g_testDy; --g_testMoveTicks; }
         if (g_testClickUntil > now) out->buttons |= 1;
+        if (g_testRightUntil > now) out->buttons |= 2;
         if (g_testCursorX >= 0) { out->cursorX = Clamp16(g_testCursorX); out->cursorY = Clamp16(g_testCursorY); }
         LeaveCriticalSection(&g_testLock);
         if (!front) { out->dx = Clamp16(dx); out->dy = Clamp16(dy); return; }

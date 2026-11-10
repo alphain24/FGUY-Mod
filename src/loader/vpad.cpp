@@ -419,6 +419,14 @@ void HandleCommand(char* line) {
         if (page && row) Log(L"VPad: gfx %S %S -> %d", page, row, GraphicsMenuChange(atoi(page), atoi(row), delta ? atoi(delta) : 0));
         return;
     }
+    if (cmd && _stricmp(cmd, "updateinstall") == 0) { UpdateInstall(); return; }   // test tools: as the ONLINE screen's update button
+    if (cmd && (_stricmp(cmd, "wpn") == 0 || _stricmp(cmd, "wpnsel") == 0)) {   // research: wpn <player> <weapon id> (FGUYMOD_TEST_ALLWEAPONS=1, at the next menu call: ui.cpp)
+        char* who = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* id = strtok_s(nullptr, " \t\r\n", &ctx);
+        void UiTestWeapon(int player, int weapon);
+        if (who && id) UiTestWeapon(atoi(who), atoi(id) + (_stricmp(cmd, "wpnsel") == 0 ? 1000 : 0));
+        return;
+    }
     if (cmd && _stricmp(cmd, "uicmd") == 0) {   // test tools: uicmd <command> [args] - a menu command, as a menu sends it
         char* c = strtok_s(nullptr, " \t\r\n", &ctx);
         char* a = strtok_s(nullptr, "\r\n", &ctx);

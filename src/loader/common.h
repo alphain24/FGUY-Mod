@@ -198,7 +198,7 @@ void SkinUpscaleDds(const std::vector<unsigned char>& rgba, unsigned w, unsigned
                     std::vector<unsigned char>& dds);   //   ... twice its size, as a DDS (any thread)
 void GraphicsFrameLog(int frames);   // research: each frame's shaders in order (with FGUYMOD_TEST_PSTRACE)
 void FirstPersonPoseStart(unsigned char* entity);   // their pose about to be built: turned the way they look, for the drawing
-void FirstPersonUnturn();   // a tick starts: the game's own transforms back (first person turned them for the drawing)
+bool FirstPersonPullHiding(int slot);   // render thread (models.cpp): the view passing through their head - their worn model not drawn
 void GraphicsAimNearBlur(bool on);   // research: the aimed view's near blur left on in first person
 bool GraphicsHdCharacters();   // graphics.cpp: Graphics > HD character textures
 bool GraphicsDrawingInk();     //   the ink strokes' shader is the one set
@@ -297,6 +297,7 @@ struct ArmsView {                      // a player's gun to bring into their vie
     float tans[2];                     //   their view's half widths (tan across, up)
     float zoom;                        //   their weapon's zoom (0 none .. 1 all the way)
     float wide;                        //   ...their view's width with it against without (1: not zoomed)
+    float turned;                      //   how far their body is from the way they look (radians: strafing, 1.57)
     float aim, rest;                   //   the game's upper body: its aiming stance's weight, its relaxed one's (both
                                        //   low: something else - a melee swing, a jump, a power-up)
     bool alone;                        //   theirs the only view on the screen (split screen: the partner sees them)
@@ -306,7 +307,8 @@ struct ArmsView {                      // a player's gun to bring into their vie
     int clip = 0;                      //   the upper body's clip ([+0x13cc]+0x60: 0 none, 0xb aiming, 4..6 reloading)
     int moveClip = 0;                  //   ...and what's under it (+0x5c: 0 standing, 2 walking, 4 running, 0x16 in the air)
     bool gunOut = true;                //   their gun's out (not: a melee swing, the hands empty after one)
-    int rounds = 0;                        // (the clip: player +0x4ffc)
+    int rounds = 0;                        // (the clip of the weapon in hand: [player+0x2240]+0x164)
+    unsigned long long weapon = 0;         // (the weapon in hand: its asset's id, [player+0x2240]+0x18)
 };
 bool FirstPersonArms(int slot, ArmsView* out);
 int FirstPersonArmsNoWhy();            //   research: why FirstPersonArms last said no (0: it didn't)

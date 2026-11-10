@@ -2676,12 +2676,12 @@ void FreeTestHurt() {
     LONG who = InterlockedExchange(&g_testHurtWho, -1);
     if (who < 0) return;
     unsigned char* victim = PlayerBySlot(who);
-    if (!victim || !g_haveLastHitInfo) {
+    if (!victim) {
         Log(L"Netplay: test - hurt player %ld: %s", who, victim ? L"no hit yet to copy" : L"no such player");
         return;
     }
     BYTE* info = ReplayInfo();
-    memcpy(info, g_lastHitInfo, kHitInfo);
+    if (g_haveLastHitInfo) memcpy(info, g_lastHitInfo, kHitInfo);
     memset(info, 0, 4);
     memset(info + 0x58, 0, 4);
     memcpy(info + 4, &g_testHurtAmount, 4);

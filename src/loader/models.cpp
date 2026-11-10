@@ -581,6 +581,7 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
         return true;
     }
     if (m->failed) return false;
+    if (FirstPersonPullHiding(player)) { *hr = D3D_OK; return true; }   // (all of its pieces, and theirs under it)
     auto theirs = [&]() {   // (worn over them: their own draw goes ahead - without the triangles under ours, when it
         IDirect3DIndexBuffer9* copy = HiddenCopy(dev, g_pieces[player], ib);   //  has some: that copy in its place, the
         if (copy) { dev->SetIndices(copy); *putBack = ib; }                     //  caller putting theirs back after)
