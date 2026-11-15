@@ -16,6 +16,7 @@
 //   TextureFiltering = 0 the game's | 1 trilinear | 2, 4, 8, 16 anisotropic   (FGUYMOD_GFX_FILTER)
 //   AntiAliasing     = 0 off | 1 FXAA   (FGUYMOD_GFX_AA)
 //   Sharpening       = 0..100           (FGUYMOD_GFX_SHARPEN)
+//   HDWorldTextures  = 1 on | 0 off     (FGUYMOD_GFX_HDWORLD); HDWorldBudgetMB = 16..512, 192 (FGUYMOD_GFX_HDWORLD_MB)
 //   Brightness       = 0..100, 50 the game's   (FGUYMOD_GFX_BRIGHT)
 //   DepthOfField     = 0 off | 1 the game's blur while aiming   (FGUYMOD_GFX_DOF)
 
@@ -35,6 +36,8 @@ volatile int g_sharp = 1, g_filter = 16, g_aa = 0, g_sharpen = 0, g_bright = 50;
 volatile int g_lines = 0;   // (the ink lines' width: 0 auto - as on the console at any resolution - or 100-300 %)
 volatile bool g_dof = false;   // (the aimed view's blur: the game's with it on - near blur never in first person)
 volatile bool g_hdChars = true;   // (the characters' textures at twice their size - cosmetics.cpp)
+volatile bool g_hdWorld = true;   // (...and the world's, the props', the other characters': HDWorldTextures; within HDWorldBudgetMB)
+int g_hdWorldBudget = 192;
 volatile bool g_statesDirty = false;   // (a filtering setting changed: every stage again, on the render thread)
 IDirect3DDevice9* g_dev = nullptr;
 UINT g_bbW = 0, g_bbH = 0;
@@ -925,6 +928,9 @@ void GraphicsLoadSettings() {
     int l = SettingInt(L"Graphics", L"LineThickness", L"FGUYMOD_GFX_LINES", 0);
     g_lines = l <= 0 ? 0 : l < 100 ? 100 : l > 300 ? 300 : l;
     g_hdChars = SettingInt(L"Graphics", L"HDCharacters", L"FGUYMOD_GFX_HD", 1) != 0;
+    g_hdWorld = SettingInt(L"Graphics", L"HDWorldTextures", L"FGUYMOD_GFX_HDWORLD", 1) != 0;
+    g_hdWorldBudget = SettingInt(L"Graphics", L"HDWorldBudgetMB", L"FGUYMOD_GFX_HDWORLD_MB", 192);
+    g_hdWorldBudget = g_hdWorldBudget < 16 ? 16 : g_hdWorldBudget > 512 ? 512 : g_hdWorldBudget;
     g_dof = SettingInt(L"Graphics", L"DepthOfField", L"FGUYMOD_GFX_DOF", 0) != 0;
     Log(L"Graphics: sharp picture %s, texture filtering %d, anti-aliasing %s, sharpening %d, brightness %d, line thickness %d%s, "
         L"HD character textures %s", g_sharp ? L"on" : L"off", g_filter, g_aa ? L"FXAA" : L"off", g_sharpen, g_bright, g_lines,
@@ -932,6 +938,8 @@ void GraphicsLoadSettings() {
 }
 
 bool GraphicsHdCharacters() { return g_hdChars; }
+bool GraphicsHdWorld() { return g_hdWorld; }
+int GraphicsHdWorldBudget() { return g_hdWorldBudget; }
 bool GraphicsDrawingInk() {   // (cosmetics.cpp: the ink strokes' shader is set - their own band texture, not for HD)
     return g_curPs && std::find(g_inkPs.begin(), g_inkPs.end(), g_curPs) != g_inkPs.end();
 }
@@ -1092,6 +1100,7 @@ const char* GraphicsMenuRows(int page) {
         row("Sharpening", v, 's', "Crisper lines and textures. 0: none");
         row("Line thickness", kLineNames[LinesIndex()], 'c', "The characters' outlines. Auto: as on the console at any resolution (the PC game's fade at 4K)");
         row("HD character textures", g_hdChars ? "ON" : "OFF", 'c', "The characters' textures at twice their size, made on this PC: smoother lines up close");
+        row("HD world textures", g_hdWorld ? "ON" : "OFF", 'c', "Walls, ground and props at twice their size: sharper up close. Made as you play, kept on disk");
     } else if (page == 2) {
         row("Menu style", GraphicsMenuNew() ? "NEW" : "CLASSIC", 'c', "Classic: Options opens the game's own options (these settings are in it too)");
         row("More options", "AUDIO, CONTROLS, LANGUAGE", 'l', "The game's own options");
@@ -1125,6 +1134,7 @@ int GraphicsMenuChange(int page, int row, int delta) {
             Save(L"Graphics", L"LineThickness", g_lines);
         }
         if (row == 5) { g_hdChars = !g_hdChars; Save(L"Graphics", L"HDCharacters", g_hdChars); }
+        if (row == 6) { g_hdWorld = !g_hdWorld; Save(L"Graphics", L"HDWorldTextures", g_hdWorld); }
     } else if (page == 2) {
         if (row == 0) Save(L"Interface", L"MenuStyle", GraphicsMenuNew() ? 0 : 1);
         if (row == 1) return 2;

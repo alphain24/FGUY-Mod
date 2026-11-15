@@ -419,6 +419,11 @@ void HandleCommand(char* line) {
         if (page && row) Log(L"VPad: gfx %S %S -> %d", page, row, GraphicsMenuChange(atoi(page), atoi(row), delta ? atoi(delta) : 0));
         return;
     }
+    if (cmd && _stricmp(cmd, "clocktrace") == 0) {   // research: clocktrace <file> (FGUYMOD_TRACE_CLOCK=1, steady.cpp)
+        char* file = strtok_s(nullptr, "\r\n", &ctx);
+        if (file) SteadyTraceWrite(file);
+        return;
+    }
     if (cmd && _stricmp(cmd, "updateinstall") == 0) { UpdateInstall(); return; }   // test tools: as the ONLINE screen's update button
     if (cmd && (_stricmp(cmd, "wpn") == 0 || _stricmp(cmd, "wpnsel") == 0)) {   // research: wpn <player> <weapon id> (FGUYMOD_TEST_ALLWEAPONS=1, at the next menu call: ui.cpp)
         char* who = strtok_s(nullptr, " \t\r\n", &ctx);

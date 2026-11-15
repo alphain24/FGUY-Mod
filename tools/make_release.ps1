@@ -5,7 +5,7 @@
 #   build\release\FGUYMod-<version>.zip.sha256  its checksum: the mod's updater installs a release only if it matches
 # Upload all three to the GitHub release (src/loader/updater.cpp). The version is kModVersion in src/loader/online.cpp.
 #   make_release.ps1 [-Server host:port]   (the lobby server players connect to; default: what FGUYMod.ini says)
-# In it: dinput8.dll, FGUYMod\FGUYMod.ini, FGUYMod\dxvk (DXVK and its licence), FGUYMod\ui\*.fgpatch (only our
+# In it: dinput8.dll, FGUYMod\FGUYMod.ini, FGUYMod\fpv_holds.dat, FGUYMod\dxvk (DXVK and its licence), FGUYMod\ui\*.fgpatch (only our
 # changes to the game's menus), FGUYMod\sounds (the loading screen's music - a re-recording, from
 # dist\FGUYMod\sounds: tools/make_sounds.py; not in the code repo), INSTALL.txt. Never in it: game files, the test
 # bot's scripts, logs or saves.
@@ -18,6 +18,9 @@ if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force "$stage\FGUYMod\ui", "$stage\FGUYMod\dxvk" | Out-Null
 Copy-Item $dll $stage
 Copy-Item "$P\dist\FGUYMod\FGUYMod.ini" "$stage\FGUYMod\"
+# (first person: the characters' aiming holds and the weapons' - arms in the view from spawn, a weapon's draw right the
+#  first time. A player's game adds what it learns; an update puts these back.)
+Copy-Item "$P\dist\FGUYMod\fpv_holds.dat" "$stage\FGUYMod\"
 Copy-Item "$P\dist\FGUYMod\dxvk\*" "$stage\FGUYMod\dxvk\"
 Copy-Item "$P\dist\FGUYMod\ui\*.fgpatch" "$stage\FGUYMod\ui\"
 # (our own mods: FGUY Cosmetics, FGUY Emotes - their content only: skins, emotes... - each one file, <name>.fgmod, made

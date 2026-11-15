@@ -8,12 +8,15 @@
 #include <d3d9.h>
 #include <intrin.h>
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -318,7 +321,7 @@ void RebuildSwaps() {
     }
 }
 
-// ---- HD character textures (Graphics page) ------------------------------------------------------------------------
+// ---- HD textures (Graphics page): the characters', and the world's ----------------------------------------------------
 // A player's character drawn: each colour texture bound for it (stages 0-2; the game's managed DXT / 32-bit ones, 64 to
 // 1024 across) is read once (here, the render thread), made twice its size on a worker thread (skinbuild.cpp: the
 // upscale and the encoder), and drawn in its place from then on. The game's texture is held (AddRef) while its HD one
@@ -330,8 +333,21 @@ struct Hd {
     std::vector<unsigned char> rgba, dds;
     unsigned w = 0, h = 0, mips = 0;
     D3DFORMAT fmt = D3DFMT_UNKNOWN;
+    bool world = false;   // (seen on something that isn't a player's character: Graphics > HD world textures)
+    size_t bytes = 0;     // (a world one's size made, against the budget)
 };
 std::vector<Hd*> g_hd;   // (the render thread's; a worker only fills an entry's dds while it's being made)
+// HD world textures. First person puts the eye a hand's breadth from walls, tables, cars: the game's world art, 64 to 512 across, a blur at that range
+// (players' reports, 0.9.9). The same making as the characters' - twice the size, block noise out, lines kept - for every opaque colour texture drawn
+// on anything else: the level, props, the other characters. By the texture bound (a hash, not a search: thousands of draws a frame), one read a frame
+// while fewer than four are being made (each read is a megabyte or four waiting for a worker), made on the two workers at low priority, and kept on
+// disk (FGUYMod\cache\hd\<hash of its pixels>.dds, up to 1.5 GB) - a level's two or three hundred take a minute the first time, a second after.
+// The game is a 32-bit program without the large-address flag: 2 GB for everything, and Direct3D keeps a copy of each managed texture in it. So a
+// budget ([Graphics] HDWorldBudgetMB, 192): past it, textures stay as the game has them until others are let go.
+std::unordered_map<IDirect3DBaseTexture9*, Hd*> g_hdOf;
+size_t g_hdBytes = 0;
+int g_hdPending = 0, g_hdWorldMade = 0, g_hdFromDisk = 0;
+bool g_hdFull = false;
 
 // ---- the slow work off the render thread (skins' textures, HD ones): two worker threads; each job's work there, then
 // its finish (making the texture - Direct3D) on the render thread, at the next frame (JobsFrame)
@@ -342,6 +358,7 @@ std::vector<Job> g_jobs;
 std::vector<std::function<void(IDirect3DDevice9*)>> g_jobsDone;
 bool g_workersStarted = false;
 void Worker() {
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);   // (never a frame's time)
     for (;;) {
         Job j;
         {
@@ -392,48 +409,127 @@ std::string BuiltKey(const SkinTex& t) {
 // (only the game's own art: managed - never a render target or anything of the device's own, which held here would
 //  keep the device from being reset - DXT or 32-bit, 64 to 1024 across. Others are only remembered, not held: one let
 //  go and a texture of the game's made at its address is only left as it is)
-std::vector<IDirect3DBaseTexture9*> g_hdNot;
-Hd* HdFor(IDirect3DBaseTexture9* tex) {
-    for (Hd* h : g_hd) if (h->game == tex) return h;
-    if (std::find(g_hdNot.begin(), g_hdNot.end(), tex) != g_hdNot.end()) return nullptr;
+std::unordered_set<IDirect3DBaseTexture9*> g_hdNot;
+Hd* HdFor(IDirect3DBaseTexture9* tex, bool world) {
+    auto it = g_hdOf.find(tex);
+    if (it != g_hdOf.end()) return it->second;
+    if (g_hdNot.count(tex)) return nullptr;
     D3DSURFACE_DESC d{};
-    if (g_hd.size() >= 96 || tex->GetType() != D3DRTYPE_TEXTURE || FAILED(static_cast<IDirect3DTexture9*>(tex)->GetLevelDesc(0, &d)) ||
+    if (g_hd.size() >= 3000 || tex->GetType() != D3DRTYPE_TEXTURE || FAILED(static_cast<IDirect3DTexture9*>(tex)->GetLevelDesc(0, &d)) ||
         d.Pool != D3DPOOL_MANAGED || d.Usage != 0 ||
         (d.Format != D3DFMT_DXT1 && d.Format != D3DFMT_DXT3 && d.Format != D3DFMT_DXT5 && d.Format != D3DFMT_A8R8G8B8) ||
         d.Width < 64 || d.Height < 64 || d.Width > 1024 || d.Height > 1024) {
-        if (g_hdNot.size() > 512) g_hdNot.clear();
-        g_hdNot.push_back(tex);
+        if (g_hdNot.size() > 8192) g_hdNot.clear();
+        g_hdNot.insert(tex);
         return nullptr;
     }
     tex->AddRef();
     Hd* h = new Hd{tex};
+    h->world = world;
     g_hd.push_back(h);
+    g_hdOf[tex] = h;
     return h;
+}
+
+// (a made texture kept on disk, by its pixels: read whole, written to a temporary name and renamed)
+std::atomic<long long> g_hdCacheBytes{-1};
+bool HdCacheRead(const wchar_t* path, std::vector<unsigned char>& out) {
+    HANDLE f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    DWORD size = GetFileSize(f, nullptr), got = 0;
+    bool ok = size != INVALID_FILE_SIZE && size > 128 && size < 64u * 1024 * 1024;
+    if (ok) { out.resize(size); ok = ReadFile(f, out.data(), size, &got, nullptr) && got == size; }
+    CloseHandle(f);
+    if (!ok) out.clear();
+    return ok;
+}
+void HdCacheWrite(const wchar_t* path, const std::vector<unsigned char>& data) {
+    if (g_hdCacheBytes.load() < 0) {   // (how much is there already: once)
+        long long total = 0;
+        wchar_t all[MAX_PATH];
+        swprintf_s(all, L"%s\\cache\\hd\\*.dds", g_modDir);
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW(all, &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do total += ((long long)fd.nFileSizeHigh << 32) | fd.nFileSizeLow; while (FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+        long long none = -1;
+        g_hdCacheBytes.compare_exchange_strong(none, total);
+    }
+    if (g_hdCacheBytes.load() + (long long)data.size() > 1536ll * 1024 * 1024) return;
+    wchar_t tmp[MAX_PATH];
+    swprintf_s(tmp, L"%s.%lu.tmp", path, GetCurrentThreadId());
+    HANDLE f = CreateFileW(tmp, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return;
+    DWORD put = 0;
+    bool ok = WriteFile(f, data.data(), (DWORD)data.size(), &put, nullptr) && put == data.size();
+    CloseHandle(f);
+    if (ok && MoveFileExW(tmp, path, MOVEFILE_REPLACE_EXISTING)) g_hdCacheBytes += (long long)data.size();
+    else DeleteFileW(tmp);
 }
 
 void HdFrame(IDirect3DDevice9* dev) {
     (void)dev;
-    for (Hd* h : g_hd) {   // (one a frame read, for a worker)
-        if (h->state != 0) continue;
+    Hd* pick = nullptr;   // (one a frame read, for a worker: the players' own first)
+    for (Hd* h : g_hd) if (h->state == 0 && !h->world) { pick = h; break; }
+    if (!pick && g_hdPending < 4 && GraphicsHdWorld()) for (Hd* h : g_hd) if (h->state == 0 && h->world) { pick = h; break; }
+    if (pick) {
+        Hd* h = pick;
         auto* t = static_cast<IDirect3DTexture9*>(h->game);
         h->state = 3;
-        if (!SkinReadTexture(t, h->rgba, &h->w, &h->h, &h->fmt, &h->mips)) break;
-        bool opaque = true;   // (colour art only: one with see-through texels - the ink strokes' bands - left as it is)
-        for (size_t i = 3; i < h->rgba.size() && opaque; i += 4) opaque = h->rgba[i] >= 250;
-        if (!opaque || h->w < 64 || h->h < 64 || h->w * 2 > 2048 || h->h * 2 > 2048) { h->rgba.clear(); break; }
-        h->state = 1;
-        InBackground([h] {
-            SkinUpscaleDds(h->rgba, h->w, h->h, h->fmt, h->mips, h->dds);
-            h->rgba.clear();
-            h->rgba.shrink_to_fit();
-        }, [h](IDirect3DDevice9* d) {   // (made: ours from its DDS)
-            h->mine = CosmeticsTextureFromDds(d, h->dds);
-            h->dds.clear();
-            h->dds.shrink_to_fit();
-            h->state = h->mine ? 2 : 3;
-            if (h->mine) Log(L"Graphics: an HD character texture made (%ux%u -> %ux%u)", h->w, h->h, h->w * 2, h->h * 2);
-        });
-        break;
+        VideoFrameExcuse();   // (a read of the texture: this frame's long by it, at any rate)
+        if (SkinReadTexture(t, h->rgba, &h->w, &h->h, &h->fmt, &h->mips)) {
+            bool opaque = true;   // (colour art only: one with see-through texels - the ink strokes' bands, a fence, leaves - left as it is)
+            for (size_t i = 3; i < h->rgba.size() && opaque; i += 4) opaque = h->rgba[i] >= 250;
+            // (what it'll take, with its mips: DXT1 half a byte a pixel, DXT5 one, 32-bit four)
+            size_t est = (size_t)h->w * 2 * h->h * 2 * (h->fmt == D3DFMT_DXT1 ? 1 : h->fmt == D3DFMT_A8R8G8B8 ? 8 : 2) / 2 * 4 / 3;
+            bool fits = !h->world || g_hdBytes + est <= ((size_t)GraphicsHdWorldBudget() << 20);
+            if (!opaque || h->w < 64 || h->h < 64 || h->w * 2 > 2048 || h->h * 2 > 2048 || !fits) {
+                h->rgba.clear();
+                h->rgba.shrink_to_fit();
+                if (!fits) {
+                    h->state = 0;   // (when others are let go)
+                    if (!g_hdFull) Log(L"Graphics: HD world textures - the budget's full (%zu MB in %d textures): the rest stay as the game has them", g_hdBytes >> 20, g_hdWorldMade);
+                    g_hdFull = true;
+                }
+            } else {
+                h->state = 1;
+                h->bytes = h->world ? est : 0;
+                g_hdBytes += h->bytes;
+                ++g_hdPending;
+                auto fromDisk = std::make_shared<bool>(false);
+                InBackground([h, fromDisk] {
+                    unsigned long long key = 1469598103934665603ull;
+                    for (unsigned char b : h->rgba) key = (key ^ b) * 1099511628211ull;
+                    for (unsigned v : {h->w, h->h, (unsigned)h->fmt, h->mips, 2u}) key = (key ^ v) * 1099511628211ull;   // (2: this making's version)
+                    wchar_t dir[MAX_PATH], path[MAX_PATH];
+                    swprintf_s(dir, L"%s\\cache", g_modDir);
+                    CreateDirectoryW(dir, nullptr);
+                    swprintf_s(dir, L"%s\\cache\\hd", g_modDir);
+                    CreateDirectoryW(dir, nullptr);
+                    swprintf_s(path, L"%s\\%016llx.dds", dir, key);
+                    if (HdCacheRead(path, h->dds)) *fromDisk = true;
+                    else {
+                        SkinUpscaleDds(h->rgba, h->w, h->h, h->fmt, h->mips, h->dds);
+                        if (!h->dds.empty()) HdCacheWrite(path, h->dds);
+                    }
+                    h->rgba.clear();
+                    h->rgba.shrink_to_fit();
+                }, [h, fromDisk](IDirect3DDevice9* d) {   // (made: ours from its DDS)
+                    --g_hdPending;
+                    VideoFrameExcuse();
+                    h->mine = CosmeticsTextureFromDds(d, h->dds);
+                    h->dds.clear();
+                    h->dds.shrink_to_fit();
+                    h->state = h->mine ? 2 : 3;
+                    if (!h->mine) { g_hdBytes -= h->bytes; h->bytes = 0; return; }
+                    if (*fromDisk) ++g_hdFromDisk;
+                    if (!h->world) { Log(L"Graphics: an HD character texture made (%ux%u -> %ux%u)", h->w, h->h, h->w * 2, h->h * 2); return; }
+                    if (++g_hdWorldMade % 50 == 1) Log(L"Graphics: HD world textures - %d made (%d from the disk), %zu MB of %d", g_hdWorldMade, g_hdFromDisk, g_hdBytes >> 20, GraphicsHdWorldBudget());
+                });
+            }
+        }
     }
     static ULONGLONG lastSweep = 0;   // (the game's let go of: ours too)
     ULONGLONG now = GetTickCount64();
@@ -445,6 +541,9 @@ void HdFrame(IDirect3DDevice9* dev) {
         if (h->state != 1 && h->game->Release() == 1) {
             h->game->Release();
             if (h->mine) h->mine->Release();
+            g_hdOf.erase(h->game);
+            if (h->bytes) { g_hdBytes -= h->bytes; g_hdFull = false; }
+            if (h->world && h->state == 2) --g_hdWorldMade;
             delete h;
             g_hd.erase(g_hd.begin() + i);
         } else {
@@ -813,13 +912,14 @@ HRESULT DrawIndexedSkinned(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT ba
     }
     // the rest of a character's textures: their HD ones, once made (its own pieces - not the ink strokes drawn round it,
     // with a band texture of their own: made bigger and sharpened, the lines came out thin and faint)
-    if (GraphicsHdCharacters() && !GraphicsDrawingInk()) {
+    bool hdChars = GraphicsHdCharacters(), hdWorld = GraphicsHdWorld();
+    if ((hdChars || hdWorld) && !GraphicsDrawingInk()) {
         for (int st = 0; st < 3; ++st) {
             IDirect3DBaseTexture9* bound = g_stages[st];
             if (!bound || restore[st]) continue;
             if (player == -2) player = DrawPlayer();
-            if (player < 0) break;
-            Hd* h = HdFor(bound);
+            if (!(player >= 0 ? hdChars : hdWorld)) break;   // (a player's character; or the world, a prop, another character)
+            Hd* h = HdFor(bound, player < 0);
             if (h && h->state == 2) {
                 restore[st] = bound;
                 Real_SetTexture(self, st, h->mine);
@@ -1430,7 +1530,7 @@ void CosmeticsTest(bool fill, unsigned lo, unsigned hi, unsigned rgb) {
 void CosmeticsOfflineTick();
 void CosmeticsFrame(IDirect3DDevice9* dev) {
     JobsFrame(dev);   // (what the workers made: its textures)
-    if (GraphicsHdCharacters() || !g_hd.empty()) HdFrame(dev);
+    if (GraphicsHdCharacters() || GraphicsHdWorld() || !g_hd.empty()) HdFrame(dev);
     static ULONGLONG lastBuiltSweep = 0;
     if (GetTickCount64() - lastBuiltSweep > 5000) { lastBuiltSweep = GetTickCount64(); BuiltSweep(); }
     if (!NetplayEnabled()) CosmeticsOfflineTick();   // (offline: the skins switched on - MODS page)
@@ -1489,7 +1589,7 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
                 r->ops.size() / 7, r->overlay.empty() ? L"" : L", own pixels", w, h);
         }
     }
-    if (!g_lockInit && GraphicsHdCharacters()) { Lock(); LeaveCriticalSection(&g_lock); }   // (HD: the players' places too)
+    if (!g_lockInit && (GraphicsHdCharacters() || GraphicsHdWorld())) { Lock(); LeaveCriticalSection(&g_lock); }   // (HD: the players' places too)
     if (!g_lockInit) return;
     std::vector<TestCmd> tests;
     std::vector<PendingSkin> pending;
@@ -1586,7 +1686,7 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
         if (changed) RebuildSwaps();
         if (!any) g_swaps.clear();
     }
-    if (!g_swaps.empty() || ModelsWorn() || GraphicsHdCharacters() || FirstPersonAny()) {   // where the players are (which player a draw is of)
+    if (!g_swaps.empty() || ModelsWorn() || GraphicsHdCharacters() || GraphicsHdWorld() || FirstPersonAny()) {   // where the players are (which player a draw is of)
         unsigned char* players[8];
         int n = GamePlayers(players, 8);
         memset(g_playerHere, 0, sizeof(g_playerHere));

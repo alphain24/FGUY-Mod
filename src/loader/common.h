@@ -68,6 +68,8 @@ void InitSteadyClock(HMODULE exe);     // offline: the game's clock one frame a 
 bool SteadyClockOn();
 void SteadyTick();                     //   a controller poll (the first of a tick starts it)
 void SteadySetInterval(LONGLONG counts);   //   the frame interval the pacing holds (d3d9.cpp)
+void SteadyTracePresent(LONGLONG real);    //   research: a frame presented; the trace written (FGUYMOD_TRACE_CLOCK=1)
+void SteadyTraceWrite(const char* path);
 void VideoRequestQuit();               //   exit cleanly at the end of the next frame (test tools)
 void VideoRequestShot(const wchar_t* path);   // test tools: save the next frame as a .bmp
 void VideoRequestShots(int frames, const wchar_t* folder);   //   ...the next n, every one, small (frame_<i>.bmp, times.txt)
@@ -141,6 +143,7 @@ std::string NetplayStats();            //   FGUYMOD_NetStats: "name:ping ms|..."
 bool OnlineShowPing();                 // onlinesettings.cpp: the match shows the pings
 void VideoHudShown(bool shown);        // d3d9.cpp: the level's HUD is showing (the chosen frame rate; else 60 at most)
 bool VideoHudUp();                     //   it showed just now (a level is being played)
+void VideoFrameExcuse();               //   this frame did a one-off job of the mod's: not one for steady frames to count
 bool OnlineDirectConnection();         //   direct connections to players who have them on too (netplay.cpp)
 void SplitViewHudHas4Way(bool has);    //   the level's HUD: does it have the 4-way layout? (the story's has none)
 int SplitViewMyViewport();             //   online: my player's viewport (-1: offline / not in the level yet)
@@ -201,6 +204,8 @@ void FirstPersonPoseStart(unsigned char* entity);   // their pose about to be bu
 bool FirstPersonPullHiding(int slot);   // render thread (models.cpp): the view passing through their head - their worn model not drawn
 void GraphicsAimNearBlur(bool on);   // research: the aimed view's near blur left on in first person
 bool GraphicsHdCharacters();   // graphics.cpp: Graphics > HD character textures
+bool GraphicsHdWorld();        //   Graphics > HD world textures
+int GraphicsHdWorldBudget();   //   ...how many megabytes of them at most
 bool GraphicsDrawingInk();     //   the ink strokes' shader is the one set
 bool GraphicsDrawingOutline(); //   a character's outline shell's shader is the one set
 // icons.cpp: skin icons in the menus

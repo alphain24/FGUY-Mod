@@ -9,8 +9,10 @@
 //   without vsync and paces frames ourselves. "vsync" in windowed/borderless waits for the desktop
 //   compositor (no tearing); in exclusive fullscreen it keeps the game's own vsync. "uncapped" still
 //   stops at 500 fps: some of the game's timers (e.g. the legal screen at boot) never finish when
-//   frames take under a millisecond. Offline, while playing, a rate the PC can't hold gives way to the highest
-//   of the screen's own it can ([Display] SteadyFrames=1, the default: see "steady frames" below, steady.cpp).
+//   frames take under a millisecond. Offline, while playing, the game's clock steps evenly ([Display] SteadyFrames=1,
+//   the default: steady.cpp); and, only if asked ([Display] SteadyRate=1), a rate the PC can't hold gives way to the
+//   highest it can (see "steady frames" below). 0.9.9 did that by default - and players saw fewer frames than their
+//   PCs make.
 // * Crash fix: the game sometimes fails to create its device at startup and then crashes using it
 //   (FGUY.exe +0x876e9). We retry CreateDevice - for up to 90 s, also through a fresh Direct3D object (right
 //   after another copy of the game closed, the driver can refuse new devices for a while, and the game's own
@@ -331,21 +333,33 @@ DwmFlush_t g_dwmFlush = nullptr;
 
 volatile ULONGLONG g_hudShownAt = 0;   // the level's HUD last said it shows (0: hidden)
 
-// ---- steady frames ([Display] SteadyFrames, offline, while playing) -----------------------------------------------
+// ---- steady frames ([Display] SteadyRate=1 with SteadyFrames=1; offline, while playing) ----------------------------
 // A rate the PC can't reach gives frames of uneven length, and the motion in them uneven from frame to frame
 // (measured: the view's turn uneven by 19% at ~140 fps against 240 - by 6% capped at 120, held). So the rate paced is
-// the highest of the screen's own the PC holds: 4, 3, 2 or 1 times its refresh, or a half or a third of it - up to
-// the one chosen ("vsync": the refresh). Down a step once frames miss it (4 of the last 60 over by 8%); up a step
-// once the PC has had room for the next one up for a while (95% of the last 120 frames inside 70% of it): three
-// seconds, twice as long each time a step up failed within ten seconds (up to a minute; frames paced at the lower
-// rate look quicker than they are at the higher - it went 180, 120, 180... every two seconds), and after a failed one
-// only once frames are a fifth quicker than they were then (a lighter scene: 3840x2400 held 30, and each try at 60
-// was a hitch).
-// Under the screen's own rate it's another matter: a step down from it halves everything - the picture, the fire rate (a gun's
+// the highest the PC holds, of a ladder under the one chosen (SteadyLadder): the chosen rate itself, the screen's own
+// (its refresh times 1, 2, 3..., a half and a third of it), and steps between those so that none gives up more than
+// about a fifth. ("vsync": the refresh, a half, a third of it - those only: it's the screen's frames it waits for.)
+// 0.9.9 had the screen's own only, and not the chosen rate unless it was one of them: 120 chosen on a 144 Hz screen
+// was 72, 60 was 48 - and a PC good for 130 in a scene played it at 72, one good for 250 at 144 (a player's report,
+// "uncapped": 500 in 0.9.8, "at most 72" now).
+// Down once frames miss the rate (4 of the last 60 over by 8%; to a rate under the screen's own only once a quarter
+// miss: 15 of 60 - what's under it shows, see below): a step, and on down while a quarter of those 60 would miss the
+// next one too (a scene that's twice as heavy: there at once, not rung by rung).
+// Up a step once the PC has had room for it for a while (95% of the last 120 frames inside 90% of it): three seconds,
+// twice as long each time a step up failed within ten seconds (up to a minute; three again once one held). Frames
+// paced at the lower rate look quicker than they are at the higher (the game's main thread makes the next frame while
+// this one waits here: its time doesn't show until the two run back to back - it went 180, 120, 180... every two
+// seconds), so a rate that failed isn't tried again for two minutes unless frames are a fifth quicker than they were
+// then (a lighter scene: 3840x2400 held 30, and each try at 60 was a hitch). 0.9.9 kept that for good, and the wait at
+// its longest: every failed try asked for quicker frames than the last, so over a session the rate only went down
+// (the same report: "a memory leak of sorts").
+// Not counted: the frames after the game comes back from a pause, a cutscene, a load (a second: they stall, at any
+// rate), and a frame the mod spent on something of its own that a lower rate wouldn't spare (an HD texture read or
+// handed to Direct3D: VideoFrameExcuse).
+// Under the screen's own rate it's another matter: a step down from it shows - the picture, the fire rate (a gun's
 // cooldown ends on a frame: 0.217 s at 60, 0.233 at 30) - and a press that comes before it ends fires nothing. So below
-// the refresh only once a quarter of the frames miss (15 of 60), and back up to it once 95% are inside 90% of it. By the
-// rules above a PC at 83 fps, spamming fire and aim, fell from 60 to 30 on a moment's hitch and stayed: 12 ms frames were
-// never inside 70% of 16.7. 100 rounds in 30 s became 85, with presses that fired nothing.
+// the refresh only once a quarter of the frames miss. By the first rules a PC at 83 fps, spamming fire and aim, fell
+// from 60 to 30 on a moment's hitch and stayed: 100 rounds in 30 s became 85, with presses that fired nothing.
 // steady.cpp gives the game's clock the interval held, so the game's dt is the frames' own.
 int ScreenRefresh() {
     static int hz = 0;
@@ -357,14 +371,46 @@ int ScreenRefresh() {
             hz = (int)dm.dmDisplayFrequency + (dm.dmDisplayFrequency % 10 == 9 ? 1 : 0);   // (59: 59.94 - 60)
         else
             hz = 60;
+        wchar_t test[16];   // (tests: another screen's rate)
+        if (GetEnvironmentVariableW(L"FGUYMOD_TEST_REFRESH", test, 16) && _wtoi(test) >= 20) hz = _wtoi(test);
         Log(L"D3D: the screen refreshes %d times a second", hz);
     }
     return hz;
 }
 
+// >>> steady controller (tools: this part is built by itself, with a pipeline played at it)
+const int kSteadyRates = 32;
+
+// The rates for a cap on a screen (hz), highest first. chosen: the cap is a rate the player picked (not "uncapped"'s
+// 500); sync: "vsync".
+int SteadyLadder(int cap, int hz, bool chosen, bool sync, int* out) {
+    int a[16], n = 0;
+    if (sync) {
+        a[n++] = hz;
+    } else {
+        if (chosen) a[n++] = cap;
+        int most = cap / hz < 8 ? cap / hz : 8;
+        for (int m = most; m >= 1; --m)
+            if (!n || hz * m < a[n - 1]) a[n++] = hz * m;
+        if (!n) a[n++] = cap;
+    }
+    for (int d = 2; d <= 3; ++d)
+        if (hz / d >= 20 && hz / d < a[n - 1]) a[n++] = hz / d;
+    int count = 0;
+    for (int i = 0; i < n && count < kSteadyRates; ++i) {
+        out[count++] = a[i];
+        if (sync || i + 1 >= n) continue;
+        float ratio = (float)a[i] / a[i + 1];
+        int between = ratio >= 1.75f ? 2 : ratio >= 1.3f ? 1 : 0;
+        for (int k = 1; k <= between && count < kSteadyRates; ++k) out[count++] = a[i] - (a[i] - a[i + 1]) * k / (between + 1);
+    }
+    return count;
+}
+
 struct SteadyRates {
-    int cap = -1;                 // (the cap they're for)
-    int rates[8] = {};
+    int cap = -1, hz = 0;         // (what they're for)
+    bool sync = false;
+    int rates[kSteadyRates] = {};
     int count = 0, at = 0;        // the rates, highest first; the one paced now
     float busy[120] = {};         // the last frames' own times (ms): from the last frame's release to this one's arrival
     int filled = 0, pos = 0;
@@ -372,35 +418,39 @@ struct SteadyRates {
     int misses = 0, missPos = 0;
     int since = 0;                // frames at this rate
     int upWait = 3;               // seconds of room before a step up
-    ULONGLONG upAt = 0;           // (when the last step up was)
+    ULONGLONG upAt = 0;           // when the last step up was (0: none, or it held)
     float upP95 = 0;              // (frames' 95th percentile at the last step up)
-    float failP95[8] = {};        // (by rate: frames' 95th percentile when a step up to it last failed)
+    float failP95[kSteadyRates] = {};      // by rate: frames' 95th percentile when a step up to it last failed
+    ULONGLONG failAt[kSteadyRates] = {};   //   and when
+    ULONGLONG graceUntil = 0;     // frames not counted until then (the game's just back)
 } g_steady;
 
 void SteadyReset() {
-    g_steady.filled = g_steady.pos = g_steady.misses = g_steady.missPos = g_steady.since = 0;
+    g_steady.misses = g_steady.missPos = g_steady.since = 0;
     memset(g_steady.missed, 0, sizeof(g_steady.missed));
 }
 
-// The rate to pace this frame at, for a cap (fps), given how long this frame took (ms).
-int SteadyRate(int cap, float busyMs) {
+// The rate to pace this frame at, for a cap (fps) on a screen (hz), given how long this frame took (ms); now: ms.
+int SteadyRate(int cap, int hz, bool chosen, bool sync, float busyMs, bool excused, ULONGLONG now) {
     SteadyRates& s = g_steady;
-    if (cap != s.cap) {
+    if (cap != s.cap || hz != s.hz || sync != s.sync) {
         s.cap = cap;
-        s.count = 0;
-        int hz = ScreenRefresh();
-        for (int m = 4; m >= 1; --m)
-            if (hz * m <= cap) s.rates[s.count++] = hz * m;
-        for (int d = 2; d <= 3; ++d)
-            if (hz / d >= 20 && hz / d <= cap) s.rates[s.count++] = hz / d;
-        if (!s.count) s.rates[s.count++] = cap;
+        s.hz = hz;
+        s.sync = sync;
+        s.count = SteadyLadder(cap, hz, chosen, sync, s.rates);
         s.at = 0;
         s.upWait = 3;
         s.upAt = 0;
         s.upP95 = 0;
+        s.filled = s.pos = 0;
         memset(s.failP95, 0, sizeof(s.failP95));
+        memset(s.failAt, 0, sizeof(s.failAt));
         SteadyReset();
+        wchar_t list[256] = L"";
+        for (int i = 0; i < s.count; ++i) swprintf_s(list + wcslen(list), 256 - wcslen(list), L"%s%d", i ? L", " : L"", s.rates[i]);
+        Log(L"D3D: steady frames - the rates: %s", list);
     }
+    if (excused || now < s.graceUntil) return s.rates[s.at];
     float frame = 1000.0f / s.rates[s.at];
     bool miss = busyMs > frame * 1.08f;
     s.misses += (int)miss - (int)s.missed[s.missPos];
@@ -410,26 +460,41 @@ int SteadyRate(int cap, float busyMs) {
     s.pos = (s.pos + 1) % 120;
     if (s.filled < 120) ++s.filled;
     ++s.since;
-    int hz = ScreenRefresh();
+    if (s.upAt && now - s.upAt >= 10000) {   // (that step up held)
+        s.upAt = 0;
+        s.upWait = 3;
+    }
     bool belowScreen = s.at < s.count - 1 && s.rates[s.at + 1] < hz;
     if (s.misses >= (belowScreen ? 15 : 4) && s.at < s.count - 1) {
-        if (s.upAt && GetTickCount64() - s.upAt < 10000) {   // (that step up failed)
+        int from = s.at;
+        if (s.upAt) {   // (that step up failed)
             if (s.upWait < 64) s.upWait *= 2;
-            s.failP95[s.at] = s.upP95;
+            s.failP95[from] = s.upP95;
+            s.failAt[from] = now;
+            s.upAt = 0;
         }
-        ++s.at;
-        Log(L"D3D: steady frames - %d fps (the PC didn't hold %d)", s.rates[s.at], s.rates[s.at - 1]);
+        int n = s.filled < 60 ? s.filled : 60;
+        int to = from + 1;
+        while (n >= 30 && to < s.count - 1) {   // (on down while a quarter of the last frames would miss this one too)
+            float limit = 1080.0f / s.rates[to];
+            int over = 0;
+            for (int i = 1; i <= n; ++i) over += s.busy[(s.pos - i + 120) % 120] > limit;
+            if (over * 4 < n) break;
+            ++to;
+        }
+        s.at = to;
+        Log(L"D3D: steady frames - %d fps (the PC didn't hold %d)", s.rates[s.at], s.rates[from]);
         SteadyReset();
-    } else if (s.at > 0 && s.filled >= 120 && s.since >= s.upWait * s.rates[s.at]) {
+    } else if (s.at > 0 && s.filled >= 120 && s.since >= 120 && s.since >= s.upWait * s.rates[s.at]) {
         float sorted[120];
         memcpy(sorted, s.busy, sizeof(sorted));
         std::sort(sorted, sorted + 120);
         float p95 = sorted[113];
-        float failed = s.failP95[s.at - 1];
-        float room = s.rates[s.at - 1] <= hz ? 0.9f : 0.7f;
-        if (p95 < room * 1000.0f / s.rates[s.at - 1] && (failed <= 0 || p95 < 0.8f * failed)) {
-            --s.at;
-            s.upAt = GetTickCount64();
+        int up = s.at - 1;
+        bool failed = s.failAt[up] && now - s.failAt[up] < 120000 && p95 >= 0.8f * s.failP95[up];
+        if (p95 < 0.9f * 1000.0f / s.rates[up] && !failed) {
+            s.at = up;
+            s.upAt = now;
             s.upP95 = p95;
             Log(L"D3D: steady frames - %d fps (the PC has room for it)", s.rates[s.at]);
             SteadyReset();
@@ -438,6 +503,44 @@ int SteadyRate(int cap, float busyMs) {
         }
     }
     return s.rates[s.at];
+}
+// <<< steady controller
+
+volatile LONG g_frameExcused = 0;   // VideoFrameExcuse: this frame's time isn't the game's
+bool g_steadyRate = false;          // [Display] SteadyRate: a rate the PC can't hold gives way to one it can (above)
+
+// Without SteadyRate the frames come at the rate chosen, or as fast as the PC makes them when it can't reach it - as
+// other games' frame limits do, and "uncapped" is that. The game's clock (steady.cpp) then has the exact interval
+// while the PC holds the rate, and the frames' own times, smoothed, while it doesn't: is it holding? Not once 4 of the
+// last 60 frames are over; again after 120 in a row that aren't.
+struct HoldsRate {
+    int fps = 0;
+    bool missed[60] = {};
+    int misses = 0, pos = 0, clean = 0;
+    bool holds = true;
+    int told = 0;   // (the log: the first few changes)
+} g_holds;
+
+bool HoldsChosenRate(int fps, float busyMs, bool skip) {
+    HoldsRate& h = g_holds;
+    if (fps != h.fps) {
+        h = HoldsRate();
+        h.fps = fps;
+    }
+    if (skip) return h.holds;
+    bool miss = busyMs > 1080.0f / fps;
+    h.misses += (int)miss - (int)h.missed[h.pos];
+    h.missed[h.pos] = miss;
+    h.pos = (h.pos + 1) % 60;
+    h.clean = miss ? 0 : h.clean + 1;
+    if (h.holds && h.misses >= 4) {
+        h.holds = false;
+        if (h.told++ < 12) Log(L"D3D: %d fps isn't held - the frames as they come, the game's clock theirs", fps);
+    } else if (!h.holds && h.clean >= 120) {
+        h.holds = true;
+        if (h.told++ < 12) Log(L"D3D: %d fps held", fps);
+    }
+    return h.holds;
 }
 
 void PaceFrame() {
@@ -460,17 +563,32 @@ void PaceFrame() {
     if (OnlineStartingMatch() && (fps <= 0 || fps > 60)) fps = 60;   // only the loading screen: leave the GPU to
                                                                     // the match's game, booting meanwhile
     bool vsync = fps == 0 && !g_fullscreen && g_dwmFlush;
+    static bool wasPlaying = false;
+    bool excused = InterlockedExchange(&g_frameExcused, 0) != 0;
+    bool held = true;   // (the clock: this rate's exact interval)
+    {
+        LARGE_INTEGER t;
+        QueryPerformanceCounter(&t);
+        SteadyTracePresent(t.QuadPart);
+    }
     if (playing && SteadyClockOn() && (fps > 0 || vsync)) {   // steady frames (above)
         LARGE_INTEGER now;
         QueryPerformanceCounter(&now);
+        ULONGLONG tick = GetTickCount64();
+        if (!wasPlaying) g_steady.graceUntil = tick + 1000;   // (back from a pause, a cutscene, a load)
         float busy = (float)((now.QuadPart - g_lastFrame.QuadPart) * 1000.0 / g_freq.QuadPart);
-        int rate = SteadyRate(vsync ? ScreenRefresh() : fps, busy);
-        if (!vsync || rate != ScreenRefresh()) {
-            fps = rate;   // (vsync the PC can't hold: half the refresh, paced here)
-            vsync = false;
+        if (g_steadyRate) {
+            int rate = SteadyRate(vsync ? ScreenRefresh() : fps, ScreenRefresh(), kFrameRates[g_frameRate].fps > 0, vsync, busy, excused, tick);
+            if (!vsync || rate != ScreenRefresh()) {
+                fps = rate;   // (vsync the PC can't hold: half the refresh, paced here)
+                vsync = false;
+            }
+        } else {
+            held = HoldsChosenRate(vsync ? ScreenRefresh() : fps, busy, excused || tick < g_steady.graceUntil);
         }
     }
-    SteadySetInterval(vsync ? g_freq.QuadPart / ScreenRefresh() : fps > 0 ? g_freq.QuadPart / fps : 0);
+    wasPlaying = playing;
+    SteadySetInterval(!held ? 0 : vsync ? g_freq.QuadPart / ScreenRefresh() : fps > 0 ? g_freq.QuadPart / fps : 0);
     if (vsync) {
         g_dwmFlush();  // vsync in windowed modes: wait for the compositor's next frame
     } else if (fps > 0) {
@@ -505,6 +623,10 @@ LONG CALLBACK ExitCrashHandler(EXCEPTION_POINTERS* e) {
 // The level's HUD, 30 times a second (pause.as2js FGUYPausePoll): is it showing? (the game hides it for cutscenes)
 void VideoHudShown(bool shown) { g_hudShownAt = shown ? GetTickCount64() : 0; }
 bool VideoHudUp() { return GetTickCount64() - g_hudShownAt < 400; }
+
+// A frame the mod spent on something of its own that a lower frame rate wouldn't spare (an HD texture read, or handed
+// to Direct3D): steady frames doesn't count it against the rate.
+void VideoFrameExcuse() { InterlockedExchange(&g_frameExcused, 1); }
 
 void QuitGame() {
     static volatile LONG once = 0;
@@ -1051,6 +1173,8 @@ void InitD3D9(HMODULE exe) {
     for (int i = 0; i < kFrameRateCount; ++i)
         if (_wcsicmp(fr, kFrameRates[i].name) == 0) g_frameRate = i;
     Log(L"D3D: frame rate setting %s", kFrameRates[g_frameRate].name);
+    g_steadyRate = SettingInt(L"Display", L"SteadyRate", L"FGUYMOD_STEADY_RATE", 0) != 0;
+    if (g_steadyRate) Log(L"D3D: a frame rate the PC can't hold gives way to one it can (SteadyRate=1)");
 
     QueryPerformanceFrequency(&g_freq);
     QueryPerformanceCounter(&g_lastFrame);

@@ -55,6 +55,8 @@ struct Model {
     IDirect3DVertexBuffer9* hull = nullptr;      // the outline's positions - every frame
     IDirect3DVertexBuffer9* uv = nullptr;
     IDirect3DIndexBuffer9* ib = nullptr;
+    IDirect3DIndexBuffer9* ibArms = nullptr;     // (first person: without the triangles on their hidden body - Skin)
+    unsigned armsFrame = 0;                // (...made for this frame)
     bool made = false, failed = false;
     unsigned frame = 0;                    // (skinned for this frame)
 };
@@ -76,6 +78,7 @@ struct Pieces {
     unsigned char* model = nullptr;
     std::vector<IDirect3DIndexBuffer9*> ibs;
     IDirect3DIndexBuffer9* anchor = nullptr;
+    std::vector<IDirect3DIndexBuffer9*> seen;   // (their pieces drawn this frame, in order - ModelsFrame)
     std::vector<std::pair<IDirect3DIndexBuffer9*, const Hide*>> hideOf;            // (a piece with triangles to leave out)
     std::vector<std::pair<IDirect3DIndexBuffer9*, IDirect3DIndexBuffer9*>> hidden;   // (its copy without them - or null)
 };
@@ -92,6 +95,7 @@ void Free(Model* m) {
     if (m->hull) m->hull->Release();
     if (m->uv) m->uv->Release();
     if (m->ib) m->ib->Release();
+    if (m->ibArms) m->ibArms->Release();
     delete m;
 }
 
@@ -213,8 +217,10 @@ Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
     m->invBind.resize((size_t)S * 12);
     memcpy(m->invBind.data(), d + o, (size_t)S * 48);
     o += (size_t)S * 48;
+    // (a part in the file is 12 bytes: first, count, texture. Part has more than that since 0.9.9 - copied whole in one go, every part after the first
+    // was read from the wrong place: a new character's head gone, pieces missing, the wrong textures. One at a time)
     m->parts.resize(P);
-    memcpy(m->parts.data(), d + o, (size_t)P * 12);
+    for (int i = 0; i < P; ++i) memcpy(&m->parts[i], d + o + (size_t)i * 12, 12);
     o += (size_t)P * 12;
     m->verts.resize(V);
     memcpy(m->verts.data(), d + o, (size_t)V * sizeof(Vert));
@@ -384,6 +390,8 @@ bool Skin(int slot, Model* m) {
     void* ph = nullptr;
     float* hull = m->hull && SUCCEEDED(m->hull->Lock(0, 0, &ph, 0)) ? static_cast<float*>(ph) : nullptr;
     std::vector<unsigned char> hidden(V);
+    std::vector<float> sizes(V);
+    float most = 0;
     for (UINT i = 0; i < V; ++i) {
         const Vert& v = m->verts[i];
         float op[3] = {}, on[3] = {}, size = 0;
@@ -391,7 +399,10 @@ bool Skin(int slot, Model* m) {
             if (!v.weight[k] || v.bone[k] >= m->skel) continue;
             const float* M = &skin[(size_t)v.bone[k] * 12];
             float w = v.weight[k] / 255.0f;
-            size += w * std::sqrt(M[0] * M[0] + M[4] * M[4] + M[8] * M[8]);
+            // (how big the pose has the bone - not the model's own matrix: a model made in other units, scaled onto the skeleton, had its size in that and
+            // its outline as many times too wide - a thick black edge round the whole character, 0.9.9)
+            const float* B = &world[(size_t)(v.bone[k] + 1) * 12];
+            size += w * std::sqrt(B[0] * B[0] + B[4] * B[4] + B[8] * B[8]);
             for (int r = 0; r < 3; ++r) {
                 op[r] += w * (M[r * 4] * v.pos[0] + M[r * 4 + 1] * v.pos[1] + M[r * 4 + 2] * v.pos[2] + M[r * 4 + 3]);
                 on[r] += w * (M[r * 4] * v.nrm[0] + M[r * 4 + 1] * v.nrm[1] + M[r * 4 + 2] * v.nrm[2]);
@@ -399,7 +410,8 @@ bool Skin(int slot, Model* m) {
         }
         memcpy(pos + i * 3, op, 12);
         memcpy(nrm + i * 3, on, 12);
-        hidden[i] = size < 0.02f;
+        sizes[i] = size;
+        most = (std::max)(most, size);
         if (hull) {
             // (as wide as the bones it's on are big: first person's arms are shrunk toward the eye - the same width there
             // stood out from the sleeves in black slabs)
@@ -409,12 +421,41 @@ bool Skin(int slot, Model* m) {
     }
     m->skinned->Unlock();
     if (hull) m->hull->Unlock();
-    // (a piece of it partly on the arms, partly on a body hidden away - a vest's side: stretched from one to the other, a brown slab along
-    // the forearm. First person's arms go without it: Hook_Draw's CosmeticsArmInk)
+    // (First person: their body's hidden away - shrunk to a dot under the view - and their arms kept, a tenth the size, ahead of the eye. A triangle with a
+    // corner on each is stretched from one to the other: a vest's side came out a brown slab along the forearm. So first person's arms are drawn from a copy
+    // of the indices without every triangle that has a corner on what's hidden - any of it to speak of: under 0.93 of the biggest any vertex is, while that's small (at 0.6 a sleeve's top was drawn out toward the body in spikes).
+    // It was whole parts left out, any with a twentieth of it hidden: a new character's arms are one part with its body - no arms at all, a gun and
+    // nothing holding it, 0.9.9. Hook_Draw's CosmeticsArmInk says which draws are the arms'.)
+    float cut = most < 0.5f ? most * 0.93f : 0.02f;
+    unsigned gone = 0;
+    for (UINT i = 0; i < V; ++i) gone += hidden[i] = sizes[i] < cut;
     for (Part& pt : m->parts) {
         unsigned on = 0;
         for (unsigned k = pt.first; k < pt.first + pt.count; ++k) on += hidden[m->idx[k]];
         pt.stretched = on * 20 > pt.count;
+    }
+    m->armsFrame = 0;
+    if (gone && gone < V) {
+        if (!m->ibArms) {
+            IDirect3DDevice9* dev = nullptr;
+            if (SUCCEEDED(m->ib->GetDevice(&dev)) && dev) {
+                dev->CreateIndexBuffer((UINT)m->idx.size() * 2, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16, D3DPOOL_MANAGED, &m->ibArms, nullptr);
+                dev->Release();
+            }
+        }
+        void* q = nullptr;
+        if (m->ibArms && SUCCEEDED(m->ibArms->Lock(0, 0, &q, 0))) {
+            unsigned short* o = static_cast<unsigned short*>(q);
+            size_t n3 = m->idx.size() / 3 * 3;
+            for (size_t t = 0; t < n3; t += 3) {
+                unsigned short a = m->idx[t], b = m->idx[t + 1], c = m->idx[t + 2];
+                if (hidden[a] || hidden[b] || hidden[c]) b = c = a;   // (drawn as nothing)
+                o[t] = a, o[t + 1] = b, o[t + 2] = c;
+            }
+            for (size_t t = n3; t < m->idx.size(); ++t) o[t] = m->idx[t];
+            m->ibArms->Unlock();
+            m->armsFrame = g_frame;
+        }
     }
     return true;
 }
@@ -454,6 +495,18 @@ bool ModelsWorn() {
 // cosmetics.cpp, after each frame (the render thread): new models in, worn models' players' pieces
 void ModelsFrame(IDirect3DDevice9* dev) {
     ++g_frame;
+    // (Ours is drawn where their biggest piece is - and in first person the game leaves that piece out: their body's hidden away, shrunk to a dot under
+    // the view, and the game draws no piece that's outside it. Nothing of a new character was drawn then: no arms, a gun and nothing holding it (0.9.9).
+    // The anchor's a piece the game is drawing: when a frame goes by without it, the first of theirs that frame drew)
+    for (int s = 0; s < 4; ++s) {
+        Pieces& pc = g_pieces[s];
+        if (!pc.seen.empty() && std::find(pc.seen.begin(), pc.seen.end(), pc.anchor) == pc.seen.end()) {
+            pc.anchor = pc.seen[0];
+            static int said = 0;
+            if (said < 12) { ++said; Log(L"Models: player %d's biggest piece isn't drawn (their body hidden in first person?) - theirs drawn with another of their pieces", s); }
+        }
+        pc.seen.clear();
+    }
     if (ModelsWorn()) {
         unsigned char* players[8];
         int n = GamePlayers(players, 8);
@@ -581,6 +634,7 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
         return true;
     }
     if (m->failed) return false;
+    { Pieces& pc = g_pieces[player]; if (std::find(pc.seen.begin(), pc.seen.end(), ib) == pc.seen.end()) pc.seen.push_back(ib); }
     if (FirstPersonPullHiding(player)) { *hr = D3D_OK; return true; }   // (all of its pieces, and theirs under it)
     auto theirs = [&]() {   // (worn over them: their own draw goes ahead - without the triangles under ours, when it
         IDirect3DIndexBuffer9* copy = HiddenCopy(dev, g_pieces[player], ib);   //  has some: that copy in its place, the
@@ -615,7 +669,8 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     dev->SetStreamSource(0, m->skinned, 0, 12);
     dev->SetStreamSource(1, m->skinned, V * 12, 12);
     dev->SetStreamSource(2, m->uv, 0, 8);
-    dev->SetIndices(m->ib);
+    bool arms = CosmeticsArmInk(), trimmed = arms && m->ibArms && m->armsFrame == g_frame;
+    dev->SetIndices(trimmed ? m->ibArms : m->ib);
     static int skipParts = -1;   // (research: FGUYMOD_TEST_MODELSKIP=<bits> - those parts not drawn)
     if (skipParts < 0) { wchar_t v[12] = L""; GetEnvironmentVariableW(L"FGUYMOD_TEST_MODELSKIP", v, 12); skipParts = _wtoi(v); }
     int partNo = 0;
@@ -630,7 +685,7 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     auto addr = [](char c) -> DWORD { return c == 'm' ? D3DTADDRESS_MIRROR : c == 'c' ? D3DTADDRESS_CLAMP : D3DTADDRESS_WRAP; };
     for (const Part& p : m->parts) {
         if ((skipParts >> partNo++ & 1) || p.count < 3) continue;   // (count 0: painted into another - MergeLayers)
-        if (p.stretched && CosmeticsArmInk()) continue;
+        if (p.stretched && arms && !trimmed) continue;
         if (p.texture < m->tex.size() && m->tex[p.texture]) {   // (stage 2 too: the outfit's material has its color
             dev->SetTexture(1, m->tex[p.texture]);              //  texture there again - read with our uvs, it showed
             if (oldTex2) dev->SetTexture(2, m->tex[p.texture]); //  through in stripes)

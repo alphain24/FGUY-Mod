@@ -121,6 +121,19 @@ int IndexOf(unsigned char* player) {
 
 float Eased(float b) { return b * b * (3 - 2 * b); }
 
+// A view's player, if they're still in the level. The player's kept from the camera's last update (Hook_Update, the game's thread) and read while a frame's
+// drawn: leaving a level for the main menu in first person the game frees them and goes on drawing - the next frame read where they'd been (0.9.9: a
+// crash in EyeNow, every time). Still listed among the game's players, and their memory still there.
+unsigned char* Listed(unsigned char* player) {
+    if (!player) return nullptr;
+    auto list = *reinterpret_cast<unsigned char***>(kPlayers);
+    if (!list || IsBadReadPtr(list, 0x24)) return nullptr;
+    int count = *reinterpret_cast<int*>(reinterpret_cast<unsigned char*>(list) + 0x20);
+    for (int i = 0; i < count && i < 8; ++i)
+        if (list[i] == player) return IsBadReadPtr(player + 0x38, 4) ? nullptr : player;
+    return nullptr;
+}
+
 // 0x647890's answer for this player: the game's offsets, or (in first person) theirs.
 const float* __cdecl Offsets(unsigned char* player, const float* game) {
     if (!g_any || !game) return game;
@@ -179,8 +192,9 @@ __declspec(naked) void OffsetsStub() {
 // frame's worth less often than it draws (about 22 a second at 108 drawn): from their place as set, the view and their
 // gun moved in steps. So their place goes from the last one set to the one before smoothly, a set's time behind.
 bool EyeNow(View& v, float* eye) {
-    auto xf = v.player && v.haveEye ? *reinterpret_cast<const float* const*>(v.player + 0x38) : nullptr;
-    if (!xf) return false;
+    unsigned char* player = v.haveEye ? Listed(v.player) : nullptr;
+    auto xf = player ? *reinterpret_cast<const float* const*>(player + 0x38) : nullptr;
+    if (!xf || IsBadReadPtr(xf, 60)) return false;
     LARGE_INTEGER now, freq;
     QueryPerformanceCounter(&now);
     QueryPerformanceFrequency(&freq);
@@ -294,7 +308,10 @@ void UnfaceAfterCamera(const Faced& f) {
 void FirstPersonPoseStart(unsigned char* entity) {
     for (int i = 0; i < 4; ++i) {
         View& v = g_view[i];
-        unsigned char* player = v.player;
+        // (still in the level: every pose built asks this - the menu's characters' too, after a level's players are freed. Read where a player had been,
+        // about one exit to the menu in three faulted here; the game turns a fault in its loop into an exception, catches it in main and closes - with
+        // first person on or off, 0.9.9)
+        unsigned char* player = Listed(v.player);
         if (!player || *reinterpret_cast<unsigned char**>(player + 0x38) != entity) continue;
         auto first = reinterpret_cast<float*>(entity);
         if (g_faceBy[i] <= 0 || IsBadReadPtr(first, 0x40)) { v.poseBy = 0; continue; }
@@ -495,7 +512,7 @@ bool FirstPersonAny() { return g_any != 0; }
 // gun back by itself. Nothing an arm's view can show: their view goes behind them for it, as for an emote. [player+0x22e0]: 1 while it
 // plays, 0 walking, firing, in a punch. (While it played the arms were held as for the idle fidget, whose layer it uses: a hand frozen
 // in the air, no gun.)
-bool Taunting(const View& v) { return v.player && *reinterpret_cast<const DWORD*>(v.player + 0x22e0) != 0; }
+bool Taunting(const View& v) { return Listed(v.player) && *reinterpret_cast<const DWORD*>(v.player + 0x22e0) != 0; }
 // [Debug] ShotLog=1 (test pipe: "fpv shotwatch 1"): player 1's left and right mouse buttons as the game reads them, and each round
 // fired - which clicks fired nothing, first person or not
 void ShotLog() {
@@ -612,7 +629,10 @@ void FrameDiagFrame(int player) {
     }
 }
 void FirstPersonFrameEnd() {
-    for (View& v : g_view) v.haveFrameOrg = false;
+    for (View& v : g_view) {
+        v.haveFrameOrg = false;
+        if (v.player && !Listed(v.player)) v.player = nullptr, v.haveEye = false;   // (gone from the level: nothing of theirs is read again)
+    }
     if (g_frameDiagLeft > 0) FrameDiagFrame(0); else if (g_vmCount) VmCountFrame();
 }   // (d3d9.cpp: a frame's been drawn)
 void FirstPersonDrawnCamera(int view, float* m) {
@@ -669,7 +689,7 @@ bool OwnLinesShow(int p, const View& v) {
     for (int i = 0; i < 4; ++i) shown += SplitViewRect(i, r) ? 1 : 0;
     if (shown <= 1) return true;
     float head[3];
-    if (!MotionHead(p, head)) return false;
+    if (!MotionHead(p, head) || !Listed(v.player)) return false;
     const float* eye = reinterpret_cast<const float*>(v.player + kOrbit) + 6;
     float yaw = *reinterpret_cast<const float*>(v.player + kCamYaw), fx = -sinf(yaw), fz = -cosf(yaw);
     return (head[0] - eye[0]) * fx + (head[2] - eye[2]) * fz > -0.5f * v.offsets[2];
@@ -682,7 +702,7 @@ bool OwnLinesShow(int p, const View& v) {
 bool FirstPersonNoLines(float x, float y, float z) {
     for (int p = 0; p < 8; ++p) {
         const View& v = g_view[p];
-        if (v.viewport < 0 || v.viewport >= 4 || !v.player) continue;
+        if (v.viewport < 0 || v.viewport >= 4 || !Listed(v.player)) continue;
         if (g_pulled[v.viewport].pull <= 0.05f && !OwnLinesShow(p, v)) continue;
         auto xf = *reinterpret_cast<unsigned char* const*>(v.player + 0x38);
         if (!xf || IsBadReadPtr(xf + 0x30, 12)) continue;
@@ -1143,6 +1163,8 @@ const float kDropNear = 1.2f;
 bool g_skipDraw = false;
 bool FirstPersonSkipDraw() { return g_skipDraw; }
 bool g_gunByHand = true;   // (research: "fpv gunbyhand 0")
+bool g_earlySkip = true;
+int g_earlySkipped = 0;
 int g_vmPlayer = -1;
 bool FirstPersonInked() { int p = g_vmPlayer; return p >= 0 && p < 4 && g_view[p].haveFrameArms && g_view[p].frameArms[16] > 0; }
 bool ViewmodelDraw(const float (*c)[4], bool skinned, float (*out)[4]) {
@@ -1228,6 +1250,10 @@ bool ViewmodelDraw(const float (*c)[4], bool skinned, float (*out)[4]) {
             }
             return false;
         }
+        // (A gun drawn before its character this frame - Lois's is: the frame's pose isn't known yet, only at the character's own first draw. Placed by the
+        // newest pose, then again - its later passes - by the frame's: on the move two guns, the first a black shape beside the second. Its early pass is
+        // left out: research "fpv early <0|1>")
+        if (g_earlySkip && hand[16] > 0 && !g_view[p].haveFrameArms) { g_skipDraw = true; ++g_earlySkipped; return false; }
         ++(GraphicsDrawingOutline() ? g_vmOutlines : g_vmParts);
         if ((g_vmCount || g_frameDiagLeft > 0) && !GraphicsDrawingOutline() && g_vmPieces < 8) {
             const float* f = hand + 7;
@@ -1502,6 +1528,19 @@ void FirstPersonCommand(const char* args) {
         if (b && c) MotionOffUpper(v);
         return;
     }
+    if (_stricmp(p, "asgame") == 0) {   // fpv asgame <calm> <less> <bob> <strafe calm>
+        void MotionAsGame(const float* v, int n);
+        float values[4];
+        int count = 0;
+        if (on) values[count++] = (float)atof(on);
+        while (count < 4) {
+            char* s = strtok_s(nullptr, " \t", &ctx);
+            if (!s) break;
+            values[count++] = (float)atof(s);
+        }
+        MotionAsGame(values, count);
+        return;
+    }
     if (_stricmp(p, "fists") == 0) { void MotionFists(bool on); MotionFists(atoi(on) != 0); return; }
     if (_stricmp(p, "fist") == 0) {   // fpv fist <out> <down> <ahead> <across> <up> <ahead of the game's move> <shoulder out, down, ahead> <thumb in> <curl> <curl at the tips> <the off hand's: across, up, ahead> <ease, s>
         void MotionFist(const float* v, int n);
@@ -1665,6 +1704,7 @@ void FirstPersonCommand(const char* args) {
         return;
     }
     if (_stricmp(p, "shells") == 0) { g_shellSplit = atoi(on) != 0; return; }   // fpv shells <0|1>
+    if (_stricmp(p, "early") == 0) { g_earlySkip = atoi(on) != 0; Log(L"FirstPerson: a gun's pass before its character's - %s (%d left out so far)", g_earlySkip ? L"left out" : L"drawn", g_earlySkipped); return; }
     if (_stricmp(p, "armsfollow") == 0) { g_armsFollow = atoi(on) != 0; return; }   // fpv armsfollow <0|1>
     if (_stricmp(p, "armstrace") == 0) { MotionArmsTraceTest(atoi(on)); return; }   // fpv armstrace <frames>
     if (_stricmp(p, "armscale") == 0) { MotionArmsScaleTest((float)atof(on)); return; }   // fpv armscale <s>

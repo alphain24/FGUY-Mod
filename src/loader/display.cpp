@@ -241,6 +241,10 @@ LRESULT CALLBACK ModWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_KEYDOWN && !NetplayEnabled()) OnlineMenuKey(wnd, wp);  // typing on the ONLINE screens
     if (msg == WM_CHAR && !NetplayEnabled()) OnlineMenuChar(wp);         //   (the lobby's chat)
     if (msg == WM_MOUSEWHEEL && !NetplayEnabled()) OnlineMenuWheel(GET_WHEEL_DELTA_WPARAM(wp));   //   (lists)
+    // (what ends the game: said in the log - a game that's gone with no word of why has had one of these)
+    if (msg == WM_CLOSE || msg == WM_DESTROY || msg == WM_ENDSESSION || msg == WM_QUERYENDSESSION || (msg == WM_SYSCOMMAND && (wp & 0xfff0) == SC_CLOSE))
+        Log(L"Window: %s (wParam %#lx, lParam %#lx)%s", msg == WM_CLOSE ? L"WM_CLOSE" : msg == WM_DESTROY ? L"WM_DESTROY" : msg == WM_SYSCOMMAND ? L"WM_SYSCOMMAND close" : L"the session's ending",
+            (unsigned long)wp, (unsigned long)lp, InSendMessage() ? L" - sent by another thread" : L"");
     LRESULT handled;
     if (KbmOnMessage(wnd, msg, wp, lp, &handled)) return handled;
     switch (msg) {

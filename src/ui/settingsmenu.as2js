@@ -69,13 +69,16 @@ function FGUYDrawGfx(ui) {
         FGUYHit(tx, 116, 236, 54, 'gfxTab', t);
     }
     FGUYPanel(ui, 48, 190, 1504, 630, 28, FGUYC.panel, FGUYC.glow);
-    for (var i = 0; i < FGUYGfxRows.length; i++) {
-        var r = FGUYGfxRows[i], y = 218 + i * 100, hot = i == FGUYGfxSel;
-        FGUYRect(ui, 76, y, 1448, 86, 16, hot ? FGUYC.rowHot : FGUYC.row, 100, hot ? FGUYC.yellow : FGUYC.rowLine, 100, hot ? 3 : 2);
-        FGUYHit(76, y, 1448, 86, 'gfxRow', i);
-        FGUYText(ui, 104, y + 10, 760, 34, r.label, false, 25, FGUYC.white, 'left');
-        FGUYText(ui, 104, y + 48, 840, 28, r.hint, false, 16, FGUYC.muted2, 'left');
-        var vx = 940, vw = 560, vy = y + 19;
+    // (the panel holds six rows at their full height; a page with more - GRAPHICS has seven - gets them lower, the same
+    //  text in each: the seventh hung below the panel, over the footer)
+    var n = FGUYGfxRows.length, pitch = n > 6 ? 600 / n : 100, rh = pitch - 14, off = (rh - 86) / 2;
+    for (var i = 0; i < n; i++) {
+        var r = FGUYGfxRows[i], y = Math.round(218 + i * pitch), hot = i == FGUYGfxSel;
+        FGUYRect(ui, 76, y, 1448, rh, 16, hot ? FGUYC.rowHot : FGUYC.row, 100, hot ? FGUYC.yellow : FGUYC.rowLine, 100, hot ? 3 : 2);
+        FGUYHit(76, y, 1448, rh, 'gfxRow', i);
+        FGUYText(ui, 104, y + 10 + off, 760, 34, r.label, false, 25, FGUYC.white, 'left');
+        FGUYText(ui, 104, y + 48 + off, 840, 28, r.hint, false, 16, FGUYC.muted2, 'left');
+        var vx = 940, vw = 560, vy = y + 19 + off;
         FGUYRect(ui, vx, vy, vw, 48, 14, FGUYC.ink, 100, hot ? FGUYC.yellow : FGUYC.glow, 100, 2);
         if (r.kind == 's') {   // a slider: the bar, its value ("<0-100>|<what to show>" if that's not the number itself)
             var at = r.value.split('|'), v = Number(at[0]), bx = vx + 70, bw = vw - 220;
