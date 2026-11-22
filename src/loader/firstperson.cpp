@@ -64,6 +64,70 @@ bool g_default = false;                      // [Camera] FirstPerson: players st
 bool g_crosshair = true;                     // [Camera] Crosshair: one in the middle of a view in first person
 int g_fov = 0;                               // [Camera] FirstPersonFOV: degrees (0: the game's) - the slider's
 bool g_mineOnline = false;                   // online: my player in first person (my PC's - it goes with my input)
+// [Camera] FirstPersonStyle: 0 their arms and gun brought into the view, their body hidden (motion.cpp); 1 their whole body as the game has it, seen
+// from their own head - the way Bostannn's First Person mod does it (nexusmods.com/familyguybacktothemultiverse/mods/8, used with his permission; this
+// is our own code for it). Nothing of theirs is moved, shrunk or left out: the eye is put where their eyes are, read from their skeleton as it's posed
+// (motion.cpp BodyMeasure), and goes round their head with the view - their face always behind it. Looking ahead there's little of them to see;
+// looking down, their arms, gun and body. The eye: the eyes' height; over the head joint, out along the view by the face's own reach and g_body[0] of
+// the eye's height more; looking down it comes back toward the head by g_body[1] of that, never nearer than g_body[2] of the eye's height past the spine's
+// joints (the chest and belly in front of them). The camera's near plane (camera +0x14, the game's 0.1) is g_body[3] meanwhile: at 0.1 a face or a
+// chest this near is cut open - and the game doesn't draw a character with a bone that near its camera at all. g_body[4]: seconds the eye's eased over.
+// Every field of view the slider has (60..120) shows the same things: g_body[5..7] - looking down past g_body[6] degrees (the game's own limit is 45)
+// the view opens toward g_body[5] degrees across, whole by g_body[7]: at 60 or 80 across, straight down showed the ground and the tip of the gun - their
+// body is behind straight down from an eye in front of their face, and only a wide view reaches back to it. g_body[8..9] - a hand held up beside their
+// head (Lois sprinting with the irons, Peter's nail gun as he carries it) is in a wide view and not in a narrow one, a hand's breadth from the eye and
+// filling a side of it: the eye goes ahead until the hand, and g_body[8] of the eye's height round it for what it holds, is past the view's side edge -
+// only for a hand within g_body[9] of the eye's height of the eye's own height (lower, it's a gun held out in front: that's to be seen).
+// (research: "fpv style <0|1> [ahead] [pull back] [body margin] [near] [ease] [down: degrees across] [from] [to] [round a hand] [a hand's height]")
+// More of the script's own guards (its ini's SnoutMargin and FaceMargin; its DownFrom / DownBoost come to looking no further down than 51
+// degrees - the game stops at 45, and past 15 it tilts 1.2 times as far), not in ours at first: at 120 across, looking 50 degrees down and
+// more, the eye was over the open neck of Peter's shirt - the view went down inside him, through to his trouser tops and shoes (a model is
+// hollow, and never closed where clothes meet). g_bodyMore[0]: looking down, the eye stays that share of its height past their jaw or snout
+// (BodyMeasure's - the eye came back onto Brian's); [1]: that much more past the chest and belly when their body faces the way they look (in
+// first person it does: a belly reaches further past its joints than a back). [3]: the view's own reach - looking further down than its lower
+// edge is straight down (46 degrees at 120 across, 66 at the game's 77), that edge looks back under the eye, at the neck from above: the eye
+// goes ahead by how far back the edge reaches at the height of their neck (the joint under the head's), times this - so what's at the bottom
+// of the view is never behind their chest's front, at any width and as far down as they look; before the edge is straight down it's the same
+// rule the other way (the edge meets their neck's height ahead of the eye: the eye can be that much nearer) - at 38 and 46 degrees down a
+// sliver of the opening still showed along the bottom. Measured on Peter at 120, 51 degrees down: the eye 0.19 ahead of his head joint looks
+// into him, 0.33 shows his shirt whole. [2]: how far down they can look, degrees (0: as far as up -
+// the script's 51 isn't needed with [3], and a player looks straight down to see what they're standing on).
+// How far ahead the front of a chest is isn't in the joints: [1] of the eye's height more than g_body[2] when their body faces the way they
+// look, and [4] of how far their jaw or snout is ahead of their head joint - Peter's is 0.22 ahead, Lois's 0.02, and at 120 across Peter needs
+// 0.17 of his eye's height past his spine (0.12 looks into him at 49 and 60 degrees down, 0.14 a sliver at 49) where Lois needs 0.12 (0.06: a
+// sliver at 60; 0: into her blouse) - with the script's 0.12 + 0.08 for everyone, Lois looking down saw her feet and nothing else of herself.
+// And a share of the eye's height is too little on someone short with a body of the usual width: [5] is the least it comes to, in the game's
+// own lengths, for anyone 1.2 or more to the eyes (less in proportion below that: Stewie and Brian, big heads on small bodies, are whole at
+// the share alone) - Meg, 1.28 to her eyes, looked into her shirt at 0.18 past her spine and is whole at 0.24, which is Lois's 0.14 of 1.62.
+// (research: "fpv bodymore <past a snout> <more, facing> <down, degrees> <the view's reach> <of the jaw's reach> <the least>")
+float g_bodyMore[6] = {0.04f, 0.02f, 0, 1.0f, 0.4f, 0.24f};
+// The script's HandMargin, as its code has it (its .asi at 0x10013716; the ini's 0.30, and 0.5 a second from the constant at 0x1003c0e8):
+// looking down, the eye stays out of a ball round each of their arms' joints (BodyMeasure's - from a fifth of the arm out to the hand),
+// g_bodyHand[0] of the eye's height across its radius - what's in a hand is inside it. An eye that would be in one goes straight UP to its
+// top, by how far down they look (the sine of it) - at once; it comes back down at g_bodyHand[1] a second. Ours had only its own rule for a
+// hand beside the head (g_body[8..9]); with the eye going ahead looking down (g_bodyMore[3]) it went into the gun they hold out in front -
+// the user's picture: Peter's Power Driller cut open, black inside, across the whole view. The script's 0.30 isn't enough with the eye
+// that far ahead: recorded from outside at 120, 45 degrees down, Peter walking, sprinting, jumping, reloading, strafing and firing, walking
+// backward (scratch gunseq.ps1) - the gun's cut open in a dozen frames of 45 with no ball, in several at 0.30 and at 0.45, in none at 0.60.
+// The script takes the sine of how far down they look of it; here it's whole from g_bodyHand[2] (a sine: 0.5 - 30 degrees down): at 45
+// degrees the sine left the eye inside the ball, and standing still Peter's Power Driller - carried upright by his shoulder, as tall as he
+// is - filled a third of the view at 120 and was cut open at its edge.
+// (research: "fpv bodyhand <radius> <down a second> <whole from: a sine>")
+float g_bodyHand[3] = {0.60f, 0.5f, 0.5f};
+int g_style = 0;
+float g_body[10] = {0.05f, 0.45f, 0.12f, 0.02f, 0.04f, 0, 45, 75, 0.30f, 0.20f};   // (g_body[5] 0: the view doesn't open looking down - the script's doesn't)
+const int kCamNear = 0x14;
+// Their whole body's style: the field of view as Bostannn's mod sets it (read from his .asi, the code at its 0x10013ae1). The slider's degrees are
+// degrees ACROSS a 16:9 screen, exactly: up and down that's V = 2 atan(tan(across / 2) x 9 / 16), and another screen shape or a split-screen half keeps
+// that up-and-down angle. The camera's own value (camera +0xa0, radians - what its update leaves for the frame, a weapon's zoom in it) isn't an angle
+// across: the view's up-and-down angle, in radians, is tan(value / 2) - the game's 1.396 gives 0.839 = 48 degrees up and down, 77 across. So after the
+// game's update the value becomes 2 atan(tan(value / 2) x V / tan(0.698)) - the game's own times ours over the game's, a zoom kept - and it's put back
+// before the next update, which eases from what it finds there. (The arms' style still scales the settings' value by degrees / 80: its "120" is 129
+// across, its "60" 56.) g_bodyFov 0: that way here too. (research: "fpv bodyfov <0|1>")
+const int kCamFov = 0xa0;
+bool g_bodyFov = true;
+int g_bodyLog = 0;   // (research: "fpv bodylog <n>" - the next n camera updates' eye and field of view)
+bool g_bodyHeadAway = true;   // (research: "fpv bodyhead <0|1>" - 0: their head left as it is)
 
 struct View {
     bool on = false;
@@ -90,6 +154,12 @@ struct View {
     float frameOrg[3] = {};                              // (where the character's drawn this frame: its first skinned draw's place)
     float frameW[3][4] = {};                             // (...and how it's put there: that draw's world matrix)
     bool haveFrameOrg = false;
+    float body[3] = {};                                  // (their whole body's style: the eye from their place - side, height, ahead along the view)
+    bool haveBody = false;
+    float bodyDown = 0;                                  //   (how far down they look, degrees)
+    float bodyLift = 0;                                  //   (the eye above its own height: clear of their arms - g_bodyHand)
+    float nearWas = 0;                                   //   (their camera's near plane as the game had it; 0: not changed)
+    float fovWas = 0;                                    //   (their camera's field of view as the game's update left it; 0: not changed)
 };
 View g_view[8];
 volatile LONG g_any = 0;
@@ -144,6 +214,7 @@ const float* __cdecl Offsets(unsigned char* player, const float* game) {
     memcpy(v.offsets, game, sizeof(v.offsets));
     float eye = v.height > 0 ? v.height : game[1] * kEyeHeight, ahead = v.forward > -90 ? v.forward : game[1] * kEyeAhead;
     float side = v.side > -90 ? v.side : game[1] * kEyeSide;
+    if (g_style == 1 && v.haveBody) side = v.body[0], eye = v.body[1], ahead = v.body[2];
     v.offsets[0] = game[0] + (side - game[0]) * t;
     v.offsets[1] = game[1] + (eye - game[1]) * t;
     v.offsets[2] = game[2] + (ahead - game[2]) * t;
@@ -302,7 +373,105 @@ void UnfaceAfterCamera(const Faced& f) {
     f.h[0x78 / 4] = f.heading[1];
 }
 
+// Their whole body's style: the eye for this camera update, from their skeleton as it was last posed.
+void BodyEye(unsigned char* player, int p, View& v, float dt) {
+    float b[96];
+    if (p >= 4 || !MotionBodyEye(p, b)) { v.haveBody = false; v.bodyLift = 0; return; }
+    float yaw = *reinterpret_cast<float*>(player + kCamYaw), fx = -sinf(yaw), fz = -cosf(yaw);
+    const float* orbit = reinterpret_cast<const float*>(player + kOrbit);
+    float f[3] = {orbit[0] - orbit[6], orbit[1] - orbit[7], orbit[2] - orbit[8]};
+    float len = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    float down = len > 0.02f ? -f[1] / len : 0;
+    down = down < 0 ? 0 : (down > 1 ? 1 : down);
+    const float* H = b;
+    const float* E = b + 3;
+    float face = sqrtf((E[0] - H[0]) * (E[0] - H[0]) + (E[2] - H[2]) * (E[2] - H[2]));
+    float out = face + g_body[0] * E[1];
+    // How far the spine's joints are ahead of the head joint, the way they LOOK (their places in the world along (fx, fz)) - not the way
+    // their body faces: it doesn't always face the view. Standing where they start it faces the other way (their jaw reads 0.21 behind
+    // their head joint - taken for a sign the wrong way round, and for a while this was in their own axes instead); walking backward
+    // they've turned round and lean toward the eye, and with their own axes the eye stayed over the neck: the view went down inside them
+    // again.
+    float front = 0;
+    for (int i = 0; i < (int)b[24] && i < 6; ++i) {
+        const float* P = b + 6 + 3 * i;
+        float d = (P[0] - H[0]) * fx + (P[2] - H[2]) * fz;
+        if (d > front) front = d;
+    }
+    v.bodyDown = asinf(down) * 57.29578f;
+    float across = (float)(v.fov > 0 ? v.fov : kFovGame);
+    if (v.bodyDown > g_body[6] && g_body[5] > across) {
+        float k2 = (v.bodyDown - g_body[6]) / (g_body[7] - g_body[6]);
+        k2 = k2 > 1 ? 1 : k2;
+        across += (g_body[5] - across) * k2 * k2 * (3 - 2 * k2);
+    }
+    float th = tanf(across * 0.5f * 0.0174533f), round = g_body[8] * E[1];
+    // (how squarely their body faces the way they look - their eyes ahead of their head joint that way: 1 the same way, 0 side on or away)
+    float facing = face > 1e-3f ? ((E[0] - H[0]) * fx + (E[2] - H[2]) * fz) / face : 1;
+    facing = facing < 0 ? 0 : (facing > 1 ? 1 : facing);
+    float jaw = b[35] > 0.5f ? (b[32] - H[0]) * fx + (b[34] - H[2]) * fz : 0;   // (their jaw or snout, ahead of the head joint the way they look)
+    // (the front of their chest, from the head joint)
+    float past = (g_body[2] + g_bodyMore[1] * facing) * E[1], atLeast = g_bodyMore[5] * (E[1] < 1.2f ? E[1] / 1.2f : 1);
+    float chest = front + (past > atLeast ? past : atLeast) + g_bodyMore[4] * facing * (jaw > 0 ? jaw : 0);
+    float pulled = out * (1 - g_body[1] * down), least = down * chest;
+    // The view's lower edge, where it meets the height of their neck: never behind the front of their chest. `back`: how far past straight
+    // down that edge points (less than 0: still ahead of it) - at their neck's height it's neck x tan(back) behind the eye.
+    float half = atanf(tanf((float)(v.fov > 0 ? v.fov : 77.3f) * 0.5f * 0.0174533f) * 0.5625f);
+    float back = asinf(down) + half - 1.5707963f, neck = ((int)b[24] > 0 ? E[1] - b[7] : 0.2f * E[1]) + v.bodyLift;   // (from the eye as it's lifted)
+    if (neck > 0 && back > -1.2f) {
+        float edge = chest + neck * tanf(back > 1.2f ? 1.2f : back) * (back > 0 ? g_bodyMore[3] : 1);
+        if (edge > least) least = edge;
+    }
+    float r = pulled > least ? pulled : least;
+    float snout = 0;
+    if (b[35] > 0.5f) {   // (their jaw or snout: the eye doesn't come back onto it)
+        snout = jaw;
+        float clear = down * (snout + g_bodyMore[0] * E[1]);
+        if (clear > r) r = clear;
+    }
+    if (g_bodyLog > 0) Log(L"FirstPerson: body - facing %.2f, spine %.3f ahead, snout %.3f ahead, neck %.3f under the eye (%.3f up), the view's edge %.1f deg back: eye %.3f ahead of the head joint (pulled %.3f)", facing, front, snout, neck, E[1], back * 57.29578f, r, pulled);
+    // (a hand beside their head: the eye ahead of it, by the view's width)
+    for (int i = 0; i < 2 && g_body[8] > 0; ++i) {
+        const float* P = b + 26 + 3 * i;
+        float dy = P[1] - E[1];
+        if (std::fabs(dy) > g_body[9] * E[1]) continue;
+        float x = std::fabs((P[0] - H[0]) * -fz + (P[2] - H[2]) * fx), z = (P[0] - H[0]) * fx + (P[2] - H[2]) * fz;
+        if (g_bodyLog > 0) Log(L"FirstPerson: body - hand %d: %.3f to the side, %.3f ahead of the head joint, %.3f from the eye's height (eye %.3f ahead)", i, x, z, dy, r);
+        if (x < 0.1f * E[1]) continue;   // (in front of their face, not beside it: a gun raised to the eye - that's to be seen)
+        float need = z - (x - round * sqrtf(1 + th * th)) / th;
+        float most = out + 0.35f * E[1];   // (no further ahead than this)
+        if (need > most) need = most;
+        if (need > r) r = need;
+    }
+    // (clear of their arms and what they hold: up out of the ball round each joint)
+    float lift = 0;
+    int arms = (int)b[38];
+    if (g_bodyHand[0] > 0 && down > 0 && arms > 0) {
+        float R = g_bodyHand[0] * E[1], ex = H[0] + r * fx, ez = H[2] + r * fz;
+        for (int i = 0; i < arms && i < 16; ++i) {
+            const float* J = b + 40 + 3 * i;
+            float d2 = (ex - J[0]) * (ex - J[0]) + (ez - J[2]) * (ez - J[2]);
+            if (d2 >= R * R) continue;
+            float up = sqrtf(R * R - d2) + J[1] - E[1];
+            if (up > lift) lift = up;
+        }
+        lift *= g_bodyHand[2] > 0 && down < g_bodyHand[2] ? down / g_bodyHand[2] : 1;
+    }
+    if (lift >= v.bodyLift || !v.haveBody) v.bodyLift = lift;
+    else {
+        float fall = (dt > 0 ? (dt < 1 ? dt : 1) : 0) * g_bodyHand[1];
+        v.bodyLift = v.bodyLift - fall > lift ? v.bodyLift - fall : lift;
+    }
+    if (g_bodyLog > 0) Log(L"FirstPerson: body - %d arm joints, the eye lifted %.3f (wanted %.3f)", arms, v.bodyLift, lift);
+    float want[3] = {H[0] * -fz + H[2] * fx, E[1] + v.bodyLift, H[0] * fx + H[2] * fz + r};
+    float k = v.haveBody && dt > 0 && dt < 0.25f && g_body[4] > 0 ? 1 - expf(-dt / g_body[4]) : 1;
+    for (int i = 0; i < 3; ++i) v.body[i] = v.haveBody ? v.body[i] + (want[i] - v.body[i]) * k : want[i];
+    v.haveBody = true;
+}
+
 }  // namespace
+
+bool FirstPersonBodyStyle() { return g_style == 1; }
 
 // Their pose about to be built (motion.cpp): how far their body is from the way they look, for this pose's arms (FollowX).
 void FirstPersonPoseStart(unsigned char* entity) {
@@ -358,28 +527,66 @@ void __fastcall Hook_Update(unsigned char* camera, void*, int a, float dt) {
     v.blend = v.on ? (v.blend + step < 1 ? v.blend + step : 1) : (v.blend - step > 0 ? v.blend - step : 0);
     v.viewport = *reinterpret_cast<int*>(player + kViewport);
     auto settings = *reinterpret_cast<unsigned char**>(camera + kCamSettings);
-    if (v.blend <= 0 || !settings) return g_real(camera, a, dt);
+    if (v.blend <= 0 || !settings) {
+        if (v.nearWas != 0) *reinterpret_cast<float*>(camera + kCamNear) = v.nearWas, v.nearWas = 0;   // (back in third person: the game's near plane)
+        if (v.fovWas != 0) *reinterpret_cast<float*>(camera + kCamFov) = v.fovWas, v.fovWas = 0;
+        return g_real(camera, a, dt);
+    }
     // looking up and down further than the game's 45 degrees, and their own field of view, while their camera updates
     // (the settings are shared)
     float* pmin = reinterpret_cast<float*>(settings + kPitchMin);
     float* pmax = reinterpret_cast<float*>(settings + kPitchMax);
     float* pfov = reinterpret_cast<float*>(settings + kFov);
     float lo = *pmin, hi = *pmax, fov = *pfov, t = Eased(v.blend);
+    // (their whole body's style: not as far down - g_bodyMore[2])
+    float downMost = g_style == 1 && g_bodyMore[2] > 0 ? g_bodyMore[2] * 0.0174533f : v.pitch;   // (the upper limit is the way down)
     *pmin = lo + (-v.pitch - lo) * t;
-    *pmax = hi + (v.pitch - hi) * t;
+    *pmax = hi + (downMost - hi) * t;
     // (the game's by the slider's share of its own: zooming the game narrows this very value - set outright, zoom did nothing at any
     // field of view but the game's)
-    float ours = v.fov > 0 ? fov * (1 + ((float)v.fov / kFovGame - 1) * t) : fov;
+    // (their whole body's style: looking down past the game's own limit the view opens - every field of view shows their body)
+    float across = (float)(v.fov > 0 ? v.fov : kFovGame);
+    if (g_style == 1 && v.haveBody && v.bodyDown > g_body[6] && g_body[5] > across && g_body[7] > g_body[6]) {
+        float k2 = (v.bodyDown - g_body[6]) / (g_body[7] - g_body[6]);
+        k2 = k2 > 1 ? 1 : k2;
+        across += (g_body[5] - across) * k2 * k2 * (3 - 2 * k2);
+    }
+    bool exact = g_style == 1 && g_bodyFov;   // (their whole body's style: set on the camera after its update - below)
+    float ours = across != kFovGame && !exact ? fov * (1 + (across / kFovGame - 1) * t) : fov;
+    if (g_bodyLog > 0 && g_style == 1) { Log(L"FirstPerson: body - down %.1f deg, %.1f across (theirs %d), the camera's %.3f -> %.3f, eye side %.3f up %.3f ahead %.3f, near %.3f", v.bodyDown, across, v.fov, fov, ours, v.body[0], v.body[1], v.body[2], *reinterpret_cast<float*>(camera + kCamNear)); }
     *pfov = ours;
     // no aim assist in first person: the game hands the camera the point on the enemy nearest the aim and a strength
     // each frame (0x62c110 -> 0x5707a0: camera +0x334 on, +0x338 the point, +0x344 / +0x348 the strength), and its
     // update pulls the view that way - the crosshair stuck to enemies. Turned off just before it updates (every PC
     // runs every player's camera, and knows who's in first person).
     if (v.blend > 0.5f) camera[kAssist] = 0;
+    // their whole body's style: the eye from their skeleton, and the camera's near plane nearer while they're in it
+    if (g_style == 1) BodyEye(player, p, v, dt); else v.haveBody = false;
+    if (g_bodyLog > 0) --g_bodyLog;
+    float* nearAt = reinterpret_cast<float*>(camera + kCamNear);
+    bool nearer = g_style == 1 && v.haveBody && v.blend > 0.5f && g_body[3] > 0;
+    if (nearer && v.nearWas == 0 && *nearAt > 0.01f && *nearAt < 1.0f) v.nearWas = *nearAt;
+    if (v.nearWas != 0) {
+        *nearAt = nearer ? g_body[3] : v.nearWas;
+        if (!nearer) v.nearWas = 0;
+    }
     Faced faced = {};
     if (g_face) FaceForCamera(player, t, &faced);
+    float* camFov = reinterpret_cast<float*>(camera + kCamFov);
+    if (v.fovWas != 0) *camFov = v.fovWas, v.fovWas = 0;   // (the game's own, for its update)
     g_real(camera, a, dt);
     if (g_face) UnfaceAfterCamera(faced);
+    if (exact && across != kFovGame && *camFov > 0.3f && *camFov < 2.8f) {
+        float upDown = 2 * atanf(tanf(across * 0.5f * 0.0174533f) * 0.5625f);
+        float k = 1 + (upDown / tanf(0.6981317f) - 1) * t;
+        v.fovWas = *camFov;
+        *camFov = 2 * atanf(tanf(*camFov * 0.5f) * k);
+    }
+    if (g_bodyLog > 0 && g_style == 1) {
+        const float* proj = reinterpret_cast<const float*>(kViewports + (v.viewport >= 0 && v.viewport < 4 ? v.viewport : 0) * kViewportSize + 0x164);
+        float ta = IsBadReadPtr(proj, 24) || std::fabs(proj[0]) < 0.01f ? 0 : 1 / std::fabs(proj[0]), tu = IsBadReadPtr(proj, 24) || std::fabs(proj[5]) < 0.01f ? 0 : 1 / std::fabs(proj[5]);
+        Log(L"FirstPerson: body - the camera's field of view %.3f (the game's %.3f); the view drawn %.1f degrees across, %.1f up and down", *camFov, v.fovWas != 0 ? v.fovWas : *camFov, 2 * atanf(ta) * 57.29578f, 2 * atanf(tu) * 57.29578f);
+    }
     // no lag across the ground: the game's camera trails the player as they set off (its own smoothed copy of the point
     // it orbits - 0.6 behind at a run), and their own head and shoulders ran into the view. The point it orbits and the
     // eye moved to where it settles standing - their place, our offsets along the view (side, ahead) and up (the game's
@@ -463,6 +670,7 @@ void InitFirstPerson() {
     g_crosshair = SettingInt(L"Camera", L"Crosshair", nullptr, 1) != 0;
     g_shotLog = SettingInt(L"Debug", L"ShotLog", nullptr, 0) != 0;
     MotionShotLog(g_shotLog);
+    g_style = SettingInt(L"Camera", L"FirstPersonStyle", L"FGUYMOD_FPV_STYLE", 0) == 1 ? 1 : 0;
     MotionArmMoves(SettingInt(L"Camera", L"FirstPersonMoves", L"FGUYMOD_FPV_MOVES", 0), 0, false);
     MotionArmSize(SettingInt(L"Camera", L"FirstPersonArmSize", L"FGUYMOD_FPV_ARMSIZE", 100) / 100.0f);
     MotionArmFlat(SettingInt(L"Camera", L"FirstPersonArmFlat", L"FGUYMOD_FPV_ARMFLAT", 100) / 100.0f);
@@ -684,6 +892,7 @@ void FirstPersonDrawnCamera(int view, float* m) {
 // alone), whenever they're in first person.
 bool OwnLinesShow(int p, const View& v) {
     if (v.blend < 0.5f || p >= 4) return false;
+    if (g_style == 1 && v.haveBody) return false;   // (their whole body's style: their face is behind the eye - their lines as the game draws them)
     int shown = 0;
     float r[4];
     for (int i = 0; i < 4; ++i) shown += SplitViewRect(i, r) ? 1 : 0;
@@ -711,6 +920,22 @@ bool FirstPersonNoLines(float x, float y, float z) {
         if (dx * dx + dz * dz < 2.25f && dy > -0.5f && dy < 3.0f) return true;   // (them and what they hold)
     }
     return false;
+}
+
+// motion.cpp: their whole body's style, their view the only one on this screen - their head is shrunk into their neck in their pose. From their own eyes
+// it's never seen; left there, looking down, Peter's chin stood in the view ahead of the eye (40 to 60 degrees down, at every field of view), and where a
+// wide view reaches back under the eye it looked through the open top of his shirt at the grass - shrunk to its joint the head closes the neck. (A partner
+// on the same screen would see them headless: one pose for every view. Then it's left, and the eye's margins have to do.)
+bool FirstPersonBodyHeadAway(int slot) {
+    if (g_style != 1 || !g_bodyHeadAway || !g_any || slot < 0 || slot >= 4) return false;
+    const View& v = g_view[slot];
+    if (!v.on || v.blend < 0.5f || !v.haveBody || !Listed(v.player) || IndexOf(v.player) != slot || v.viewport < 0 || v.viewport >= 4) return false;
+    if (g_pulled[v.viewport].pull > 0 || MotionPlaying(slot)) return false;   // (their view behind them - an emote, a taunt: all of them)
+    for (int i = 0; i < 4; ++i) {
+        float o[4];
+        if (i != v.viewport && SplitViewRect(i, o)) return false;
+    }
+    return true;
 }
 
 bool FirstPersonDefault() { return g_default; }
@@ -759,7 +984,7 @@ int g_layerDump = 0;   // (research: "fpv layer <n>" - the upper body's blend bl
 bool g_armsRaw = false;   // (research: "fpv armsraw 1" - their arms as the game has them, none of ours: the truth to match)
 bool FirstPersonArms(int slot, ArmsView* out) {
     g_armsNoWhy = 1;
-    if (!g_any || slot < 0 || slot >= 4 || g_armsRaw) return false;
+    if (!g_any || slot < 0 || slot >= 4 || g_armsRaw || g_style == 1) return false;   // (their whole body's style: the game's pose, untouched)
     View& v = g_view[slot];
     float r[4];
     g_armsNoWhy = 2;
@@ -1305,7 +1530,7 @@ bool ViewmodelDraw(const float (*c)[4], bool skinned, float (*out)[4]) {
     for (int i = 0; i < 3; ++i) if (std::fabs(c2[i] - A * c3[i]) > 1e-3f * (std::fabs(c2[i]) + 1)) return false;
     g_vmWhy = 0;
     const float* proj = reinterpret_cast<const float*>(kViewports + view * kViewportSize + 0x164);
-    float scale = IsBadReadPtr(proj, 4) || std::fabs(proj[0]) < 0.1f ? 1.0f : 1 / std::fabs(proj[0]) / kArmTan;
+    float scale = IsBadReadPtr(proj, 4) || std::fabs(proj[0]) < 0.1f ? 1.0f : 1 / std::fabs(proj[0]) / MotionArmTan(p);
     float X[3][4];
     FollowX(c, g_view[p], hand, X);
     Followed(c, X, scale, hand, out);
@@ -1351,7 +1576,7 @@ bool FirstPersonShell(const float (*c)[4], float (*inner)[4], float* nearPlane, 
     for (int i = 0; i < 3; ++i) if (std::fabs(c2[i] - A * c3[i]) > 1e-3f * (std::fabs(c2[i]) + 1)) return false;
     if (std::fabs(B) < 1e-9f) return false;
     const float* proj = reinterpret_cast<const float*>(kViewports + view * kViewportSize + 0x164);
-    float scale = IsBadReadPtr(proj, 4) || std::fabs(proj[0]) < 0.1f ? 1.0f : 1 / std::fabs(proj[0]) / kArmTan;
+    float scale = IsBadReadPtr(proj, 4) || std::fabs(proj[0]) < 0.1f ? 1.0f : 1 / std::fabs(proj[0]) / MotionArmTan(p);
     // (in front with the arms, their near plane nearer - motion.cpp keeps their hidden body, a dot of outline, behind
     // the eye: an arm's length ahead it came out over the gun, black)
     float X[3][4];
@@ -1390,6 +1615,7 @@ int FirstPersonOwnDraw(const float (*c)[4], float* planes) {
         return 0;
     }
     if (view < 0 || view >= 4 || g_pulled[view].pull > 0.05f) return 0;   // (drawn from behind: all of them)
+    if (g_style == 1) return 0;   // (their whole body's style: all of them, from their own eyes)
     int p = CosmeticsDrawPlayer();
     if (p < 0 || p >= 8 || g_view[p].viewport != view || g_view[p].blend < 0.5f) return 0;
     if (g_hideMode == 2) return -1;
@@ -1526,6 +1752,22 @@ void FirstPersonCommand(const char* args) {
         char* d = strtok_s(nullptr, " \t", &ctx);
         float v[4] = {(float)atof(on), b ? (float)atof(b) : 0, c ? (float)atof(c) : 0, d ? (float)atof(d) : 0.3f};
         if (b && c) MotionOffUpper(v);
+        return;
+    }
+    if (_stricmp(p, "true") == 0) {   // fpv true <on> <back> <up> <side> <tan> <tilt degrees> <a hand at least this far ahead>
+        void MotionTrueArms(const float* v);
+        float v[10] = {(float)atof(on), 0, 0, 0, 1.0f, -16, 0, 1, 0.001f, 1.3f};
+        for (int i = 1; i < 10; ++i) { char* t = strtok_s(nullptr, " 	", &ctx); if (t) v[i] = (float)atof(t); }
+        MotionTrueArms(v);
+        return;
+    }
+    if (_stricmp(p, "truecarry") == 0) { void MotionTrueCarry(int on); MotionTrueCarry(atoi(on)); return; }   // fpv truecarry <0|1|2>
+    if (_stricmp(p, "trueeye") == 0) { void MotionTrueEye(float s); MotionTrueEye((float)atof(on)); return; }   // fpv trueeye <seconds>
+    if (_stricmp(p, "elbowhigh") == 0) {   // fpv elbowhigh <from> <to> <side> <back>
+        void MotionElbowHigh(const float* v);
+        float v[4] = {(float)atof(on), -0.1f, 3.0f, 2.0f};
+        for (int i = 1; i < 4; ++i) { char* t = strtok_s(nullptr, " 	", &ctx); if (t) v[i] = (float)atof(t); }
+        MotionElbowHigh(v);
         return;
     }
     if (_stricmp(p, "asgame") == 0) {   // fpv asgame <calm> <less> <bob> <strafe calm>
@@ -1670,6 +1912,28 @@ void FirstPersonCommand(const char* args) {
         CosmeticsArmInkTest((float)atof(on), b ? (float)atof(b) : 3e-5f, s ? (float)atof(s) : 3);
         return;
     }
+    if (_stricmp(p, "style") == 0) {   // fpv style <0|1> [ahead] [pull back] [body margin] [near] [ease]
+        g_style = atoi(on) == 1 ? 1 : 0;
+        for (int i = 0; i < 10; ++i) { char* t = strtok_s(nullptr, " \t", &ctx); if (t) g_body[i] = (float)atof(t); }
+        Log(L"FirstPerson: style %d - eye %.3f of its height ahead of the face, back %.2f looking down, %.3f past the body, near plane %.3f, eased over %.3f s", g_style, g_body[0], g_body[1], g_body[2], g_body[3], g_body[4]);
+        return;
+    }
+    if (_stricmp(p, "bodymore") == 0) {   // fpv bodymore <past a snout> <more, facing> <down, degrees> <the view's reach> <of the jaw's reach>
+        g_bodyMore[0] = (float)atof(on);
+        for (int i = 1; i < 6; ++i) { char* t = strtok_s(nullptr, " \t", &ctx); if (t) g_bodyMore[i] = (float)atof(t); }
+        Log(L"FirstPerson: body - %.3f past a snout, %.3f more facing, down to %.1f degrees, the view's reach x %.2f, %.2f of the jaw's", g_bodyMore[0], g_bodyMore[1], g_bodyMore[2], g_bodyMore[3], g_bodyMore[4]);
+        return;
+    }
+    if (_stricmp(p, "bodyhand") == 0) {   // fpv bodyhand <radius, of the eye's height> <down, a second>
+        g_bodyHand[0] = (float)atof(on);
+        for (int i = 1; i < 3; ++i) if (char* t = strtok_s(nullptr, " \t", &ctx)) g_bodyHand[i] = (float)atof(t);
+        Log(L"FirstPerson: body - clear of their arms by %.3f of the eye's height, down at %.2f a second, whole from %.2f", g_bodyHand[0], g_bodyHand[1], g_bodyHand[2]);
+        return;
+    }
+    if (_stricmp(p, "bodylog") == 0) { g_bodyLog = atoi(on); return; }   // fpv bodylog <n>
+    if (_stricmp(p, "bodyfov") == 0) { g_bodyFov = atoi(on) != 0; return; }   // fpv bodyfov <0|1>
+    if (_stricmp(p, "bodyhead") == 0) { g_bodyHeadAway = atoi(on) != 0; return; }   // fpv bodyhead <0|1>
+    if (_stricmp(p, "bonedump") == 0) { void MotionBoneDump(int n); MotionBoneDump(atoi(on)); return; }   // fpv bonedump <n>
     if (_stricmp(p, "armsraw") == 0) { g_armsRaw = atoi(on) != 0; return; }   // fpv armsraw <0|1>
     if (_stricmp(p, "armflat") == 0) { MotionArmFlat((float)atof(on)); return; }   // fpv armflat <1: their own>
     if (_stricmp(p, "armsize") == 0) { MotionArmSize((float)atof(on)); return; }   // fpv armsize <1: as set>

@@ -265,6 +265,9 @@ void MotionPlay(int slot, std::shared_ptr<const MotionClip> clip, const std::vec
 void MotionStop(int slot);             //   (blending back to the game's own)
 bool MotionPlaying(int slot);
 bool MotionPose(int slot, std::vector<float>& out, int* bones);   //   a player's pose this frame (models.cpp)
+bool MotionBodyEye(int slot, float* out);   // first person with their whole body: their head and eyes this pose (96 floats - motion.cpp BodyMeasure)
+bool FirstPersonBodyHeadAway(int slot);   //   (their head shrunk into their neck: their view alone on the screen)
+bool FirstPersonBodyStyle();           //   ([Camera] FirstPersonStyle=1 - firstperson.cpp)
 bool MotionHead(int slot, float* at);  //   where a player's head is this frame, in the world (firstperson.cpp)
 void MotionArmsTest(float right, float down, float ahead, bool on);   //   research: the gun hand's place in first person
 void MotionArmsZoomTest(float right, float down);                     //     (zoomed in)
@@ -317,6 +320,7 @@ struct ArmsView {                      // a player's gun to bring into their vie
 };
 bool FirstPersonArms(int slot, ArmsView* out);
 int FirstPersonArmsNoWhy();            //   research: why FirstPersonArms last said no (0: it didn't)
+float MotionArmTan(int slot);           // (a slot's arms' own field of view now: kArmTan, or her own arms' - motion.cpp)
 const float kArmTan = 0.79f;           // first person's arms drawn with a field of view of their own: tan across (the
                                        //   game's 80 degrees at 16:9) - the same size at any field of view, zoomed too
 bool MotionViewmodel(int slot, float* hand);   //   render thread: their arms drawn as first person's (their body hidden

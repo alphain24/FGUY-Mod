@@ -180,6 +180,7 @@ export function createEmoteEditor({scene, camera, controls, renderer, holder, $,
     $('timeLabel').textContent = ed.time.toFixed(2) + ' / ' + dur.toFixed(2) + ' s';
     $('delKey').disabled = !ed.keys.some(k => Math.abs(k.t - ed.time) < 0.5 / FPS);
     $('saveEmote').disabled = !ed.keys.length;
+    $('installEmote').disabled = !ed.keys.length;
     $('exportGlb').disabled = !ed.rig;
   }
   function seek(t) {
@@ -268,6 +269,30 @@ export function createEmoteEditor({scene, camera, controls, renderer, holder, $,
     download(p.blob, p.file);
     setStatus('Saved emote "' + p.name + '" for ' + ed.rig.outfit.character + ' - put it in the game\'s FGUYMod\\emotes folder.');
   };
+  // straight into the game: its folder picked once (Chrome and Edge can write there when asked), the pack put in
+  // FGUYMod\emotes - where the game looks for loose emotes
+  $('installEmote').onclick = async () => {
+    if (!ed.rig || !ed.keys.length) return;
+    const p = buildPack();
+    if (!window.showDirectoryPicker) {
+      download(p.blob, p.file);
+      setStatus('This browser can\'t write into the game folder - saved "' + p.file + '": put it in the game\'s FGUYMod\\emotes folder.');
+      return;
+    }
+    try {
+      if (!ed.gameDir) ed.gameDir = await window.showDirectoryPicker({id: 'fguy-game', mode: 'readwrite'});
+      let mod;
+      try { mod = await ed.gameDir.getDirectoryHandle('FGUYMod'); }
+      catch (e) { ed.gameDir = null; throw new Error('that folder has no FGUYMod folder - pick the game\'s own folder (where FGUY.exe is)'); }
+      const folder = await mod.getDirectoryHandle('emotes', {create: true});
+      const w = await (await folder.getFileHandle(p.file, {create: true})).createWritable();
+      await w.write(p.blob);
+      await w.close();
+      setStatus('Installed "' + p.name + '" for ' + ed.rig.outfit.character + '. In the game: hold B (Back on a controller) for the emote wheel.');
+    } catch (err) {
+      if (err.name !== 'AbortError') setStatus("Couldn't install it: " + err.message);
+    }
+  };
   $('openEmote').onchange = async e => {
     const f = e.target.files[0];
     e.target.value = '';
@@ -332,5 +357,16 @@ export function createEmoteEditor({scene, camera, controls, renderer, holder, $,
     build, tick, click, buildPack,
     leave() { stop(); tc.detach(); },
     get busy() { return tc.dragging; },
+    // (mocap.js: the character as it's rigged here, and keys made from a video put on its timeline - then played)
+    get rig() { return ed.rig; },
+    get meshes() { return holder.children.filter(m => m.isSkinnedMesh); },
+    get keys() { return ed.keys; },
+    setKeys(keys, length) {
+      ed.keys = keys;
+      $('emoteLength').value = Math.max(0.2, length).toFixed(2);
+      $('emoteLoop').checked = false;
+      seek(0);
+      play();
+    },
   };
 }

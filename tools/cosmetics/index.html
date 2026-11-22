@@ -66,6 +66,11 @@ input[type=text] { background: var(--panel2); border: 2px solid var(--line); bor
 .tabs { display: flex; gap: 6px; }
 .tab { background: var(--panel2); border: 2px solid var(--line); border-radius: 999px; padding: 5px 16px; cursor: pointer; font-weight: 800; }
 .tab.on { border-color: var(--accent); color: var(--accent); }
+.mocapView { position: relative; margin: 6px 0; }
+.mocapView video { width: 100%; max-height: 260px; background: #000; border-radius: 8px; display: block; object-fit: contain; }
+.mocapView canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.mocapBarBox { height: 4px; background: var(--line); border-radius: 2px; margin: 4px 0 8px; overflow: hidden; }
+#mocapBar { height: 100%; width: 0; background: var(--accent); }
 select { background: var(--panel2); border: 2px solid var(--line); border-radius: 8px; padding: 6px 9px; width: 100%; }
 input[type=number] { background: var(--panel2); border: 2px solid var(--line); border-radius: 8px; padding: 5px 8px; }
 .timeline { position: absolute; left: 12px; right: 12px; bottom: 34px; display: flex; gap: 12px; align-items: center;
@@ -235,6 +240,34 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
     </div>
     <div class="row"><button class="btn" id="clearKeys">Clear all</button></div>
     <div class="sep"></div>
+    <h2>From a video</h2>
+    <div class="muted">A video of one person dancing becomes this character's emote. Whole body in view, facing the camera;
+    up to 20 seconds. The video stays on your PC.</div>
+    <div class="row"><label class="btn">Choose a video <input type="file" id="mocapFile" accept="video/*" hidden></label></div>
+    <div class="mocapView">
+      <video id="mocapVideo" muted playsinline controls hidden></video>
+      <canvas id="mocapOverlay" hidden></canvas>
+    </div>
+    <div class="row">
+      <span class="muted">Start</span><input type="number" id="mocapStart" value="0" min="0" step="0.1" style="width:70px"><span class="muted">s</span>
+      <span class="muted">Length</span><input type="number" id="mocapLength" value="6" min="0.2" max="20" step="0.1" style="width:70px"><span class="muted">s</span>
+    </div>
+    <div class="row"><button class="btn primary" id="mocapTrack" disabled>Track the dance</button></div>
+    <div class="mocapBarBox"><div id="mocapBar"></div></div>
+    <div class="row">
+      <label class="muted"><input type="checkbox" id="mocapShow" checked> Tracked points</label>
+      <label class="muted"><input type="checkbox" id="mocapGround" checked> Feet on the ground</label>
+      <label class="muted" title="A camera that looks a little down makes the dancer seem to lean toward it - this stands them straight"><input type="checkbox" id="mocapLevel" checked> Stand straight (fix the camera's tilt)</label>
+      <label class="muted"><input type="checkbox" id="mocapMirror"> Mirrored video</label>
+      <label class="muted"><input type="checkbox" id="mocapReach" checked> Hands to the face</label>
+      <label class="muted"><input type="checkbox" id="mocapClip" checked> Keep hands out of the body</label>
+      <label class="muted" title="The fingers, the palms and the head from the hands' and the face's own points - off: from the body's points alone"><input type="checkbox" id="mocapHands" checked> Fingers and face</label>
+    </div>
+    <div class="row">
+      <span class="muted">Steady</span><input type="range" id="mocapSmooth" min="0" max="5" step="1" value="2" style="width:110px">
+      <button class="btn" id="mocapUse" disabled>Put it on the character again</button>
+    </div>
+    <div class="sep"></div>
     <h2>Other programs</h2>
     <div class="row">
       <button class="btn" id="exportGlb" disabled>Export rigged .glb</button>
@@ -244,7 +277,8 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
     <div class="sep"></div>
     <h2>Emote pack</h2>
     <div class="row">
-      <button class="btn primary" id="saveEmote" disabled>Save emote</button>
+      <button class="btn primary" id="installEmote" disabled>Install to game</button>
+      <button class="btn" id="saveEmote" disabled>Save emote</button>
       <label class="btn">Open emote <input type="file" id="openEmote" accept=".fgemote,.zip" hidden></label>
     </div>
     <div class="status" id="status2"></div>

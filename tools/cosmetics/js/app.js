@@ -8,6 +8,7 @@ import {Ho} from './ho.js';
 import {decodeDds} from './dds.js';
 import {loadModel, loadSkeleton, outfitsOf, pictureFor, CHARACTERS} from './model.js';
 import {createEmoteEditor} from './emotes.js';
+import {createMocap} from './mocap.js';
 import {createModelEditor, modelPackGroup} from './models.js';
 
 const $ = id => document.getElementById(id);
@@ -1041,6 +1042,7 @@ renderer.domElement.addEventListener('webglcontextrestored', () => setStatus('Th
 models = createModelEditor({holder, $, setStatus, download, textureFor, outfitsOf: ch => state.outfits.filter(o => o.character === ch)});
 emotes = createEmoteEditor({scene, camera, controls, renderer, holder, $, setStatus, download, textureFor,
   outfitsOf: ch => state.outfits.filter(o => o.character === ch)});
+const mocap = createMocap({$, setStatus, editor: emotes});
 function setMode(mode) {
   if (mode === state.mode) return;
   if (state.mode === 'emotes') emotes.leave();
@@ -1067,4 +1069,6 @@ if (new URLSearchParams(location.search).has('dev') && ['127.0.0.1', 'localhost'
   fetch('/game/PLYS.ho').then(r => r.ok ? r.blob() : null).then(b => b && openPackage(new File([b], 'PLYS.ho')));
 }
 window.studio = state;   // (for checking in the browser's console)
-window.studioView = {holder, camera, controls, setMode, emotes, models, render: () => renderer.render(scene, camera)};
+window.studioView = {holder, camera, controls, setMode, emotes, models, mocap, render: () => renderer.render(scene, camera),
+  // (testing: the 3D view at a size of its own - the page's may be none while its tab is hidden)
+  shot(w, h) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.render(scene, camera); return renderer.domElement; }};
