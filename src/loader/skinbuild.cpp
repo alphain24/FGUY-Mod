@@ -58,16 +58,11 @@ void ColorBlock(const unsigned char* b, Rgba& out, unsigned x0, unsigned y0, uns
         }
 }
 
-// the game's texture, its largest level, as RGBA
-bool ReadTexture(IDirect3DTexture9* tex, Rgba& out, unsigned* w, unsigned* h, D3DFORMAT* fmt, unsigned* mips) {
-    D3DSURFACE_DESC d{};
-    if (FAILED(tex->GetLevelDesc(0, &d))) return false;
-    *w = d.Width; *h = d.Height; *fmt = d.Format; *mips = tex->GetLevelCount();
-    if (d.Format != D3DFMT_DXT1 && d.Format != D3DFMT_DXT5 && d.Format != D3DFMT_DXT3 && d.Format != D3DFMT_A8R8G8B8) return false;
-    D3DLOCKED_RECT lr;
-    if (FAILED(tex->LockRect(0, &lr, nullptr, D3DLOCK_READONLY))) return false;
+// a texture's largest level as the card has it (32-bit or DXT, `pitch` bytes a row of pixels or of blocks) - as RGBA
+void DecodePixels(const unsigned char* src, int pitch, unsigned width, unsigned height, D3DFORMAT format, Rgba& out) {
+    struct { unsigned Width, Height; D3DFORMAT Format; } d = {width, height, format};
+    struct { int Pitch; } lr = {pitch};
     out.assign((size_t)d.Width * d.Height * 4, 0);
-    const unsigned char* src = static_cast<const unsigned char*>(lr.pBits);
     if (d.Format == D3DFMT_A8R8G8B8) {
         for (unsigned y = 0; y < d.Height; ++y)
             for (unsigned x = 0; x < d.Width; ++x) {
@@ -101,6 +96,17 @@ bool ReadTexture(IDirect3DTexture9* tex, Rgba& out, unsigned* w, unsigned* h, D3
                     }
             }
     }
+}
+
+// the game's texture, its largest level, as RGBA
+bool ReadTexture(IDirect3DTexture9* tex, Rgba& out, unsigned* w, unsigned* h, D3DFORMAT* fmt, unsigned* mips) {
+    D3DSURFACE_DESC d{};
+    if (FAILED(tex->GetLevelDesc(0, &d))) return false;
+    *w = d.Width; *h = d.Height; *fmt = d.Format; *mips = tex->GetLevelCount();
+    if (d.Format != D3DFMT_DXT1 && d.Format != D3DFMT_DXT5 && d.Format != D3DFMT_DXT3 && d.Format != D3DFMT_A8R8G8B8) return false;
+    D3DLOCKED_RECT lr;
+    if (FAILED(tex->LockRect(0, &lr, nullptr, D3DLOCK_READONLY))) return false;
+    DecodePixels(static_cast<const unsigned char*>(lr.pBits), lr.Pitch, d.Width, d.Height, d.Format, out);
     tex->UnlockRect(0);
     return true;
 }
@@ -517,6 +523,27 @@ void SkinBuildFrom(std::vector<unsigned char> px, unsigned w, unsigned h, D3DFOR
 }
 
 // cosmetics.cpp (HD character textures): the game's texture as RGBA - on the render thread (it's locked)
+// The same in two steps, for the HD textures made as the match runs: its bytes as the card has them - a copy, on the render thread
+// (taking them apart there cost a frame 7 ms for a 512 one: a frame missed at 170 a second, each time a new wall came into view) -
+// and those as RGBA, on any thread.
+bool SkinReadRaw(IDirect3DTexture9* game, std::vector<unsigned char>& raw, unsigned* w, unsigned* h, D3DFORMAT* fmt, unsigned* mips, unsigned* pitch) {
+    D3DSURFACE_DESC d{};
+    if (!game || FAILED(game->GetLevelDesc(0, &d)) || d.Pool != D3DPOOL_MANAGED) return false;
+    *w = d.Width; *h = d.Height; *fmt = d.Format; *mips = game->GetLevelCount();
+    if (d.Format != D3DFMT_DXT1 && d.Format != D3DFMT_DXT5 && d.Format != D3DFMT_DXT3 && d.Format != D3DFMT_A8R8G8B8) return false;
+    bool whole = d.Format == D3DFMT_A8R8G8B8;
+    unsigned rows = whole ? d.Height : (d.Height + 3) / 4, row = whole ? d.Width * 4 : (d.Width + 3) / 4 * (d.Format == D3DFMT_DXT1 ? 8 : 16);
+    D3DLOCKED_RECT lr;
+    if (FAILED(game->LockRect(0, &lr, nullptr, D3DLOCK_READONLY))) return false;
+    raw.resize((size_t)rows * row);
+    for (unsigned y = 0; y < rows; ++y) memcpy(&raw[(size_t)y * row], static_cast<const unsigned char*>(lr.pBits) + (size_t)y * lr.Pitch, row);
+    game->UnlockRect(0);
+    *pitch = row;
+    return true;
+}
+void SkinDecodeRaw(const std::vector<unsigned char>& raw, unsigned w, unsigned h, D3DFORMAT fmt, unsigned pitch, std::vector<unsigned char>& rgba) {
+    DecodePixels(raw.data(), (int)pitch, w, h, fmt, rgba);
+}
 bool SkinReadTexture(IDirect3DTexture9* game, std::vector<unsigned char>& rgba, unsigned* w, unsigned* h, D3DFORMAT* fmt,
                      unsigned* mips) {
     D3DSURFACE_DESC d{};

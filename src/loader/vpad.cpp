@@ -432,6 +432,19 @@ void HandleCommand(char* line) {
         if (who && id) UiTestWeapon(atoi(who), atoi(id) + (_stricmp(cmd, "wpnsel") == 0 ? 1000 : 0));
         return;
     }
+    if (cmd && _stricmp(cmd, "netwpn") == 0) {   // research: netwpn <id> - said to the others to be in my hand (0: the real one)
+        char* id = strtok_s(nullptr, " \t\r\n", &ctx);
+        NetplayWeaponSay(id ? atoi(id) : 0);
+        return;
+    }
+    if (cmd && _stricmp(cmd, "uicall") == 0) {   // research: uicall <name> [a] [b] - a menu call, its answer logged (ui.cpp)
+        char* name = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* a = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* b = a ? strtok_s(nullptr, " \t\r\n", &ctx) : nullptr;
+        void UiTestCall(const char* name, int argc, double a, double b);
+        if (name) UiTestCall(name, b ? 2 : (a ? 1 : 0), a ? atof(a) : 0, b ? atof(b) : 0);
+        return;
+    }
     if (cmd && _stricmp(cmd, "uicmd") == 0) {   // test tools: uicmd <command> [args] - a menu command, as a menu sends it
         char* c = strtok_s(nullptr, " \t\r\n", &ctx);
         char* a = strtok_s(nullptr, "\r\n", &ctx);

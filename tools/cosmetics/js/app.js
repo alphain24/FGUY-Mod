@@ -1064,6 +1064,8 @@ $('tabEmotes').onclick = () => setMode('emotes');
 $('tabModels').onclick = () => setMode('models');
 resize();
 
+// (an emote from a video: hidden until it's good enough - index.html?video or ?dev shows it)
+if (['video', 'dev'].some(k => new URLSearchParams(location.search).has(k))) $('mocapSection').hidden = false;
 // (development only: dev_server.py on this PC hands over the game file - index.html?dev)
 if (new URLSearchParams(location.search).has('dev') && ['127.0.0.1', 'localhost'].includes(location.hostname)) {
   fetch('/game/PLYS.ho').then(r => r.ok ? r.blob() : null).then(b => b && openPackage(new File([b], 'PLYS.ho')));

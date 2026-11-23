@@ -18,6 +18,7 @@
 // Who plays with keyboard and mouse: the session's picks (char:costume:team:input, input k = keyboard), from
 // the lobby. Test knob: FGUYMOD_TEST_KBMSLOTS=0,1 (slots).
 
+#include <algorithm>
 #include "common.h"
 
 #include <cstdlib>
@@ -524,19 +525,22 @@ bool KbmSkipPressed() {
     return front && ((GetAsyncKeyState(VK_RETURN) | GetAsyncKeyState(VK_SPACE) | GetAsyncKeyState(VK_ESCAPE)) & 0x8000);
 }
 
+HWND MouseWindow();   // (the reports' own window, timed as they come - below; null: the game's window, as it was)
 namespace {
 // Raw mouse input goes to one window per program; the game's DirectInput mouse (quiet in sessions) takes it
 // over when it starts, so we claim it back now and then.
 void ClaimRawMouse() {
+    HWND own = MouseWindow(), to = own ? own : g_wnd;
+    DWORD flags = own ? RIDEV_INPUTSINK : 0;   // (a window that's never in front: heard in the background - it looks who is in front itself)
     RAWINPUTDEVICE now[8];
     UINT n = 8;
     if (GetRegisteredRawInputDevices(now, &n, sizeof(RAWINPUTDEVICE)) != (UINT)-1)
         for (UINT i = 0; i < n; ++i)
-            if (now[i].usUsagePage == 0x01 && now[i].usUsage == 0x02 && now[i].hwndTarget == g_wnd && !now[i].dwFlags) return;
-    RAWINPUTDEVICE mouse{0x01, 0x02, 0, g_wnd};
+            if (now[i].usUsagePage == 0x01 && now[i].usUsage == 0x02 && now[i].hwndTarget == to && now[i].dwFlags == flags) return;
+    RAWINPUTDEVICE mouse{0x01, 0x02, flags, to};
     BOOL ok = RegisterRawInputDevices(&mouse, 1, sizeof(mouse));
     static int logged = 0;
-    if (logged++ < 3) Log(L"Input: mouse movement %s", ok ? L"claimed for the game window" : L"could not be claimed");
+    if (logged++ < 3) Log(L"Input: mouse movement %s", ok ? (own ? L"claimed for the mod's own window" : L"claimed for the game window") : L"could not be claimed");
 }
 
 SHORT Clamp16(LONG v) { return (SHORT)(v > 32767 ? 32767 : (v < -32768 ? -32768 : v)); }
@@ -552,12 +556,18 @@ ULONGLONG g_testClickUntil = 0, g_testRightUntil = 0;   // (test: "kbm click <ms
 int g_testCursorX = -1, g_testCursorY = -1;   // test: the cursor, 0..32767 of the window
 }  // namespace
 
+extern volatile LONG g_testHz, g_testHzCounts, g_testHzMs;   // ("kbm mousehz": below)
+DWORD WINAPI TestMouseThread(void*);
 void KbmTestCommand(const char* what, int a, int b, int c) {
     if (!g_testInit) { InitializeCriticalSection(&g_testLock); g_testInit = true; }
     EnterCriticalSection(&g_testLock);
     ULONGLONG now = GetTickCount64();
     if (!strcmp(what, "key") && a > 0 && a < 256) g_testKeyUntil[a] = now + (b > 0 ? b : 100);
     else if (!strcmp(what, "mouse")) { g_testDx = a; g_testDy = b; g_testMoveTicks = c > 0 ? c : 1; }
+    else if (!strcmp(what, "mousehz") && a > 0) {
+        g_testHz = a, g_testHzCounts = b, g_testHzMs = c > 0 ? c : 1000;
+        if (HANDLE t = CreateThread(nullptr, 0, TestMouseThread, nullptr, 0, nullptr)) CloseHandle(t);
+    }
     else if (!strcmp(what, "click")) g_testClickUntil = now + (a > 0 ? a : 100);
     else if (!strcmp(what, "rclick")) g_testRightUntil = now + (a > 0 ? a : 100);
     else if (!strcmp(what, "cursor")) { g_testCursorX = a; g_testCursorY = b; }
@@ -583,6 +593,187 @@ void KbmTestCommand(const char* what, int a, int b, int c) {
     Log(L"Input: test %S %d %d %d", what, a, b, c);
 }
 
+// A mouse reports its movement so many times a second - 125 for many, 1000 for a gaming one - and the match takes what has come since
+// its last frame. With fewer reports than frames three frames in eight get nothing and the rest a whole report: the view turns in
+// steps - the user, on the new PC (about 200 frames a second online, the old one 60-110): "the camera jumps sometimes when you move it
+// around", in third person as in first. Their mouse, measured: a report every 8.0 ms, and often 16 (one missed, or nothing to say).
+// So each report is taken as the movement of the time since the one before it, and a frame is given what belongs to its own stretch of
+// time - looked at kMouseBack reports' time late, so a report that comes late or not at all leaves no hole: every frame turns by its
+// length, however the reports fall. The view is that far behind the hand (16 ms at 125 a second, 2 at 1000).
+// The reports are timed as they come, on a thread of their own with a window of its own (a program's raw mouse input goes to one
+// window; the game's is looked at once a frame, which is too coarse to tell when a report came).
+// [Input] MouseEven=0 (FGUYMOD_MOUSE_EVEN): as it comes. The log says every 5 s of movement what the mouse does ("Input: mouse - ...").
+const double kMouseBack = 2.0;
+struct MouseReport { double t, cur, left[2]; };   // (when it came; how far of its time is given out; what's left of it)
+CRITICAL_SECTION g_mouseLock;
+volatile LONG g_mouseLockReady = 0;
+std::vector<MouseReport> g_mouseReports;
+double g_mouseEvery = 0, g_mouseLastT = 0;   // (how long between two reports while it moves; when the last came)
+int g_mouseArrived = 0;
+HWND g_mouseWnd = nullptr;
+
+double MouseNowMs() {
+    static LARGE_INTEGER freq{};
+    if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    return now.QuadPart * 1000.0 / freq.QuadPart;
+}
+void MouseLock() {
+    if (InterlockedCompareExchange(&g_mouseLockReady, 1, 0) == 0) { InitializeCriticalSection(&g_mouseLock); InterlockedExchange(&g_mouseLockReady, 2); }
+    while (g_mouseLockReady != 2) Sleep(0);
+    EnterCriticalSection(&g_mouseLock);
+}
+// A report of the mouse's, now (its own thread; the test's).
+void MouseReportIn(LONG dx, LONG dy) {
+    double t = MouseNowMs();
+    MouseLock();
+    double gap = g_mouseLastT > 0 ? t - g_mouseLastT : 1e9;
+    if (gap < 30) {   // (moving on. How long it usually takes: of the last 32 times, the one two fifths up - a report missed is a long
+                      //  one, two heard at once - this thread kept waiting - a short one and a long one; neither moves that)
+        static double gaps[32];
+        static int count = 0;
+        gaps[count++ % 32] = gap;
+        double sorted[32];
+        int n = count < 32 ? count : 32;
+        memcpy(sorted, gaps, n * sizeof(double));
+        std::sort(sorted, sorted + n);
+        g_mouseEvery = sorted[n * 2 / 5];
+    }
+    double one = g_mouseEvery > 0 ? g_mouseEvery : 8;
+    // (the time it stands for: since the one before - unless that's hardly any time, heard together: then the usual time, up to now)
+    // (...and no longer than a frame looks back: one that comes later than that is given out from now on, not all at once)
+    double back = kMouseBack * one < 24 ? kMouseBack * one : 24;
+    double from = gap < 30 && gap > 0.5 * one ? g_mouseLastT : t - one;
+    MouseReport r{t, from > t - back ? from : t - back, {(double)dx, (double)dy}};
+    if (g_mouseReports.size() >= 512) g_mouseReports.erase(g_mouseReports.begin());   // (nobody takes them: the oldest goes)
+    g_mouseReports.push_back(r);
+    g_mouseLastT = t;
+    ++g_mouseArrived;
+    LeaveCriticalSection(&g_mouseLock);
+}
+LRESULT CALLBACK MouseWndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_INPUT) {
+        // (research: FGUYMOD_TEST_MOUSEANY=1 - the mouse counts with the game in the background too: a test copy turns with it)
+        static const bool any = [] { char v[4] = {}; return GetEnvironmentVariableA("FGUYMOD_TEST_MOUSEANY", v, 4) && v[0] == '1'; }();
+        RAWINPUT in;
+        UINT size = sizeof(in);
+        if (GetRawInputData((HRAWINPUT)lp, RID_INPUT, &in, &size, sizeof(RAWINPUTHEADER)) != (UINT)-1 && in.header.dwType == RIM_TYPEMOUSE &&
+            g_wnd && (any || GetForegroundWindow() == g_wnd)) {   // (this window hears the mouse in the background too: only the game's own counts)
+            if (!(in.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) && (in.data.mouse.lLastX || in.data.mouse.lLastY))
+                MouseReportIn(in.data.mouse.lLastX, in.data.mouse.lLastY);
+            if (in.data.mouse.usButtonFlags & RI_MOUSE_WHEEL) InterlockedExchangeAdd(&g_dz, (SHORT)in.data.mouse.usButtonData);
+        }
+    }
+    return DefWindowProcW(wnd, msg, wp, lp);
+}
+DWORD WINAPI MouseThread(void* ready) {
+    WNDCLASSW wc{};
+    wc.lpfnWndProc = MouseWndProc;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = L"FGUYModMouse";
+    RegisterClassW(&wc);
+    g_mouseWnd = CreateWindowExW(0, wc.lpszClassName, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, wc.hInstance, nullptr);
+    SetEvent(static_cast<HANDLE>(ready));
+    MSG msg;
+    while (g_mouseWnd && GetMessageW(&msg, nullptr, 0, 0) > 0) DispatchMessageW(&msg);
+    return 0;
+}
+// The window the mouse's reports go to: the thread's own, or (it couldn't be made) the game's as before.
+HWND MouseWindow() {
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        HANDLE ready = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (HANDLE t = CreateThread(nullptr, 0, MouseThread, ready, 0, nullptr)) {
+            SetThreadPriority(t, THREAD_PRIORITY_ABOVE_NORMAL);
+            WaitForSingleObject(ready, 1000);
+            CloseHandle(t);
+        }
+        CloseHandle(ready);
+        Log(L"Input: the mouse's reports %s", g_mouseWnd ? L"timed as they come (a window and thread of their own)" : L"taken once a frame (no window of their own)");
+    }
+    return g_mouseWnd;
+}
+
+// What of the mouse's movement belongs to this frame, added to *dx, *dy (what the game's own window heard: none, with the reports' own
+// window).
+void EvenMouse(LONG* dx, LONG* dy) {
+    static const bool on = SettingInt(L"Input", L"MouseEven", L"FGUYMOD_MOUSE_EVEN", 1) != 0;
+    static double last = 0, part[2] = {}, span = 0, loggedAt = 0;
+    static int moving = 0, without = 0, most = 0, over = 0, reportsSeen = 0, said = 0;
+    double now = MouseNowMs(), dt = last > 0 ? now - last : 0, give[2] = {0, 0};
+    last = now;
+    MouseLock();
+    int arrived = g_mouseArrived;
+    g_mouseArrived = 0;
+    double every = g_mouseEvery, since = g_mouseLastT > 0 ? now - g_mouseLastT : 1e9;
+    double back = on && every > 0 ? kMouseBack * every : 0;
+    if (back > 24) back = 24;
+    double upTo = now - back;
+    size_t keep = 0;
+    for (size_t i = 0; i < g_mouseReports.size(); ++i) {
+        MouseReport& r = g_mouseReports[i];
+        double to = r.t < upTo ? r.t : upTo;
+        if (to > r.cur) {
+            double share = r.t - r.cur > 1e-6 ? (to - r.cur) / (r.t - r.cur) : 1;
+            for (int k = 0; k < 2; ++k) { double g = r.left[k] * share; give[k] += g; r.left[k] -= g; }
+            r.cur = to;
+        }
+        if (r.cur < r.t - 1e-9) g_mouseReports[keep++] = r;
+        else for (int k = 0; k < 2; ++k) give[k] += r.left[k];   // (all of its time: what rounding left, too)
+    }
+    g_mouseReports.resize(keep);
+    LeaveCriticalSection(&g_mouseLock);
+    LONG* out[2] = {dx, dy};
+    int counts = 0;
+    for (int k = 0; k < 2; ++k) {
+        part[k] += give[k];
+        LONG whole = (LONG)part[k];   // (whole counts: the rest with the next frame's)
+        part[k] -= whole;
+        *out[k] += whole;
+        if (labs(whole) > counts) counts = (int)labs(whole);
+    }
+    // (what the mouse does, for the log)
+    if ((arrived > 0 || since < 30) && dt > 0 && dt < 100) {
+        ++moving, span += dt, reportsSeen += arrived;
+        if (arrived == 0) ++without;
+        if (counts > most) most = counts;
+        if (counts > 60) ++over;
+    }
+    if (moving >= 400 && now - loggedAt > 5000 && said < 60) {
+        ++said;
+        loggedAt = now;
+        Log(L"Input: mouse - %.0f reports a second while it moves (usually %.1f ms apart), a frame every %.1f ms: %d%% of them had no "
+            L"report of their own%s; the most given to one frame %d counts, %d frames over the game's 60", reportsSeen * 1000.0 / (span > 1 ? span : 1),
+            every, span / moving, without * 100 / moving, on ? L" - evened out" : L" (as it comes: MouseEven=0)", most, over);
+        moving = without = most = over = reportsSeen = 0, span = 0;
+    }
+}
+
+// (research: "kbm mousehz <reports a second> <counts a report> <ms>" - a mouse that reports that often, moving to the right; 10000 x a
+// percentage more: that share of the reports missed, their movement with the next that comes - a wireless mouse)
+volatile LONG g_testHz = 0, g_testHzCounts = 0, g_testHzMs = 0;
+DWORD WINAPI TestMouseThread(void*) {
+    LARGE_INTEGER freq, start, now;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&start);
+    LONG hz = g_testHz % 10000, miss = g_testHz / 10000, counts = g_testHzCounts, ms = g_testHzMs, held = 0;
+    unsigned seed = 12345;
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+    for (LONG n = 1; hz > 0 && n * 1000 / hz <= ms; ++n) {
+        do { Sleep(0); QueryPerformanceCounter(&now); } while ((now.QuadPart - start.QuadPart) * hz < n * freq.QuadPart);
+        held += counts;
+        LONG due = (LONG)((now.QuadPart - start.QuadPart) * hz / freq.QuadPart);   // (kept waiting past some: their movement with this one)
+        if (due > n) held += counts * (due - n), n = due;
+        seed = seed * 1664525u + 1013904223u;
+        if ((LONG)((seed >> 16) % 100) < miss) continue;
+        MouseReportIn(held, 0);
+        held = 0;
+    }
+    return 0;
+}
+
 // netplay.cpp, once per tick (for the tick being sent): my keyboard and mouse right now.
 void KbmCaptureRaw(KbmRaw* out);
 void KbmCapture(KbmRaw* out) {
@@ -593,6 +784,7 @@ void KbmCapture(KbmRaw* out) {
 void KbmCaptureRaw(KbmRaw* out) {
     memset(out, 0, sizeof(*out));
     LONG dx = InterlockedExchange(&g_dx, 0), dy = InterlockedExchange(&g_dy, 0), dz = InterlockedExchange(&g_dz, 0);
+    EvenMouse(&dx, &dy);
     EmotesMouse(&dx, &dy, &dz);   // (the emote wheel open: the mouse is its - not the match's)
     static ULONGLONG lastClaim = 0;
     if (g_wnd && GetTickCount64() - lastClaim > 2000) {

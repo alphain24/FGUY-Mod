@@ -292,14 +292,24 @@ int WSAAPI Hook_recvfrom(SOCKET s, char* b, int n, int f, sockaddr* a, int* l) {
 }
 
 // Background file reads: finish them before ReadFile returns, so disk timing can't shift a tick.
+volatile LONG g_readCalls = 0, g_readBytes = 0, g_readMicros = 0;   // (since d3d9.cpp last asked: its long frames)
 BOOL WINAPI Hook_ReadFile(HANDLE f, LPVOID buf, DWORD n, LPDWORD read, LPOVERLAPPED ov) {
+    LARGE_INTEGER t0, t1, freq;
+    QueryPerformanceCounter(&t0);
     BOOL r = Real_ReadFile(f, buf, n, read, ov);
-    if (r || !ov || GetLastError() != ERROR_IO_PENDING) return r;
     DWORD got = 0;
-    if (!GetOverlappedResult(f, ov, &got, TRUE)) return FALSE;
-    if (ov->hEvent) SetEvent(ov->hEvent);  // stays signalled for the game's own wait
-    if (read) *read = got;
-    return TRUE;
+    if (!r && ov && GetLastError() == ERROR_IO_PENDING) {
+        if (!GetOverlappedResult(f, ov, &got, TRUE)) return FALSE;
+        if (ov->hEvent) SetEvent(ov->hEvent);  // stays signalled for the game's own wait
+        if (read) *read = got;
+        r = TRUE;
+    }
+    QueryPerformanceCounter(&t1);
+    QueryPerformanceFrequency(&freq);
+    InterlockedIncrement(&g_readCalls);
+    InterlockedExchangeAdd(&g_readBytes, (LONG)n);
+    InterlockedExchangeAdd(&g_readMicros, (LONG)((t1.QuadPart - t0.QuadPart) * 1000000 / freq.QuadPart));
+    return r;
 }
 
 void* StartAddress(HANDLE h) {
@@ -1084,7 +1094,11 @@ void StorySaveHaveIn(int s, const PktSaveHave* p);
 extern const int kPktSaveAskSize, kPktSaveChunkHead, kPktSaveHaveSize;
 extern const int kPktNpcDownSize;
 extern const int kPktStatsSize;
-void FreeState(int s, const PktState* p, bool withMoney, bool withClock);
+void FreeState(int s, const PktState* p, bool withMoney, bool withClock, bool withWeapon);
+void LockerIn(int slot, const unsigned char* has, int count);
+void LockerSend(ULONGLONG nowMs);
+const int kLockerCount = 94;   // (the locker's weapons: ui.cpp kLockerWeapons)
+extern const int kPktStateSizeWeapon;
 void FreeHitIn(int s, const PktHit* p, bool withCredit);
 extern const int kPktStateSize, kPktHitSize, kPktHitSizeOld;
 
@@ -1510,8 +1524,10 @@ void Receive() {
             if (g_free) FreeStoryIn(slot, reinterpret_cast<PktStory*>(buf), n);
         } else if (h->type == 'f' && n >= kPktCarrySize) {   // Capture the Flag: who carries the Deaf Guy, captures
             if (g_free) FreeCarryIn(slot, reinterpret_cast<PktCarry*>(buf));
+        } else if (h->type == 'l' && n >= (int)sizeof(PktHeader) + kLockerCount) {   // story co-op: the weapons their save has
+            LockerIn(slot, reinterpret_cast<const unsigned char*>(buf) + sizeof(PktHeader), kLockerCount);
         } else if (h->type == 'X' && n >= kPktStateSizeOld) {   // (0.8.12 and older: no money in it)
-            if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSizeMoney, n >= kPktStateSize);
+            if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSizeMoney, n >= kPktStateSize, n >= kPktStateSizeWeapon);
         } else if (h->type == 'Z' && n >= kPktHitSizeOld) {   // (0.8.13 and older: no credit in it)
             if (g_free) FreeHitIn(slot, reinterpret_cast<PktHit*>(buf), n >= kPktHitSize);
         } else if (h->type == 'o') {   // story co-op: the host went back to the lobby from the main menu - everyone does
@@ -2418,6 +2434,7 @@ struct Remote {
     float pos[3], yaw, pitch, health;
     bool alive;
     bool haveMoney;
+    int weapon;                 // the weapon in their hand as their own PC has it (the menus' id for it; 0: not said)
     int money;                                 // their money (what the store's prices are checked against)
     float yawVel, pitchVel;                    // how fast they're turning (radians a second, from their last states)
     double stateAt;                            // when their last state came (PreciseMs)
@@ -2438,13 +2455,18 @@ struct Remote {
 Remote g_remote[4];
 
 #pragma pack(push, 1)
+// weapon: the one in their hand, by the menus' id for it (PLYR_GetWeaponID - ui.cpp; 0: not known). A player's weapon here was only
+// ever what their input made of it here - and which weapons a character HAS is each PC's own: in story co-op the save's (what its
+// owner has unlocked), in a match what was bought. The user's friend, as Stewie, held the satchel charge their save has; the user's
+// save hasn't, so on the user's PC the same presses picked something else - "another plasma gun", and it hurt as one.
 struct PktState { PktHeader h; unsigned seq; float pos[3]; float yaw, pitch, health; BYTE alive; unsigned hitAck[4]; int money;
-                  unsigned sentMs; };   // sentMs: their clock as it went (how fast they turn: between two of them)
+                  unsigned sentMs; short weapon; };   // sentMs: their clock as it went (how fast they turn: between two of them)
 const int kHitInfo = 0x68;                     // the game's damage info (DamageInfo, see the notes)
 struct PktHit { PktHeader h; unsigned seq; BYTE victim, source, part; float lost, after; unsigned partOffset; BYTE info[kHitInfo];
                 BYTE credit; };   // credit: whose kill it is when no player caused it (a power-up's character: its owner)
 #pragma pack(pop)
-const int kPktStateSize = (int)sizeof(PktState), kPktHitSize = (int)sizeof(PktHit);
+const int kPktStateSize = (int)offsetof(PktState, weapon), kPktHitSize = (int)sizeof(PktHit);
+const int kPktStateSizeWeapon = (int)sizeof(PktState);
 const int kPktHitSizeOld = (int)offsetof(PktHit, credit);
 const int kPktStateSizeOld = (int)offsetof(PktState, money), kPktStateSizeMoney = (int)offsetof(PktState, sentMs);
 
@@ -2454,6 +2476,12 @@ const uintptr_t kKillMedals = 0x66eb90;            // thiscall (killer, hit, vic
 const int kKillsForMedals = 0xeb24;                //   the killer's kills it counts (its first: FIRST BLOOD)
 const int kProxy = 0x104c, kProxyShape = 0x60, kShapePos = 0xe0;   // Havok character proxy -> its shape -> position
 
+// The weapon a player has in hand: its asset's id ([player+0x2240]+0x18 - firstperson.cpp), 0: none.
+unsigned long long HeldWeapon(const unsigned char* player) {
+    if (!player) return 0;
+    auto held = *reinterpret_cast<const unsigned char* const*>(player + 0x2240);
+    return held && !IsBadReadPtr(held + 0x18, 8) ? *reinterpret_cast<const unsigned long long*>(held + 0x18) : 0;
+}
 unsigned char* PlayerBySlot(int slot) {
     unsigned char* list[8];
     int n = GamePlayers(list, 8);
@@ -2511,7 +2539,38 @@ double PreciseMs() {
     return t.QuadPart * 1000.0 / g_freq.QuadPart;
 }
 
-void FreeState(int s, const PktState* p, bool withMoney, bool withClock) {
+// Story co-op: the weapons each player's save has ('l', twice a second from the session's start: one byte a weapon). The game is
+// answered with this save's or anyone's (ui.cpp Hook_IsWeaponAcquired) - what a character carries is made from that as they come into
+// the level, so they must be here before it: the first is sent as soon as this PC's own are known (its first menu call).
+unsigned char g_lockerTheirs[4][kLockerCount] = {};
+bool g_lockerHeard[4] = {};
+void LockerIn(int slot, const unsigned char* has, int count) {
+    if (slot < 0 || slot >= 4 || slot == g_slot || count < kLockerCount) return;
+    if (!g_lockerHeard[slot] || memcmp(g_lockerTheirs[slot], has, kLockerCount) != 0) {
+        unsigned char mine[kLockerCount];
+        bool known = UiLockerMine(mine, kLockerCount);
+        wchar_t more[200] = L"";
+        int at = 0;
+        for (int i = 0; i < kLockerCount && at < 180; ++i)
+            if (has[i] && known && !mine[i]) at += swprintf_s(more + at, 200 - at, L" %d", i);
+        Log(L"Netplay: player %d's save's weapons are here (tick %d)%s%s", slot, g_tick, at ? L" - this save hasn't:" : L"", more);
+    }
+    memcpy(g_lockerTheirs[slot], has, kLockerCount);
+    g_lockerHeard[slot] = true;
+}
+void LockerSend(ULONGLONG nowMs) {
+    static ULONGLONG last = 0;
+    if (!g_sessionStory || nowMs - last < 500) return;
+    unsigned char pkt[sizeof(PktHeader) + kLockerCount];
+    PktHeader h{'l', (BYTE)g_slot};
+    memcpy(pkt, &h, sizeof(h));
+    if (!UiLockerMine(pkt + sizeof(h), kLockerCount)) return;
+    last = nowMs;
+    SendAll(pkt, sizeof(pkt));
+}
+volatile LONG g_weaponMine = 0;   // (the weapon in my player's hand, by the menus' id - ui.cpp asks the game, a few times a second)
+volatile LONG g_weaponSay = 0;    // (research: pipe "netwpn <id>" - said to be in my hand instead, to the others; 0: the real one)
+void FreeState(int s, const PktState* p, bool withMoney, bool withClock, bool withWeapon) {
     Remote& r = g_remote[s];
     double now = PreciseMs();
     r.heardAt = GetTickCount64();
@@ -2540,6 +2599,7 @@ void FreeState(int s, const PktState* p, bool withMoney, bool withClock) {
     memcpy(r.hitAck, p->hitAck, sizeof(r.hitAck));
     r.haveMoney = withMoney;
     if (withMoney) r.money = p->money;
+    r.weapon = withWeapon ? p->weapon : 0;
 }
 
 std::vector<PktHit> g_hitsIn;                  // hits from the others, played at the start of my next tick
@@ -4778,6 +4838,7 @@ void FreeSendState() {
     for (int s = 0; s < 4; ++s) st.hitAck[s] = g_remote[s].hitApplied;   // (the hits my health has in it)
     st.money = PlayerMoney(me);
     st.sentMs = (unsigned)(ULONGLONG)PreciseMs();
+    st.weapon = (short)(g_weaponSay ? g_weaponSay : g_weaponMine);
     SendAll(&st, sizeof(st));
 }
 
@@ -5236,6 +5297,7 @@ void FreeTick() {
             PktPing ping{{'P', (BYTE)g_slot}, 0, nowMs};
             SendAll(&ping, sizeof(ping));
         }
+        LockerSend(nowMs);
     }
     Pad mine = SampleLocal(g_tick);
     int ring = g_tick % kRing;
@@ -5347,17 +5409,20 @@ void FreeTick() {
         if (pos) { memcpy(lastPos, pos, sizeof(lastPos)); havePos = true; }
         XINPUT_STATE st{};
         bool pad = MyPadState(&st) == ERROR_SUCCESS;
+        unsigned long long mineHeld = HeldWeapon(me);
         Log(L"Netplay: free - me (player %d): moved %.1f in 5 s, movement input in %d of %d frames; %s, controller %s, "
-            L"health %.0f", g_slot, moved, moveFrames, frames, KbmIsKeyboardSlot(g_slot) ? L"keyboard / mouse player" :
-            L"controller player", pad ? L"connected" : L"not connected (none in any of the 4 controller slots)", me ? PlayerHealth(me) : -1.0f);
+            L"health %.0f, weapon %08x:%08x in hand", g_slot, moved, moveFrames, frames, KbmIsKeyboardSlot(g_slot) ? L"keyboard / mouse player" :
+            L"controller player", pad ? L"connected" : L"not connected (none in any of the 4 controller slots)", me ? PlayerHealth(me) : -1.0f,
+            (unsigned)mineHeld, (unsigned)(mineHeld >> 32));
         frames = moveFrames = 0;
         for (int s = 0; s < g_players && s < 4; ++s) {
             Remote& r = g_remote[s];
             if (s == g_slot || !r.errCount) continue;
             Log(L"Netplay: free - player %d: %.2f off on average, %.2f at most; %d slides, %d teleports, %d health fixes; ping %ld "
-                L"ms; aim %.1f deg off on average, %.1f at most; %d hits left to other PCs, %d decided here", s, r.errSum / r.errCount,
+                L"ms; aim %.1f deg off on average, %.1f at most; %d hits left to other PCs, %d decided here; weapon %08x:%08x in their hand "
+                L"here", s, r.errSum / r.errCount,
                 r.errMax, r.slides, r.teleports, r.healthFixes, g_pingMs[s], r.yawErrSum / r.errCount * 57.2958, r.yawErrMax * 57.2958,
-                g_hitsBlocked, g_hitsMine);
+                g_hitsBlocked, g_hitsMine, (unsigned)HeldWeapon(PlayerBySlot(s)), (unsigned)(HeldWeapon(PlayerBySlot(s)) >> 32));
             r.errSum = r.yawErrSum = 0;
             r.errMax = r.yawErrMax = 0;
             r.errCount = r.slides = r.teleports = r.healthFixes = 0;
@@ -5435,6 +5500,7 @@ void Tick() {
                 PktPing ping{{'P', (BYTE)g_slot}, 0, now};
                 SendAll(&ping, sizeof(ping));
             }
+            LockerSend(now);
         }
         g_clockNs += 1000000000LL / g_rate;   // the tick that just ended took 1 / its rate
         ++g_tick;
@@ -5931,6 +5997,26 @@ void NetplayStoreBought(int player, int weapon) {
     AcquireSRWLockExclusive(&g_buyLock);
     g_buysOut.push_back(weapon);
     ReleaseSRWLockExclusive(&g_buyLock);
+}
+// The weapon in a player's hand, across PCs (ui.cpp WeaponSync): mine as the game has it here, told to the others with my state;
+// someone else's as their own PC has it (0: not known - an older build's, or not free-running).
+bool NetplayLockerHas(int weapon) {
+    if (!g_enabled || !g_sessionStory || weapon < 0 || weapon >= kLockerCount) return false;
+    for (int s = 0; s < 4; ++s)
+        if (g_lockerHeard[s] && g_lockerTheirs[s][weapon]) return true;
+    return false;
+}
+void NetplayWeaponMine(int weapon) { InterlockedExchange(&g_weaponMine, weapon > 0 && weapon < 30000 ? weapon : 0); }
+int NetplayWeaponOf(int slot) {
+    if (!NetplayFreeRun() || slot < 0 || slot >= 4 || slot == g_slot) return 0;
+    const Remote& r = g_remote[slot];
+    return r.haveState && r.alive && GetTickCount64() - r.heardAt < 2000 ? r.weapon : 0;
+}
+void NetplayWeaponSay(int weapon) { InterlockedExchange(&g_weaponSay, weapon); }
+void NetplayReadNote(int* files, int* kb, double* ms) {
+    *files = InterlockedExchange(&g_readCalls, 0);
+    *kb = InterlockedExchange(&g_readBytes, 0) / 1024;
+    *ms = InterlockedExchange(&g_readMicros, 0) / 1000.0;
 }
 bool NetplayStoreTake(int* player, int* weapon) {
     AcquireSRWLockExclusive(&g_buyLock);

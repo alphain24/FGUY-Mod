@@ -86,7 +86,12 @@ bool NetplayEnabled();
 bool NetplayFreeRun();                 //   the match runs free (no lockstep: client-server, being built)
 bool NetplayStoreAllowed(int player);  //   the store (ui.cpp): may this purchase for that player go through here?
 void NetplayStoreBought(int player, int weapon);  // my player bought a weapon (sent to the others)
-bool NetplayStoreTake(int* player, int* weapon);  // a weapon someone bought on their PC, to mark bought here
+bool NetplayStoreTake(int* player, int* weapon);
+void NetplayWeaponMine(int weapon);    // the weapon in my player's hand (the menus' id for it), told to the others
+int NetplayWeaponOf(int slot);         // ...and in another player's, as their own PC has it (0: not known)
+void NetplayWeaponSay(int weapon);     //   (research: said to be in mine instead)
+bool NetplayLockerHas(int weapon);     // online story co-op: another player's save has this weapon (ui.cpp: it counts as had here)
+bool UiLockerMine(unsigned char* out, int count);   //   the weapons this save has (ui.cpp)  // a weapon someone bought on their PC, to mark bought here
 void NetplayOnFrame();                 //   end of every rendered frame
 bool NetplayPadConnected(DWORD pad);
 int NetplayLocalSlot();                //   my player slot, -1 when netplay is off
@@ -168,6 +173,8 @@ std::vector<std::pair<std::wstring, std::wstring>> ModsContentFolders(const wcha
 void ModsTick();                       //   vpad.cpp: a game tick starts (the game's thread)
 void ModsFrame();                      //   d3d9.cpp: a frame was drawn
 struct IDirect3DDevice9;
+void CosmeticsWorkNote(int* reads, double* readMs, int* made, double* madeMs);   // cosmetics.cpp: HD textures read / made since last asked (d3d9.cpp: long frames)
+void NetplayReadNote(int* files, int* kb, double* ms);   // netplay.cpp: file reads since last asked
 void CosmeticsFrame(IDirect3DDevice9* dev);   // cosmetics.cpp: skins, on the render thread after each frame
 void CosmeticsTest(bool fill, unsigned lo, unsigned hi, unsigned rgb);   //   test pipe "texinfo" / "texfill"
 void CosmeticsDeviceCreated(IDirect3DDevice9* dev);   //   d3d9.cpp: the game's device
@@ -194,6 +201,10 @@ bool SkinBuildRgba(IDirect3DTexture9* game, const std::vector<double>& ops, cons
 enum _D3DFORMAT;
 bool SkinReadTexture(IDirect3DTexture9* game, std::vector<unsigned char>& rgba, unsigned* w, unsigned* h, _D3DFORMAT* fmt,
                      unsigned* mips);   //   HD character textures: the game's (managed) texture as RGBA, render thread
+bool SkinReadRaw(IDirect3DTexture9* game, std::vector<unsigned char>& raw, unsigned* w, unsigned* h, _D3DFORMAT* fmt, unsigned* mips,
+                 unsigned* pitch);   //   ...its bytes as the card has them (render thread: a copy)
+void SkinDecodeRaw(const std::vector<unsigned char>& raw, unsigned w, unsigned h, _D3DFORMAT fmt, unsigned pitch,
+                   std::vector<unsigned char>& rgba);   //   ...those as RGBA (any thread)
 void SkinBuildFrom(std::vector<unsigned char> px, unsigned w, unsigned h, _D3DFORMAT fmt, unsigned mips,
                    const std::vector<double>& ops, const std::vector<unsigned char>& overlay,
                    std::vector<unsigned char>& dds);   //   a skin's texture from the game's pixels (any thread)
@@ -267,6 +278,7 @@ bool MotionPlaying(int slot);
 bool MotionPose(int slot, std::vector<float>& out, int* bones);   //   a player's pose this frame (models.cpp)
 bool MotionBodyEye(int slot, float* out);   // first person with their whole body: their head and eyes this pose (96 floats - motion.cpp BodyMeasure)
 bool FirstPersonBodyHeadAway(int slot);   //   (their head shrunk into their neck: their view alone on the screen)
+float FirstPersonBodyTurn(int slot, const unsigned char* entity);   //   (their pose turned about up by this: their body faces the way they look)
 bool FirstPersonBodyStyle();           //   ([Camera] FirstPersonStyle=1 - firstperson.cpp)
 bool MotionHead(int slot, float* at);  //   where a player's head is this frame, in the world (firstperson.cpp)
 void MotionArmsTest(float right, float down, float ahead, bool on);   //   research: the gun hand's place in first person

@@ -121,9 +121,34 @@ bool LoadEmote(const std::wstring& path, Emote& e) {
 // the emotes there are - the Emotes mod's (and any other mod's that's on), then FGUYMod\emotes - read again when one
 // changed (a file's time or size), at most every 2 s
 void Scan() {
+    // (...in the menus; with a level on the screen every 20 s - listing the folders is the render thread's time, and now and then a frame's:
+    // 3.9 ms, a frame missed at 170 a second)
     ULONGLONG now = GetTickCount64();
-    if (g_scannedAt && now - g_scannedAt < 2000) return;
+    if (g_scannedAt && now - g_scannedAt < (VideoHudUp() ? 20000u : 2000u)) return;
     g_scannedAt = now;
+    // What's there, by name, size and time: the same as last time - nothing more to do. (Every look used to copy every pack, take its
+    // checksum and copy it again for the network thread, on the render thread: with the ten packs made from a video in the user's game,
+    // 10.6 MB, that was a 54 ms frame every 2 s - "the game stutters for a split second even while walking", in their log as "the mod's
+    // work after it 54 (most of it: emotes)".)
+    {
+        static std::vector<std::wstring> last;
+        static bool looked = false;
+        std::vector<std::wstring> there;
+        for (const auto& folder : ModsContentFolders(L"emotes")) {
+            WIN32_FIND_DATAW fd;
+            HANDLE h = FindFirstFileW((folder.first + L"\\*.fgemote").c_str(), &fd);
+            if (h == INVALID_HANDLE_VALUE) continue;
+            do {
+                wchar_t key[MAX_PATH + 80];
+                swprintf_s(key, L"%s|%s|%lu|%08lx%08lx", folder.second.c_str(), fd.cFileName, fd.nFileSizeLow, fd.ftLastWriteTime.dwHighDateTime, fd.ftLastWriteTime.dwLowDateTime);
+                there.push_back(key);
+            } while (FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+        if (looked && there == last) return;
+        looked = true;
+        last.swap(there);
+    }
     std::vector<Emote> found;
     for (const auto& folder : ModsContentFolders(L"emotes")) {
         WIN32_FIND_DATAW fd;

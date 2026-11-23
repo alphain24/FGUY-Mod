@@ -469,23 +469,38 @@ void HdCacheWrite(const wchar_t* path, const std::vector<unsigned char>& data) {
     else DeleteFileW(tmp);
 }
 
+// (how long the render thread spent reading the game's textures and making ours, for d3d9.cpp's long frames)
+int g_hdWorkReads = 0, g_hdWorkMade = 0;
+double g_hdWorkReadMs = 0, g_hdWorkMadeMs = 0;
+double HdNowMs() {
+    static LARGE_INTEGER f{};
+    if (!f.QuadPart) QueryPerformanceFrequency(&f);
+    LARGE_INTEGER n;
+    QueryPerformanceCounter(&n);
+    return n.QuadPart * 1000.0 / f.QuadPart;
+}
 void HdFrame(IDirect3DDevice9* dev) {
     (void)dev;
     Hd* pick = nullptr;   // (one a frame read, for a worker: the players' own first)
     for (Hd* h : g_hd) if (h->state == 0 && !h->world) { pick = h; break; }
-    if (!pick && g_hdPending < 4 && GraphicsHdWorld()) for (Hd* h : g_hd) if (h->state == 0 && h->world) { pick = h; break; }
+    static ULONGLONG fullTried = 0;   // (the budget full: one that doesn't fit is looked at again a second later, not every frame)
+    bool tryWorld = g_hdPending < 4 && GraphicsHdWorld() && (!g_hdFull || GetTickCount64() - fullTried > 1000);
+    if (!pick && tryWorld) for (Hd* h : g_hd) if (h->state == 0 && h->world) { pick = h; fullTried = GetTickCount64(); break; }
     if (pick) {
         Hd* h = pick;
         auto* t = static_cast<IDirect3DTexture9*>(h->game);
         h->state = 3;
         VideoFrameExcuse();   // (a read of the texture: this frame's long by it, at any rate)
-        if (SkinReadTexture(t, h->rgba, &h->w, &h->h, &h->fmt, &h->mips)) {
-            bool opaque = true;   // (colour art only: one with see-through texels - the ink strokes' bands, a fence, leaves - left as it is)
-            for (size_t i = 3; i < h->rgba.size() && opaque; i += 4) opaque = h->rgba[i] >= 250;
+        double readAt = HdNowMs();
+        // (its bytes as they are, here; taken apart on a worker - h->rgba holds them till then)
+        unsigned pitch = 0;
+        bool readOk = SkinReadRaw(t, h->rgba, &h->w, &h->h, &h->fmt, &h->mips, &pitch);
+        ++g_hdWorkReads, g_hdWorkReadMs += HdNowMs() - readAt;
+        if (readOk) {
             // (what it'll take, with its mips: DXT1 half a byte a pixel, DXT5 one, 32-bit four)
             size_t est = (size_t)h->w * 2 * h->h * 2 * (h->fmt == D3DFMT_DXT1 ? 1 : h->fmt == D3DFMT_A8R8G8B8 ? 8 : 2) / 2 * 4 / 3;
             bool fits = !h->world || g_hdBytes + est <= ((size_t)GraphicsHdWorldBudget() << 20);
-            if (!opaque || h->w < 64 || h->h < 64 || h->w * 2 > 2048 || h->h * 2 > 2048 || !fits) {
+            if (h->w < 64 || h->h < 64 || h->w * 2 > 2048 || h->h * 2 > 2048 || !fits) {
                 h->rgba.clear();
                 h->rgba.shrink_to_fit();
                 if (!fits) {
@@ -498,8 +513,21 @@ void HdFrame(IDirect3DDevice9* dev) {
                 h->bytes = h->world ? est : 0;
                 g_hdBytes += h->bytes;
                 ++g_hdPending;
-                auto fromDisk = std::make_shared<bool>(false);
-                InBackground([h, fromDisk] {
+                auto fromDisk = std::make_shared<bool>(false), leave = std::make_shared<bool>(false);
+                InBackground([h, fromDisk, leave, pitch] {
+                    {
+                        std::vector<unsigned char> px;
+                        SkinDecodeRaw(h->rgba, h->w, h->h, h->fmt, pitch, px);
+                        h->rgba.swap(px);
+                    }
+                    bool opaque = true;   // (colour art only: one with see-through texels - the ink strokes' bands, a fence, leaves - left as it is)
+                    for (size_t i = 3; i < h->rgba.size() && opaque; i += 4) opaque = h->rgba[i] >= 250;
+                    if (!opaque) {
+                        *leave = true;
+                        h->rgba.clear();
+                        h->rgba.shrink_to_fit();
+                        return;
+                    }
                     unsigned long long key = 1469598103934665603ull;
                     for (unsigned char b : h->rgba) key = (key ^ b) * 1099511628211ull;
                     for (unsigned v : {h->w, h->h, (unsigned)h->fmt, h->mips, 2u}) key = (key ^ v) * 1099511628211ull;   // (2: this making's version)
@@ -516,10 +544,13 @@ void HdFrame(IDirect3DDevice9* dev) {
                     }
                     h->rgba.clear();
                     h->rgba.shrink_to_fit();
-                }, [h, fromDisk](IDirect3DDevice9* d) {   // (made: ours from its DDS)
+                }, [h, fromDisk, leave](IDirect3DDevice9* d) {   // (made: ours from its DDS)
                     --g_hdPending;
+                    if (*leave) { g_hdBytes -= h->bytes; h->bytes = 0; h->state = 3; return; }
                     VideoFrameExcuse();
+                    double madeAt = HdNowMs();
                     h->mine = CosmeticsTextureFromDds(d, h->dds);
+                    ++g_hdWorkMade, g_hdWorkMadeMs += HdNowMs() - madeAt;
                     h->dds.clear();
                     h->dds.shrink_to_fit();
                     h->state = h->mine ? 2 : 3;
@@ -993,6 +1024,10 @@ IDirect3DTexture9* CosmeticsTextureFromDds(IDirect3DDevice9* dev, const std::vec
     return MakeTexture(dev, t);
 }
 int CosmeticsDrawPlayer() { return DrawPlayer(); }
+void CosmeticsWorkNote(int* reads, double* readMs, int* made, double* madeMs) {
+    *reads = g_hdWorkReads, *readMs = g_hdWorkReadMs, *made = g_hdWorkMade, *madeMs = g_hdWorkMadeMs;
+    g_hdWorkReads = g_hdWorkMade = 0, g_hdWorkReadMs = g_hdWorkMadeMs = 0;
+}
 bool CosmeticsDrawSkinned() { return g_drawSkinned; }
 bool CosmeticsOwnBodyClipped() { return g_ownClipped; }
 bool CosmeticsArmInk() { return g_armInkNow; }

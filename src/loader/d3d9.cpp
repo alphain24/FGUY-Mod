@@ -762,8 +762,46 @@ void BurstFrame(IDirect3DDevice9* dev) {
     g_burstAt.clear();
 }
 
+// A frame that takes much longer than the ones around it - a stutter - in the log, with where its time went: the game's own part (its
+// update and its drawing, up to Present), Present itself (the driver, the graphics card catching up), the frame-rate pacing, and the
+// mod's work after the frame - with the HD textures read and made in it (cosmetics.cpp) and the files read meanwhile (any thread).
+// The user, 2026-11-22: "the game stutters for a split second even while walking ... when you load in new assets".
+double SlowMs(const LARGE_INTEGER& a, const LARGE_INTEGER& b) { return (b.QuadPart - a.QuadPart) * 1000.0 / g_freq.QuadPart; }
+int g_slowFrames = 0;
+double g_slowLongest = 0, g_slowPartMs = 0;
+const wchar_t* g_slowPart = L"";   // (the piece of the mod's after-frame work that took the longest this frame)
+void SlowFrame(const LARGE_INTEGER* at) {   // (at: entering Present's hook, before Present, after it, after pacing, leaving)
+    static LARGE_INTEGER left{};
+    static double usual = 0;
+    static int told = 0;
+    int reads = 0, made = 0, files = 0, kb = 0;
+    double readMs = 0, madeMs = 0, fileMs = 0;
+    CosmeticsWorkNote(&reads, &readMs, &made, &madeMs);
+    NetplayReadNote(&files, &kb, &fileMs);
+    if (left.QuadPart) {
+        double game = SlowMs(left, at[0]), total = SlowMs(left, at[4]);
+        bool slow = usual > 0 && total > 1.8 * usual && total > usual + 4;   // (a frame's time and four fifths more: one frame missed, on any screen)
+        // (the usual follows every frame, a long one counted as three usual ones at most: one stutter hardly moves it, and after a loading
+        // screen it is the match's own within a hundred frames - following only the frames that weren't long, it never got there)
+        usual = usual > 0 ? usual + ((total < 3 * usual ? total : 3 * usual) - usual) * 0.02 : total;
+        if (slow) {
+            ++g_slowFrames;
+            if (total > g_slowLongest) g_slowLongest = total;
+            if (g_slowFrames <= 12 && told < 3000) {   // (a dozen in each ten seconds - the frame rate's line counts them all; a loading screen is full of them)
+                ++told;
+                Log(L"Slow: a frame took %.0f ms (usually %.1f): the game's own %.1f, before Present %.1f, Present %.1f, pacing %.1f, the mod's work "
+                    L"after it %.1f (most of it: %s, %.1f); HD textures: %d read (%.1f ms), %d made (%.1f ms); files read meanwhile: %d (%d KB, %.1f ms)", total, usual, game,
+                    SlowMs(at[0], at[1]), SlowMs(at[1], at[2]), SlowMs(at[2], at[3]), SlowMs(at[3], at[4]), g_slowPart, g_slowPartMs, reads, readMs, made, madeMs, files, kb, fileMs);
+            }
+        }
+    }
+    left = at[4];
+}
+
 HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, const RECT* dst, HWND wnd,
                                        const RGNDATA* dirty) {
+    LARGE_INTEGER at[5];
+    QueryPerformanceCounter(&at[0]);
     GraphicsPresent(self);   // (graphics.cpp: anti-aliasing, sharpening, brightness)
     if (g_burstLeft > 0) BurstFrame(self);
     FirstPersonFrameEnd();
@@ -781,16 +819,9 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, 
         LeaveCriticalSection(&g_shotLock);
         if (path[0]) SaveShot(self, path);
     }
+    QueryPerformanceCounter(&at[1]);
     HRESULT hr = Real_Present(self, src, dst, wnd, dirty);
-    {   // (a long frame - a stall - in the log; loading screens make some too)
-        static LARGE_INTEGER prev{};
-        static int told = 0;
-        LARGE_INTEGER t;
-        QueryPerformanceCounter(&t);
-        double ms = prev.QuadPart ? (t.QuadPart - prev.QuadPart) * 1000.0 / g_freq.QuadPart : 0;
-        if (ms > 150 && told < 60) { ++told; Log(L"Slow: a frame took %.0f ms", ms); }
-        prev = t;
-    }
+    QueryPerformanceCounter(&at[2]);
     if (g_quitRequested) {
         // Exiting from the render thread between frames lets Direct3D and the driver clean up in this
         // process. Killing the process instead can leave the driver unable to create D3D9 devices for a
@@ -799,24 +830,44 @@ HRESULT STDMETHODCALLTYPE Hook_Present(IDirect3DDevice9* self, const RECT* src, 
         QuitGame();
     }
     PaceFrame();
+    QueryPerformanceCounter(&at[3]);
+    LARGE_INTEGER part[9];   // (the mod's work after the frame, piece by piece: which of them a long frame was - SlowFrame)
+    part[0] = at[3];
     DisplayCheckStyle();
+    QueryPerformanceCounter(&part[1]);
     ModsFrame();   // the mods' plugins (modloader.cpp)
+    QueryPerformanceCounter(&part[2]);
     CosmeticsFrame(self);   // skins (cosmetics.cpp)
+    QueryPerformanceCounter(&part[3]);
     MotionFrame();          // poses (motion.cpp)
+    QueryPerformanceCounter(&part[4]);
     EmotesFrame();          // emotes (emotes.cpp)
+    QueryPerformanceCounter(&part[5]);
     NetplayOnFrame();
+    QueryPerformanceCounter(&part[6]);
     OnlineMenuFrame();
+    QueryPerformanceCounter(&part[7]);
     static unsigned frame = 0;
     ResearchOnFrame(++frame);
+    QueryPerformanceCounter(&part[8]);
+    {
+        static const wchar_t* const names[8] = {L"the window's style", L"the mods' plugins", L"skins and HD textures", L"poses", L"emotes", L"the match", L"the online menu", L"research"};
+        g_slowPart = L"", g_slowPartMs = 0;
+        for (int i = 0; i < 8; ++i)
+            if (SlowMs(part[i], part[i + 1]) > g_slowPartMs) g_slowPartMs = SlowMs(part[i], part[i + 1]), g_slowPart = names[i];
+    }
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
     ++g_statFrames;
     if (now.QuadPart - g_statStart.QuadPart >= g_freq.QuadPart * 10) {
-        Log(L"D3D: %.1f fps (frame rate setting: %s)",
-            g_statFrames * (double)g_freq.QuadPart / (now.QuadPart - g_statStart.QuadPart), kFrameRates[g_frameRate].name);
+        Log(L"D3D: %.1f fps (frame rate setting: %s); %d long frames, the longest %.0f ms",
+            g_statFrames * (double)g_freq.QuadPart / (now.QuadPart - g_statStart.QuadPart), kFrameRates[g_frameRate].name, g_slowFrames, g_slowLongest);
         g_statStart = now;
         g_statFrames = 0;
+        g_slowFrames = 0, g_slowLongest = 0;
     }
+    QueryPerformanceCounter(&at[4]);
+    SlowFrame(at);
     return hr;
 }
 

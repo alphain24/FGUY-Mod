@@ -2672,7 +2672,11 @@ int g_boneDump = 0;    // (research: "fpv bonedump <n>" - player 1's bones, the 
 // joint, the most of them [36]; how far the jaw or snout is [37]. Their arms' joints, places as the first ones': how many [38] (16 at
 // most), each [40 + 3i] - every joint of an arm from a fifth of the arm's length out from the body to the hand (the script's HandSpan:
 // the eye is kept clear of these - firstperson.cpp).
-bool BodyMeasure(Track& tr, const unsigned char* ent, const float* rot, const float* pos, int bones, float* out) {
+// `turned`: how far the pose was turned about up before this (their body turned the way they look - Hook_PoseBuild): which way is
+// ahead in it.
+bool BodyMeasure(Track& tr, const unsigned char* ent, const float* rot, const float* pos, int bones, float turned, float* out) {
+    const V3 ahead = {sinf(turned), 0, cosf(turned)};
+    auto fore = [&](V3 v) { return v.x * ahead.x + v.z * ahead.z; };
     auto at = [](const void* p, int off) -> const unsigned char* {
         if (!p || IsBadReadPtr(static_cast<const unsigned char*>(p) + off, 4)) return nullptr;
         return *reinterpret_cast<const unsigned char* const*>(static_cast<const unsigned char*>(p) + off);
@@ -2718,7 +2722,7 @@ bool BodyMeasure(Track& tr, const unsigned char* ent, const float* rot, const fl
     for (int b = head + 1; b < n; ++b)
         if (on[b] && most > 1e-3f && place[b].y - H.y >= 0.6f * most) E = E + place[b], ++count;
     if (count > 0) E = E * (1.0f / count);
-    else E = H + V3{0, 0.18f * H.y, 0.12f * H.y};   // (no joints on the head: about where a face is)
+    else E = H + V3{0.12f * H.y * ahead.x, 0.18f * H.y, 0.12f * H.y * ahead.z};   // (no joints on the head: about where a face is)
     const float* m = reinterpret_cast<const float*>(ent);
     auto put = [&](V3 v, float* o) { for (int i = 0; i < 3; ++i) o[i] = v.x * m[i] + v.y * m[4 + i] + v.z * m[8 + i]; };
     put(H, out);
@@ -2730,15 +2734,15 @@ bool BodyMeasure(Track& tr, const unsigned char* ent, const float* rot, const fl
     for (int i = 0; i < 2; ++i) put(place[tr.bodyHands[i]], out + 26 + 3 * i);   // (their hands: [26..28], [29..31])
     int snout = -1;
     for (int b = head + 1; b < n; ++b)
-        if (on[b] && place[b].y - H.y < 0.6f * most && place[b].z > H.z && (snout < 0 || place[b].z > place[snout].z)) snout = b;
+        if (on[b] && place[b].y - H.y < 0.6f * most && fore(place[b]) > fore(H) && (snout < 0 || fore(place[b]) > fore(place[snout]))) snout = b;
     put(snout >= 0 ? place[snout] : H, out + 32);
     out[35] = snout >= 0 ? 1.0f : 0.0f;
     float front = 0;
     int back = 0;
     for (int b = parent[head] == 0xff ? -1 : parent[head]; b >= 0 && back < 6; b = parent[b] == 0xff ? -1 : parent[b], ++back)
-        if (place[b].z - H.z > front) front = place[b].z - H.z;
+        if (fore(place[b]) - fore(H) > front) front = fore(place[b]) - fore(H);
     out[36] = front;
-    out[37] = snout >= 0 ? place[snout].z - H.z : 0;
+    out[37] = snout >= 0 ? fore(place[snout]) - fore(H) : 0;
     bool middle[255] = {};   // (the head joint and what it hangs from: where an arm ends)
     for (int b = head; b >= 0; b = parent[b] == 0xff ? -1 : parent[b]) middle[b] = true;
     int arms = 0;
@@ -2850,6 +2854,42 @@ void __cdecl Hook_PoseBuild(unsigned char* ent, float* rot, float* pos, float* s
             g_diagPrevPos.assign(pos, pos + bones * 3);
         }
         tr.viewmodel = false;
+        float turned = 0;
+        // (first person with their whole body: turned about up, about their place, to face the way they look - the pose's root, in their
+        // own axes; mirrored axes turn the other way round)
+        if (g_boneDump > 0 && &tr == g_tracks && !IsBadReadPtr(ent, 0x30)) {
+            const float* m = reinterpret_cast<const float*>(ent);
+            Log(L"Diag: pose built %.5f (thread %lu), turn %.1f deg, the entity's ahead %.3f %.3f %.3f", Now(), GetCurrentThreadId(),
+                FirstPersonBodyTurn(0, ent) * 57.29578f, m[8], m[9], m[10]);
+        }
+        if (float turn = FirstPersonBodyTurn(static_cast<int>(&tr - g_tracks), ent)) {
+            const float* m = reinterpret_cast<const float*>(ent);
+            if (!IsBadReadPtr(m, 0x30) && m[0] * m[10] - m[2] * m[8] < 0) turn = -turn;
+            float c = cosf(turn), s = sinf(turn);
+            M3 about = {{c, 0, s, 0, 1, 0, -s, 0, c}};
+            turned = turn;
+            // (every joint that hangs on nothing: the pose's first entry, the root's, isn't in what the game draws - turned, the measure
+            // of their body turned and the picture didn't)
+            auto ptr = [](const void* p, int off) -> const unsigned char* {
+                if (!p || IsBadReadPtr(static_cast<const unsigned char*>(p) + off, 4)) return nullptr;
+                return *reinterpret_cast<const unsigned char* const*>(static_cast<const unsigned char*>(p) + off);
+            };
+            const unsigned char* parent = ptr(ptr(ptr(ptr(ent, 0x1d4), 0x80), 0x283c), 0);
+            int n = bones - 1;
+            if (parent && n > 0 && !IsBadReadPtr(parent, n)) {
+                M3 root = FromQuat(rot), back = Transposed(root);
+                V3 rootAt = {pos[0], pos[1], pos[2]};
+                for (int b = 0; b < n; ++b) {
+                    if (parent[b] != 0xff) continue;
+                    // (in the world of their own axes: root x joint, turned, and back under the root)
+                    float* q = rot + (b + 1) * 4;
+                    float* t = pos + (b + 1) * 3;
+                    ToQuat(Mul(back, Mul(about, Mul(root, FromQuat(q)))), q);
+                    V3 at = Mul(back, Mul(about, rootAt + Mul(root, V3{t[0], t[1], t[2]})) - rootAt);
+                    t[0] = at.x, t[1] = at.y, t[2] = at.z;
+                }
+            }
+        }
         if (g_boneDump > 0 && &tr == g_tracks) { --g_boneDump; BoneDump(ent, rot, pos, bones); }
         ArmsInView(static_cast<int>(&tr - g_tracks), ent, rot, pos, scale, bones, &tr.viewmodel, tr.gunHandNew);
         if (g_orderTrace > 0 && &tr == g_tracks) {
@@ -2862,7 +2902,7 @@ void __cdecl Hook_PoseBuild(unsigned char* ent, float* rot, float* pos, float* s
         Gather(rot, pos, scale, bones, tr.last.data());
         tr.lastBones = bones;
         tr.haveHead = FirstPersonAny() && HeadPlace(ent, rot, pos, scale, bones, tr.head);
-        tr.haveBody = FirstPersonAny() && FirstPersonBodyStyle() && BodyMeasure(tr, ent, rot, pos, bones, tr.body);
+        tr.haveBody = FirstPersonAny() && FirstPersonBodyStyle() && BodyMeasure(tr, ent, rot, pos, bones, turned, tr.body);
         if (tr.haveBody && tr.bodyHead >= 0 && tr.bodyHead < bones - 1 && FirstPersonBodyHeadAway(static_cast<int>(&tr - g_tracks)))
             scale[(tr.bodyHead + 1) * 3] = scale[(tr.bodyHead + 1) * 3 + 1] = scale[(tr.bodyHead + 1) * 3 + 2] = 0;
         if (diag) {

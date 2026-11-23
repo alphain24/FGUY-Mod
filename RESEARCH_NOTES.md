@@ -1267,3 +1267,89 @@ ematch_<lobby pid>.txt`), whose lobby then
   from where the pivot will be), and the distance follows the nearest on a critically damped spring (80 ms in, 250 ms
   out), never past the game's. Measured at 60 fps, running and turning past a wall: the pull-in's speed changed by up to
   37 m/s frame to frame, 13-14 eased; spinning in place with no wall about, the camera stays at 6.0.
+
+## First person, whole body: the view that jumped; story co-op: the other player's weapon (2026-11-22)
+
+**The view jumped as it was turned** (the user, online, whole-body style at 120). Traced every camera update (`fpv bodytrace <n>` ->
+`FGUYMod\bodytrace_<pid>.csv`: the angles, the eye as it's put, each guard's own answer): the angles are smooth, the eye's PLACE isn't.
+- The game turns a character toward where they go and, standing, leaves them as they were: the view went round on a body that didn't
+  turn. Where a level starts they face the camera (in first person: looking out of the back of their own head); strafing they run side
+  on; walking backward they face the eye. Every guard read that pose against the view - a hand "beside the head" came and went with the
+  view's direction (the eye 0.5 ahead in a tenth of a second on a fast turn, standing, level), the chest's front and the arms' balls
+  changed with it, the head's lean swung to the side at each change of direction (0.34 in a tenth of a second).
+- Now their pose is turned about up to face the way they look (`FirstPersonBodyTurn`; motion.cpp turns the joints that hang on nothing -
+  the pose's first entry, the root's, isn't in what the game draws: turned, the measure turned and the picture didn't). What's in their
+  hands goes with the pose (seen from outside with `fpv bodyturn 1 <degrees>`: 45, 90, 180 - the gun in the hand each time). Drawing
+  only; online only on the PC whose player it is. BodyMeasure is told which way is ahead in the turned pose (it took +z: the jaw read 0).
+- The guards read steadied measures of the pose (`Steady`, `fpv bodyslow`): the most it has lately been, followed over 0.15 s, kept 1 s,
+  let go slowly - a swinging arm is one steady lift. The lift comes in between 10 and 30 degrees down (none looking ahead). The eye goes
+  ahead with the head at once and comes back over 0.35 s.
+- Measured after (Peter, 120): standing, fast turns 0.06 in a tenth of a second (was 0.5); strafing with turns 0.19 (was 0.3; what's left
+  is the walk's own bob, 0.19 up and down, and the lean as they set off, 0.25 ahead - the game's animation, as before). Pictures at
+  10..80 degrees down standing, walking, strafing, backward, firing (Peter, Lois, Stewie): body whole, gun whole, the same from any
+  heading. Still there: a sliver of Peter's collar at the bottom edge firing at 45 degrees; a jump or fall looking down lifts the eye
+  (the arms go up).
+
+**Story co-op: the other player's weapon was another one here** (their Stewie held the satchel charge; here "another plasma gun", and it
+hurt as one). A player's weapon on another PC was only what their input made of it there, and which weapons a character can take is each
+PC's own save's:
+- The locker (the LOKR_ menu calls' object): a byte a weapon id at +0x84 "acquired" (`0x62f3e0`), as many at +0xe2 "locked" (`0x62f490`,
+  the story hasn't come to it); 94 ids - Brian 1..8 (Pistol, AutoShotgun, SniperRifle, MagmaGun, LightningGun, RailGun, FreezeRay,
+  Molotov), Stewie 10..17 (LaserPistol, FlameCannon, SatchelCharge, FreezeRay, SeekerBear, RocketLauncher, MagmaGun, Diaper). Whether a
+  weapon can be taken is asked as it's chosen (`0x5dd810`: not locked, acquired, and two flags of the weapon's own data - 14, 15 and
+  Brian's 4 can't be taken in the story at all).
+- The menu calls' names are in the exe without their prefix (around file 0x61dcd8): PLYR_GetWeaponID(player) answers the weapon in
+  hand; PLYR_ShowWeaponWheel / SetSelectedSlotToWeapon / ConfirmWeaponWheelSelection / HideWeaponWheel put one there - only with the
+  screen up, and not in its first moments (set 120 ms after showing: not taken; 300 ms: taken). A call's answer is read by giving the
+  movie a copy of its method table with SetExternalInterfaceRetVal ours for the length of the call (`CallForNumber`; pipe `uicall`).
+- Now: each PC tells the others the weapons its save has to use ('l', from the session's start), and the game's two questions are
+  answered with this save's or theirs - nothing is written to a save. The weapon in hand goes with each player's state ('X', a short
+  more); another player's that isn't the same here for 0.6 s is put in their hand the weapons screen's way (ui.cpp `WeaponSync`).
+- Two copies, story co-op, the guest's save counting as without the satchel charge and the flame cannon
+  (`FGUYMOD_TEST_LOCKERLACK=Guest:12,11`): the host's Stewie takes each - on the guest's copy he holds the same (the same asset id).
+  A deathmatch on two copies: in sync, nothing forced. Both players need this build.
+
+**The same day, the user: "the camera jumping happened in 3rd person too when you move the mouse"** - so not (only) first person's eye.
+The match takes the mouse's movement once a frame (kbm.cpp KbmCaptureRaw: what the raw reports added up to since the last one). A mouse
+that reports less often than the frames come - 125 a second into the new PC's ~200 frames online - leaves frames with nothing and
+gives the next a whole report: imitated (`kbm mousehz 125 16 3000`, traced), 35% of the camera's updates don't turn at all and the rest
+turn twice as far. The user's mouse wasn't measured (it's on a generic 2.4 GHz receiver, USB 25A7:FA61; the old PC ran 60-110 fps, where
+every frame had a report). Now a report's movement is given out over the time it stands for (`EvenMouse`; [Input] MouseEven=0: as it
+comes): no update without its share, the turn's speed within 27% of the middle for half the updates (a real 500-a-second mouse: 15%; a
+1000: 10%), at most one report (8 ms) behind the hand; a mouse faster than the frames is untouched (measured at 500 and 1000: the same
+with and without). The log says what the mouse does every 5 s of movement ("Input: mouse - N reports a second ... % of frames had no
+report of their own ... frames over the game's 60") - read it after the user's next match before believing this was it.
+Also known, not changed: the game takes 60 counts a tick at most and drops the rest (a fast flick at a low frame rate turns less).
+
+**Measured after all (the user's own mouse, a passive count of its raw reports):** every 8.0 ms, and often 16 - a 125-a-second wireless
+mouse that misses reports. The first way of evening it (a report given out over one report's time from the frame that saw it) left
+half the unevenness and a hole at every missed report. The way it is now: the reports go to a window and thread of the mod's own
+(`MouseWindow`, RIDEV_INPUTSINK - it looks itself whether the game is in front) and are timed as they come; each stands for the time
+since the one before; a frame is given what belongs to its own stretch of time, looked at two reports' time late (`kMouseBack`: 16 ms
+behind the hand at 125 a second, 2 at 1000). Imitated at 200 frames a second, the turning speed update by update: 125 a second - no
+update without a turn (36% before), nine in ten within 21% of the speed (100% before; a 1000-a-second mouse: 20%); 125 with a quarter of
+the reports missed - 6% without a turn (54%), nine in ten within 68% (210%). The real mouse through the new window (a test copy
+hearing it in the background, FGUYMOD_TEST_MOUSEANY=1): "82-99 reports a second, usually 8.0 ms apart, 35-53% of the frames had no
+report of their own - evened out". On the real game as build F31CC004B0E6 (backup-before-mouse-even holds B1CC087A8B5C).
+
+**Stutter (the same day, after playing F31CC004B0E6): "the game stutters when you load in new assets or i think its the uncapped fps ...
+for a split second even while walking".** Long frames are now in the log with where their time went (d3d9.cpp `SlowFrame`: a frame
+1.8 times the usual and 4 ms more - "Slow: a frame took N ms (usually M): the game's own, Present, pacing, the mod's work after it
+(most of it: ...); HD textures read / made; files read"; the frame rate's line every 10 s counts them). In the user's own logs no frame
+of a match was over 150 ms (the old line's bar). A test copy at 3840x2160, third person, walking, turning and firing, 160-176 frames a
+second: about one long frame in 10 s, 10-14 ms, and each was the mod's own - an HD world texture read on the render thread (7.2 ms:
+its DXT blocks taken apart there) or the emotes' folders listed (3.9 ms, every 2 s). Now the render thread only copies the texture's
+bytes and a worker takes them apart (`SkinReadRaw` / `SkinDecodeRaw`; the see-through check moved there too), a texture that doesn't
+fit the budget is looked at again a second later instead of every frame, and the emotes' folders are listed every 20 s while a level
+is on the screen. After: 0 long frames in 62 s with every HD texture made fresh (the cache moved away: 101 made), the picture as before.
+NOT reproduced here: any longer stutter, or one from the game's own loading - nothing of the game's own part or of Present was ever
+long in these runs. The user's FrameRate is 240 and the card makes 150-170 at 4K, so the rate is the card's own, uneven by a
+millisecond or two each frame; a cap below what it makes (144 or 120) is the thing to try. Read the "Slow:" lines of their next match.
+
+**The stutter, found in the user's own log (7612DD4678E2, its "Slow:" lines):** every 20 s to the second a 60 ms frame, "the mod's work
+after it 54 (most of it: emotes)" - and nothing else long. The emotes' look at their folders copied every pack, took its checksum and
+copied it again for the network thread each time, on the render thread: with the ten packs made from a video that are in the user's
+game since 2026-11-17 (10.6 MB) that is 54 ms - every 2 s before that build, every 20 s in it ("its much better"). A test copy with no
+such packs showed 4 ms, which is why it looked small here. Now the look compares names, sizes and times with last time's and stops
+there when nothing changed (emotes.cpp Scan). The user's ten packs in a test copy, 4K, third person: 0 long frames in 67 s, the 16
+packs read. Build E02769F8569F.

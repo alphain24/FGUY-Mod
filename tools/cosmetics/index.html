@@ -239,6 +239,8 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
       <button class="btn" id="nextKey" title="next key">&rarr;</button>
     </div>
     <div class="row"><button class="btn" id="clearKeys">Clear all</button></div>
+    <!-- An emote from a video: not good enough yet to offer (2026-11) - there with ?video in the address, for working on it -->
+    <div id="mocapSection" hidden>
     <div class="sep"></div>
     <h2>From a video</h2>
     <div class="muted">A video of one person dancing becomes this character's emote. Whole body in view, facing the camera;
@@ -266,6 +268,7 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
     <div class="row">
       <span class="muted">Steady</span><input type="range" id="mocapSmooth" min="0" max="5" step="1" value="2" style="width:110px">
       <button class="btn" id="mocapUse" disabled>Put it on the character again</button>
+    </div>
     </div>
     <div class="sep"></div>
     <h2>Other programs</h2>

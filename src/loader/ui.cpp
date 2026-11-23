@@ -277,6 +277,151 @@ const char* ArgString(const GFxValue* args, unsigned argc, unsigned i) {
 
 volatile LONG g_testWeapon = -1;   // (research: pipe "wpn")
 int g_testWeaponPlayer = 0;
+
+// A menu call made from here, and the number the game answers it with. The answer goes to the movie (its SetExternalInterfaceRetVal): for
+// the length of the call the movie's method table is a copy with that one entry ours, which keeps the value instead.
+GFxValue g_caught{};
+bool g_caughtAny = false;
+void __fastcall CatchReturn(void*, void*, const GFxValue* value) {
+    if (value && !IsBadReadPtr(value, sizeof(GFxValue))) g_caught = *value, g_caughtAny = true;
+}
+bool CallForNumber(void* self, void* movie, const char* name, const GFxValue* args, unsigned argc, double* out) {
+    static void* shadow[256];
+    auto table = reinterpret_cast<void***>(movie);
+    if (!movie || IsBadWritePtr(table, 4) || IsBadReadPtr(*table, sizeof(shadow))) return false;
+    void** was = *table;
+    memcpy(shadow, was, sizeof(shadow));
+    shadow[kSetExternalInterfaceRetVal] = (void*)CatchReturn;
+    g_caughtAny = false;
+    *table = shadow;
+    Real_Callback(self, movie, name, args, argc);
+    *table = was;
+    if (!g_caughtAny) return false;
+    unsigned kind = g_caught.type & 0x0F;
+    if (kind == kNumber) *out = g_caught.number;
+    else if (kind == kBool) *out = g_caught.boolean ? 1 : 0;
+    else return false;
+    return true;
+}
+// A free-running match: the weapon in each player's hand kept the same on every PC. Mine: asked of the game (PLYR_GetWeaponID - the
+// menus' id for it) and told to the others with my state. Someone else's: if what they hold here isn't what their own PC says for
+// kWeaponWait ms - their own switch, played here from their input, has had its time - it's put in their hand the way the weapons
+// screen does it: their screen shown, and kWeaponShown ms later the weapon set, confirmed, the screen hidden. Without the screen up the
+// game takes no choice, nor in its first moments (two copies in story co-op: set 120 ms after showing it - not taken; 300 and 700 -
+// taken); it's their screen, in their own view - nothing of it is on mine. A weapon they haven't got here isn't taken that way: after
+// a first try it's marked bought for them first (STOR_SetMultiplayerWeaponBought - a match's own list, nothing of the save's).
+// In story co-op a character has the weapons the SAVE has (the locker's: a byte for each weapon id at its +0x84, 94 of them - the game's
+// own IsWeaponAcquired, 0x62f3e0, is `return this[0x84 + id]`) and hasn't still locked (as many bytes after them, +0xe2: 0x62f490 - a
+// weapon the story hasn't come to yet), and every PC plays from its own save. Whether a weapon can be taken in hand is asked of both
+// as it's chosen (0x5dd810): one the other player's save has and this one hasn't can't be put in their hand here, bought or not (tried,
+// two copies: marked bought, PLYR_Refresh - not taken). So in online story co-op the weapons count as had, and not locked, that ANY
+// player's save has to use: each PC tells the others its save's (netplay.cpp, from the session's start), and the game's two questions
+// are answered with this save's or theirs. Both characters can carry the same on every PC - as on one console, where both play from
+// one save - and nothing is written into anyone's save: only the answers change.
+// (The locker is known from the game's own answer: the function is ours - the same three instructions' worth - and notes whose it is.)
+const DWORD kWeaponEvery = 200, kWeaponWait = 600, kWeaponShown = 500, kWeaponTaken = 2500;
+const uintptr_t kIsWeaponAcquired = 0x62f3e0;
+const uintptr_t kIsWeaponLocked = 0x62f490;
+const int kLockerAcquired = 0x84, kLockerLocked = 0xe2, kLockerWeapons = 0x5e;
+unsigned char* g_locker = nullptr;
+bool g_lockerLack[0x5e] = {};   // (research: FGUYMOD_TEST_LOCKERLACK=<online name>:<id>,<id> - that copy's save counts as not having these)
+bool __fastcall Hook_IsWeaponAcquired(unsigned char* locker, void*, int id) {
+    // (asked before there's a locker - this build's own early asking, at a session's first menu calls: the game's own code read 0x84 + id there)
+    if (!locker || id < 0 || id >= kLockerWeapons) return false;
+    g_locker = locker;
+    return (locker[kLockerAcquired + id] != 0 && !g_lockerLack[id]) || NetplayLockerHas(id);
+}
+bool __fastcall Hook_IsWeaponLocked(unsigned char* locker, void*, int id) {
+    if (!locker || id < 0 || id >= kLockerWeapons) return false;
+    return locker[kLockerLocked + id] != 0 && !NetplayLockerHas(id);
+}
+void HookLockerAt(uintptr_t where, unsigned char offset, void* ours) {
+    const unsigned char expected[] = {0x8b, 0x44, 0x24, 0x04, 0x8a, 0x84, 0x08, offset, 0x00, 0x00, 0x00, 0xc2, 0x04, 0x00};
+    auto at = reinterpret_cast<unsigned char*>(where);
+    DWORD old;
+    if (IsBadReadPtr(at, sizeof(expected)) || memcmp(at, expected, sizeof(expected)) != 0 || !VirtualProtect(at, 5, PAGE_EXECUTE_READWRITE, &old)) {
+        Log(L"UI: the locker's weapons aren't where they're expected - a weapon this save hasn't can't be put in another player's hand");
+        return;
+    }
+    at[0] = 0xe9;
+    *reinterpret_cast<int*>(at + 1) = (int)(reinterpret_cast<uintptr_t>(ours) - (where + 5));
+    VirtualProtect(at, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), at, 5);
+}
+void HookLocker() {
+    HookLockerAt(kIsWeaponAcquired, (unsigned char)kLockerAcquired, (void*)Hook_IsWeaponAcquired);
+    HookLockerAt(kIsWeaponLocked, (unsigned char)kLockerLocked, (void*)Hook_IsWeaponLocked);
+}
+// (research: FGUYMOD_TEST_LOCKERSAY=<id>,<id> - this copy says its save has these weapons too, to the others)
+bool g_lockerSay[kLockerWeapons] = {};
+void LockerSayFromEnv() {
+    char v[200] = "", who[64] = "";
+    if (GetEnvironmentVariableA("FGUYMOD_TEST_LOCKERLACK", v, sizeof(v)) && GetEnvironmentVariableA("FGUYMOD_ONLINE_NAME", who, sizeof(who))) {
+        char* colon = strchr(v, ':');
+        if (colon && (size_t)(colon - v) == strlen(who) && _strnicmp(v, who, strlen(who)) == 0) {
+            char* c2 = nullptr;
+            for (char* t = strtok_s(colon + 1, ", ", &c2); t; t = strtok_s(nullptr, ", ", &c2))
+                if (atoi(t) >= 0 && atoi(t) < kLockerWeapons) g_lockerLack[atoi(t)] = true;
+            Log(L"UI: test - this copy's save counts as not having some weapons (%S)", colon + 1);
+        }
+    }
+    v[0] = 0;
+    if (!GetEnvironmentVariableA("FGUYMOD_TEST_LOCKERSAY", v, sizeof(v))) return;
+    char* ctx = nullptr;
+    for (char* t = strtok_s(v, ", ", &ctx); t; t = strtok_s(nullptr, ", ", &ctx)) {
+        int id = atoi(t);
+        if (id >= 0 && id < kLockerWeapons) g_lockerSay[id] = true;
+    }
+}
+void WeaponSync(void* self, void* movie) {
+    static DWORD last = 0;
+    DWORD now = GetTickCount();
+    if (now - last < kWeaponEvery) return;
+    last = now;
+    int me = NetplayLocalSlot();
+    if (me < 0) return;
+    GFxValue a[2] = {};
+    a[0].type = a[1].type = kNumber;
+    a[0].number = me;
+    double id = 0;
+    NetplayWeaponMine(CallForNumber(self, movie, "PLYR_GetWeaponID", a, 1, &id) ? (int)id : 0);
+    static DWORD since[4] = {}, shownAt[4] = {};
+    static int wanted[4] = {}, tries[4] = {}, said = 0;
+    for (int s = 0; s < 4; ++s) {
+        int want = s == me ? 0 : NetplayWeaponOf(s);
+        a[0].number = s;
+        if (shownAt[s]) {   // (their weapons screen is up here for this: the weapon set once it's been up long enough - and hidden, whatever else)
+            if (now - shownAt[s] < kWeaponShown) continue;
+            a[1].number = want > 0 ? want : wanted[s];
+            Real_Callback(self, movie, "PLYR_SetSelectedSlotToWeapon", a, 2);
+            Real_Callback(self, movie, "PLYR_ConfirmWeaponWheelSelection", a, 1);
+            Real_Callback(self, movie, "PLYR_HideWeaponWheel", a, 1);
+            shownAt[s] = 0;
+            since[s] = now + (kWeaponTaken - kWeaponWait);   // (drawing it takes them a moment: not tried again before kWeaponTaken)
+            if (!since[s]) since[s] = 1;
+            continue;
+        }
+        if (want <= 0 || !CallForNumber(self, movie, "PLYR_GetWeaponID", a, 1, &id) || (int)id == want) {
+            if (want > 0 && tries[s] > 0 && said < 40) { ++said; Log(L"UI: player %d holds weapon %d here now, as on their PC", s, want); }
+            since[s] = 0, tries[s] = 0;
+            continue;
+        }
+        if (!since[s] || wanted[s] != want) { since[s] = now ? now : 1, wanted[s] = want, tries[s] = 0; continue; }
+        if ((int)(now - since[s]) < (int)kWeaponWait) continue;
+        since[s] = now ? now : 1;   // (and again after as long, if it didn't take)
+        if (tries[s] >= 5) continue;   // (it doesn't take: left - until they hold something else)
+        a[1].number = want;
+        if (tries[s] >= 1) Real_Callback(self, movie, "STOR_SetMultiplayerWeaponBought", a, 2);
+        Real_Callback(self, movie, "PLYR_ShowWeaponWheel", a, 1);
+        shownAt[s] = now ? now : 1;
+        if (said < 40) { ++said; Log(L"UI: player %d holds weapon %d on their PC and %d here - put in their hand here%s", s, want, (int)id, tries[s] >= 1 ? L" (marked bought for them first)" : L""); }
+        ++tries[s];
+    }
+}
+// (research: pipe "uicall <name> [a] [b]" - a menu call with up to two numbers, at the next menu call; what it answered, logged)
+char g_uiCallName[64] = "";
+double g_uiCallArgs[2] = {};
+volatile LONG g_uiCallArgc = -1;
 void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, const GFxValue* args,
                               unsigned argc) {
     // The supply crates' store in a free-running match (netplay.cpp): someone else's store opens here too (from their
@@ -305,6 +450,25 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
                 NetplayStoreBought(player, (int)ArgNumber(args, argc, 1));
                 return;
             }
+        }
+    }
+    static DWORD lockerAsked = 0;
+    if (!g_locker && name && NetplayEnabled() && GetTickCount() - lockerAsked > 300) {   // (whose the locker is - Hook_IsWeaponAcquired - before the level's players are made)
+        lockerAsked = GetTickCount();
+        GFxValue one{};
+        one.type = kNumber, one.number = 1;
+        double had = 0;
+        CallForNumber(self, movie, "LOKR_IsWeaponAcquired", &one, 1, &had);
+    }
+    if (NetplayFreeRun() && name) WeaponSync(self, movie);
+    {
+        LONG n = InterlockedExchange(&g_uiCallArgc, -1);
+        if (n >= 0) {
+            GFxValue a[2] = {};
+            for (int i = 0; i < 2; ++i) a[i].type = kNumber, a[i].number = g_uiCallArgs[i];
+            double v = 0;
+            bool ok = CallForNumber(self, movie, g_uiCallName, a, (unsigned)n, &v);
+            Log(L"UI: test - %S(%g, %g; %d args) answered %s%g", g_uiCallName, g_uiCallArgs[0], g_uiCallArgs[1], (int)n, ok ? L"" : L"nothing / not a number ", v);
         }
     }
     // (the menus' player 2 - the store's preview - put in an outfit again: its skin as that outfit wears it, unless the
@@ -728,7 +892,18 @@ bool PatchSlot(uintptr_t vtable, int slot, uintptr_t expected, void* hook, void*
 }
 
 }  // namespace
+// The weapons this save has (netplay.cpp tells the others): one byte each, kLockerWeapons of them. False: not known yet.
+bool UiLockerMine(unsigned char* out, int count) {
+    if (!g_locker || count < kLockerWeapons || IsBadReadPtr(g_locker + kLockerAcquired, 2 * kLockerWeapons)) return false;
+    for (int i = 0; i < kLockerWeapons; ++i) out[i] = (g_locker[kLockerAcquired + i] != 0 && g_locker[kLockerLocked + i] == 0 && !g_lockerLack[i]) || g_lockerSay[i];   // (had, and to use)
+    return true;
+}
 void UiTestWeapon(int player, int weapon) { g_testWeaponPlayer = player; InterlockedExchange(&g_testWeapon, weapon); }
+void UiTestCall(const char* name, int argc, double a, double b) {
+    strcpy_s(g_uiCallName, name);
+    g_uiCallArgs[0] = a, g_uiCallArgs[1] = b;
+    InterlockedExchange(&g_uiCallArgc, argc);
+}
 
 // The mod's own menu command (the game thread): as a menu would send it - through the last command's handler.
 bool UiRunCommand(const char* command, const char* args) {
@@ -744,6 +919,8 @@ void InitUi() {
               L"Scaleform::FileOpener::OpenFile");
     PatchSlot(kExtHandlerVtable, 1, kExtHandlerCallback, (void*)Hook_Callback, (void**)&Real_Callback,
               L"Scaleform::ExternalInterfaceHandler::Callback");
+    HookLocker();
+    LockerSayFromEnv();
     PatchSlot(kCommandHandlerVtable, 0, kCommandHandlerCallback, (void*)Hook_Command, (void**)&Real_Command,
               L"the menus' FSCommand handler");
 }
