@@ -48,6 +48,7 @@ ULONGLONG g_pausedAt = 0;   // (story co-op: when g_gamePaused went on; how many
 // the game. Now everyone else's keys, mouse and buttons are simply not theirs while it is up: taken out of their input where it is
 // made (OnlinePauseSample) - nothing of it reaches the menu on any PC.
 int g_pauseOwner = -1;
+ULONGLONG g_ownResumeAt = 0;   // (my own pause's menu sent GAME_Unpause then: a SCEN_Reset right after is its RESTART LEVEL)
 bool PauseMine() { return !g_gamePaused || !NetplayStoryCoop() || g_pauseOwner < 0 || g_pauseOwner == NetplayLocalSlot(); }
 void PauseOwnerSays(const wchar_t* what, DWORD ms) {
     const wchar_t* name = g_pauseOwner >= 0 ? NetplayLobbyName(g_pauseOwner) : L"";
@@ -674,15 +675,33 @@ void OnlinePauseCommand(const char* command, const char* args) {
         return;
     }
     if (!g_gamePaused) return;
+    // My own pause (story co-op): what its menu does is told to the others - their copy of the menu isn't worked by my keys
+    // (netplay.cpp, FreePauseDoneTick).
+    bool mine = NetplayStoryCoop() && g_pauseOwner >= 0 && g_pauseOwner == NetplayLocalSlot();
+    static ULONGLONG clearedAt = 0;   // (the menu cleared the checkpoint: what leaves the level right after is from the level's start)
+    if (strcmp(command, "GAME_ClearCheckPoint") == 0) clearedAt = GetTickCount64();
     if (strcmp(command, "GAME_Unpause") == 0) {
         g_gamePaused = false;
         Log(L"Pause: the game resumed");
+        if (mine) { g_ownResumeAt = GetTickCount64(); NetplayPauseOutcome(1, command, args); }
     } else if (strcmp(command, "GAME_Quit") == 0 || strcmp(command, "GAME_Portal") == 0 ||
                strcmp(command, "GAME_Reload") == 0 || strcmp(command, "SCEN_Reset") == 0) {
         g_gamePaused = false;
         Log(L"Pause: the paused level is left (%S) - the pause goes with it", command);
+        if (mine) NetplayPauseOutcome(clearedAt && GetTickCount64() - clearedAt < 500 ? 4 : 3, command, args);
     }
 }
+// ui.cpp: the game's menu restarted the level here (its SCEN_Reset). Right after my own pause's resume: its RESTART LEVEL - told.
+void OnlinePauseResetCalled() {
+    if (NetplayStoryCoop() && g_ownResumeAt && GetTickCount64() - g_ownResumeAt < 1500) {
+        g_ownResumeAt = 0;
+        NetplayPauseOutcome(2, "SCEN_Reset", "");
+    }
+}
+int OnlinePauseOwnerElsewhere() {
+    return g_gamePaused && NetplayStoryCoop() && g_pauseOwner >= 0 && g_pauseOwner != NetplayLocalSlot() ? g_pauseOwner : -1;
+}
+int OnlinePauseStateHere() { return !g_gamePaused ? 0 : GameMode() == 2 ? 2 : 1; }
 
 // FGUYMOD_PauseMenu, every frame from the HUD:
 //   "open|selected|host|open count|players|quit|settings|row|top|label~value~kind;..." (the rows shown)

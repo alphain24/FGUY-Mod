@@ -1443,3 +1443,26 @@ should depend on the player who paused it". Three things in the user's logs of t
   (FGUYMOD_TEST_NOPEERAT=1, FGUYMOD_DIRECT=1), lobby with --sim-lag 20: "direct connection to player 1" 0.4 s in, the trip 67 ms
   -> 8 ms; the display: "Host 0 ms / Guest (direct) 8 ms" (direct: the trip straight to them and back). Both players need
   DirectConnection on - the friend's was off in every session so far.
+
+## After 0.9.14: "when i restart the match 2 times it brings scuffy into the level select menu" (2026-11-23, night - not released yet)
+
+- The user's log (their 0.9.14 session, direct connection on): two restarts from their pause menu, "Scuffy left the match" 28 s
+  after the second. The game's pause menu ran on every PC, each one's worked by the pauser's key presses as they arrived - and
+  they don't arrive as pressed: a late packet holds a press a moment longer there (the menu repeats it) or runs two into one.
+  The other PC's choice a line off: RESTART LEVEL there was MISSION SELECT (a level picker inside the pause: MAPS, LEVEL 1...).
+  Two copies, `fguy_lobby.py --sim-lag 30 --sim-jitter 90 --sim-loss 3`: the guest out of step on the sixth restart (stuck in
+  its menu, the host playing on).
+- Now the pauser's keys don't reach the menu on the other PCs at all (netplay.cpp FreeTick: their input emptied there while
+  their pause is up, and until the keys that ended it are let go - else the Esc that resumed there was a new press here and
+  paused this game again), and what they chose is said in words: packet 'z' - 1 resumed, 2 restarted the level (SCEN_Reset),
+  3 / 4 a command that leaves the level (GAME_Quit; the level picker's GAME_Reload / GAME_Portal(<a level this game has>); 4:
+  the checkpoint cleared first). The other PC does that: the resume's own commands (MENU_EnableCheatEntry 0, SNDS_StopSoundFX
+  PauseScreen_BG, SNDS_PlaySoundFX ExitPause, GAME_Unpause, MENU_Stop), the reset by the menu's call (ui.cpp UiStoryReset - with
+  what the hook does at SCEN_Reset; not twice within 3 s), the command as it is. Same bad connection: ten restarts from the
+  host's menu, the guest restarted ten times (level instance 10 on both, the picks back each time); from the guest's seat too;
+  resume (click and Esc), QUIT GAME from each seat - both back in the lobby; no crash. The picker's GAME_Portal: written, not run
+  (the test save has one level).
+- Found on the way: MISSION SELECT's level picker can't be started by the first player's keyboard or mouse (its START wants the
+  controller's Start; Enter isn't one there) - older, left. And the test copies took the real keyboard and mouse whenever their
+  window was in front (a weapon wheel held open through a run, clicks landing where the real pointer was, the pointer shut in
+  their window): `FGUYMOD_TEST_NOREAL=1` (kbm.cpp) - set it for every scripted run; "kbm cursor" now holds in front as well.

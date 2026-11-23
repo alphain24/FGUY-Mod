@@ -1166,6 +1166,7 @@ extern const int kPktNpcDownSize;
 extern const int kPktStatsSize;
 void FreeState(int s, const PktState* p, bool withMoney, bool withClock, bool withWeapon);
 double PreciseMs();
+void PauseDoneIn(int slot, const char* buf, int n);
 void LockerIn(int slot, const unsigned char* has, int count);
 void LockerSend(ULONGLONG nowMs);
 const int kLockerCount = 94;   // (the locker's weapons: ui.cpp kLockerWeapons)
@@ -1536,6 +1537,8 @@ void Receive() {
             if (straight) DirectHello(slot, from, reinterpret_cast<PktDirect*>(buf)->ack != 0);
         } else if (h->type == 'i' && n >= (int)sizeof(PktLanAt)) {   // where they are on their own network
             DirectLanAt(slot, reinterpret_cast<PktLanAt*>(buf));
+        } else if (h->type == 'z') {   // story co-op: what they chose in their pause menu (resume, restart, quit)
+            PauseDoneIn(slot, buf, n);
         } else if (h->type == 'p' && n >= (int)sizeof(PktMyPing)) {   // their own ping to the server
             InterlockedExchange(&g_theirPing[slot], reinterpret_cast<PktMyPing*>(buf)->ms);
             g_theirPingAt[slot] = GetTickCount64();
@@ -5178,6 +5181,93 @@ void FetchSave(const wchar_t* path) {
     Log(L"Netplay: rejoining - the host's save (%u bytes, %08x) in %.1f s%s", (unsigned)g_saveIn.size(), g_saveInCrc,
         (GetTickCount64() - start) / 1000.0, written ? L"" : L" - COULDN'T WRITE IT");
 }
+// ---- story co-op: what the pauser chose in their pause menu ---------------------------------------------------------------
+// The game's pause menu ran on every PC, each one's worked by the pauser's key presses as they arrived. On a real connection
+// they don't arrive as they were pressed: a packet late, and a press is held a moment longer there (the menu repeats it) or two
+// run into one - the other PC's choice a line off, its Enter on MISSION SELECT while the pauser restarted the level ("when i
+// restart the match 2 times it brings scuffy into the level select menu"; two copies, 30 ms +-90, 3 % lost: out of step on the
+// sixth restart). So their keys don't reach the menu on the other PCs at all (FreeTick: their input is emptied there while
+// their pause is up - the menu stays as it came up), and what they chose is said in words: 'z' - 1 resumed, 2 restarted the
+// level (the menu's SCEN_Reset), 3 a command that leaves the level (GAME_Quit...). Sent a second long; done once on each PC.
+#pragma pack(push, 1)
+struct PktPauseDone { PktHeader h; unsigned seq; BYTE kind; char command[24]; char args[40]; };
+#pragma pack(pop)
+struct PauseDone { PktPauseDone p; ULONGLONG at; int from; };
+PktPauseDone g_pauseDoneOut[4];
+ULONGLONG g_pauseDoneUntil[4], g_pauseDoneNext = 0;
+unsigned g_pauseDoneSeq = 0, g_pauseDoneOutAt = 0, g_pauseDoneSeen[4][8];
+std::vector<PauseDone> g_pauseDoneIn;
+
+void PauseDoneIn(int slot, const char* buf, int n) {   // (the net lock held)
+    if (!g_free || !g_sessionStory || n < (int)sizeof(PktPauseDone) || slot < 0 || slot >= 4) return;
+    PktPauseDone p;
+    memcpy(&p, buf, sizeof(p));
+    p.command[sizeof(p.command) - 1] = p.args[sizeof(p.args) - 1] = 0;
+    if (!p.seq) return;
+    for (unsigned seen : g_pauseDoneSeen[slot]) if (seen == p.seq) return;
+    g_pauseDoneSeen[slot][p.seq % 8] = p.seq;
+    g_pauseDoneIn.push_back({p, GetTickCount64(), slot});
+}
+void FreePauseDoneTick() {   // (the game thread, each tick; the net lock held)
+    ULONGLONG now = GetTickCount64();
+    if (now >= g_pauseDoneNext) {   // (mine: a few copies - packets get lost)
+        g_pauseDoneNext = now + 100;
+        for (int k = 0; k < 4; ++k)
+            if (now < g_pauseDoneUntil[k]) SendAll(&g_pauseDoneOut[k], sizeof(g_pauseDoneOut[k]));
+    }
+    if (g_pauseDoneIn.empty()) return;
+    PauseDone d = g_pauseDoneIn.front();
+    // Their pause here: 2 its menu is up, 1 on its way (their START just put in), 0 not paused. On its way: wait for it. Not
+    // paused: a moment more (their pause may only just be coming) - then a resume is for nothing, the others are done as they are.
+    int here = OnlinePauseStateHere();
+    static ULONGLONG resumedAt = 0;   // (their resume done here then: what follows it - the restart - needn't wait for a pause)
+    if (here == 1 && now - d.at < 1500) return;
+    if (here == 0 && now - d.at < 600 && now - resumedAt > 2000) return;
+    if (d.p.kind == 1 && here != 0) resumedAt = now;
+    g_pauseDoneIn.erase(g_pauseDoneIn.begin());
+    // (3 / 4: a command that leaves the level - 4: the menu cleared the checkpoint first, the level from its start. GAME_Quit; its
+    //  MISSION SELECT's level picker: GAME_Reload for the same level, GAME_Portal(<level>) for another - only a level's own path
+    //  that this game has: a made-up one crashes the game)
+    bool leaves = d.p.kind == 3 || d.p.kind == 4;
+    bool quit = leaves && strncmp(d.p.command, "GAME_Quit", 9) == 0;
+    bool reload = leaves && strcmp(d.p.command, "GAME_Reload") == 0;
+    bool portal = leaves && strcmp(d.p.command, "GAME_Portal") == 0;
+    if (portal) {
+        size_t len = strlen(d.p.args);
+        portal = len > 13 && len < sizeof(d.p.args) - 1 && strncmp(d.p.args, "/FGUY/Levels/", 13) == 0 && !strstr(d.p.args, "..");
+        for (size_t i = 0; portal && i < len; ++i) portal = isalnum((unsigned char)d.p.args[i]) || d.p.args[i] == '/' || d.p.args[i] == '_';
+        if (portal) {
+            char file[80];
+            sprintf_s(file, ".%s.ho", d.p.args);
+            portal = GetFileAttributesA(file) != INVALID_FILE_ATTRIBUTES;
+        }
+    }
+    Log(L"Netplay: free - story: player %d %s in their pause menu (%S %S) - %s here%s", d.from,
+        d.p.kind == 1 ? L"resumed" : d.p.kind == 2 ? L"restarted the level" : quit ? L"quit the level" : L"went to a level",
+        d.p.command, d.p.args, here == 0 && d.p.kind == 1 ? L"nothing to do" : leaves && !quit && !reload && !portal ? L"not done" : L"the same",
+        here == 2 ? L"" : L" (the game wasn't paused here)");
+    LeaveCriticalSection(&g_netLock);   // (the commands come back into the netcode)
+    auto resume = [] {   // (what the menu's own RESUME sends)
+        UiRunCommand("MENU_EnableCheatEntry", "0");
+        UiRunCommand("SNDS_StopSoundFX", "PauseScreen_BG");
+        UiRunCommand("SNDS_PlaySoundFX", "ExitPause");
+        UiRunCommand("GAME_Unpause", "");
+        UiRunCommand("MENU_Stop", "");
+    };
+    if (d.p.kind == 1) {
+        if (here != 0) resume();
+    } else if (d.p.kind == 2) {
+        if (here != 0) resume();
+        UiStoryReset();
+    } else if (quit) {
+        UiRunCommand("GAME_Quit", "");
+    } else if (reload || portal) {
+        if (d.p.kind == 4) UiRunCommand("GAME_ClearCheckPoint", "");
+        UiRunCommand(d.p.command, portal ? d.p.args : "");
+    }
+    EnterCriticalSection(&g_netLock);
+}
+
 void FreeStoryRestartTick() {   // (the game thread, each tick; the net lock held)
     ULONGLONG now = GetTickCount64();
     if (g_slot != 0) {
@@ -5425,6 +5515,38 @@ void FreeTick() {
         }
         bool keyboard = false;
         int at = OnlinePauseTick(flags, gone, g_players, &keyboard);
+        // Story co-op, another player's pause up here: nothing of theirs reaches its menu on this PC (what they choose there
+        // comes in words: FreePauseDoneTick) - only the press that pauses the game here, put in below.
+        int theirs = g_sessionStory ? OnlinePauseOwnerElsewhere() : -1;
+        // (...and a moment on after it ended here, while the keys that ended it are still down in their input: their word can
+        //  come before their newer input does - the Esc that resumed there was a new press here, and paused this game again)
+        static int heldOff = -1;
+        static ULONGLONG heldOffUntil = 0;
+        if (theirs >= 0) {
+            heldOff = theirs;
+            heldOffUntil = GetTickCount64() + 1500;
+        } else if (heldOff >= 0 && heldOff < g_players && heldOff != g_slot && GetTickCount64() < heldOffUntil) {
+            const Pad& p = g_current[heldOff];
+            auto key = [&p](int vk) { return ((p.kbm.keys[vk >> 3] >> (vk & 7)) & 1) != 0; };
+            bool down = (p.buttons & (XINPUT_GAMEPAD_START | XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_DPAD_UP |
+                                      XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_DPAD_LEFT | XINPUT_GAMEPAD_DPAD_RIGHT)) != 0 ||
+                        key(VK_ESCAPE) || key(VK_RETURN) || key(VK_BACK) || key(VK_UP) || key(VK_DOWN) || key(VK_LEFT) ||
+                        key(VK_RIGHT) || (p.kbm.buttons & 1);
+            if (down) theirs = heldOff;
+            else heldOff = -1;
+        } else {
+            heldOff = -1;
+        }
+        if (theirs >= 0 && theirs < g_players && theirs < 4 && theirs != g_slot) {
+            Pad& p = g_current[theirs];
+            p.buttons = 0;
+            p.lt = p.rt = 0;
+            p.lx = p.ly = p.rx = p.ry = 0;
+            memset(p.kbm.keys, 0, sizeof(p.kbm.keys));
+            p.kbm.buttons = 0;
+            p.kbm.dx = p.kbm.dy = p.kbm.dz = 0;
+            kbm[theirs] = p.kbm;
+        }
         if (at >= 0 && at < 4) {
             if (keyboard) g_current[at].kbm.keys[VK_ESCAPE >> 3] |= (BYTE)(1 << (VK_ESCAPE & 7));
             else g_current[at].buttons |= XINPUT_GAMEPAD_START;
@@ -5433,6 +5555,7 @@ void FreeTick() {
     }
     OnlineSettingsApply(kbm, g_players);
     KbmApply(kbm, g_players);
+    if (g_sessionStory) FreePauseDoneTick();
     FreeApplyHits();
     FreeApplySpawns();
     FreeApplyRounds();
@@ -6199,6 +6322,25 @@ void NetplaySessionPress(int pad, WORD buttons, int delayTicks) {
     Log(L"Netplay: session press pad %d buttons %04x in %d ticks", pad, buttons, delayTicks);
 }
 int NetplayLocalSlot() { return g_enabled ? g_slot : -1; }
+// onlinepause.cpp / ui.cpp, on the pauser's PC: what their pause menu just did - 1 resumed, 2 restarted the level, 3 a command
+// that leaves the level. Told to the others (FreePauseDoneTick does it there).
+void NetplayPauseOutcome(int kind, const char* command, const char* args) {
+    if (!g_enabled || !g_free || !g_sessionStory) return;
+    EnterCriticalSection(&g_netLock);
+    PktPauseDone p{};
+    p.h = {'z', (BYTE)g_slot};
+    p.seq = ++g_pauseDoneSeq;
+    p.kind = (BYTE)kind;
+    strncpy_s(p.command, command ? command : "", _TRUNCATE);
+    strncpy_s(p.args, args ? args : "", _TRUNCATE);
+    int k = g_pauseDoneOutAt++ % 4;
+    g_pauseDoneOut[k] = p;
+    g_pauseDoneUntil[k] = GetTickCount64() + 1000;
+    SendAll(&p, sizeof(p));
+    SendAll(&p, sizeof(p));
+    LeaveCriticalSection(&g_netLock);
+    Log(L"Netplay: free - story: my pause menu %s - told to the others", kind == 1 ? L"resumed" : kind == 2 ? L"restarted the level" : L"left the level");
+}
 const wchar_t* NetplayLobbyName(int slot) {   // a player's lobby name, or "" (no lobby: a LAN / test session)
     ReadNames();
     return slot >= 0 && slot < 4 ? g_names[slot] : L"";

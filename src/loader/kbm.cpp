@@ -792,6 +792,11 @@ void KbmCaptureRaw(KbmRaw* out) {
         ClaimRawMouse();
     }
     bool front = g_wnd && GetForegroundWindow() == g_wnd;
+    // (test copies run by a script - FGUYMOD_TEST_NOREAL=1: never "in front". Their windows come up over whatever the person at
+    //  this PC is doing: with one in front their own keys and mouse played in the test - a weapon wheel held open through a whole
+    //  run - and their pointer was shut into its window.)
+    static const bool noReal = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NOREAL", 0) != 0;
+    if (noReal) front = false;
     if (front) {
         RECT r;
         GetClientRect(g_wnd, &r);
@@ -829,6 +834,9 @@ void KbmCaptureRaw(KbmRaw* out) {
         out->cursorX = Clamp16(MulDiv(max(0L, min(c.x, r.right)), 32767, r.right));
         out->cursorY = Clamp16(MulDiv(max(0L, min(c.y, r.bottom)), 32767, r.bottom));
     }
+    // (test: "kbm cursor" holds also while the test copy's window is in front - the real pointer took it back there, and a scripted
+    //  click landed wherever the real mouse was)
+    if (g_testInit && g_testCursorX >= 0) { out->cursorX = Clamp16(g_testCursorX); out->cursorY = Clamp16(g_testCursorY); }
 }
 
 // netplay.cpp, at the start of every tick, with every player's inputs for this tick: give each keyboard

@@ -452,6 +452,8 @@ void StoryPicksOwed() { g_storyPicksOwed = true; g_storyPicksGone = false; g_sto
 // (never out of the level), Stewie and Brian again as the level has them. Owed again, once the reset is through (its HUD is back 0.1 s
 // after, its menu gone 0.3 s after). 0.9.12 missed it: its restarts were tested by GAME_Reload, which the menu doesn't use.
 ULONGLONG g_storyPicksNotBefore = 0;
+ULONGLONG g_storyResetAt = 0;          // (the level was restarted here then: SCEN_Reset)
+volatile LONG g_storyResetAsked = 0;   // (UiStoryReset: at the next menu call)
 void StoryPicksAfterReset() {
     g_storyPicksOwed = g_storyPicksGone = true;
     g_storyPicksSince = 0;
@@ -540,6 +542,21 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         one.type = kNumber, one.number = 1;
         double had = 0;
         CallForNumber(self, movie, "LOKR_IsWeaponAcquired", &one, 1, &had);
+    }
+    // Story co-op: the player who paused restarted the level in their pause menu (netplay.cpp) - the same here: what the menu's
+    // RESTART LEVEL calls, with what this hook does for it (below, at SCEN_Reset). Not twice: a restart here in the last 3 s was
+    // it already. (Here, at any call - the HUD's own come every frame.)
+    if (name && NetplayStoryCoop() && InterlockedExchange(&g_storyResetAsked, 0)) {
+        if (g_storyResetAt && GetTickCount64() - g_storyResetAt < 3000) {
+            Log(L"UI: story - the level was restarted here a moment ago already - not again");
+        } else {
+            Log(L"UI: story - restarting the level here (the pause menu's RESTART LEVEL, chosen on the pauser's PC)");
+            NetplayStoryLevelChange("the level restarted");
+            WeaponSyncQuiet();
+            StoryPicksAfterReset();
+            g_storyResetAt = GetTickCount64();
+            Real_Callback(self, movie, "SCEN_Reset", nullptr, 0);
+        }
     }
     if (name && NetplayStoryCoop()) StoryCharacters(self, movie);   // (from the lockstep's last ticks on: the level's first moment)
     if (NetplayFreeRun() && name) WeaponSync(self, movie);
@@ -881,6 +898,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         NetplayStoryLevelChange("the level restarted");
         WeaponSyncQuiet();        // (as after the commands that change the level: nobody's weapon asked or set while it's put back)
         StoryPicksAfterReset();   // (its players are Stewie and Brian again: as picked, once it's through)
+        g_storyResetAt = GetTickCount64();
+        OnlinePauseResetCalled(); // (my own pause menu's RESTART LEVEL: the others are told - they do it by UiStoryReset)
     }
     if (name && g_seenCalls.insert(name).second) {
         if (NetplayEnabled()) Log(L"UI: menu calls %S (%u args) - tick %u", name, argc, NetplayTick());
@@ -993,6 +1012,8 @@ void UiTestCall(const char* name, int argc, double a, double b) {
     g_uiCallArgs[0] = a, g_uiCallArgs[1] = b;
     InterlockedExchange(&g_uiCallArgc, argc);
 }
+
+void UiStoryReset() { InterlockedExchange(&g_storyResetAsked, 1); }
 
 // The mod's own menu command (the game thread): as a menu would send it - through the last command's handler.
 bool UiRunCommand(const char* command, const char* args) {

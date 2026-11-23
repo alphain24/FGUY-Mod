@@ -327,7 +327,7 @@ struct ArmsView {                      // a player's gun to bring into their vie
     int layer90 = 0;                   //   (research: its state)
     int clip = 0;                      //   the upper body's clip ([+0x13cc]+0x60: 0 none, 0xb aiming, 4..6 reloading)
     int moveClip = 0;                  //   ...and what's under it (+0x5c: 0 standing, 2 walking, 4 running, 0x16 in the air)
-    bool gunOut = true;                //   their gun's out (not: a melee swing, the hands empty after one)
+    bool gunOut = true;                //   their gun's out (not: a melee swing, the hands empty after one)
     int rounds = 0;                        // (the clip of the weapon in hand: [player+0x2240]+0x164)
     unsigned long long weapon = 0;         // (the weapon in hand: its asset's id, [player+0x2240]+0x18)
 };
@@ -437,6 +437,11 @@ struct KbmRaw;
 bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool keyboardPlayer);  // netplay: my input
 int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyboard); //   everyone's
 void OnlinePauseCommand(const char* command, const char* args);  //   ui.cpp: a menu command ran
+int OnlinePauseOwnerElsewhere();               //   story co-op: the player whose pause is up, when it isn't mine (-1: none / mine)
+int OnlinePauseStateHere();                    //   story co-op: 2 the game's pause menu is up here, 1 on its way, 0 not paused
+void OnlinePauseResetCalled();                 //   ui.cpp: the game's menu restarted the level (SCEN_Reset) on this PC
+void NetplayPauseOutcome(int kind, const char* command, const char* args);   // netplay.cpp: my pause menu's choice, to the others
+void UiStoryReset();                           //   ui.cpp: restart the level here, as the pause menu's RESTART LEVEL does
 const char* OnlinePauseMenu();                 //   FGUYMOD_PauseMenu (the HUD)
 const char* OnlinePauseCursor();
 void SplitViewNoMarkers(bool on);
