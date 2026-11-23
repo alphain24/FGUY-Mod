@@ -702,6 +702,7 @@ int OnlinePauseOwnerElsewhere() {
     return g_gamePaused && NetplayStoryCoop() && g_pauseOwner >= 0 && g_pauseOwner != NetplayLocalSlot() ? g_pauseOwner : -1;
 }
 int OnlinePauseStateHere() { return !g_gamePaused ? 0 : GameMode() == 2 ? 2 : 1; }
+int OnlinePauseGameMode() { return GameMode(); }   // (7 playing, 2 a menu of the game's up)
 
 // FGUYMOD_PauseMenu, every frame from the HUD:
 //   "open|selected|host|open count|players|quit|settings|row|top|label~value~kind;..." (the rows shown)

@@ -439,6 +439,7 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
 void OnlinePauseCommand(const char* command, const char* args);  //   ui.cpp: a menu command ran
 int OnlinePauseOwnerElsewhere();               //   story co-op: the player whose pause is up, when it isn't mine (-1: none / mine)
 int OnlinePauseStateHere();                    //   story co-op: 2 the game's pause menu is up here, 1 on its way, 0 not paused
+int OnlinePauseGameMode();                     //   the game's mode: 7 playing, 2 a menu of its own up
 void OnlinePauseResetCalled();                 //   ui.cpp: the game's menu restarted the level (SCEN_Reset) on this PC
 void NetplayPauseOutcome(int kind, const char* command, const char* args);   // netplay.cpp: my pause menu's choice, to the others
 void UiStoryReset();                           //   ui.cpp: restart the level here, as the pause menu's RESTART LEVEL does

@@ -1466,3 +1466,41 @@ should depend on the player who paused it". Three things in the user's logs of t
   controller's Start; Enter isn't one there) - older, left. And the test copies took the real keyboard and mouse whenever their
   window was in front (a weapon wheel held open through a run, clicks landing where the real pointer was, the pointer shut in
   their window): `FGUYMOD_TEST_NOREAL=1` (kbm.cpp) - set it for every scripted run; "kbm cursor" now holds in front as well.
+
+## After 0.9.15: the second level, ammo, the HUD (2026-11-24, night - not released yet)
+
+- **"once you get on the second level, the other player doesnt get in the level ... he can just see me play".** In the user's logs
+  since 0.9.11: after a level the game loads the next one, "player 1 drops in" twice, no second view. How the game joins a player
+  (FGUY.exe): its pad manager (`0x5beef0()` = 0xb3b388) keeps 8 entries of 0x14 from +8 - the pad object, its player, the
+  controller's number twice (0 the first pad, 1 the keyboard, 2.. the next pads: player s plays on controller s + 1), a "joined"
+  byte; +0x18a "join enabled" (PLYR_SetJoinEnabled - the menu's LevelSelectConfirm says true at a level's start), +0x18c the
+  join's button; `0xbad7f0[slot]` each slot's controller (-1: none). Each player object's update (0x5f60d0) asks
+  `0x5ef480(player)` -> `0x5dd050(player, force)`: not while a cutscene object is current ([0xbad99c]), not from the table's
+  FIRST entry while the keyboard is in use ([0xacc4cd]) - and a join swaps the joined pad's entry INTO the first place. So the
+  first join of a game works (controller 2 sits third) and no later one: the next level (table as it was: controller 2 first,
+  "joined" still 1, slot 1 still "has" controller 2, its player gone) and a player dropped out (PLYR_Drop(1): entry freed, the
+  player's view -1). Forty STARTs in a row did nothing. Things tried that did NOT help: PLYR_SetJoinEnabled(true) alone,
+  PLYR_Drop(1) before or after the level, MENU_SetStartingPlayerCount(2) (the level then starts two-up and the guest's HUD is the
+  raw template), the table put back by hand + START. What works: the table put back (the entry changes places with controller
+  0's free one) AND the join called outright - `0x5dd050(padmgr, player, 1)` (netplay.cpp StoryJoin; the START only if the code
+  isn't where expected). Tries every 3 s while a player isn't in (was: twice). Two copies: FRXX -> AMXX -> CTXX -> FRXX by
+  GAME_Portal, the second player in at the first try each time on both, own HUD, picks kept. (Scratch: disx.py, find_disp.py,
+  callers.py, padtable.ps1, players.ps1, level2_test.ps1. PLYR_SetJoinEnabled(true) is also said at every level's start now.)
+- **"scuffy could only see one ammo in his weapon but on mine he kept on shooting".** Each PC counted the other players' rounds
+  by itself, from their input as it came. Their state ('X', 30 a second) now carries the rounds in the weapon in their hand
+  ([player+0x2240]+0x164) and that weapon's asset id (+0x18); set here when the same weapon is in their hand here. Two copies:
+  equal after firing from either side; a wrong count poked in on one PC was right again within a state.
+- **"scuffy in the middle of the match couldn't render the game HUD"** (their screenshot: his own view, no HUD, name tags and
+  pings there). Not reproduced: death and respawn bring the HUD back; the truck level's cutscenes (the game goes to one view and
+  back around them - "HUD split mode 0 -> 0 ... 2 -> 0" in the user's log) need someone playing through. One thing that could do
+  it is gone: with one view up and no cutscene seen, the mod pressed START for a player who was in already (a pause / a skip to
+  the game); StoryJoin presses nothing for a player the table has. Needs the friend's own log if it happens again.
+- **Asked: the second player leaving and joining again without the lobby, as in the base game** (its pause menu's DROP OUT:
+  PLYR_Drop). The join side now exists (StoryJoin); not built: what dropping out means online (their PC watching the other's
+  view, a key to come back) - to be agreed first.
+- **The version on the title screen** (a player's idea, 2026-11-24): "FGUYMod v0.9.16" small at the bottom right - the start
+  patch (tools/ui/make_start_patch.py: FGUYTitleVersion, a text field in '$font_bodyText' at the screen's own corner from
+  Stage.visibleRect - the movie's stage is 960 x 720) asks the loader FGUYMOD_Version. Not on the screens after it.
+- Met testing 0.9.16's files: the hold on the pauser's input after their pause ends let go at once when their input showed no
+  key down yet - the word came first, the Esc a frame later, the other game paused again (0.9.15 passed this by luck of the
+  packets' order). Half a second at least now. Esc pause / Esc resume five times from each seat: both games playing every time.

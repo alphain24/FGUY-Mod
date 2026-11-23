@@ -27,6 +27,34 @@ OUT_DIR = os.path.join(HERE, '..', '..', 'dist', 'FGUYMod', 'ui')
 SOURCE = r'''
 function FGUYTitleShown() {
     flash.external.ExternalInterface.call('FGUYMOD_TitleScreen');
+    FGUYTitleVersion();
+}
+
+// The mod and its version, small at the bottom right of the title screen (a player's idea: "so it doesnt just show up in the
+// logs and anyone who loads up the game will see what they are using and what version"). The movie's stage is 960 x 720 in the
+// middle of a wider screen: the screen's own corner, from Stage.visibleRect.
+function FGUYTitleVersion() {
+    var v = flash.external.ExternalInterface.call('FGUYMOD_Version');
+    if (v == undefined || v == '') return;   // (not our loader)
+    var vr = Stage.visibleRect;
+    var x = 0, y = 0, w = 960, h = 720;
+    if (vr) { x = vr.x; y = vr.y; w = vr.width; h = vr.height; }
+    var size = h / 720;
+    _root.FGUYVersionUI.removeMovieClip();
+    var ui = _root.createEmptyMovieClip('FGUYVersionUI', 29980);
+    ui.createTextField('t', 1, x + w - 316 * size, y + h - 30 * size, 300 * size, 22 * size);
+    var t = ui.t;
+    t.embedFonts = true;
+    t.selectable = false;
+    t.wordWrap = false;
+    var f = new TextFormat();
+    f.font = '$font_bodyText';
+    f.size = 13 * size;
+    f.color = 0x9AA0A8;
+    f.align = 'right';
+    t.setNewTextFormat(f);
+    t.text = 'FGUYMod v' + String(v);
+    t.setTextFormat(f);
 }
 
 function FGUYTitleSession() {

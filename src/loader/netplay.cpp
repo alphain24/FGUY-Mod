@@ -1164,13 +1164,13 @@ void StorySaveHaveIn(int s, const PktSaveHave* p);
 extern const int kPktSaveAskSize, kPktSaveChunkHead, kPktSaveHaveSize;
 extern const int kPktNpcDownSize;
 extern const int kPktStatsSize;
-void FreeState(int s, const PktState* p, bool withMoney, bool withClock, bool withWeapon);
+void FreeState(int s, const PktState* p, bool withMoney, bool withClock, bool withWeapon, bool withClip);
 double PreciseMs();
 void PauseDoneIn(int slot, const char* buf, int n);
 void LockerIn(int slot, const unsigned char* has, int count);
 void LockerSend(ULONGLONG nowMs);
 const int kLockerCount = 94;   // (the locker's weapons: ui.cpp kLockerWeapons)
-extern const int kPktStateSizeWeapon;
+extern const int kPktStateSizeWeapon, kPktStateSizeClip;
 void FreeHitIn(int s, const PktHit* p, bool withCredit);
 extern const int kPktStateSize, kPktHitSize, kPktHitSizeOld;
 
@@ -1607,7 +1607,8 @@ void Receive() {
         } else if (h->type == 'l' && n >= (int)sizeof(PktHeader) + kLockerCount) {   // story co-op: the weapons their save has
             LockerIn(slot, reinterpret_cast<const unsigned char*>(buf) + sizeof(PktHeader), kLockerCount);
         } else if (h->type == 'X' && n >= kPktStateSizeOld) {   // (0.8.12 and older: no money in it)
-            if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSizeMoney, n >= kPktStateSize, n >= kPktStateSizeWeapon);
+            if (g_free) FreeState(slot, reinterpret_cast<PktState*>(buf), n >= kPktStateSizeMoney, n >= kPktStateSize, n >= kPktStateSizeWeapon,
+                                  n >= kPktStateSizeClip);
         } else if (h->type == 'Z' && n >= kPktHitSizeOld) {   // (0.8.13 and older: no credit in it)
             if (g_free) FreeHitIn(slot, reinterpret_cast<PktHit*>(buf), n >= kPktHitSize);
         } else if (h->type == 'o') {   // story co-op: the host went back to the lobby from the main menu - everyone does
@@ -2123,6 +2124,52 @@ void StartFreeKeepAlive();
 extern unsigned short g_storyEpoch;
 unsigned char* PlayerBySlot(int slot);
 
+// Story co-op: a player joins the level - the game's own join (its pad manager's, 0x5dd050: the player, "no asking"), not a START on
+// their pad. The START joined them once in a game and never again: the game looks for a joining pad in its table of pads (the
+// manager at 0xb3b388: 8 entries of 0x14 from +8 - the pad, its player, the controller's number twice, a "joined" byte) but, with
+// the keyboard in use, never at the table's first entry - and a join moves the joined pad's entry there. The level after
+// (its players new, nobody joined) and a player dropped out found their pad in the one place that can't join: "once you get on
+// the second level, the other player doesnt get in the level ... he can just see me play" (in the user's logs since 0.9.11; forty
+// STARTs in a row on two copies). So: the entry put back behind the first (it changes places with the free entry of controller
+// 0), and the join asked for outright - it takes the entry of the controller the slot had, or the first free one: theirs
+// (controller 0 is the first pad, 1 the keyboard, 2.. the next pads - player s plays on the game's pad s: controller s + 1).
+#pragma pack(push, 1)
+struct GamePadEntry { void* pad; void* player; int number; int controller; BYTE joined; BYTE unused[3]; };
+#pragma pack(pop)
+const uintptr_t kPadManager = 0xb3b388, kPadJoin = 0x5dd050, kSlotController = 0xbad7f0;
+const unsigned char kPadJoinStart[] = {0x80, 0x7c, 0x24, 0x08, 0x00, 0x53, 0x55, 0x56};   // cmp byte [esp+8],0; push ebx; push ebp; push esi
+bool StoryJoin(int s) {
+    static int known = -1;   // (the game's code is what this was written for)
+    if (known < 0) {
+        known = !IsBadReadPtr((void*)kPadJoin, sizeof(kPadJoinStart)) && memcmp((void*)kPadJoin, kPadJoinStart, sizeof(kPadJoinStart)) == 0;
+        if (!known) Log(L"Netplay: session - the game's join isn't where it's expected - players drop in by START only");
+    }
+    unsigned char* player = PlayerBySlot(s);
+    if (!known || s < 1 || s > 3 || !player) return false;
+    auto e = reinterpret_cast<GamePadEntry*>(kPadManager + 8);
+    if (IsBadWritePtr(e, 8 * sizeof(GamePadEntry))) return false;
+    int want = s + 1, at = -1, zero = -1;
+    for (int k = 0; k < 8; ++k) {
+        if (e[k].controller == want && e[k].pad) at = k;
+        if (k > 0 && e[k].controller == 0 && e[k].pad && !e[k].player) zero = k;
+    }
+    if (at < 0) return false;
+    if (e[at].player) return true;   // (joined already: the view comes)
+    if (at == 0) {
+        if (zero < 0) return false;
+        std::swap(e[0].pad, e[zero].pad);
+        std::swap(e[0].number, e[zero].number);
+        std::swap(e[0].controller, e[zero].controller);
+        e[0].joined = e[zero].joined = 0;
+        static int said = 0;
+        if (++said <= 6) Log(L"Netplay: session - player %d's pad was first in the game's table (no joining from there): put back to place %d", s, zero);
+    }
+    int slotHad = *reinterpret_cast<int*>(kSlotController + s * 4);
+    if (slotHad >= 0 && slotHad <= 7 && slotHad != want) *reinterpret_cast<int*>(kSlotController + s * 4) = -1;   // (not another pad's)
+    reinterpret_cast<int(__thiscall*)(void*, unsigned char*, int)>(kPadJoin)(reinterpret_cast<void*>(kPadManager), player, 1);
+    return true;
+}
+
 void TakeSessionPresses() {      // main thread, start of a tick
     EnterCriticalSection(&g_pressLock);
     for (auto& p : g_pressQueue) {
@@ -2150,25 +2197,43 @@ void TakeSessionPresses() {      // main thread, start of a tick
         // (MISSION SELECT, CONTINUE, a restart - its players are new objects) starts over - the last one's views can
         // still be up while it loads. Twice at most: a one-player level asks "If you join, this level will restart" -
         // answered no (Chicken Fight's one-player fight), it isn't asked every 3 s from then on
+        // Not twice at most any more: the levels after the first open with a talking scene the game doesn't count as a cutscene
+        // here (the players walk about in it) and takes no joining in - both tries fell into it, and the second player was never
+        // in the level again ("once you get on the second level, the other player doesnt get in ... he can just see me play":
+        // the Amish level; in the user's logs since 0.9.11). Every 3 s while they're not in, for five minutes of the level's
+        // play. What IS at most twice: a try that a menu answered - the one-player level's question.
         static unsigned epoch = ~0u;
         static unsigned char* host = nullptr;
-        static ULONGLONG upSince = 0, next = 0;
-        static int tries = 0;
+        static ULONGLONG upSince = 0, next = 0, triedAt = 0;
+        static int tries = 0, asked = 0;
         ULONGLONG now = GetTickCount64();
         int views = *reinterpret_cast<volatile int*>(kViewportCount);
         unsigned char* p0 = PlayerBySlot(0);
-        if (epoch != g_storyEpoch || host != p0) { epoch = g_storyEpoch; host = p0; upSince = 0; next = now + 3000; tries = 0; }
-        bool up = g_sessionStory && g_levelTick && views >= 1 && !SplitViewCutscenePlaying() && !OnlinePauseMenusUp();
+        if (epoch != g_storyEpoch || host != p0) { epoch = g_storyEpoch; host = p0; upSince = 0; next = now + 3000; tries = asked = 0; triedAt = 0; }
+        if (triedAt && now - triedAt < 1500 && OnlinePauseGameMode() == 2 && !OnlinePauseStateHere()) {   // (a menu came of it)
+            triedAt = 0;
+            ++asked;
+            Log(L"Netplay: session - a menu answered the drop-in (the level asks before it lets a player join?) - %d of 2", asked);
+        }
+        bool up = g_sessionStory && g_levelTick && views >= 1 && !SplitViewCutscenePlaying() && !OnlinePauseMenusUp() &&
+                  OnlinePauseGameMode() == 7;
         if (!up) { upSince = 0; return; }
         if (!upSince) upSince = now;
-        if (now - upSince < 5000 || now < next || tries >= 2) return;
+        if (now - upSince < 5000 || now < next || tries >= 100 || asked >= 2) return;
         next = now + 3000;
         for (int s = 1; s < g_players; ++s)
-            if (views < s + 1) {
+            if (views < s + 1 && !g_gone[s]) {
                 ++tries;
-                g_pressActive.push_back({s, XINPUT_GAMEPAD_START, 0, g_tick});
-                g_current[s].buttons |= XINPUT_GAMEPAD_START;
-                Log(L"Netplay: session - player %d drops in (tick %u)", s, g_tick);
+                triedAt = now;
+                // The game's own join, asked for outright (StoryJoin) - a START on their pad only the first time in a game:
+                // the second never took (the next level, a player dropped out and back).
+                bool asked = StoryJoin(s);
+                if (!asked) {
+                    g_pressActive.push_back({s, XINPUT_GAMEPAD_START, 0, g_tick});
+                    g_current[s].buttons |= XINPUT_GAMEPAD_START;
+                }
+                if (tries <= 3 || tries % 10 == 0)
+                    Log(L"Netplay: session - player %d drops in (tick %u; try %d%s)", s, g_tick, tries, asked ? L"" : L"; by START");
                 break;
             }
         return;
@@ -2532,6 +2597,10 @@ struct Remote {
     double errSum, yawErrSum;
     float errMax, yawErrMax;
     int errCount, teleports, slides, healthFixes;
+    bool haveClip;                             // the rounds in the weapon in their hand, as their PC has them (their state)
+    short clip;
+    unsigned held;
+    int clipFixes;
 };
 Remote g_remote[4];
 
@@ -2540,14 +2609,17 @@ Remote g_remote[4];
 // ever what their input made of it here - and which weapons a character HAS is each PC's own: in story co-op the save's (what its
 // owner has unlocked), in a match what was bought. The user's friend, as Stewie, held the satchel charge their save has; the user's
 // save hasn't, so on the user's PC the same presses picked something else - "another plasma gun", and it hurt as one.
+// clip / held: the rounds left in the weapon in their hand, and which weapon that is (its asset's id) - each PC counted the other
+// players' shots by itself, from their input as it arrived: "scuffy could only see one ammo in his weapon but on mine he kept on
+// shooting". Theirs is what counts: set here whenever it differs and the weapon in their hand here is the same one.
 struct PktState { PktHeader h; unsigned seq; float pos[3]; float yaw, pitch, health; BYTE alive; unsigned hitAck[4]; int money;
-                  unsigned sentMs; short weapon; };   // sentMs: their clock as it went (how fast they turn: between two of them)
+                  unsigned sentMs; short weapon; short clip; unsigned held; };   // sentMs: their clock as it went (how fast they turn)
 const int kHitInfo = 0x68;                     // the game's damage info (DamageInfo, see the notes)
 struct PktHit { PktHeader h; unsigned seq; BYTE victim, source, part; float lost, after; unsigned partOffset; BYTE info[kHitInfo];
                 BYTE credit; };   // credit: whose kill it is when no player caused it (a power-up's character: its owner)
 #pragma pack(pop)
 const int kPktStateSize = (int)offsetof(PktState, weapon), kPktHitSize = (int)sizeof(PktHit);
-const int kPktStateSizeWeapon = (int)sizeof(PktState);
+const int kPktStateSizeWeapon = (int)offsetof(PktState, clip), kPktStateSizeClip = (int)sizeof(PktState);
 const int kPktHitSizeOld = (int)offsetof(PktHit, credit);
 const int kPktStateSizeOld = (int)offsetof(PktState, money), kPktStateSizeMoney = (int)offsetof(PktState, sentMs);
 
@@ -2651,7 +2723,7 @@ void LockerSend(ULONGLONG nowMs) {
 }
 volatile LONG g_weaponMine = 0;   // (the weapon in my player's hand, by the menus' id - ui.cpp asks the game, a few times a second)
 volatile LONG g_weaponSay = 0;    // (research: pipe "netwpn <id>" - said to be in my hand instead, to the others; 0: the real one)
-void FreeState(int s, const PktState* p, bool withMoney, bool withClock, bool withWeapon) {
+void FreeState(int s, const PktState* p, bool withMoney, bool withClock, bool withWeapon, bool withClip) {
     Remote& r = g_remote[s];
     double now = PreciseMs();
     r.heardAt = GetTickCount64();
@@ -2681,6 +2753,8 @@ void FreeState(int s, const PktState* p, bool withMoney, bool withClock, bool wi
     r.haveMoney = withMoney;
     if (withMoney) r.money = p->money;
     r.weapon = withWeapon ? p->weapon : 0;
+    r.haveClip = withClip && p->clip >= 0 && p->held;
+    if (r.haveClip) { r.clip = p->clip; r.held = p->held; }
 }
 
 std::vector<PktHit> g_hitsIn;                  // hits from the others, played at the start of my next tick
@@ -4896,6 +4970,18 @@ void FreeApplyRemotes(float dt) {
         // their health: as their PC has it - once it has counted my last hit on them (before that it's behind mine)
         if (r.health > 0 && fabsf(r.health - health) > 0.5f && r.hitAck[g_slot] >= g_lastHitOn[s])
             if (float* hf = HealthField(p)) { *hf = r.health; ++r.healthFixes; }
+        // the rounds in their weapon: as their PC has them (the same weapon in their hand here)
+        if (r.haveClip) {
+            auto held = *reinterpret_cast<unsigned char**>(p + 0x2240);
+            if (held && !IsBadWritePtr(held + 0x164, 4) && *reinterpret_cast<unsigned*>(held + 0x18) == r.held) {
+                int* rounds = reinterpret_cast<int*>(held + 0x164);
+                if (*rounds != r.clip) {
+                    if (++r.clipFixes <= 3 || r.clipFixes % 200 == 0)
+                        Log(L"Netplay: free - player %d's weapon has %d rounds on their PC, %d here - theirs (%d times now)", s, r.clip, *rounds, r.clipFixes);
+                    *rounds = r.clip;
+                }
+            }
+        }
     }
 }
 
@@ -4920,6 +5006,13 @@ void FreeSendState() {
     st.money = PlayerMoney(me);
     st.sentMs = (unsigned)(ULONGLONG)PreciseMs();
     st.weapon = (short)(g_weaponSay ? g_weaponSay : g_weaponMine);
+    st.clip = -1;
+    if (auto held = *reinterpret_cast<unsigned char**>(me + 0x2240))
+        if (!IsBadReadPtr(held, 0x168)) {
+            int rounds = *reinterpret_cast<int*>(held + 0x164);
+            st.clip = (short)(rounds < 0 ? -1 : rounds > 30000 ? 30000 : rounds);
+            st.held = *reinterpret_cast<unsigned*>(held + 0x18);
+        }
     SendAll(&st, sizeof(st));
 }
 
@@ -5520,19 +5613,23 @@ void FreeTick() {
         int theirs = g_sessionStory ? OnlinePauseOwnerElsewhere() : -1;
         // (...and a moment on after it ended here, while the keys that ended it are still down in their input: their word can
         //  come before their newer input does - the Esc that resumed there was a new press here, and paused this game again)
+        // (Half a second at least, whatever their input shows: the word can come before the input with the key down in it does -
+        //  seen with the release's files: nothing down yet, the hold let go, the Esc arrived a frame later and paused this game.)
         static int heldOff = -1;
-        static ULONGLONG heldOffUntil = 0;
+        static ULONGLONG heldOffSince = 0;
         if (theirs >= 0) {
             heldOff = theirs;
-            heldOffUntil = GetTickCount64() + 1500;
-        } else if (heldOff >= 0 && heldOff < g_players && heldOff != g_slot && GetTickCount64() < heldOffUntil) {
+            heldOffSince = 0;
+        } else if (heldOff >= 0 && heldOff < g_players && heldOff != g_slot) {
+            ULONGLONG nowHeld = GetTickCount64();
+            if (!heldOffSince) heldOffSince = nowHeld;
             const Pad& p = g_current[heldOff];
             auto key = [&p](int vk) { return ((p.kbm.keys[vk >> 3] >> (vk & 7)) & 1) != 0; };
             bool down = (p.buttons & (XINPUT_GAMEPAD_START | XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_DPAD_UP |
                                       XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_DPAD_LEFT | XINPUT_GAMEPAD_DPAD_RIGHT)) != 0 ||
                         key(VK_ESCAPE) || key(VK_RETURN) || key(VK_BACK) || key(VK_UP) || key(VK_DOWN) || key(VK_LEFT) ||
                         key(VK_RIGHT) || (p.kbm.buttons & 1);
-            if (down) theirs = heldOff;
+            if (nowHeld - heldOffSince < 500 || (down && nowHeld - heldOffSince < 2000)) theirs = heldOff;
             else heldOff = -1;
         } else {
             heldOff = -1;

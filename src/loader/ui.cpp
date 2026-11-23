@@ -486,6 +486,17 @@ void StoryCharacters(void* self, void* movie) {
     if (!g_storyPicksSince) g_storyPicksSince = GetTickCount64();
     bool both = NetplayPlayerInLevel(0) && NetplayPlayerInLevel(1);
     if (!both && GetTickCount64() - g_storyPicksSince < 10000) return;   // (the other drops in a moment after the level's up; alone: after 10 s)
+    // A level that the session didn't start from the menu - the next one after a level is done, MISSION SELECT's - doesn't let a
+    // player join: the menu's own start says so each time (its LevelSelectConfirm: PLYR_SetJoinEnabled(true)), a level change
+    // by the game doesn't. The second player's START did nothing there, forty times over: "once you get on the second level, the
+    // other player doesnt get in the level ... he can just see me play". Said here, as the menu would, for every level that comes up.
+    {
+        GFxValue yes = {};
+        yes.type = kBool;
+        yes.boolean = true;
+        Real_Callback(self, movie, "PLYR_SetJoinEnabled", &yes, 1);
+        Log(L"UI: story - this level lets players join (PLYR_SetJoinEnabled, as the menu's own start says it)");
+    }
     int want[2] = {StoryPick(0), StoryPick(1)};
     if (!want[0]) want[0] = 1;
     if (!want[1] || want[1] == want[0]) want[1] = 3 - want[0];
@@ -705,6 +716,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnString(movie, v);
         } else if (strcmp(fn, "TitleScreen") == 0) {   // the title screen shows (start patch)
             AudioTitleScreen();
+        } else if (strcmp(fn, "Version") == 0) {       // the mod's version (the title screen's corner: start patch)
+            ReturnString(movie, ModVersion());
         } else if (strcmp(fn, "ProfileLoaded") == 0) {   // the main menu opened (menu patch, OnHomeEnter)
             AudioProfileLoaded();
             OnlineSettingsProfileLoaded();   // (a session game: my own sound over the host's save)
