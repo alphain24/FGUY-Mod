@@ -1407,3 +1407,39 @@ packs read. Build E02769F8569F.
   story test: tools-free recipe in the scratch `rel_story_test.ps1` - pause, click RESTART LEVEL / YES, pause, the guest clicks
   QUIT GAME / YES (pointer by `kbm cursor`, 0..32767: the list's items at x 8200, y 8100 / 10200 / 12290 / 14380 / 16480; YES at
   13000, 12960). A real mouse moving over the test window at that moment can eat a scripted click - look for "item N clicked".
+
+## After 0.9.13: the story pause menu - whose it is (2026-11-23, late evening - not released yet)
+
+"so the bug still persists on the pause menu, it still happens sometimes and when scuffy did pause it also lets me control it, it
+should depend on the player who paused it". Three things in the user's logs of that hour, and one found on two copies:
+
+- **Two pointers on one menu** (0.9.12 made the pause menu's mouse anyone's). In the user's own pause the choice went 0-1-0-1 fifteen
+  times a second: their pointer's item and the friend's (resting on RESUME, on the friend's PC) each pulled it back - ListMouse kept a
+  pointed-at item as its target for good. The friend's clicks accepted RESTART LEVEL's question on the user's screen.
+- **The second player's own pause was dead to the keyboard - and so to the mouse, which is keys.** The game's pause menu listens to
+  the controller of the player who paused; the keyboard is the first player's. Two copies: guest pauses, its `kbm key 40` / Esc do
+  nothing, `press 0 down` (its pad's d-pad) moves the choice on both, `press 0 b` resumes. In the user's session the friend (player
+  1) paused, nothing moved for 25 s, the user closed the game - the same as 0.9.11's first report. Never seen in my tests: the host
+  always paused in them.
+- **Esc with my player down**: START doesn't pause then; the mod believed in the pause for 2.7 s (two more STARTs, then 1.5 s) and
+  kept everyone's input meanwhile - no menu, nothing answering.
+- Now (onlinepause.cpp): `g_pauseOwner` - the pause is its player's alone. Everyone else's keys, mouse buttons and pad are emptied
+  where their input is made (OnlinePauseSample) while it is up - nothing reaches the menu on any PC - with a notice ("<name> paused
+  the game", and "... - the menu is theirs" on a press); no pointer for them. Two presses at once: the first player's. The owner gone:
+  anyone's. A second (third, fourth) keyboard player's own pause: their arrows / Enter / Esc and Backspace go out as their pad's
+  d-pad / A / B too. A pointed-at item is the target only until the choice is there (arrow keys aren't undone by a resting
+  pointer). No story pause while my player is down; the give-up wait 0.7 s. Two copies (scratch `pause_owner_test.ps1`): each
+  pauses in turn, the other's pointer, click, Down, Enter, Esc move nothing (their notice shows); the pauser's own mouse and
+  keyboard work on both; resume and QUIT GAME reach both; no crash. Not staged: the pause press with the player down.
+
+- **"scuffy is literally next to me on the same room irl and his ping is some how higher? how?"** The line under the other player's
+  name was the trip to them and back with my own ping taken off - not a measurement of theirs: their PC's frame (packets are read
+  once a frame) and every hiccup of the way are in it (the raw trip in the user's sessions: 71-121 ms, their own ping 32). Now each
+  PC tells the others its own measured ping ('p', once a second) and that is what stands under its name. And two players behind
+  one router never got a direct connection worth the name: the server knows both at the router's one address, which few home
+  routers turn round - everything between them went to the server and back. Each now also says where it is on its own network
+  ('i': the address it reaches the server from + the match socket's port; through the server, only with DirectConnection on; only
+  private addresses are knocked on), tried next to the server's address. Two copies, the server's 'A' ignored
+  (FGUYMOD_TEST_NOPEERAT=1, FGUYMOD_DIRECT=1), lobby with --sim-lag 20: "direct connection to player 1" 0.4 s in, the trip 67 ms
+  -> 8 ms; the display: "Host 0 ms / Guest (direct) 8 ms" (direct: the trip straight to them and back). Both players need
+  DirectConnection on - the friend's was off in every session so far.

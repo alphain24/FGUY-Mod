@@ -40,6 +40,21 @@ ULONGLONG g_storyPauseUntil = 0;   // story co-op: my pause goes out with my inp
 const uintptr_t kGameMode = 0xaee080;
 int GameMode() { return *reinterpret_cast<volatile int*>(kGameMode); }
 ULONGLONG g_pausedAt = 0;   // (story co-op: when g_gamePaused went on; how many STARTs put in for it)
+// Story co-op: whose pause it is (-1: nobody's / theirs no more - they left). The game's pause menu is theirs alone to work: "when
+// scuffy did pause it also lets me control it, it should depend on the player who paused it". 0.9.12 had made it anyone's (the other
+// player's arrows and Esc reached it anyway and their mouse alone didn't) - and then two pointers steered one menu: in the user's own
+// pause their choice went 0-1-0-1 fifteen times a second (the friend's pointer resting on RESUME pulled it back each time), the friend's
+// clicks accepted RESTART LEVEL's question on the user's screen; in the friend's pause the user's clicks did nothing here and they closed
+// the game. Now everyone else's keys, mouse and buttons are simply not theirs while it is up: taken out of their input where it is
+// made (OnlinePauseSample) - nothing of it reaches the menu on any PC.
+int g_pauseOwner = -1;
+bool PauseMine() { return !g_gamePaused || !NetplayStoryCoop() || g_pauseOwner < 0 || g_pauseOwner == NetplayLocalSlot(); }
+void PauseOwnerSays(const wchar_t* what, DWORD ms) {
+    const wchar_t* name = g_pauseOwner >= 0 ? NetplayLobbyName(g_pauseOwner) : L"";
+    wchar_t text[120];
+    swprintf_s(text, what, name && name[0] ? name : L"The other player");
+    OverlayShow(text, ms);
+}
 int g_pauseTries = 0;
 bool g_pauseKeyHeld = false;   // the START / Esc that paused: not the game's while still held (it would pause the
                                //   others' games itself, as my player's press - outside the mod's pause)
@@ -297,6 +312,9 @@ void ListMouse(KbmRaw* kbm, bool click) {
     }
     if (click && item >= 0 && g_seqPos < g_seqLen) { waiting = item; waitingAt = GetTickCount64(); }
     if (waiting >= 0 && (!BoxesShown() || GetTickCount64() - waitingAt > 600)) waiting = -1;
+    // The pointed-at item is the target only until the choice is there. Kept after, the pointer resting on the list undid every arrow
+    // key (the choice walked back to it), and two players' resting pointers pulled one choice to and fro for good.
+    if (g_seqPos >= g_seqLen && target >= 0 && target == cur) target = -1;
     if (g_seqPos >= g_seqLen && waiting >= 0 && !click) { click = true; item = waiting; }
     if (g_seqPos >= g_seqLen) waiting = -1;
     if (g_seqPos >= g_seqLen && item >= 0 && click) {
@@ -362,6 +380,21 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
         }
     }
     if (GetTickCount64() < g_storyPauseUntil) kbm->flags |= 8;   // (on while my game is paused by it too)
+    if (g_gamePaused && !PauseMine()) {   // someone else's pause (story co-op): its menu is theirs - nothing of mine goes anywhere
+        bool tried = click || down != 0;
+        for (int k = 0; k < 32 && !tried; ++k) tried = (keys[k] & ~before[k]) != 0;
+        static ULONGLONG said = 0;
+        if (tried && GetTickCount64() - said > 2500) {   // (a press: why nothing happens)
+            said = GetTickCount64();
+            PauseOwnerSays(L"%s paused the game - the menu is theirs", 2500);
+        }
+        *buttons = 0;
+        *lx = *ly = 0;
+        memset(kbm->keys, 0, sizeof(kbm->keys));
+        kbm->buttons = 0;
+        kbm->dx = kbm->dy = kbm->dz = 0;
+        return false;
+    }
     if (g_gamePaused && !(g_open && g_settings)) {   // the game's own pause menu is up: everything goes to it
         if (g_swallowBack) {   // (the Esc / B that closed my SETTINGS: not the game's menu's back too)
             bool held = (*buttons & (XINPUT_GAMEPAD_B | XINPUT_GAMEPAD_START)) || Key(keys, VK_ESCAPE) || Key(keys, VK_BACK);
@@ -371,6 +404,20 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
             kbm->keys[VK_BACK >> 3] &= ~(1 << (VK_BACK & 7));
         }
         if (keyboardPlayer) ListMouse(kbm, click);    //   (its buttons by mouse, if it's mine to drive)
+        // The game's pause menu listens to the controller of the player who paused, and the keyboard is the first player's: the second
+        // player's own pause answered neither their arrows, Enter and Esc nor their mouse (which is keys) - only a controller's d-pad
+        // would have (two copies: the guest's "press 0 down" moved it, "kbm key 40" didn't). The friend paused, nobody could work the
+        // menu, the user closed the game (0.9.11's "the mouse doesnt work" and 0.9.13's "still happens sometimes" both). So their keys
+        // there are their controller's buttons too: arrows the d-pad, Enter A, Esc / Backspace B (back; at the list: resume).
+        if (keyboardPlayer && NetplayStoryCoop() && NetplayLocalSlot() > 0) {
+            auto key = [&](int vk) { return ((kbm->keys[vk >> 3] >> (vk & 7)) & 1) != 0; };
+            if (key(VK_UP)) *buttons |= XINPUT_GAMEPAD_DPAD_UP;
+            if (key(VK_DOWN)) *buttons |= XINPUT_GAMEPAD_DPAD_DOWN;
+            if (key(VK_LEFT)) *buttons |= XINPUT_GAMEPAD_DPAD_LEFT;
+            if (key(VK_RIGHT)) *buttons |= XINPUT_GAMEPAD_DPAD_RIGHT;
+            if (key(VK_RETURN)) *buttons |= XINPUT_GAMEPAD_A;
+            if (key(VK_ESCAPE) || key(VK_BACK)) *buttons |= XINPUT_GAMEPAD_B;
+        }
         return false;
     }
     if (g_gamePaused && keyboardPlayer) {   // (my SETTINGS over it: the pointer as on our menu)
@@ -434,6 +481,14 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
     }
     // Story co-op pauses as it does offline: one player's pause pauses everyone's game, the game's own pause menu
     // (theirs to drive). The press goes out with my input (KbmRaw.flags bit 3) - OnlinePauseTick on every PC.
+    // Not while my player is down: the game doesn't pause then (its START goes nowhere), and the pause the mod believed in took
+    // everyone's input for 2.7 s until it gave up - no menu, nothing answering ("the bug still persists on the pause menu, it still
+    // happens sometimes": the user's log, Esc a moment after an explosion had downed both players).
+    if (!g_open && pausePress && NetplayStoryCoop() && !g_gamePaused && !NetplayPlayerInLevel(NetplayLocalSlot())) {
+        static ULONGLONG said = 0;
+        if (GetTickCount64() - said > 2000) { said = GetTickCount64(); Log(L"Pause: story co-op - no pause while my player is down"); }
+        pausePress = false;
+    }
     if (!g_open && pausePress && NetplayStoryCoop() && !g_gamePaused) {
         g_storyPauseUntil = GetTickCount64() + 400;
         g_pauseKeyHeld = true;
@@ -548,8 +603,25 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
             g_injectTicks = 4 * NetplayRate() / 60;
             g_pausedAt = GetTickCount64();
             g_pauseTries = 1;
+            g_pauseOwner = s;
             Log(L"Pause: player %d paused the game (story co-op)", s);
+            if (s != NetplayLocalSlot()) PauseOwnerSays(L"%s paused the game", 3000);
         }
+    if (!g_gamePaused) g_pauseOwner = -1;
+    if (g_gamePaused && g_pauseOwner >= 0 && g_pauseOwner < players) {
+        if (gone[g_pauseOwner]) {   // (they left with their pause up: whoever is still here works it)
+            Log(L"Pause: player %d, whose pause it is, left - the menu is anyone's", g_pauseOwner);
+            g_pauseOwner = -1;
+        } else if (GetTickCount64() - g_pausedAt < 600) {
+            // (two presses at once: each PC had its own first - the first player's it is, on every PC)
+            for (int s = 0; s < g_pauseOwner; ++s)
+                if (pauseWas[s]) {
+                    Log(L"Pause: player %d pressed pause at the same moment - theirs (the first player's)", s);
+                    g_pauseOwner = s;
+                    break;
+                }
+        }
+    }
     if (NetplayStoryCoop() && g_gamePaused && g_injectTicks <= 0) {   // (its START in: is the game paused?)
         ULONGLONG now = GetTickCount64();
         if (GameMode() == 2) {
@@ -560,7 +632,7 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
                 g_pausedAt = now;
                 g_injectTicks = 4 * NetplayRate() / 60;
                 Log(L"Pause: the game didn't pause here (the press went to something else) - START again for player %d", g_injectSlot);
-            } else if (now - g_pausedAt > 1500) {
+            } else if (now - g_pausedAt > 700) {   // (was 1500: with the two tries before it, 2.7 s of a pause that wasn't one)
                 g_gamePaused = false;
                 Log(L"Pause: the game isn't paused here - the pause is over");
             }
@@ -597,6 +669,7 @@ void OnlinePauseCommand(const char* command, const char* args) {
         g_pausedAt = GetTickCount64();
         g_pauseTries = 3;
         g_injectSlot = NetplayLocalSlot();
+        g_pauseOwner = NetplayLocalSlot();
         Log(L"Pause: the game paused itself here - pausing everyone's (story co-op)");
         return;
     }
@@ -669,11 +742,12 @@ const char* OnlinePauseDeathMouse(const char* boxes) {
 // The pause menu's mouse was only the player's who paused - "anyone else's pointer would do nothing there". Not so: every keyboard
 // player's keys reach the game's menus together (kbm.cpp), and the mouse here is keys - with the other player's pause up, the
 // arrows and Esc worked and the mouse alone didn't: "when you press escape and go to the pause screen the mouse doesnt work on
-// storymode" (the user's friend had paused; they closed the game on it). Anyone's now. (OPTIONS stays the pauser's own page.)
+// storymode" (the user's friend had paused; they closed the game on it). Anyone's in 0.9.12 and 0.9.13 - two pointers on one menu
+// (g_pauseOwner, above): the pauser's alone again, and this time the other players' keys too. No pointer for them.
 const char* OnlineMenuMouse(const char* boxes, const char* who) {
     MouseBox b[6];
     int n = ParseBoxes(boxes, b, 6);
-    if (who && strcmp(who, "pause") == 0 && !(g_gamePaused && !g_open)) n = 0;
+    if (who && strcmp(who, "pause") == 0 && !(g_gamePaused && !g_open && PauseMine())) n = 0;
     if (who && strcmp(who, "results") == 0 && n > 0) g_resultsAt = GetTickCount64();
     AcquireSRWLockExclusive(&g_boxLock);
     static std::string last = "-";

@@ -418,6 +418,8 @@ struct PktDropped { PktHeader h; BYTE who; unsigned from; };    // 'D': I play o
 struct PktDirect { PktHeader h; BYTE ack; };                     // 'Y': straight to a player (no server) - 'a': to the
 struct PktPeerAt { PktHeader h; BYTE who; BYTE ip[4]; BYTE port[2]; };   //  server, I'd connect directly; 'A': from it
 struct PktPing { PktHeader h; BYTE to; unsigned long long sent; };
+struct PktLanAt { PktHeader h; BYTE ip[4]; BYTE port[2]; };     // 'i': where I am on my own network (direct connections, below)
+struct PktMyPing { PktHeader h; short ms; };                     // 'p': my own ping to the server, as I measure it
 struct PktHistAsk { PktHeader h; unsigned from, at; BYTE want; };
 struct PktHist { PktHeader h; BYTE to, hashes, last; unsigned first; WORD count; unsigned hostTick, word; unsigned goneFrom[4]; };
 struct HashRec { unsigned tick, hash, players, rng; };   // (in a 'K' after the header: `hashes` of them, then the ticks)
@@ -435,12 +437,22 @@ volatile ULONGLONG g_testStallUntil = 0;   // test pipe "netstall <ms>": this PC
 bool g_catchUpFailed = false;        // catching up: given up (this game quits; it says nothing to anyone any more)
 
 // Direct connections to the other players (opt-in: [Online] DirectConnection - and theirs too, the server checks).
+// Two players behind one router (the user and their friend "literally next to me on the same room"): the server sees both at the
+// router's one address, and a packet sent to one's own public address mostly doesn't come back in (few home routers turn it round) -
+// their packets went out to the server and back, 60 ms and more for a metre of cable. So each also says where it is on its own
+// network ('i', through the server, only with DirectConnection on; only private addresses are taken): knocked on as well.
 struct Direct {
     sockaddr_in addr;                // where they are, as the server sees them
     bool known, ok;                  // ok: their 'Y' came straight to me, and they've had mine
     ULONGLONG punchUntil, nextPunch;
+    sockaddr_in lan;                 // where they say they are on their own network
+    bool lanKnown;
+    ULONGLONG lanPunchUntil;
 };
 Direct g_direct[4];
+volatile LONG g_theirPing[4] = {-1, -1, -1, -1};   // each player's own ping to the server, as their PC measures it ('p')
+ULONGLONG g_theirPingAt[4];
+volatile LONG g_serverPingMs = -1;                 // mine (ServerPingThread)
 
 void SendAll(const void* data, int len) {
     if (g_testStallUntil && GetTickCount64() < g_testStallUntil) return;
@@ -966,9 +978,57 @@ void DirectHello(int who, const sockaddr_in& from, bool ack) {
     }
 }
 
+// Where I am on my own network: the address this PC reaches the server from, and the match's socket's port.
+bool MyLanAddress(sockaddr_in* out) {
+    if (g_peers.empty()) return false;
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET) return false;
+    sockaddr_in me{}, sock{};
+    int len = sizeof(me), sockLen = sizeof(sock);
+    bool ok = connect(s, (const sockaddr*)&g_peers[0], sizeof(g_peers[0])) == 0 && getsockname(s, (sockaddr*)&me, &len) == 0 &&
+              getsockname(g_sock, (sockaddr*)&sock, &sockLen) == 0 && sock.sin_port != 0;
+    closesocket(s);
+    if (!ok) return false;
+    me.sin_port = sock.sin_port;
+    *out = me;
+    return true;
+}
+bool PrivateAddress(const BYTE* ip) {   // (a home network's, or this PC itself: nothing out on the internet is knocked on by their say)
+    return ip[0] == 10 || (ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31) || (ip[0] == 192 && ip[1] == 168) ||
+           (ip[0] == 169 && ip[1] == 254) || ip[0] == 127;
+}
+// Player `who`, through the server: where they are on their own network.
+void DirectLanAt(int who, const PktLanAt* p) {
+    if (!g_directWanted || who < 0 || who >= g_players || who >= 4 || who == g_slot || g_direct[who].ok) return;
+    if (!PrivateAddress(p->ip) || (!p->port[0] && !p->port[1])) return;
+    Direct& d = g_direct[who];
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    memcpy(&a.sin_addr, p->ip, 4);
+    memcpy(&a.sin_port, p->port, 2);
+    if (d.lanKnown && d.lan.sin_addr.s_addr == a.sin_addr.s_addr && d.lan.sin_port == a.sin_port) return;
+    d.lan = a;
+    d.lanKnown = true;
+    d.lanPunchUntil = GetTickCount64() + 20000;
+    d.nextPunch = 0;
+    Log(L"Netplay: player %d says where they are on their own network - trying that way too (the same network as mine: straight, no server)", who);
+}
+// My own ping to the server, told to the others once a second (theirs is shown under their name: NetplayStats).
+void PingTell() {
+    static ULONGLONG next = 0;
+    ULONGLONG now = GetTickCount64();
+    if (now < next) return;
+    next = now + 1000;
+    LONG mine = InterlockedCompareExchange(&g_serverPingMs, 0, 0);
+    if (mine < 0) return;
+    PktMyPing p{{'p', (BYTE)g_slot}, (short)(mine > 30000 ? 30000 : mine)};
+    SendAll(&p, sizeof(p));
+}
+
 // Every tick: ask the server for the others' places now and then (while one isn't connected), and knock on theirs.
 void DirectTick() {
     if (!g_relay || !g_inSession) return;
+    PingTell();
     bool want = OnlineDirectConnection();
     if (want != g_directWanted) {
         g_directWanted = want;
@@ -985,10 +1045,19 @@ void DirectTick() {
         nextAsk = now + 2000;
         PktHeader a{'a', (BYTE)g_slot};
         SendAll(&a, sizeof(a));
+        sockaddr_in me{};
+        if (MyLanAddress(&me)) {   // (and where I am on my own network: for a player on the same one)
+            PktLanAt i{{'i', (BYTE)g_slot}, {}, {}};
+            memcpy(i.ip, &me.sin_addr, 4);
+            memcpy(i.port, &me.sin_port, 2);
+            SendAll(&i, sizeof(i));
+        }
     }
     for (int s = 0; s < g_players && s < 4; ++s) {
         Direct& d = g_direct[s];
-        if (s == g_slot || !d.known || d.ok || now > d.punchUntil || now < d.nextPunch) continue;
+        if (s == g_slot || d.ok || now < d.nextPunch) continue;
+        bool wide = d.known && now <= d.punchUntil, lan = d.lanKnown && now <= d.lanPunchUntil;
+        if (!wide && !lan) continue;
         d.nextPunch = now + 100;
         char buf[64];
         buf[0] = 'F';
@@ -997,7 +1066,8 @@ void DirectTick() {
         buf[10] = (char)g_slot;
         PktDirect y{{'Y', (BYTE)g_slot}, 0};
         memcpy(buf + 11, &y, sizeof(y));
-        sendto(g_sock, buf, 11 + (int)sizeof(y), 0, (const sockaddr*)&d.addr, sizeof(d.addr));
+        if (wide) sendto(g_sock, buf, 11 + (int)sizeof(y), 0, (const sockaddr*)&d.addr, sizeof(d.addr));
+        if (lan) sendto(g_sock, buf, 11 + (int)sizeof(y), 0, (const sockaddr*)&d.lan, sizeof(d.lan));
     }
 }
 
@@ -1453,7 +1523,8 @@ void Receive() {
             memmove(buf, buf + 11, n - 11);
             n -= 11;
             if ((BYTE)buf[1] == 0xFE && !straight) {   // the server's own word: where a player is (direct connections)
-                if (buf[0] == 'A' && n >= (int)sizeof(PktPeerAt)) DirectPeerAt(reinterpret_cast<PktPeerAt*>(buf));
+                static const bool noPeerAt = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NOPEERAT", 0) != 0;   // (test: only the home network way)
+                if (buf[0] == 'A' && n >= (int)sizeof(PktPeerAt) && !noPeerAt) DirectPeerAt(reinterpret_cast<PktPeerAt*>(buf));
                 continue;
             }
         }
@@ -1463,6 +1534,11 @@ void Receive() {
         if (slot >= g_players || slot == g_slot) continue;  // not a peer's (our own inputs are never replaced)
         if (h->type == 'Y' && n >= (int)sizeof(PktDirect)) {   // straight from them: the direct connection works that way
             if (straight) DirectHello(slot, from, reinterpret_cast<PktDirect*>(buf)->ack != 0);
+        } else if (h->type == 'i' && n >= (int)sizeof(PktLanAt)) {   // where they are on their own network
+            DirectLanAt(slot, reinterpret_cast<PktLanAt*>(buf));
+        } else if (h->type == 'p' && n >= (int)sizeof(PktMyPing)) {   // their own ping to the server
+            InterlockedExchange(&g_theirPing[slot], reinterpret_cast<PktMyPing*>(buf)->ms);
+            g_theirPingAt[slot] = GetTickCount64();
         } else if (h->type == 'R') {
             if (!g_peerReady[slot]) Log(L"Netplay: peer with slot %d is ready", slot);
             g_peerReady[slot] = true;
@@ -6288,7 +6364,6 @@ bool NetplayInputOf(int slot, WORD* buttons, BYTE* lt, BYTE* rt, SHORT* sticks, 
 // of each PC, in 15.6 ms steps - and showed that under THEIR name: "can we get MY ping on the display? and not scuffy's?" (78-109 ms
 // shown; this PC to the server and back is 32). Timed over a connection of its own to the server's lobby port, its PING / PONG, once
 // a second; the middle of the last five.
-volatile LONG g_serverPingMs = -1;
 DWORD WINAPI ServerPingThread(void*) {
     wchar_t relay[256];
     SettingString(L"Netplay", L"_", L"FGUYMOD_NET_RELAY", L"", relay, 256);
@@ -6331,6 +6406,12 @@ DWORD WINAPI ServerPingThread(void*) {
                     memcpy(sorted, recent, have * sizeof(int));
                     std::sort(sorted, sorted + have);
                     InterlockedExchange(&g_serverPingMs, sorted[have / 2]);
+                    if (k % 30 == 5) {   // (now and then, for the log: mine, and what the others say theirs is)
+                        LONG t[4];
+                        for (int q = 0; q < 4; ++q) t[q] = InterlockedCompareExchange(&g_theirPing[q], 0, 0);
+                        Log(L"Netplay: my ping to the server %d ms (this one %d); the others say theirs: %ld %ld %ld %ld (-1: not said)",
+                            sorted[have / 2], recent[(count - 1) % 5], t[0], t[1], t[2], t[3]);
+                    }
                     Sleep(1000);
                 }
             }
@@ -6355,19 +6436,28 @@ std::string NetplayStats() {
             if (s != g_slot && (g_gone[s] || g_goneFrom[s])) continue;
             if (s == g_slot && mine < 0) continue;
             LONG ms = mine;
+            bool direct = false;
             if (s != g_slot) {
-                int sorted[kPingRecent], have = 0;   // (the middle of the last few: one late packet isn't the ping)
+                // Theirs: what their own PC measures to the server and says ('p'). 0.9.13 showed "the trip to them and back with mine
+                // taken off" - their PC's frame and every hiccup of the way in it: "scuffy is literally next to me on the same room
+                // irl and his ping is some how higher? how?". With a direct connection to them: the trip straight to them and back,
+                // marked so (the middle of the last few: one late packet isn't the ping). Neither known: the old guess.
+                int sorted[kPingRecent], have = 0;
                 for (int k = 0; k < kPingRecent; ++k) if (g_pingRecent[s][k] > 0) sorted[have++] = g_pingRecent[s][k];
                 std::sort(sorted, sorted + have);
-                ms = have ? sorted[have / 2] : g_pingMs[s];
-                if (ms >= 0 && mine >= 0 && ms >= mine) ms -= mine;
+                LONG trip = have ? sorted[have / 2] : g_pingMs[s];
+                LONG theirs = InterlockedCompareExchange(&g_theirPing[s], 0, 0);
+                direct = g_direct[s].ok && trip >= 0;
+                if (direct) ms = trip;
+                else if (theirs >= 0 && GetTickCount64() - g_theirPingAt[s] < 6000) ms = theirs;
+                else { ms = trip; if (ms >= 0 && mine >= 0 && ms >= mine) ms -= mine; }
             }
-            char part[96];
+            char part[112];
             std::wstring name = PlayerName(s);
             char n8[64];
             WideCharToMultiByte(CP_UTF8, 0, name.c_str(), -1, n8, sizeof(n8), nullptr, nullptr);
             for (char* c = n8; *c; ++c) if (*c == '|' || *c == ':') *c = ' ';
-            sprintf_s(part, "%s%s:%ld", out.empty() ? "" : "|", n8, ms);
+            sprintf_s(part, "%s%s%s:%ld", out.empty() ? "" : "|", n8, direct ? " (direct)" : "", ms);
             out += part;
         }
     return out;
