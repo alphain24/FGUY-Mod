@@ -634,12 +634,16 @@ const char* OnlinePauseDeathMouse(const char* boxes) {
 }
 
 // FGUYMOD_MenuMouse("x0,y0,x1,y1,13,2,index,chosen;..." or "", who): a menu of the game's - its items for the mouse.
-// who "pause": the game's pause menu, which only the player who paused drives (anyone else's pointer would do
-// nothing there); else the end of the match's menu. Returns whether the Windows pointer is shown ("1").
+// who "pause": the game's pause menu (story co-op: one player's pause is everyone's); else the end of the match's menu. Returns
+// whether the Windows pointer is shown ("1").
+// The pause menu's mouse was only the player's who paused - "anyone else's pointer would do nothing there". Not so: every keyboard
+// player's keys reach the game's menus together (kbm.cpp), and the mouse here is keys - with the other player's pause up, the
+// arrows and Esc worked and the mouse alone didn't: "when you press escape and go to the pause screen the mouse doesnt work on
+// storymode" (the user's friend had paused; they closed the game on it). Anyone's now. (OPTIONS stays the pauser's own page.)
 const char* OnlineMenuMouse(const char* boxes, const char* who) {
     MouseBox b[6];
     int n = ParseBoxes(boxes, b, 6);
-    if (who && strcmp(who, "pause") == 0 && !(g_gamePaused && g_injectSlot == NetplayLocalSlot() && !g_open)) n = 0;
+    if (who && strcmp(who, "pause") == 0 && !(g_gamePaused && !g_open)) n = 0;
     if (who && strcmp(who, "results") == 0 && n > 0) g_resultsAt = GetTickCount64();
     AcquireSRWLockExclusive(&g_boxLock);
     static std::string last = "-";

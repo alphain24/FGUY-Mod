@@ -6013,6 +6013,12 @@ int NetplayWeaponOf(int slot) {
     return r.haveState && r.alive && GetTickCount64() - r.heardAt < 2000 ? r.weapon : 0;
 }
 void NetplayWeaponSay(int weapon) { InterlockedExchange(&g_weaponSay, weapon); }
+// A player of this session who is in the level now: there, with a view of their own, alive.
+bool NetplayPlayerInLevel(int slot) {
+    if (!g_enabled || slot < 0 || slot >= 4 || !NetplayLevelLive()) return false;
+    unsigned char* p = PlayerBySlot(slot);
+    return p && LivePlayer(p) && *reinterpret_cast<int*>(p + 0xdfc) >= 0 && PlayerHealth(p) > 0;
+}
 void NetplayReadNote(int* files, int* kb, double* ms) {
     *files = InterlockedExchange(&g_readCalls, 0);
     *kb = InterlockedExchange(&g_readBytes, 0) / 1024;
@@ -6091,9 +6097,10 @@ bool NetplaySessionReturn() {
     static bool returned = false;
     if (returned) return true;
     if (!g_inSession || !g_levelLaunched) return false;
-    // (story co-op: the main menu's, until ONLINE - unless I left the match: its quit to the lobby, my game alone now -
-    //  stuck on the game's main menu, not back in its lobby)
-    if (StoryFrontEnd() && !g_storyLeaveAsked && !g_left) return false;
+    // (story co-op: a level quit used to leave everyone on the game's own main menu - its mission select - until the host chose ONLINE
+    //  there. The user: "when you quit the game brings you back to the mission select lobby" - asked, they want the online lobby, as
+    //  after a match. So the front end coming back is the session's end here too: the host's takes everyone along.)
+    if (StoryFrontEnd() && !g_storyLeaveAsked && !g_left) NetplaySessionLeaveAsked();
     returned = true;
     NetplayLeave(L"the match is over");
     char code[16] = "", token[40] = "";

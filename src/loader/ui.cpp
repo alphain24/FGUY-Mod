@@ -319,7 +319,14 @@ bool CallForNumber(void* self, void* movie, const char* name, const GFxValue* ar
 // are answered with this save's or theirs. Both characters can carry the same on every PC - as on one console, where both play from
 // one save - and nothing is written into anyone's save: only the answers change.
 // (The locker is known from the game's own answer: the function is ours - the same three instructions' worth - and notes whose it is.)
-const DWORD kWeaponEvery = 200, kWeaponWait = 600, kWeaponShown = 500, kWeaponTaken = 2500;
+// ONLY while the level is being played and both of them are in it. 0.9.11 asked on at any menu call of a free-running session - and a
+// story session goes on at the main menu after its level is quit: a weapon put in the hand of a player whose level was being taken
+// down crashed the game there (0x9a781f, reading 4 - the user's, two seconds after quitting a story level with their friend; the same
+// on two copies: the guest says a weapon the host can't give, the host quits). So: the level's HUD on the screen, the game not paused,
+// my player and theirs in the level and alive, and nothing for kWeaponQuiet ms after a command that leaves or changes the level.
+const DWORD kWeaponEvery = 200, kWeaponWait = 600, kWeaponShown = 500, kWeaponTaken = 2500, kWeaponQuiet = 8000;
+ULONGLONG g_weaponQuietUntil = 0;
+void WeaponSyncQuiet() { g_weaponQuietUntil = GetTickCount64() + kWeaponQuiet; }
 const uintptr_t kIsWeaponAcquired = 0x62f3e0;
 const uintptr_t kIsWeaponLocked = 0x62f490;
 const int kLockerAcquired = 0x84, kLockerLocked = 0xe2, kLockerWeapons = 0x5e;
@@ -380,15 +387,22 @@ void WeaponSync(void* self, void* movie) {
     last = now;
     int me = NetplayLocalSlot();
     if (me < 0) return;
+    static DWORD since[4] = {}, shownAt[4] = {};
+    static int wanted[4] = {}, tries[4] = {}, said = 0;
+    if (!NetplayPlayerInLevel(me) || GetTickCount64() < g_weaponQuietUntil) {   // (no level, or it's going: nothing asked, nothing owed)
+        NetplayWeaponMine(0);
+        for (int s = 0; s < 4; ++s) since[s] = shownAt[s] = 0, tries[s] = 0;
+        return;
+    }
+    if (!VideoHudUp() || OnlinePauseGamePaused()) return;   // (paused, a scene: later)
     GFxValue a[2] = {};
     a[0].type = a[1].type = kNumber;
     a[0].number = me;
     double id = 0;
     NetplayWeaponMine(CallForNumber(self, movie, "PLYR_GetWeaponID", a, 1, &id) ? (int)id : 0);
-    static DWORD since[4] = {}, shownAt[4] = {};
-    static int wanted[4] = {}, tries[4] = {}, said = 0;
     for (int s = 0; s < 4; ++s) {
         int want = s == me ? 0 : NetplayWeaponOf(s);
+        if (s != me && !NetplayPlayerInLevel(s)) { since[s] = shownAt[s] = 0, tries[s] = 0; continue; }
         a[0].number = s;
         if (shownAt[s]) {   // (their weapons screen is up here for this: the weapon set once it's been up long enough - and hidden, whatever else)
             if (now - shownAt[s] < kWeaponShown) continue;
@@ -417,6 +431,57 @@ void WeaponSync(void* self, void* movie) {
         if (said < 40) { ++said; Log(L"UI: player %d holds weapon %d on their PC and %d here - put in their hand here%s", s, want, (int)id, tries[s] >= 1 ? L" (marked bought for them first)" : L""); }
         ++tries[s];
     }
+}
+// Story co-op: who plays whom. A story level makes its first player Stewie and its second Brian, whatever the lobby's picks said (the
+// session walks the menus straight into the level - no join screen to set them on): the user picked Brian and "when the game starts i
+// get stewie". PLYR_SetCharacter(player, character) - the menus' own call for their preview - changes a level's player too: their
+// model, their weapons, their HUD (two copies: player 0 Brian with his pistol, player 1 Stewie, the same on both). So once a level is
+// up and its players are in it, each is made the character their pick names (1 Stewie, 2 Brian; two the same: the first has it, the
+// other the one that's left) - on every PC alike, from the session's own line (FGUYMOD_SESSION "...|Brian:0:0:k;Stewie:0:0:k").
+// Once a level: after that the game's own switching is the players'.
+bool g_storyPicksOwed = true;
+ULONGLONG g_storyPicksSince = 0;
+void StoryPicksOwed() { g_storyPicksOwed = true; g_storyPicksSince = 0; }
+int StoryPick(int slot) {
+    char session[400] = "";
+    if (!GetEnvironmentVariableA("FGUYMOD_SESSION", session, sizeof(session))) return 0;
+    const char* p = strchr(session, '|');
+    for (int s = 0; p && s <= slot; ++s) {
+        ++p;
+        if (s == slot) return _strnicmp(p, "Stewie", 6) == 0 ? 1 : (_strnicmp(p, "Brian", 5) == 0 ? 2 : 0);
+        p = strchr(p, ';');
+    }
+    return 0;
+}
+void StoryCharacters(void* self, void* movie) {
+    if (!NetplayStoryCoop()) return;
+    static DWORD last = 0;
+    DWORD now = GetTickCount();
+    if (now - last < 200) return;
+    last = now;
+    int me = NetplayLocalSlot();
+    if (me < 0) return;
+    // (my player gone - the level restarted or another one loading, here because the other player chose it too: its players are made
+    // anew, as the level has them - owed again)
+    if (!NetplayPlayerInLevel(me)) { StoryPicksOwed(); return; }
+    if (!g_storyPicksOwed || !VideoHudUp() || OnlinePauseGamePaused() || GetTickCount64() < g_weaponQuietUntil) return;
+    if (!g_storyPicksSince) g_storyPicksSince = GetTickCount64();
+    bool both = NetplayPlayerInLevel(0) && NetplayPlayerInLevel(1);
+    if (!both && GetTickCount64() - g_storyPicksSince < 10000) return;   // (the other drops in a moment after the level's up; alone: after 10 s)
+    int want[2] = {StoryPick(0), StoryPick(1)};
+    if (!want[0]) want[0] = 1;
+    if (!want[1] || want[1] == want[0]) want[1] = 3 - want[0];
+    for (int s = 0; s < 2; ++s) {
+        if (!NetplayPlayerInLevel(s)) continue;
+        GFxValue a[2] = {};
+        a[0].type = a[1].type = kNumber;
+        a[0].number = s, a[1].number = want[s];
+        double is = 0;
+        if (!CallForNumber(self, movie, "PLYR_GetCharacter", a, 1, &is) || (int)is == want[s]) continue;
+        Real_Callback(self, movie, "PLYR_SetCharacter", a, 2);
+        Log(L"UI: story - player %d is %s, as picked in the lobby (the level made them %s)", s, want[s] == 1 ? L"Stewie" : L"Brian", (int)is == 1 ? L"Stewie" : L"Brian");
+    }
+    g_storyPicksOwed = false;
 }
 // (research: pipe "uicall <name> [a] [b]" - a menu call with up to two numbers, at the next menu call; what it answered, logged)
 char g_uiCallName[64] = "";
@@ -460,7 +525,7 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         double had = 0;
         CallForNumber(self, movie, "LOKR_IsWeaponAcquired", &one, 1, &had);
     }
-    if (NetplayFreeRun() && name) WeaponSync(self, movie);
+    if (NetplayFreeRun() && name) { StoryCharacters(self, movie); WeaponSync(self, movie); }
     {
         LONG n = InterlockedExchange(&g_uiCallArgc, -1);
         if (n >= 0) {
@@ -839,6 +904,9 @@ void* g_cmdMovie = nullptr;
 
 void __fastcall Hook_Command(void* self, void* edx, void* movie, const char* command, const char* args) {
     if (self) { g_cmdSelf = self; g_cmdMovie = movie; }
+    if (command && (strcmp(command, "GAME_Portal") == 0 || strcmp(command, "GAME_Reload") == 0 || strcmp(command, "GAME_Start") == 0 ||
+                    strncmp(command, "GAME_Quit", 9) == 0))
+        { WeaponSyncQuiet(); StoryPicksOwed(); }   // (the level goes or changes: nobody's weapon is asked or set meanwhile; a new level: its players as picked)
     if (command && (strcmp(command, "GAME_Portal") == 0 || strcmp(command, "GAME_Reload") == 0 ||
                     strcmp(command, "GAME_Start") == 0))   // (CONTINUE: the saved level, from its checkpoint)
         NetplayStoryLevelChange(command);   // (story co-op: another level / the same again)

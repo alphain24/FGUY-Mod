@@ -90,6 +90,7 @@ bool NetplayStoreTake(int* player, int* weapon);
 void NetplayWeaponMine(int weapon);    // the weapon in my player's hand (the menus' id for it), told to the others
 int NetplayWeaponOf(int slot);         // ...and in another player's, as their own PC has it (0: not known)
 void NetplayWeaponSay(int weapon);     //   (research: said to be in mine instead)
+bool NetplayPlayerInLevel(int slot);   //   a player of the session who is in the level now, with a view, alive
 bool NetplayLockerHas(int weapon);     // online story co-op: another player's save has this weapon (ui.cpp: it counts as had here)
 bool UiLockerMine(unsigned char* out, int count);   //   the weapons this save has (ui.cpp)  // a weapon someone bought on their PC, to mark bought here
 void NetplayOnFrame();                 //   end of every rendered frame

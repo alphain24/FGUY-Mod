@@ -1353,3 +1353,25 @@ game since 2026-11-17 (10.6 MB) that is 54 ms - every 2 s before that build, eve
 such packs showed 4 ms, which is why it looked small here. Now the look compares names, sizes and times with last time's and stops
 there when nothing changed (emotes.cpp Scan). The user's ten packs in a test copy, 4K, third person: 0 long frames in 67 s, the 16
 packs read. Build E02769F8569F.
+
+## 0.9.12: what the user met in story co-op on 0.9.11 (2026-11-23)
+
+- **A crash, 0.9.11's own.** Their game closed two seconds after they quit a story level with their friend: `CRASH at 0x9a781f
+  (reading 0x4)`, the PLYR_ menu calls' handler under it. The weapon sync ran at any menu call of a free-running session, and a
+  story session went on at the main menu after its level: a weapon put in the hand (PLYR_ShowWeaponWheel / SetSelectedSlotToWeapon /
+  Confirm) of a player whose level was being taken down. Reproduced on two copies (the guest says a weapon the host can't give,
+  `netwpn 4`; the host quits, `uicmd GAME_Quit`: the same address a second after the main menu). Now only with the level's HUD up,
+  not paused, both players in the level and alive (`NetplayPlayerInLevel`), and not for 8 s after GAME_Quit / Start / Reload / Portal.
+  Not caught before the release: no test quit a story level with the new build - a release's test has to END its sessions the ways
+  players do.
+- **"I select brian but when the game starts i get stewie".** A story level makes player 0 Stewie and player 1 Brian; the session
+  goes straight into the level (session.as2js FGUYSessionStory - no join screen), the lobby's picks unused. PLYR_SetCharacter(player,
+  1 Stewie | 2 Brian) changes a level's player in place - model, weapons, HUD - the same on both copies. Done once a level is up
+  (and again when my player has been away: a restart, another level): ui.cpp `StoryCharacters`, from FGUYMOD_SESSION's picks. (The
+  game's own "switch character" - IFGUY_SwitchCharacter - wasn't found on any key tried.)
+- **"when you quit the game brings you back to the mission select lobby".** By design until now: a story session kept the game's
+  main menu as the players' (the host's ONLINE there went back to the lobby). Asked, the user wants the online lobby: the front end
+  coming back is the session's end (netplay.cpp NetplaySessionReturn) - both back in the lobby 3 s after the quit.
+- **"the mouse doesnt work on the pause screen in storymode".** Their friend had paused: the game's pause menu was only the pauser's
+  to click (onlinepause.cpp OnlineMenuMouse) - but every keyboard player's keys reach the game's menus together, so the arrows and
+  Esc of the other player worked and the mouse alone did not. Anyone's now: the guest clicked RESUME on the host's pause, both went on.
