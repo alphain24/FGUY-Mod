@@ -1095,6 +1095,7 @@ extern const int kPktSaveAskSize, kPktSaveChunkHead, kPktSaveHaveSize;
 extern const int kPktNpcDownSize;
 extern const int kPktStatsSize;
 void FreeState(int s, const PktState* p, bool withMoney, bool withClock, bool withWeapon);
+double PreciseMs();
 void LockerIn(int slot, const unsigned char* has, int count);
 void LockerSend(ULONGLONG nowMs);
 const int kLockerCount = 94;   // (the locker's weapons: ui.cpp kLockerWeapons)
@@ -1579,7 +1580,8 @@ void Receive() {
             if (p->to == g_slot) g_echoAt[slot] = GetTickCount64();
             if (p->to == g_slot && p->sent != timed[slot]) {
                 timed[slot] = p->sent;
-                ULONGLONG now = GetTickCount64();
+                // (by the precise clock, as it was sent: GetTickCount64 steps by 15.6 ms - the pings shown went 62, 78, 94, 109)
+                ULONGLONG now = (ULONGLONG)PreciseMs();
                 if (now >= p->sent && now - p->sent < 60000) {
                     InterlockedExchange(&g_pingMs[slot], (LONG)(now - p->sent));
                     g_pingRecent[slot][g_pingAt[slot]++ % kPingRecent] = (int)(now - p->sent);
@@ -5294,7 +5296,7 @@ void FreeTick() {
         static ULONGLONG lastPing = 0;
         if (nowMs - lastPing >= 250) {
             lastPing = nowMs;
-            PktPing ping{{'P', (BYTE)g_slot}, 0, nowMs};
+            PktPing ping{{'P', (BYTE)g_slot}, 0, (ULONGLONG)PreciseMs()};
             SendAll(&ping, sizeof(ping));
         }
         LockerSend(nowMs);
@@ -5497,7 +5499,7 @@ void Tick() {
             ULONGLONG now = GetTickCount64();
             if (now - lastPing >= 250) {
                 lastPing = now;
-                PktPing ping{{'P', (BYTE)g_slot}, 0, now};
+                PktPing ping{{'P', (BYTE)g_slot}, 0, (ULONGLONG)PreciseMs()};
                 SendAll(&ping, sizeof(ping));
             }
             LockerSend(now);
@@ -6281,20 +6283,93 @@ bool NetplayInputOf(int slot, WORD* buttons, BYTE* lt, BYTE* rt, SHORT* sticks, 
     return true;
 }
 
-// FGUYMOD_NetStats: the round trip to every other player still in the match - "name:ms|..." (ms -1: not known yet).
+// My own ping: the round trip from this PC to the mod's server (the match's packets all go through it). The match only ever timed
+// the trip to each other player and back - me to the server to them, and all the way back: both players' pings together, plus a frame
+// of each PC, in 15.6 ms steps - and showed that under THEIR name: "can we get MY ping on the display? and not scuffy's?" (78-109 ms
+// shown; this PC to the server and back is 32). Timed over a connection of its own to the server's lobby port, its PING / PONG, once
+// a second; the middle of the last five.
+volatile LONG g_serverPingMs = -1;
+DWORD WINAPI ServerPingThread(void*) {
+    wchar_t relay[256];
+    SettingString(L"Netplay", L"_", L"FGUYMOD_NET_RELAY", L"", relay, 256);
+    char host[200] = "";
+    WideCharToMultiByte(CP_UTF8, 0, relay, -1, host, sizeof(host), nullptr, nullptr);
+    char* colon = strrchr(host, ':');
+    if (!colon) return 0;
+    *colon = 0;
+    for (;;) {
+        addrinfo hints{}, *found = nullptr;
+        hints.ai_family = AF_INET, hints.ai_socktype = SOCK_STREAM;
+        if (getaddrinfo(host, colon + 1, &hints, &found) == 0 && found) {
+            SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+            DWORD wait = 3000;
+            BOOL now = TRUE;
+            setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&wait), sizeof(wait));
+            setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&wait), sizeof(wait));
+            setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&now), sizeof(now));
+            if (connect(s, found->ai_addr, (int)found->ai_addrlen) == 0) {
+                int recent[5], count = 0;
+                for (unsigned k = 1;; ++k) {
+                    char line[40];
+                    int len = sprintf_s(line, "PING %u\n", k);
+                    LARGE_INTEGER t0, t1;
+                    Real_QPC(&t0);
+                    if (send(s, line, len, 0) != len) break;
+                    char got[64];
+                    int n = 0;
+                    bool whole = false;
+                    while (!whole && n < (int)sizeof(got) - 1) {
+                        int r = recv(s, got + n, (int)sizeof(got) - 1 - n, 0);
+                        if (r <= 0) break;
+                        n += r;
+                        whole = memchr(got, '\n', n) != nullptr;
+                    }
+                    if (!whole) break;
+                    Real_QPC(&t1);
+                    recent[count++ % 5] = (int)((t1.QuadPart - t0.QuadPart) * 1000 / g_freq.QuadPart);
+                    int sorted[5], have = count < 5 ? count : 5;
+                    memcpy(sorted, recent, have * sizeof(int));
+                    std::sort(sorted, sorted + have);
+                    InterlockedExchange(&g_serverPingMs, sorted[have / 2]);
+                    Sleep(1000);
+                }
+            }
+            closesocket(s);
+        }
+        if (found) freeaddrinfo(found);
+        InterlockedExchange(&g_serverPingMs, -1);
+        Sleep(5000);
+    }
+}
+
+// FGUYMOD_NetStats, the pings at the top right: "name:ms|..." (ms -1: not known yet). Mine first - to the server and back; then the
+// other players': what's left of the trip to them and back with mine taken off - their own way to the server (a guess of it: a frame
+// or two of the PCs' are in it). With no ping of my own known, the whole trip, as it was.
 std::string NetplayStats() {
     std::string out;
     if (!g_enabled || !g_inSession) return out;
-    for (int s = 0; s < g_players && s < 4; ++s) {
-        if (s == g_slot || g_gone[s] || g_goneFrom[s]) continue;
-        char part[96];
-        std::wstring name = PlayerName(s);
-        char n8[64];
-        WideCharToMultiByte(CP_UTF8, 0, name.c_str(), -1, n8, sizeof(n8), nullptr, nullptr);
-        for (char* c = n8; *c; ++c) if (*c == '|' || *c == ':') *c = ' ';
-        sprintf_s(part, "%s%s:%ld", out.empty() ? "" : "|", n8, g_pingMs[s]);
-        out += part;
-    }
+    LONG mine = InterlockedCompareExchange(&g_serverPingMs, 0, 0);
+    for (int pass = 0; pass < 2; ++pass)
+        for (int s = 0; s < g_players && s < 4; ++s) {
+            if ((pass == 0) != (s == g_slot)) continue;
+            if (s != g_slot && (g_gone[s] || g_goneFrom[s])) continue;
+            if (s == g_slot && mine < 0) continue;
+            LONG ms = mine;
+            if (s != g_slot) {
+                int sorted[kPingRecent], have = 0;   // (the middle of the last few: one late packet isn't the ping)
+                for (int k = 0; k < kPingRecent; ++k) if (g_pingRecent[s][k] > 0) sorted[have++] = g_pingRecent[s][k];
+                std::sort(sorted, sorted + have);
+                ms = have ? sorted[have / 2] : g_pingMs[s];
+                if (ms >= 0 && mine >= 0 && ms >= mine) ms -= mine;
+            }
+            char part[96];
+            std::wstring name = PlayerName(s);
+            char n8[64];
+            WideCharToMultiByte(CP_UTF8, 0, name.c_str(), -1, n8, sizeof(n8), nullptr, nullptr);
+            for (char* c = n8; *c; ++c) if (*c == '|' || *c == ':') *c = ' ';
+            sprintf_s(part, "%s%s:%ld", out.empty() ? "" : "|", n8, ms);
+            out += part;
+        }
     return out;
 }
 
@@ -6353,6 +6428,7 @@ void InitNetplay(HMODULE exe) {
     SettingString(L"Netplay", L"_", L"FGUYMOD_NET_TOKEN", L"", token, 32);
     if (relay[0] && wcslen(token) == 16) {
         g_relay = true;
+        if (HANDLE t = CreateThread(nullptr, 0, ServerPingThread, nullptr, 0, nullptr)) CloseHandle(t);   // (my own ping: to the server)
         for (int i = 0; i < 8; ++i) g_token[i] = (unsigned char)wcstoul(std::wstring(token + 2 * i, 2).c_str(), nullptr, 16);
         port = 0;  // any free local port: the server learns it from our packets
         wcscpy_s(peers, relay);

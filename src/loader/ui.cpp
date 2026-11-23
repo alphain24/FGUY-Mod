@@ -439,9 +439,24 @@ void WeaponSync(void* self, void* movie) {
 // up and its players are in it, each is made the character their pick names (1 Stewie, 2 Brian; two the same: the first has it, the
 // other the one that's left) - on every PC alike, from the session's own line (FGUYMOD_SESSION "...|Brian:0:0:k;Stewie:0:0:k").
 // Once a level: after that the game's own switching is the players'.
-bool g_storyPicksOwed = true;
+// When: the moment the level is up for everyone - the tick the session's window comes up, still in lockstep. 0.9.12 did it only once
+// the match ran free AND the weapons' 8 s of quiet after the command that loads the level were over: the user stood there as Stewie
+// for four seconds ("so the brian pick didnt work"), and had switched themself by the game's own key before the pick came (their log:
+// Brian's pistol in their hand 0.7 s after the match went free, the pick's line a second later - for player 1 only). The quiet is for
+// a level that a command is taking down (its players are still there for a moment - 0.9.11's crash): it holds until my player has been
+// seen out of the level once; the players of the level that comes after are new.
+bool g_storyPicksOwed = true, g_storyPicksGone = false;
 ULONGLONG g_storyPicksSince = 0;
-void StoryPicksOwed() { g_storyPicksOwed = true; g_storyPicksSince = 0; }
+void StoryPicksOwed() { g_storyPicksOwed = true; g_storyPicksGone = false; g_storyPicksSince = 0; }
+// The pause menu's RESTART LEVEL is no command and no load: SCEN_Reset, the level put back as it began in place - its players stay
+// (never out of the level), Stewie and Brian again as the level has them. Owed again, once the reset is through (its HUD is back 0.1 s
+// after, its menu gone 0.3 s after). 0.9.12 missed it: its restarts were tested by GAME_Reload, which the menu doesn't use.
+ULONGLONG g_storyPicksNotBefore = 0;
+void StoryPicksAfterReset() {
+    g_storyPicksOwed = g_storyPicksGone = true;
+    g_storyPicksSince = 0;
+    g_storyPicksNotBefore = GetTickCount64() + 700;
+}
 int StoryPick(int slot) {
     char session[400] = "";
     if (!GetEnvironmentVariableA("FGUYMOD_SESSION", session, sizeof(session))) return 0;
@@ -457,14 +472,15 @@ void StoryCharacters(void* self, void* movie) {
     if (!NetplayStoryCoop()) return;
     static DWORD last = 0;
     DWORD now = GetTickCount();
-    if (now - last < 200) return;
+    if (now - last < (g_storyPicksOwed ? 30u : 200u)) return;
     last = now;
     int me = NetplayLocalSlot();
     if (me < 0) return;
     // (my player gone - the level restarted or another one loading, here because the other player chose it too: its players are made
     // anew, as the level has them - owed again)
-    if (!NetplayPlayerInLevel(me)) { StoryPicksOwed(); return; }
-    if (!g_storyPicksOwed || !VideoHudUp() || OnlinePauseGamePaused() || GetTickCount64() < g_weaponQuietUntil) return;
+    if (!NetplayPlayerInLevel(me)) { g_storyPicksOwed = g_storyPicksGone = true; g_storyPicksSince = 0; return; }
+    if (!g_storyPicksOwed || !VideoHudUp() || OnlinePauseGamePaused() || GetTickCount64() < g_storyPicksNotBefore) return;
+    if (!g_storyPicksGone && GetTickCount64() < g_weaponQuietUntil) return;   // (a level being left: these are still its players)
     if (!g_storyPicksSince) g_storyPicksSince = GetTickCount64();
     bool both = NetplayPlayerInLevel(0) && NetplayPlayerInLevel(1);
     if (!both && GetTickCount64() - g_storyPicksSince < 10000) return;   // (the other drops in a moment after the level's up; alone: after 10 s)
@@ -525,7 +541,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
         double had = 0;
         CallForNumber(self, movie, "LOKR_IsWeaponAcquired", &one, 1, &had);
     }
-    if (NetplayFreeRun() && name) { StoryCharacters(self, movie); WeaponSync(self, movie); }
+    if (name && NetplayStoryCoop()) StoryCharacters(self, movie);   // (from the lockstep's last ticks on: the level's first moment)
+    if (NetplayFreeRun() && name) WeaponSync(self, movie);
     {
         LONG n = InterlockedExchange(&g_uiCallArgc, -1);
         if (n >= 0) {
@@ -860,7 +877,11 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             fflush(f);   // (test copies get closed without a goodbye)
         }
     }
-    if (name && strcmp(name, "SCEN_Reset") == 0) NetplayStoryLevelChange("the level restarted");
+    if (name && strcmp(name, "SCEN_Reset") == 0) {
+        NetplayStoryLevelChange("the level restarted");
+        WeaponSyncQuiet();        // (as after the commands that change the level: nobody's weapon asked or set while it's put back)
+        StoryPicksAfterReset();   // (its players are Stewie and Brian again: as picked, once it's through)
+    }
     if (name && g_seenCalls.insert(name).second) {
         if (NetplayEnabled()) Log(L"UI: menu calls %S (%u args) - tick %u", name, argc, NetplayTick());
         else Log(L"UI: menu calls %S (%u args)", name, argc);

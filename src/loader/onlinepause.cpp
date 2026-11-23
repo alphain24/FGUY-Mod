@@ -136,6 +136,17 @@ int ListItemAt(SHORT cx, SHORT cy, int* cur, bool* row) {
     return item;
 }
 
+// Which list is up: where its first item starts, row or column (0: none). Not its size - a chosen item draws wider - nor how many
+// items: a list's come up one after another.
+unsigned ListWhich() {
+    unsigned which = 0;
+    AcquireSRWLockShared(&g_boxLock);
+    if (GetTickCount64() - g_listAt < 300 && g_listCount > 0)
+        which = 1u + (unsigned)g_listBoxes[0].x0 * 7u + (unsigned)g_listBoxes[0].y0 * 100003u + (unsigned)g_listBoxes[0].kind * 31u;
+    ReleaseSRWLockShared(&g_boxLock);
+    return which;
+}
+
 int ParseBoxes(const char* boxes, MouseBox* b, int max) {
     int n = 0;
     for (const char* at = boxes; at && *at && n < max;) {
@@ -271,6 +282,23 @@ void ListMouse(KbmRaw* kbm, bool click) {
     if (!BoxesShown()) target = -1;   // (a menu that comes up later: only once the pointer moves over it)
     lastX = kbm->cursorX;
     lastY = kbm->cursorY;
+    // A click while a key of the list is still going (the pointer just came to the item: the choice is on its way there) is kept until
+    // that key is done - it used to be dropped, and the item had to be clicked again.
+    static int waiting = -1;
+    static ULONGLONG waitingAt = 0;
+    // Another list up (the click's own question - "are you sure?" - or the list behind it again): what was pointed at or clicked was
+    // an item of the one before. Kept, the pointer resting where QUIT GAME had been went on asking for "item 4" of a question with two
+    // answers: its choice flipped between YES and NO six times a second until the mouse moved.
+    static unsigned which = 0;
+    unsigned whichNow = ListWhich();
+    if (whichNow != which) {
+        which = whichNow;
+        target = waiting = -1;
+    }
+    if (click && item >= 0 && g_seqPos < g_seqLen) { waiting = item; waitingAt = GetTickCount64(); }
+    if (waiting >= 0 && (!BoxesShown() || GetTickCount64() - waitingAt > 600)) waiting = -1;
+    if (g_seqPos >= g_seqLen && waiting >= 0 && !click) { click = true; item = waiting; }
+    if (g_seqPos >= g_seqLen) waiting = -1;
     if (g_seqPos >= g_seqLen && item >= 0 && click) {
         g_seqLen = g_seqPos = g_seqTick = 0;
         for (int k = cur; k != item && g_seqLen < 10; k += item > cur ? 1 : -1) g_seq[g_seqLen++] = item > cur ? next : prev;
@@ -282,14 +310,16 @@ void ListMouse(KbmRaw* kbm, bool click) {
         if (now >= g_hoverAt) {
             g_seqLen = g_seqPos = g_seqTick = 0;
             g_seq[g_seqLen++] = target > cur ? next : prev;
-            g_hoverAt = now + 150;
+            g_hoverAt = now + 60;
         }
     }
-    if (g_seqPos < g_seqLen) {   // each key down 4 steps (1/15 s), then up 4
+    // Each key down 3 steps (1/20 s), then up 2. It was 4 and 4 with 150 ms between two steps of a pointed-at choice: an item four
+    // down the list took the best part of a second to reach - "the response time is so slow on the menus".
+    if (g_seqPos < g_seqLen) {
         int key = g_seq[g_seqPos];
-        if (g_seqTick < 4) kbm->keys[key >> 3] |= (BYTE)(1 << (key & 7));
+        if (g_seqTick < 3) kbm->keys[key >> 3] |= (BYTE)(1 << (key & 7));
         g_seqTick += g_steps;
-        if (g_seqTick >= 8) { g_seqTick = 0; ++g_seqPos; }
+        if (g_seqTick >= 5) { g_seqTick = 0; ++g_seqPos; }
     }
 }
 

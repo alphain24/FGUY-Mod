@@ -1375,3 +1375,35 @@ packs read. Build E02769F8569F.
 - **"the mouse doesnt work on the pause screen in storymode".** Their friend had paused: the game's pause menu was only the pauser's
   to click (onlinepause.cpp OnlineMenuMouse) - but every keyboard player's keys reach the game's menus together, so the arrows and
   Esc of the other player worked and the mouse alone did not. Anyone's now: the guest clicked RESUME on the host's pause, both went on.
+
+## After 0.9.12: what the user met in their first session with it (2026-11-23, evening - not released yet)
+
+- **"so the brian pick didnt work".** It worked, four seconds late. Their log (session of 19:10): window up 19:10:14.95, Stewie's
+  laser pistol in their hand as the match went free (17.23), Brian's pistol 0.7 s later ("22 left in the clip", the HUD asking
+  PLYR_GetCharacter) - their own switch, by the game's key (the same within 1-4 s of the start in their 0.9.11 sessions, at a
+  different moment each time; not in the one where they stayed Stewie) - and only then, 19.11, `StoryCharacters`: for player 1
+  alone. It ran only once the match was free AND the weapons' 8 s of quiet after GAME_Portal were over. Now from the tick the level
+  is up for everyone (still lockstep; 0.15 s before the window is shown): the quiet holds only until my player has been seen out of
+  the level once (a level a command is taking down still has its players for a moment - 0.9.11's crash). On two copies: both lines
+  at the level's first tick, the same on a restart (3 s after GAME_Reload, as the level comes back), quit to the lobby, no crash.
+  The lockstep's checks of ticks 720-780 say DESYNC after it (player 0's aim point 0.003 apart - the camera settling on the other
+  model a tick apart); ignored there (NoteMismatch: not before 600 ticks after the level is up), gone when the match goes free.
+- **"the response time is so slow on the menus"** (the pause menu by mouse - keys, onlinepause.cpp ListMouse). Each key was down 4
+  steps and up 4, with 150 ms between two steps of a pointed-at choice; a click while a key was still going was DROPPED (point at an
+  item, click at once: nothing - click again); and after a click the pointer's old item stayed the target, so on the click's own
+  question ("are you sure?") the choice flipped YES/NO six times a second until the mouse moved. Now 3 down / 2 up, 60 ms; a click
+  waits for the key going; another list up (its first item elsewhere) forgets target and click. Pointing at the fifth item and
+  clicking 40 ms later: the question is up 340 ms after, and holds still; the other copy's menu followed every key.
+- **"can we get MY ping on the display? and not scuffy's?"** The line under a player's name was the trip to THEM and back (me -
+  server - them - server - me, plus a frame of each PC: the packets are read once a frame), timed with GetTickCount64 (62 / 78 /
+  94 / 109: its 15.6 ms steps). This PC to the server and back is 32 ms (TCP PING / PONG to the lobby port, measured). Now: my own
+  line first (a thread's own connection to the lobby port, a PING a second, the middle of five), then the others' - the middle of
+  their last trips, timed by the precise clock, with mine taken off. Their direct connection was on from mid-session, the friend's
+  not ("with players who have them on too" - no "would like one too" line): everything went through the server.
+- **The pause menu's RESTART LEVEL is SCEN_Reset** (a menu call; no GAME_Reload, no load): the level is put back in place, its
+  players never leave it - Stewie and Brian again as the level has them, and nothing owed the picks again. Missed in 0.9.12: its
+  restart tests sent GAME_Reload by the pipe. Found testing 0.9.13's files by clicking the menu as a player does. Now owed again
+  0.7 s after SCEN_Reset (HUD back 0.1 s after it, menu gone 0.3 s after), and the weapons' quiet starts there too. A release's
+  story test: tools-free recipe in the scratch `rel_story_test.ps1` - pause, click RESTART LEVEL / YES, pause, the guest clicks
+  QUIT GAME / YES (pointer by `kbm cursor`, 0..32767: the list's items at x 8200, y 8100 / 10200 / 12290 / 14380 / 16480; YES at
+  13000, 12960). A real mouse moving over the test window at that moment can eat a scripted click - look for "item N clicked".
