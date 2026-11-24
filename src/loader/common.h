@@ -443,6 +443,12 @@ int OnlinePauseGameMode();                     //   the game's mode: 7 playing, 
 void OnlinePauseResetCalled();                 //   ui.cpp: the game's menu restarted the level (SCEN_Reset) on this PC
 void NetplayPauseOutcome(int kind, const char* command, const char* args);   // netplay.cpp: my pause menu's choice, to the others
 void UiStoryReset();                           //   ui.cpp: restart the level here, as the pause menu's RESTART LEVEL does
+void UiStoryDrop(int slot);                    //   ui.cpp: that player out of the level (the game's PLYR_Drop), at the next menu call
+void UiStoryPicksAgain();                      //   ui.cpp: the lobby's picks set again (a player joined: the level's own character)
+bool NetplayStoryLeft(int slot);               //   netplay.cpp: story co-op - that player chose LEAVE CO-OP (still in the session)
+void NetplayStoryLeave();                      //   ...I did, in my pause menu
+void NetplayStoryRejoin();                     //   ...and I'm back (my key)
+bool OnlinePauseLeaveOffered();                //   onlinepause.cpp: LEAVE CO-OP belongs in the pause menu that's up (FGUYMOD_PauseLeave)
 const char* OnlinePauseMenu();                 //   FGUYMOD_PauseMenu (the HUD)
 const char* OnlinePauseCursor();
 void SplitViewNoMarkers(bool on);

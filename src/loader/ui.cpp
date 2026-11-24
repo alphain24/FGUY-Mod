@@ -454,6 +454,7 @@ void StoryPicksOwed() { g_storyPicksOwed = true; g_storyPicksGone = false; g_sto
 ULONGLONG g_storyPicksNotBefore = 0;
 ULONGLONG g_storyResetAt = 0;          // (the level was restarted here then: SCEN_Reset)
 volatile LONG g_storyResetAsked = 0;   // (UiStoryReset: at the next menu call)
+volatile LONG g_storyDropAsked = 0;    // (UiStoryDrop: the slots to drop out of the level, bits - at the next menu call)
 void StoryPicksAfterReset() {
     g_storyPicksOwed = g_storyPicksGone = true;
     g_storyPicksSince = 0;
@@ -484,19 +485,10 @@ void StoryCharacters(void* self, void* movie) {
     if (!g_storyPicksOwed || !VideoHudUp() || OnlinePauseGamePaused() || GetTickCount64() < g_storyPicksNotBefore) return;
     if (!g_storyPicksGone && GetTickCount64() < g_weaponQuietUntil) return;   // (a level being left: these are still its players)
     if (!g_storyPicksSince) g_storyPicksSince = GetTickCount64();
-    bool both = NetplayPlayerInLevel(0) && NetplayPlayerInLevel(1);
+    bool both = NetplayPlayerInLevel(0) && (NetplayPlayerInLevel(1) || NetplayStoryLeft(1));   // (left co-op: not waited for)
     if (!both && GetTickCount64() - g_storyPicksSince < 10000) return;   // (the other drops in a moment after the level's up; alone: after 10 s)
-    // A level that the session didn't start from the menu - the next one after a level is done, MISSION SELECT's - doesn't let a
-    // player join: the menu's own start says so each time (its LevelSelectConfirm: PLYR_SetJoinEnabled(true)), a level change
-    // by the game doesn't. The second player's START did nothing there, forty times over: "once you get on the second level, the
-    // other player doesnt get in the level ... he can just see me play". Said here, as the menu would, for every level that comes up.
-    {
-        GFxValue yes = {};
-        yes.type = kBool;
-        yes.boolean = true;
-        Real_Callback(self, movie, "PLYR_SetJoinEnabled", &yes, 1);
-        Log(L"UI: story - this level lets players join (PLYR_SetJoinEnabled, as the menu's own start says it)");
-    }
+    // (0.9.16 said PLYR_SetJoinEnabled(true) here for every level. Not needed - the loader's join is the game's forced one - and
+    //  not wanted: the game's own join by START / Enter is each PC's alone. netplay.cpp keeps it off: StoryNoOwnJoin.)
     int want[2] = {StoryPick(0), StoryPick(1)};
     if (!want[0]) want[0] = 1;
     if (!want[1] || want[1] == want[0]) want[1] = 3 - want[0];
@@ -568,6 +560,23 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             g_storyResetAt = GetTickCount64();
             Real_Callback(self, movie, "SCEN_Reset", nullptr, 0);
         }
+    }
+    // Story co-op: a player left co-op (netplay.cpp) - out of the level here too, the game's own way: PLYR_Drop(<player>).
+    if (name && NetplayStoryCoop())
+        if (LONG drops = InterlockedExchange(&g_storyDropAsked, 0))
+            for (int s = 1; s < 4; ++s)
+                if (drops & (1 << s)) {
+                    GFxValue who = {};
+                    who.type = kNumber;
+                    who.number = s;
+                    Log(L"UI: story - player %d leaves co-op: out of the level here (PLYR_Drop)", s);
+                    Real_Callback(self, movie, "PLYR_Drop", &who, 1);
+                }
+    // The pause menu's LEAVE CO-OP calls PLYR_Drop with nothing - "the player whose menu this is", which is each PC's own idea. Mine
+    // it is (the menu is the pauser's alone, and only a joined player's has the item): said to every PC by its number instead.
+    if (name && strcmp(name, "PLYR_Drop") == 0 && argc == 0 && NetplayStoryCoop() && NetplayFreeRun() && NetplayLocalSlot() > 0) {
+        NetplayStoryLeave();
+        return;
     }
     if (name && NetplayStoryCoop()) StoryCharacters(self, movie);   // (from the lockstep's last ticks on: the level's first moment)
     if (NetplayFreeRun() && name) WeaponSync(self, movie);
@@ -807,6 +816,8 @@ void __fastcall Hook_Callback(void* self, void*, void* movie, const char* name, 
             ReturnString(movie, stats.c_str());
         } else if (strcmp(fn, "StoryCoop") == 0) {       // (the game's pause menu: an online story co-op?)
             ReturnBool(movie, NetplayStoryCoop());
+        } else if (strcmp(fn, "PauseLeave") == 0) {      // (the game's pause menu: LEAVE CO-OP in it? - a joined player's own pause)
+            ReturnBool(movie, OnlinePauseLeaveOffered());
         } else if (strcmp(fn, "MyPlayer") == 0) {     // online: my player's index (-1: not yet)
             ReturnNumber(movie, NetplayEnabled() ? NetplayLocalSlot() : -1);
         } else if (strcmp(fn, "PauseQuitDone") == 0) {
@@ -1027,6 +1038,8 @@ void UiTestCall(const char* name, int argc, double a, double b) {
 }
 
 void UiStoryReset() { InterlockedExchange(&g_storyResetAsked, 1); }
+void UiStoryDrop(int slot) { if (slot > 0 && slot < 4) InterlockedOr(&g_storyDropAsked, 1 << slot); }
+void UiStoryPicksAgain() { StoryPicksAfterReset(); }
 
 // The mod's own menu command (the game thread): as a menu would send it - through the last command's handler.
 bool UiRunCommand(const char* command, const char* args) {

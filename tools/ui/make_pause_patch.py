@@ -35,11 +35,20 @@ function FGUYPauseOnlineButtons() {
     FGUYMenuMouseStart('pause');
     FGUYPauseOverlayStart();
     var story = flash.external.ExternalInterface.call('FGUYMOD_StoryCoop') == true;
+    // LEAVE CO-OP, as offline: for a player who joined (not the first), in their own pause - they stay in the session, out of
+    // the level, and come back with a key (the loader: netplay.cpp StoryLeave). After RESTART LEVEL, where the game has it.
+    var leave = story && flash.external.ExternalInterface.call('FGUYMOD_PauseLeave') == true;
     var keep = [];
     for (var i = 0; i < pauseScreenButtonInfo.length; i++) {
         var n = pauseScreenButtonInfo[i].name;
         if (n == 'Resume' || n == 'SaveQuit' || (story && (n == 'Options' || n == 'Restart' || n == 'LevelSelect')))
             keep.push(pauseScreenButtonInfo[i]);
+        if (leave && n == 'Restart') {
+            var drop = new Object();
+            drop.name = 'Drop';
+            drop.text = '=MNU_LEAVE_COOP';
+            keep.push(drop);
+        }
     }
     if (keep.length == 0) return;
     pauseScreenButtonInfo.splice(0, pauseScreenButtonInfo.length);

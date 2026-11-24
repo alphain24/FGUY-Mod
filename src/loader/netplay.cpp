@@ -2124,6 +2124,14 @@ void StartFreeKeepAlive();
 extern unsigned short g_storyEpoch;
 unsigned char* PlayerBySlot(int slot);
 
+// Story co-op: a player who chose LEAVE CO-OP in their pause menu (the game's own, as offline: PLYR_Drop). They stay in the
+// session - their PC shows the first view - and come back with a key (Space / Enter, A or START on a controller): "they are still
+// in the game when they leave but can join again by pressing the spacebar". Not joined by the loader meanwhile (the drop-in
+// below is for players who should be in), and their input is nobody's. Said to the others with the pause menu's word ('z': 5 left,
+// 6 back). The speedrunners' Amish skip wants this: its weapon wheel is the one-player game's.
+bool g_storyLeft[4] = {};
+bool g_storyJoinSoon = false;        // (someone came back: the drop-in at once, not at its next 3 s)
+
 // Story co-op: a player joins the level - the game's own join (its pad manager's, 0x5dd050: the player, "no asking"), not a START on
 // their pad. The START joined them once in a game and never again: the game looks for a joining pad in its table of pads (the
 // manager at 0xb3b388: 8 entries of 0x14 from +8 - the pad, its player, the controller's number twice, a "joined" byte) but, with
@@ -2138,12 +2146,24 @@ struct GamePadEntry { void* pad; void* player; int number; int controller; BYTE 
 #pragma pack(pop)
 const uintptr_t kPadManager = 0xb3b388, kPadJoin = 0x5dd050, kSlotController = 0xbad7f0;
 const unsigned char kPadJoinStart[] = {0x80, 0x7c, 0x24, 0x08, 0x00, 0x53, 0x55, 0x56};   // cmp byte [esp+8],0; push ebx; push ebp; push esi
-bool StoryJoin(int s) {
+bool StoryJoinKnown() {
     static int known = -1;   // (the game's code is what this was written for)
     if (known < 0) {
         known = !IsBadReadPtr((void*)kPadJoin, sizeof(kPadJoinStart)) && memcmp((void*)kPadJoin, kPadJoinStart, sizeof(kPadJoinStart)) == 0;
         if (!known) Log(L"Netplay: session - the game's join isn't where it's expected - players drop in by START only");
     }
+    return known == 1;
+}
+// The game's own joining - a free pad's START, and on the keyboard Enter - is off in a session that joins its players itself: each
+// PC's game would take it for itself alone. Met with a player out of the level by LEAVE CO-OP: the first player's Enter on RESTART
+// LEVEL, the game playing under its pause menu, joined the second player on that PC only - on the first pad, which nobody holds.
+void StoryNoOwnJoin() {
+    if (!StoryJoinKnown()) return;
+    auto on = reinterpret_cast<BYTE*>(kPadManager + 0x18a);   // (PLYR_SetJoinEnabled's byte; StoryJoin's forced join doesn't ask it)
+    if (!IsBadWritePtr(on, 1) && *on) *on = 0;
+}
+bool StoryJoin(int s) {
+    bool known = StoryJoinKnown();
     unsigned char* player = PlayerBySlot(s);
     if (!known || s < 1 || s > 3 || !player) return false;
     auto e = reinterpret_cast<GamePadEntry*>(kPadManager + 8);
@@ -2202,6 +2222,7 @@ void TakeSessionPresses() {      // main thread, start of a tick
         // in the level again ("once you get on the second level, the other player doesnt get in ... he can just see me play":
         // the Amish level; in the user's logs since 0.9.11). Every 3 s while they're not in, for five minutes of the level's
         // play. What IS at most twice: a try that a menu answered - the one-player level's question.
+        if (g_sessionStory) StoryNoOwnJoin();
         static unsigned epoch = ~0u;
         static unsigned char* host = nullptr;
         static ULONGLONG upSince = 0, next = 0, triedAt = 0;
@@ -2219,15 +2240,17 @@ void TakeSessionPresses() {      // main thread, start of a tick
                   OnlinePauseGameMode() == 7;
         if (!up) { upSince = 0; return; }
         if (!upSince) upSince = now;
+        if (g_storyJoinSoon) { g_storyJoinSoon = false; next = 0; upSince = now - 5000; }   // (a player back from leaving co-op: now)
         if (now - upSince < 5000 || now < next || tries >= 100 || asked >= 2) return;
         next = now + 3000;
         for (int s = 1; s < g_players; ++s)
-            if (views < s + 1 && !g_gone[s]) {
+            if (views < s + 1 && !g_gone[s] && !g_storyLeft[s]) {
                 ++tries;
                 triedAt = now;
                 // The game's own join, asked for outright (StoryJoin) - a START on their pad only the first time in a game:
                 // the second never took (the next level, a player dropped out and back).
                 bool asked = StoryJoin(s);
+                if (asked) UiStoryPicksAgain();   // (a joined player is the level's own character again: as picked, on every PC)
                 if (!asked) {
                     g_pressActive.push_back({s, XINPUT_GAMEPAD_START, 0, g_tick});
                     g_current[s].buttons |= XINPUT_GAMEPAD_START;
@@ -4902,7 +4925,7 @@ bool InstallNpcHooks() {
 void FreeApplyRemotes(float dt) {
     for (int s = 0; s < g_players && s < 4; ++s) {
         Remote& r = g_remote[s];
-        if (s == g_slot || g_gone[s] || !r.haveState) continue;
+        if (s == g_slot || g_gone[s] || !r.haveState || g_storyLeft[s]) continue;   // (left co-op: nobody's character now)
         unsigned char* p = PlayerBySlot(s);
         if (!p) continue;
         // their money: as their PC has it (kills pay there; what they spend at a supply crate comes off there)
@@ -5310,6 +5333,19 @@ void FreePauseDoneTick() {   // (the game thread, each tick; the net lock held)
     }
     if (g_pauseDoneIn.empty()) return;
     PauseDone d = g_pauseDoneIn.front();
+    if (d.p.kind == 5 || d.p.kind == 6) {   // (left co-op / back: whatever the pause is doing here)
+        g_pauseDoneIn.erase(g_pauseDoneIn.begin());
+        bool left = d.p.kind == 5;
+        if (d.from > 0 && d.from < 4 && g_storyLeft[d.from] != left) {
+            g_storyLeft[d.from] = left;
+            if (left) UiStoryDrop(d.from);
+            else g_storyJoinSoon = true;
+            Log(L"Netplay: free - story: player %d %s", d.from, left ? L"left co-op (still in the session: out of the level until they come back)"
+                                                                      : L"is back from leaving co-op - joining the level");
+            OverlayShow((PlayerName(d.from) + (left ? L" left co-op" : L" is back")).c_str(), 3000);
+        }
+        return;
+    }
     // Their pause here: 2 its menu is up, 1 on its way (their START just put in), 0 not paused. On its way: wait for it. Not
     // paused: a moment more (their pause may only just be coming) - then a resume is for nothing, the others are done as they are.
     int here = OnlinePauseStateHere();
@@ -6419,6 +6455,26 @@ void NetplaySessionPress(int pad, WORD buttons, int delayTicks) {
     Log(L"Netplay: session press pad %d buttons %04x in %d ticks", pad, buttons, delayTicks);
 }
 int NetplayLocalSlot() { return g_enabled ? g_slot : -1; }
+// Story co-op: LEAVE CO-OP chosen in my pause menu (ui.cpp, its PLYR_Drop) / my key to come back (onlinepause.cpp).
+bool NetplayStoryLeft(int slot) { return g_enabled && g_sessionStory && slot > 0 && slot < 4 && g_storyLeft[slot]; }
+void NetplayStoryLeave() {
+    if (!g_enabled || !g_free || !g_sessionStory || g_slot < 1 || g_slot > 3 || g_storyLeft[g_slot]) return;
+    EnterCriticalSection(&g_netLock);
+    g_storyLeft[g_slot] = true;
+    LeaveCriticalSection(&g_netLock);
+    UiStoryDrop(g_slot);
+    NetplayPauseOutcome(5, "", "");
+    Log(L"Netplay: free - story: I left co-op (LEAVE CO-OP in my pause menu) - out of the level, still in the session");
+}
+void NetplayStoryRejoin() {
+    if (!g_enabled || !g_free || !g_sessionStory || g_slot < 1 || g_slot > 3 || !g_storyLeft[g_slot]) return;
+    EnterCriticalSection(&g_netLock);
+    g_storyLeft[g_slot] = false;
+    g_storyJoinSoon = true;
+    LeaveCriticalSection(&g_netLock);
+    NetplayPauseOutcome(6, "", "");
+    Log(L"Netplay: free - story: I'm back from leaving co-op - joining the level");
+}
 // onlinepause.cpp / ui.cpp, on the pauser's PC: what their pause menu just did - 1 resumed, 2 restarted the level, 3 a command
 // that leaves the level. Told to the others (FreePauseDoneTick does it there).
 void NetplayPauseOutcome(int kind, const char* command, const char* args) {
@@ -6436,7 +6492,7 @@ void NetplayPauseOutcome(int kind, const char* command, const char* args) {
     SendAll(&p, sizeof(p));
     SendAll(&p, sizeof(p));
     LeaveCriticalSection(&g_netLock);
-    Log(L"Netplay: free - story: my pause menu %s - told to the others", kind == 1 ? L"resumed" : kind == 2 ? L"restarted the level" : L"left the level");
+    if (kind < 5) Log(L"Netplay: free - story: my pause menu %s - told to the others", kind == 1 ? L"resumed" : kind == 2 ? L"restarted the level" : L"left the level");
 }
 const wchar_t* NetplayLobbyName(int slot) {   // a player's lobby name, or "" (no lobby: a LAN / test session)
     ReadNames();

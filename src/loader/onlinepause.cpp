@@ -48,6 +48,7 @@ ULONGLONG g_pausedAt = 0;   // (story co-op: when g_gamePaused went on; how many
 // the game. Now everyone else's keys, mouse and buttons are simply not theirs while it is up: taken out of their input where it is
 // made (OnlinePauseSample) - nothing of it reaches the menu on any PC.
 int g_pauseOwner = -1;
+ULONGLONG g_pauseMovieAt = 0;   // (the game's pause menu movie last said its items: it is on the screen)
 ULONGLONG g_ownResumeAt = 0;   // (my own pause's menu sent GAME_Unpause then: a SCEN_Reset right after is its RESTART LEVEL)
 bool PauseMine() { return !g_gamePaused || !NetplayStoryCoop() || g_pauseOwner < 0 || g_pauseOwner == NetplayLocalSlot(); }
 void PauseOwnerSays(const wchar_t* what, DWORD ms) {
@@ -380,6 +381,25 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
             kbm->keys[VK_ESCAPE >> 3] &= ~(1 << (VK_ESCAPE & 7));
         }
     }
+    if (NetplayStoryLeft(NetplayLocalSlot())) {   // I left co-op: out of the level, in the session - a key brings me back
+        bool back = !g_gamePaused && (pressed(VK_SPACE) || pressed(VK_RETURN) || (down & (XINPUT_GAMEPAD_A | XINPUT_GAMEPAD_START)));
+        static ULONGLONG said = 0;
+        if (GetTickCount64() - said > 4000 && !back) {
+            said = GetTickCount64();
+            OverlayShow(keyboardPlayer ? L"You left co-op - press SPACE to join again" : L"You left co-op - press A to join again", 4600);
+        }
+        *buttons = 0;
+        *lx = *ly = 0;
+        memset(kbm->keys, 0, sizeof(kbm->keys));
+        kbm->buttons = 0;
+        kbm->dx = kbm->dy = kbm->dz = 0;
+        if (back) {
+            said = 0;
+            OverlayShow(L"Joining...", 1500);
+            NetplayStoryRejoin();
+        }
+        return false;
+    }
     if (GetTickCount64() < g_storyPauseUntil) kbm->flags |= 8;   // (on while my game is paused by it too)
     if (g_gamePaused && !PauseMine()) {   // someone else's pause (story co-op): its menu is theirs - nothing of mine goes anywhere
         bool tried = click || down != 0;
@@ -412,10 +432,11 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
         // there are their controller's buttons too: arrows the d-pad, Enter A, Esc / Backspace B (back; at the list: resume).
         if (keyboardPlayer && NetplayStoryCoop() && NetplayLocalSlot() > 0) {
             auto key = [&](int vk) { return ((kbm->keys[vk >> 3] >> (vk & 7)) & 1) != 0; };
-            if (key(VK_UP)) *buttons |= XINPUT_GAMEPAD_DPAD_UP;
-            if (key(VK_DOWN)) *buttons |= XINPUT_GAMEPAD_DPAD_DOWN;
-            if (key(VK_LEFT)) *buttons |= XINPUT_GAMEPAD_DPAD_LEFT;
-            if (key(VK_RIGHT)) *buttons |= XINPUT_GAMEPAD_DPAD_RIGHT;
+            // (W A S D as the arrows, as the first player's keyboard has them there: "the wasd keys work on the pause screen too")
+            if (key(VK_UP) || key('W')) *buttons |= XINPUT_GAMEPAD_DPAD_UP;
+            if (key(VK_DOWN) || key('S')) *buttons |= XINPUT_GAMEPAD_DPAD_DOWN;
+            if (key(VK_LEFT) || key('A')) *buttons |= XINPUT_GAMEPAD_DPAD_LEFT;
+            if (key(VK_RIGHT) || key('D')) *buttons |= XINPUT_GAMEPAD_DPAD_RIGHT;
             if (key(VK_RETURN)) *buttons |= XINPUT_GAMEPAD_A;
             if (key(VK_ESCAPE) || key(VK_BACK)) *buttons |= XINPUT_GAMEPAD_B;
         }
@@ -627,6 +648,12 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
         ULONGLONG now = GetTickCount64();
         if (GameMode() == 2) {
             g_pauseTries = 3;
+        } else if (GameMode() == 7 && now - g_pausedAt > 600 && now - g_pauseMovieAt < 500) {
+            // The pause menu is on the screen and the game plays under it: the speedrunners' "pause menu storage" (pause and the
+            // weapon wheel in one frame, the wheel again - the Amish skip's first step). Not a pause that failed: no START
+            // again, and the pause stays its player's - its menu's RESTART LEVEL is still to be told to the others.
+            static ULONGLONG said = 0;
+            if (now - said > 5000) { said = now; Log(L"Pause: the game runs under its pause menu (pause menu storage) - left as it is"); }
         } else if (GameMode() == 7 && now - g_pausedAt > 600) {
             if (g_pauseTries < 3) {
                 ++g_pauseTries;
@@ -702,6 +729,11 @@ int OnlinePauseOwnerElsewhere() {
     return g_gamePaused && NetplayStoryCoop() && g_pauseOwner >= 0 && g_pauseOwner != NetplayLocalSlot() ? g_pauseOwner : -1;
 }
 int OnlinePauseStateHere() { return !g_gamePaused ? 0 : GameMode() == 2 ? 2 : 1; }
+// FGUYMOD_PauseLeave: LEAVE CO-OP in the pause menu that's up - a joined player's own pause (not the first player's: the level is theirs).
+bool OnlinePauseLeaveOffered() {
+    int me = NetplayLocalSlot();
+    return NetplayStoryCoop() && NetplayFreeRun() && me > 0 && g_gamePaused && g_pauseOwner == me;
+}
 int OnlinePauseGameMode() { return GameMode(); }   // (7 playing, 2 a menu of the game's up)
 
 // FGUYMOD_PauseMenu, every frame from the HUD:
@@ -767,6 +799,7 @@ const char* OnlinePauseDeathMouse(const char* boxes) {
 const char* OnlineMenuMouse(const char* boxes, const char* who) {
     MouseBox b[6];
     int n = ParseBoxes(boxes, b, 6);
+    if (who && strcmp(who, "pause") == 0 && n > 0) g_pauseMovieAt = GetTickCount64();   // (its menu is on the screen)
     if (who && strcmp(who, "pause") == 0 && !(g_gamePaused && !g_open && PauseMine())) n = 0;
     if (who && strcmp(who, "results") == 0 && n > 0) g_resultsAt = GetTickCount64();
     AcquireSRWLockExclusive(&g_boxLock);

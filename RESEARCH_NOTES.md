@@ -1504,3 +1504,37 @@ should depend on the player who paused it". Three things in the user's logs of t
 - Met testing 0.9.16's files: the hold on the pauser's input after their pause ends let go at once when their input showed no
   key down yet - the word came first, the Esc a frame later, the other game paused again (0.9.15 passed this by luck of the
   packets' order). Half a second at least now. Esc pause / Esc resume five times from each seat: both games playing every time.
+
+## 0.9.17: LEAVE CO-OP, the speedrunners' Amish skip online, W A S D in the pause menu (2026-11-24)
+
+The user: the Amish level's big skip "doesnt work on online, works fine on offline story mode" (a tutorial video, from its third
+minute), "the wasd keys work on the pause screen too", and the base game's LEAVE CO-OP for the second player - "they are still in
+the game when they leave but can join again by pressing the spacebar?".
+
+- **The skip** ("pause menu storage"): pause and the weapon wheel in the same frame, the wheel again - the game plays on under its
+  pause menu; run into a cutscene's trigger, RESTART LEVEL from that menu, the cutscene plays again, Esc: out of bounds past a
+  whole section. Its weapon wheel is the ONE-player game's (both characters' weapons, pauses the game: default key the tilde,
+  0xC0, action 28; middle mouse) - two joined players have no such wheel, "hence why we don't do this in co-op" (the tutorial).
+  The user had tried it with the friend joined. So online it wants the second player out of the level: LEAVE CO-OP.
+- **LEAVE CO-OP.** The game's pause menu has it for a joined player (pause_menu.gfx: the 'Drop' button when
+  CTRL_GetPrimaryController != 0 && SCEN_IsSinglePlayerLevel && !SCEN_IsChallenge; OnDropSelect -> a yes/no -> LeaveCoop ->
+  PLYR_Drop() with no argument, then Unpause). The mod's pause patch had taken it out online. Back in for a joined player's own
+  pause (FGUYMOD_PauseLeave; the patch adds the button itself, after RESTART LEVEL). Its PLYR_Drop() is caught (ui.cpp): told to
+  every PC ('z' kind 5; back: 6), and every PC calls PLYR_Drop(<slot>). The player stays in the session - their PC shows the first
+  view, their input is emptied where it is made, a notice says how to come back; Space / Enter (A / START on a controller) and
+  every PC joins them again (StoryJoin, at once). Not joined by the loader meanwhile (g_storyLeft), across restarts and levels.
+- **The game's own join is off in sessions** (netplay.cpp StoryNoOwnJoin: the pad manager's +0x18a kept 0). With a player out,
+  the first player's Enter - on RESTART LEVEL, the game playing under the menu - joined the second player on that PC alone, on
+  controller 0: Enter is the keyboard's "press start". StoryJoin's forced join doesn't ask that byte. (0.9.16's
+  PLYR_SetJoinEnabled(true) at each level's start is gone again.)
+- **The pause's "it didn't pause" check** let go of a pause whose game was playing again (START twice more, then "the pause is
+  over") - the skip's very state. The pause movie says its items every frame while it is on the screen (g_pauseMovieAt): on the
+  screen with the game playing is pause menu storage - left as it is, the pause still its player's, so its RESTART LEVEL is told.
+- **W A S D** in a joined player's own pause: with the arrows, as their pad's d-pad (the first player's keyboard has them there
+  by the game itself).
+- Two copies, AMXX (scratch `leave_pms_test.ps1`): the guest leaves (S S S, Enter, A, Enter) - one view on both; the host's
+  Enter / E / Space join nobody; pause + tilde in one pipe write, tilde again - the game's mode 7 under the pause menu at the
+  first try; W: moved 10.7 in 5 s under it while the guest's game stayed paused; RESTART LEVEL from that menu: both restarted,
+  one view on both; the guest's Space: two views on both, each their own weapon; pauses after it fine. The pause suite on the
+  bad-connection lobby and a match + quit pass. NOT done: the skip's own end (the trigger, the cutscene again, out of bounds) -
+  that is the game's, and needs the level played by hand.
