@@ -1574,3 +1574,63 @@ friend's three: his lobby game's, the session game that crashed, the one after h
 - **A pause that wasn't one is said** (onlinepause.cpp OnlinePauseTick): when the pauser's own PC finds its game didn't
   pause and gives up, it tells the others a resume ('z' 1) - a PC whose game did pause by it resumes.
 - The pause suite (both seats, restarts, quit), leave co-op / pause menu storage / rejoin, and a match pass on this build.
+
+## After 0.9.18: "scuffy sees a door open, on my end it's closed" - open, not explained (2026-11-24)
+
+The user's session on 0.9.18 (16:10-16:21; their log and the friend's session log): FRXX finished - the results screen as
+made ("the level's results are up - player 0's choice" on both; both in the Amish level, the level-follow line only for a
+moment). Then the Amish skip twice (leave co-op, pause menu storage, RESTART LEVEL, Space) and: "some things are out of
+sync, scuffy sees one thing like a door is open but on my end it might be closed and i cant move further but he can".
+- NOT found which door or why. The story events' log lines are capped (200 played, 20 dropped) and were used up at 16:12;
+  the door was about 16:18. Next time: the caps up first.
+- Seen: 16:18:40 the user stands still 10 s while the friend runs on (the worlds differ already); 16:18:51 the user's
+  player takes `amount 200 type 8 flags 0x2001` from nobody and is put next to the friend (moved 80.9) - the game's own
+  (left behind / a fall). Four such type-8 deaths of the user's in the session; at three of them the friend's PC went to
+  one view for 10-18 s (GC + "HUD split mode 0", his own player there but not moving, the drop-in loop's tries refused
+  until try 10) while the user's PC kept two views; at the fourth both did. Twice the friend's PC went to one view 0.6 s
+  BEFORE the user's death happened on the user's PC - so his game starts something of its own there (a checkpoint
+  restart? the left-behind rule?) that the user's doesn't. If it resets his level to a checkpoint, that is doors apart.
+- A plain death by the level (test pipe `hurt`, type 0), either seat: no one-view episode on the other PC (scratch
+  `death_test.ps1`) - it is that kind of hit, not any death.
+- Also seen, not tied to it: at a level's load the first player's first events of that level reach a PC still loading and
+  are dropped there ("player 0's event ...: no player here", 20+ at 16:12:00 on the friend's PC) - held would be right.
+- Each PC runs the level's own logic (doors, scripts) by itself; nothing brings two level states together again.
+- **What the user was doing there** (their link: the co-op world record run, https://youtu.be/a__KZvkiaC8 3:52-4:13): the co-op
+  Amish skip - NOT pause menu storage. Split screen: one player stands at the stream, the other runs over the wooden bridge
+  to the village cutscene's trigger; the first jumps into the water (the level kills: our "type 8, amount 200, flags
+  0x2001") as the second touches the trigger - the cutscene plays with "YOU HAVE DIED!!! 3 2 1" over it; after it ONE view
+  (the second player is out), the first player on the bridge, runs through the village past the scythe men and the buggies,
+  by the white gate, into the farm - the fight section skipped. So the four type-8 deaths in the log are the water, on
+  purpose, and the friend's "one view for 10-18 s" is that cutscene - which at three of the four tries played on the
+  friend's PC ONLY (his own player set it off there; on the user's PC nothing started), at one on both (16:17:47 - and
+  from there they got as far as the next cutscene, 4d3f). The trick needs a death and a cutscene's start in one moment;
+  each PC plays both by itself, a fraction of a second apart - it lands on one PC and not on the other, and the gate after
+  it is open on one, closed on the other. To do: a cutscene that starts on one PC starts on the others (as its end
+  already ends there); the event that starts a cinematic is not known yet (its end: 0x0b3550f2) - log the dispatches to
+  the cinematic class on a test copy first. And why the friend's trigger event, played on the user's PC, started nothing.
+
+## After 0.9.18: a cutscene that starts on one PC starts on the others (2026-11-24 - built, not released)
+
+For the co-op Amish skip (above): the user - "it works sometimes but here it hasnt"; offline the second player stays out after
+it by itself "and then he comes back later on" (online the drop-in loop puts them back once the cutscene is over - left so).
+- **A cinematic's events** (its handler 0x968060): `0x0acc48b8` Play (vtable +0x54, 0x9c0980: thiscall with the sender, who
+  gets `0x1f8336df` when it is over), `0x0b3550f2` End (+0x60), `0x389e01c0` / `0xa8b93047` (+0x64), `0x85151a66` (+0x58).
+  Play asks 0x967bc0 first: no with cutscenes off (`[0xbad69c]`, a command line switch next to "NoPadCheck"), with a
+  current cutscene (`[0xbad99c]`), without its data (+0x80), with `[0xb53d90]` set - refused, it sends 0x1f8336df to itself
+  and its sender at once: the level's script goes on without the cutscene. `[0xb53d90]`: set by 0x674e40 (which also ends
+  the current cutscene) - the game leaving the level's state; poked to 1 on a test copy, that game left its level at once.
+- **The sync** (netplay.cpp StoryCinematicPlay / FreeCinematicFollowTick): Free_Dispatch sees every Play to a cinematic; if
+  it started here ([0xbad99c] is it now) it goes out with the players' events (StoryEvent.fromNone 2: the cinematic's id,
+  who set it off); if not, why is logged ("REFUSED by the game (...)", "not started"). A PC that hears of a start and has
+  not started that one itself within 5 s before or 0.7 s after plays it: Play to it from whoever set it off there (from
+  nobody if its own Play was refused here a moment before - the script has gone on already), with [0xb53d90] held clear for
+  the call. Waits up to 6 s for another current cutscene to end. Cleared at every level change and restart.
+- Why it should make the skip land on both: each PC sees its own player's doing first and the other's a hop later - on the
+  friend's PC "his trigger, then the user's death" (the skip's order), on the user's "their own death, then his trigger"
+  (no cutscene). Now the PC where it started carries the other.
+- Two copies, the bad-connection lobby (scratch `cin_test.ps1`: the test pipe's `sendevent 4d3f 179 0acc48b8`, now sent
+  through Free_Dispatch like the game's own): started on the guest alone - "played here too: started" on the host 0.7 s
+  later, ended on both together; the same from the host; on both at once - no second start. Pause suite, leave co-op /
+  pause menu storage / rejoin, a match: pass. NOT tested: the skip itself (a death in the water against the village
+  trigger - played by hand only), and a start refused for [0xb53d90] (setting it by hand ends the level).
+- Research switch: FGUYMOD_TEST_EVLOG=1 also logs every event a cinematic gets (id lo:hi, its state, the depth).

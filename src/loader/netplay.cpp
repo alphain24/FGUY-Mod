@@ -4122,6 +4122,25 @@ int PlayerSlotOf(const unsigned char* o) {   // (a player object: its slot; else
 void StoryRecord(int a, unsigned char* to, unsigned event, void* args, int onlyIfOn, bool fromNone);
 const ULONG_PTR kCinematicVtable = 0xa8d7f4;
 const unsigned kCinematicEnd = 0x0b3550f2;
+// A cutscene's start. The cinematic's events (its handler, 0x968060): 0x0acc48b8 plays it (0x9c0980, thiscall with the sender -
+// who gets 0x1f8336df when it is over), 0x0b3550f2 ends it. Play asks first (0x967bc0): not with cutscenes off ([0xbad69c], a
+// command line switch), not while one is the current one ([0xbad99c]), not without its data, not while [0xb53d90] is set (the
+// game's "everyone is down - again from the checkpoint" has begun: 0x674e40 sets it and ends the current cutscene) - refused,
+// it says "over" to itself and its sender at once and the level's script goes on without it.
+// Each PC plays the level's cutscenes by itself, from the same events a little apart - and what else is going on at that moment
+// on each PC decides whether it plays. The speedrunners' co-op Amish skip is exactly that: one player dies in the water as the
+// other touches the village cutscene's trigger - "YOU HAVE DIED" over the cutscene, the fight after it skipped. The user and the
+// friend tried it four times (0.9.18): at three the cutscene played on the friend's PC only (he set it off there; the user's PC,
+// where their own death came first, played nothing) - "scuffy sees a door is open but on my end it might be closed". So a
+// cutscene that starts on one PC is said to the others (with the players' events, in order: fromNone 2), and a PC where it
+// hasn't started 0.7 s later plays it too - also where Play would refuse for [0xb53d90].
+const unsigned kCinematicPlay = 0x0acc48b8;
+const uintptr_t kCutsceneCurrent = 0xbad99c, kCutscenesOff = 0xbad69c, kRestartBegun = 0xb53d90;
+struct CinStart { unsigned lo, hi, fromLo, fromHi; ULONGLONG at; int by; };
+std::vector<CinStart> g_cinFollow;               // the others' cutscene starts, not played here yet
+std::map<unsigned, ULONGLONG> g_cinStartedHere;   // (a cinematic's id - when it last started on this PC)
+std::map<unsigned, ULONGLONG> g_cinRefusedHere;   // (...when its Play was last refused here: its sender has had its "over")
+bool g_cinForcing = false;
 
 // (depth 0, story co-op) false: drop it - another player's, whose PC sends it
 bool StoryPlayerEvent(unsigned char* from, int a, unsigned char* to, unsigned event, void* args, int onlyIfOn) {
@@ -4170,6 +4189,85 @@ void StoryRecord(int a, unsigned char* to, unsigned event, void* args, int onlyI
     e.onlyIfOn = (BYTE)onlyIfOn;
     g_storyOut[e.seq % 64] = e;
     g_storyLastNew = GetTickCount64();
+}
+
+// (Free_Dispatch, after the game's own dispatch of a cinematic's Play) did it start here? Started: said to the others.
+void StoryCinematicPlay(unsigned char* cin, unsigned char* sender, unsigned char* curBefore, bool restartBefore, int a, int onlyIfOn) {
+    unsigned id = *reinterpret_cast<unsigned*>(cin + 0x18);
+    ULONGLONG now = GetTickCount64();
+    bool started = *reinterpret_cast<unsigned char**>(kCutsceneCurrent) == cin && curBefore != cin;
+    bool off = *reinterpret_cast<volatile BYTE*>(kCutscenesOff) != 0;
+    if (!started) {
+        bool refused = off || (curBefore && curBefore != cin) || restartBefore;
+        if (refused) g_cinRefusedHere[id] = now;
+        Log(L"Netplay: free - story: cutscene %x asked to play here - %s", id,
+            curBefore == cin ? L"it is playing already"
+            : restartBefore ? L"REFUSED by the game (everyone down: the restart from the checkpoint has begun) - the level's script goes on without it"
+            : curBefore ? L"REFUSED by the game (another cutscene is the current one) - the level's script goes on without it"
+            : off ? L"refused (cutscenes are off)" : L"not started");
+        return;
+    }
+    g_cinStartedHere[id] = now;
+    bool sOk = sender && !IsBadReadPtr(sender, 0x20) && PlayerSlotOf(sender) < 0;
+    unsigned from[2] = {sOk ? *reinterpret_cast<unsigned*>(sender + 0x18) : 0, sOk ? *reinterpret_cast<unsigned*>(sender + 0x1c) : 0};
+    Log(L"Netplay: free - story: cutscene %x starts here (set off by %x, a %x, only-if-on %d) - said to the others", id, from[0], a, onlyIfOn);
+    StoryEvent e{};
+    e.fromNone = 2;
+    e.seq = ++g_storySeq;
+    e.epoch = g_storyEpoch;
+    e.toSlot = 0xff;
+    e.toLo = id;
+    e.toHi = *reinterpret_cast<unsigned*>(cin + 0x1c);
+    e.event = kCinematicPlay;
+    e.a = (unsigned)a;
+    memcpy(e.args, from, sizeof(from));   // (who set it off: its id, for the "over" it gets at the end)
+    e.onlyIfOn = (BYTE)onlyIfOn;
+    g_storyOut[e.seq % 64] = e;
+    g_storyLastNew = now;
+}
+
+// (each frame, the game's thread) a cutscene another PC started and this one hasn't, 0.7 s on: played here too.
+void FreeCinematicFollowTick() {
+    if (g_cinFollow.empty()) return;
+    ULONGLONG now = GetTickCount64();
+    for (size_t i = 0; i < g_cinFollow.size();) {
+        CinStart c = g_cinFollow[i];
+        auto cin = reinterpret_cast<unsigned char*(__cdecl*)(unsigned, unsigned)>(kFindObject)(c.lo, c.hi);
+        auto cur = *reinterpret_cast<unsigned char**>(kCutsceneCurrent);
+        auto st = g_cinStartedHere.find(c.lo);
+        bool startedHere = st != g_cinStartedHere.end() && st->second + 5000 > c.at;   // (shortly before their word, or since)
+        if (!cin || IsBadReadPtr(cin, 0xb0) || *reinterpret_cast<ULONG_PTR*>(cin) != kCinematicVtable || startedHere || cur == cin) {
+            g_cinFollow.erase(g_cinFollow.begin() + i);
+            continue;
+        }
+        if (now - c.at < 700) { ++i; continue; }   // (this PC's own start of it may be on its way)
+        if (now - c.at > 6000) {
+            Log(L"Netplay: free - story: player %d's PC plays cutscene %x - not here (another one has been the current one here for 6 s)", c.by, c.lo);
+            g_cinFollow.erase(g_cinFollow.begin() + i);
+            continue;
+        }
+        if (cur) { ++i; continue; }   // (another cutscene is the current one here: once it is over)
+        g_cinFollow.erase(g_cinFollow.begin() + i);
+        // Who gets the "over" at its end: whoever set it off there - unless its Play was asked and refused here a moment ago (the
+        // level's script has gone on from that already: not a second time).
+        auto rf = g_cinRefusedHere.find(c.lo);
+        bool refusedHere = rf != g_cinRefusedHere.end() && rf->second + 10000 > c.at;
+        unsigned char* sender = !refusedHere && (c.fromLo || c.fromHi)
+                                    ? reinterpret_cast<unsigned char*(__cdecl*)(unsigned, unsigned)>(kFindObject)(c.fromLo, c.fromHi) : nullptr;
+        BYTE restart = *reinterpret_cast<volatile BYTE*>(kRestartBegun);
+        *reinterpret_cast<volatile BYTE*>(kRestartBegun) = 0;   // (Play would refuse with it set)
+        g_cinForcing = true;
+        ++g_dispatchDepth;
+        DispatchOriginal(sender, 0, cin, kCinematicPlay, nullptr, 1);
+        --g_dispatchDepth;
+        g_cinForcing = false;
+        if (restart) *reinterpret_cast<volatile BYTE*>(kRestartBegun) = restart;
+        bool ok = *reinterpret_cast<unsigned char**>(kCutsceneCurrent) == cin;
+        if (ok) g_cinStartedHere[c.lo] = now;
+        Log(L"Netplay: free - story: player %d's PC plays cutscene %x and this PC didn't - played here too: %s%s%s", c.by, c.lo,
+            ok ? L"started" : L"it did NOT start", refusedHere ? L" (the game had refused it here a moment before)" : L"",
+            restart ? L" (the restart from the checkpoint had begun here)" : L"");
+    }
 }
 
 // (each frame) mine out: the new ones, and for a moment after the last new one, the last few again
@@ -4255,13 +4353,14 @@ bool InstallOneLinerHook() {
     return true;
 }
 
+void __cdecl Free_Dispatch(void* from, int a, unsigned char* to, unsigned event, void* args, int onlyIfOn);
 volatile LONG g_testEventPending = 0;   // (test pipe "sendevent": done on the game's thread)
 unsigned g_testEventLo = 0, g_testEventHi = 0, g_testEvent = 0;
 void FreeTestSendEvent() {
     if (!InterlockedExchange(&g_testEventPending, 0)) return;
     auto obj = reinterpret_cast<unsigned char*(__cdecl*)(unsigned, unsigned)>(kFindObject)(g_testEventLo, g_testEventHi);
     Log(L"Netplay: test - event %08x to %x:%x (%p)", g_testEvent, g_testEventLo, g_testEventHi, obj);
-    if (obj) DispatchOriginal(nullptr, 0, obj, g_testEvent, nullptr, 1);
+    if (obj) Free_Dispatch(nullptr, 0, obj, g_testEvent, nullptr, 1);   // (as the game's own code would send it)
 }
 
 void FreeStoryApply() {
@@ -4295,6 +4394,20 @@ void FreeStoryApply() {
             unsigned char* from = e.fromNone ? nullptr : PlayerBySlot(s);
             unsigned char* to = e.toSlot != 0xff ? PlayerBySlot(e.toSlot)
                                                  : reinterpret_cast<unsigned char*(__cdecl*)(unsigned, unsigned)>(kFindObject)(e.toLo, e.toHi);
+            if (e.fromNone == 2) {   // (a cutscene started on their PC: here too, if this PC's own start of it doesn't come)
+                ULONGLONG at = GetTickCount64();
+                auto st = g_cinStartedHere.find(e.toLo);
+                bool here = to && (*reinterpret_cast<unsigned char**>(kCutsceneCurrent) == to ||
+                                   (st != g_cinStartedHere.end() && at - st->second < 5000));   // (5 s: each PC's own start of it, a little apart)
+                Log(L"Netplay: free - story: player %d's PC started cutscene %x - %s", s, e.toLo,
+                    !to ? L"no such cutscene here" : here ? L"here too" : L"not here yet");
+                if (to && !here) {
+                    unsigned from2[2];
+                    memcpy(from2, e.args, sizeof(from2));
+                    g_cinFollow.push_back({e.toLo, e.toHi, from2[0], from2[1], at, s});
+                }
+                continue;
+            }
             if (e.fromNone) {   // (a cutscene's end: only if that one is still playing here)
                 bool playing = SplitViewCutsceneRunning(to);
                 Log(L"Netplay: free - story: player %d's PC ended cutscene %x - %s", s, e.toLo, playing ? L"here too" : L"not playing here");
@@ -4339,6 +4452,19 @@ void __cdecl Free_Dispatch(void* from, int a, unsigned char* to, unsigned event,
                 tOk ? *reinterpret_cast<unsigned*>(to + 0x10) : 0, tOk ? *reinterpret_cast<unsigned*>(to + 0x18) : 0,
                 args && !IsBadReadPtr(args, 4) ? *static_cast<float*>(args) : 0.f, onlyIfOn, _ReturnAddress());
     }
+    if (evLog && g_free && to && !IsBadReadPtr(to, 0xb0) && *reinterpret_cast<ULONG_PTR*>(to) == kCinematicVtable) {
+        static int logged = 0;   // (research: what starts a cutscene - every event a cinematic gets, at any depth)
+        auto f = static_cast<unsigned char*>(from);
+        bool fOk = f && !IsBadReadPtr(f, 0x1c);
+        auto cur = *reinterpret_cast<unsigned char**>(0xbad99c);
+        if (++logged <= 600)
+            Log(L"Netplay: research - cinematic %x:%x (state %d) gets event %08x at depth %d: from %x id %x, a %x, arg %.2f, only-if-on %d; "
+                L"the current one %x - called from %p", *reinterpret_cast<unsigned*>(to + 0x18), *reinterpret_cast<unsigned*>(to + 0x1c),
+                *reinterpret_cast<int*>(to + 0xac), event,
+                depth, fOk ? *reinterpret_cast<unsigned*>(f) : 0, fOk ? *reinterpret_cast<unsigned*>(f + 0x18) : 0, a,
+                args && !IsBadReadPtr(args, 4) ? *static_cast<float*>(args) : 0.f, onlyIfOn,
+                cur && !IsBadReadPtr(cur, 0x20) ? *reinterpret_cast<unsigned*>(cur + 0x18) : 0, _ReturnAddress());
+    }
     if ((event == kEnableEvent || event == kDisableEvent) && g_free && g_sessionInf && g_slot != 0 && !g_pointEnabling &&
         to && *reinterpret_cast<uintptr_t*>(to) == kPointVtable && !g_pointsHost.empty()) {
         static int logged = 0;
@@ -4349,9 +4475,15 @@ void __cdecl Free_Dispatch(void* from, int a, unsigned char* to, unsigned event,
     }
     if (depth == 0 && g_free && g_sessionStory && !StoryPlayerEvent(static_cast<unsigned char*>(from), a, to, event, args, onlyIfOn))
         return;   // (another player's own: their PC's comes instead)
+    // (a cutscene asked to play: whether it started here - StoryCinematicPlay)
+    bool cinPlay = g_free && g_sessionStory && event == kCinematicPlay && to && !IsBadReadPtr(to, 0xb0) &&
+                   *reinterpret_cast<ULONG_PTR*>(to) == kCinematicVtable;
+    unsigned char* curBefore = cinPlay ? *reinterpret_cast<unsigned char**>(kCutsceneCurrent) : nullptr;
+    bool restartBefore = cinPlay && *reinterpret_cast<volatile BYTE*>(kRestartBegun) != 0;
     ++depth;
     DispatchOriginal(from, a, to, event, args, onlyIfOn);
     --depth;
+    if (cinPlay && !g_cinForcing) StoryCinematicPlay(to, static_cast<unsigned char*>(from), curBefore, restartBefore, a, onlyIfOn);
 }
 void PointSend(unsigned char* p, unsigned event) {
     g_pointEnabling = true;
@@ -5091,6 +5223,9 @@ void StoryLevelChange(const char* what) {
         strcmp(what, "GAME_Start") == 0) g_levelLoadAskedAt = GetTickCount64();
     EnterCriticalSection(&g_netLock);
     ++g_storyEpoch;
+    g_cinFollow.clear();          // (the cutscenes' starts: a new level instance plays them again)
+    g_cinStartedHere.clear();
+    g_cinRefusedHere.clear();
     for (int s = 0; s < 4; ++s) {
         Remote& r = g_remote[s];
         r.heldAtReset = r.latest.buttons | r.buttonsSince;
@@ -5854,6 +5989,7 @@ void FreeTick() {
         FreeLinkLevelNpcs(false);
         FreeTestSendEvent();
         FreeStoryApply();
+        FreeCinematicFollowTick();
         FreeStorySend();
     }
     FreeTestHurt();
