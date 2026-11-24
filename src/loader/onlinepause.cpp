@@ -70,6 +70,16 @@ bool g_votes[4] = {};          // everyone's (OnlinePauseTick)
 int g_votePlayers = 0;
 bool g_rematchGo = false, g_rematchDone = false;
 bool ResultsShown() { return GetTickCount64() - g_resultsAt < 500; }
+// Story co-op: a level's results (CONTINUE / REPLAY LEVEL ...) are the first player's to choose, on every PC. The menu ran on each PC,
+// worked by that PC's player AND by the first player's keys as they arrived: the user clicked CONTINUE (the mouse is keys: three
+// ups and Enter), the friend's own choice was two lines down at that moment, the same keys ended on REPLAY LEVEL there - the user
+// in the next level, the friend back in the old one, his game paused by a pause of the user's that wasn't one, and crashed half
+// a minute later (0.9.17, the user's and the friend's logs of 2026-11-24 14:49). Now: nobody else's keys or mouse reach it (theirs
+// emptied where they are made, the first player's on the other PCs - netplay.cpp FreeTick), and what the first player chose is
+// said in words ('z' 7: CONTINUE, 8: a command - REPLAY's GAME_Reload, GAME_Quit), done on the other PCs when their results are up.
+ULONGLONG g_resultsSince = 0;      // (story: the results came up here then; 0: not up)
+ULONGLONG g_resultsChoiceAt = 0;   // (the first player's PC: its results closed then - CONTINUE, unless a command follows at once)
+bool StoryResultsShown() { return NetplayStoryCoop() && NetplayFreeRun() && ResultsShown(); }
 WORD g_lastButtons = 0;
 BYTE g_lastKeys[32];
 BYTE g_lastMouse = 0;
@@ -400,6 +410,27 @@ bool OnlinePauseSample(WORD* buttons, SHORT* lx, SHORT* ly, KbmRaw* kbm, bool ke
         }
         return false;
     }
+    if (StoryResultsShown()) {
+        pausePress = false;   // (no pause over a level's results)
+        if (NetplayLocalSlot() != 0) {   // the level's results: the first player's choice - nothing of mine goes to it
+            bool tried = click || down != 0;
+            for (int k = 0; k < 32 && !tried; ++k) tried = (keys[k] & ~before[k]) != 0;
+            static ULONGLONG said = 0;
+            if (GetTickCount64() - said > (tried ? 2500u : 6000u)) {
+                said = GetTickCount64();
+                const wchar_t* name = NetplayLobbyName(0);
+                wchar_t text[120];
+                swprintf_s(text, L"%s chooses what's next", name && name[0] ? name : L"The first player");
+                OverlayShow(text, 3000);
+            }
+            *buttons = 0;
+            *lx = *ly = 0;
+            memset(kbm->keys, 0, sizeof(kbm->keys));
+            kbm->buttons = 0;
+            kbm->dx = kbm->dy = kbm->dz = 0;
+            return false;
+        }
+    }
     if (GetTickCount64() < g_storyPauseUntil) kbm->flags |= 8;   // (on while my game is paused by it too)
     if (g_gamePaused && !PauseMine()) {   // someone else's pause (story co-op): its menu is theirs - nothing of mine goes anywhere
         bool tried = click || down != 0;
@@ -663,7 +694,23 @@ int OnlinePauseTick(const BYTE* flags, const bool* gone, int players, bool* keyb
             } else if (now - g_pausedAt > 700) {   // (was 1500: with the two tries before it, 2.7 s of a pause that wasn't one)
                 g_gamePaused = false;
                 Log(L"Pause: the game isn't paused here - the pause is over");
+                // Mine: on another PC the game may have paused by it (no cutscene there to take the press - or, once, another
+                // level): nothing ever ended that pause there - "X paused the game", the menu theirs, until the pauser paused
+                // and resumed for real (the friend's log, 0.9.17: half a minute of it). Said as a resume.
+                if (g_pauseOwner == NetplayLocalSlot()) NetplayPauseOutcome(1, "GAME_Unpause", "");
             }
+        }
+    }
+    {   // story co-op, a level's results: since when here; the first player's CONTINUE told (no command followed its closing)
+        ULONGLONG now = GetTickCount64();
+        if (!StoryResultsShown()) g_resultsSince = 0;
+        else if (!g_resultsSince) {
+            g_resultsSince = now;
+            Log(L"Pause: the level's results are up (story co-op) - player 0's choice, on every PC");
+        }
+        if (g_resultsChoiceAt && now - g_resultsChoiceAt >= 300) {
+            g_resultsChoiceAt = 0;
+            NetplayPauseOutcome(7, "", "");
         }
     }
     // (two players at least: alone - the others gone - the online menu stays the menu; the game's own came up on top
@@ -700,6 +747,21 @@ void OnlinePauseCommand(const char* command, const char* args) {
         g_pauseOwner = NetplayLocalSlot();
         Log(L"Pause: the game paused itself here - pausing everyone's (story co-op)");
         return;
+    }
+    // The first player's PC, a level's results (story co-op): what they chose, for the others. Its CONTINUE is the menu closing
+    // (GAME_Unpause; the level's script loads the next one), REPLAY LEVEL the same and GAME_Reload right after.
+    if (!g_gamePaused && NetplayStoryCoop() && NetplayFreeRun() && NetplayLocalSlot() == 0) {
+        ULONGLONG now = GetTickCount64();
+        if (strcmp(command, "GAME_Unpause") == 0 && g_resultsSince) {
+            g_resultsChoiceAt = now;
+            return;
+        }
+        if (g_resultsChoiceAt && now - g_resultsChoiceAt < 300 &&
+            (strcmp(command, "GAME_Quit") == 0 || strcmp(command, "GAME_Portal") == 0 || strcmp(command, "GAME_Reload") == 0)) {
+            g_resultsChoiceAt = 0;
+            NetplayPauseOutcome(8, command, args);
+            return;
+        }
     }
     if (!g_gamePaused) return;
     // My own pause (story co-op): what its menu does is told to the others - their copy of the menu isn't worked by my keys
@@ -801,7 +863,10 @@ const char* OnlineMenuMouse(const char* boxes, const char* who) {
     int n = ParseBoxes(boxes, b, 6);
     if (who && strcmp(who, "pause") == 0 && n > 0) g_pauseMovieAt = GetTickCount64();   // (its menu is on the screen)
     if (who && strcmp(who, "pause") == 0 && !(g_gamePaused && !g_open && PauseMine())) n = 0;
-    if (who && strcmp(who, "results") == 0 && n > 0) g_resultsAt = GetTickCount64();
+    if (who && strcmp(who, "results") == 0 && n > 0) {
+        g_resultsAt = GetTickCount64();
+        if (NetplayStoryCoop() && NetplayFreeRun() && NetplayLocalSlot() != 0) n = 0;   // (a level's results: the first player's - no pointer of mine)
+    }
     AcquireSRWLockExclusive(&g_boxLock);
     static std::string last = "-";
     static int logged = 0;
@@ -865,6 +930,9 @@ bool OnlinePauseMenusUp() { return g_open || g_gamePaused || BoxesShown() || Res
 bool OnlinePauseGamePaused() { return g_gamePaused; }
 
 bool OnlinePauseResultsShown() { return ResultsShown(); }
+int OnlinePauseStoryResultsMs() {   // story co-op: how long a level's results have been up here (0: not up)
+    return g_resultsSince && StoryResultsShown() ? (int)(GetTickCount64() - g_resultsSince) + 1 : 0;
+}
 bool OnlinePauseTakeLeave() { return InterlockedExchange(&g_leave, 0) != 0; }
 
 void OnlinePauseForceQuit() {

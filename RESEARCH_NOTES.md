@@ -1538,3 +1538,39 @@ the game when they leave but can join again by pressing the spacebar?".
   one view on both; the guest's Space: two views on both, each their own weapon; pauses after it fine. The pause suite on the
   bad-connection lobby and a match + quit pass. NOT done: the skip's own end (the trigger, the cutscene again, out of bounds) -
   that is the game's, and needs the level played by hand.
+
+## 0.9.18: the two PCs in different levels - a level's results screen, a pause that wasn't one (2026-11-24)
+
+The user, an hour into 0.9.17 with the friend: "working fine but check my latest log as scuffy was having issues" (their logs and the
+friend's three: his lobby game's, the session game that crashed, the one after his rejoin).
+
+- **What happened** (14:49, the Amish level's end after the skip). The level's results came up on both PCs (the friend's 3 s
+  before the user's: each PC ends the level by itself). The user clicked CONTINUE - the mouse is keys: ups and Enter. Those
+  keys were replayed on the friend's copy of the screen as they arrived, on top of his own choice, which was two lines down
+  at that moment: Enter landed on REPLAY LEVEL there (`GAME_Reload`). The user's PC loaded the third level (CTXX), the
+  friend's the Amish level again. Nothing brought them together: each PC put the other's player and enemies into its own
+  level. The user pressed Esc in CTXX's opening (taken by the cutscene there: "the game didn't pause here ... the pause is
+  over") - the friend's game, with no cutscene, DID pause by it, and nothing ever ended that pause there ("alpha paused the
+  game - the menu is theirs", 30 s). Then his game crashed: `CRASH at 0x5f0add (reading 0)` - the game's own script (stack
+  0x5f81cc 0x60d0f4 0x724f79 0x62a850, the script VM under them) setting something on a player whose lookup (0x5f0850)
+  gave nothing. He rejoined by himself (the level restarted for both, as made), paused during that load, and both closed.
+  The same class as 0.9.15's pause menu ("it brings scuffy into the level select menu"), on the one menu left that both
+  PCs still worked by keys.
+- **A level's results are the first player's choice** (onlinepause.cpp StoryResultsShown): the other players' own keys and
+  mouse are emptied where they are made while it is up (a notice: "<name> chooses what's next"), no pointer for them, and
+  on every PC nobody else's input reaches its copy (netplay.cpp FreeTick). The first player's PC says what they chose: 'z'
+  kind 7 CONTINUE (the menu's GAME_Unpause with no command after it within 0.3 s), 8 a command (REPLAY's GAME_Reload,
+  GAME_Quit, a validated GAME_Portal); the others do it once their own results have been up 1.2 s (kept 30 s: the level
+  ends at different moments) - SNDS_StopSoundFX PauseScreen_BG, MENU_Stop, GAME_Unpause, then the command.
+  NOT TESTED on a real results screen: no way found to end a level in a scripted test (the results are a script action,
+  "ShowStatsScreen"; a level has to be played to its end). The next thing is, and covers it.
+- **Every PC goes to the first player's level** (netplay.cpp FreeLevelFollowTick): their PC says its level once a second
+  ('v': the path its game opened it by, its level instance); a PC whose own level has been another one for 6 s (its own
+  load 4 s done, theirs 4 s the same, the game playing or a menu of its up) closes that menu and loads theirs from its
+  start (GAME_ClearCheckPoint, GAME_Portal), with their instance count. Not a rejoining game before the restart for
+  everyone has come. Two copies (scratch `follow_test.ps1`, the bad-connection lobby): the host alone to CTXX - the guest
+  there 6 s later; the guest alone back to AMXX - back in CTXX 12 s later; the same with the guest's own pause menu up -
+  closed, there; two views on both each time, pauses fine after, no crash.
+- **A pause that wasn't one is said** (onlinepause.cpp OnlinePauseTick): when the pauser's own PC finds its game didn't
+  pause and gives up, it tells the others a resume ('z' 1) - a PC whose game did pause by it resumes.
+- The pause suite (both seats, restarts, quit), leave co-op / pause menu storage / rejoin, and a match pass on this build.

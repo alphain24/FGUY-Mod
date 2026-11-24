@@ -464,6 +464,7 @@ bool OnlinePauseBotVotes();                     //   the test bot's scripted inp
 void OnlinePauseQuitDone();
 void OnlinePauseForceQuit();
 bool OnlinePauseResultsShown();                 //   the end of the match's menu is up
+int OnlinePauseStoryResultsMs();                //   story co-op: how long a level's results have been up here (0: not up)
 bool OnlinePauseTakeLeave();                    //   a back-to-the-lobby asked (taken)
 int NetplayResultsCommand(const char* command);    // netplay.cpp: the end of the match's pick, free-running (2: quit)
 void NetplayRematchVoted();

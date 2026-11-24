@@ -1155,6 +1155,10 @@ void FreeNpcDownIn(int s, const PktNpcDown* p);
 struct PktStoryRestart;
 void FreeStoryRestartIn(const PktStoryRestart* p);
 extern const int kPktStoryRestartSize;
+struct PktStoryLevel;
+void StoryLevelIn(const PktStoryLevel* p);
+extern const int kPktStoryLevelSize;
+bool StoryLevelPathOk(const char* path);
 struct PktSaveAsk;
 struct PktSaveChunk;
 struct PktSaveHave;
@@ -1633,6 +1637,8 @@ void Receive() {
             if (g_slot == 0) StorySaveHaveIn(slot, reinterpret_cast<PktSaveHave*>(buf));
         } else if (h->type == 'y' && n >= kPktStoryRestartSize) {   // story co-op: the host restarts the level for everyone
             if (g_free && slot == 0 && g_slot != 0) FreeStoryRestartIn(reinterpret_cast<PktStoryRestart*>(buf));
+        } else if (h->type == 'v' && n >= kPktStoryLevelSize) {   // story co-op: the first player's level (every PC goes there)
+            if (g_free && slot == 0 && g_slot != 0) StoryLevelIn(reinterpret_cast<PktStoryLevel*>(buf));
         } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
             auto p = reinterpret_cast<PktLeave*>(buf);
             if (g_free) {   // (free-running: their tick count isn't mine - they're simply out)
@@ -5078,6 +5084,7 @@ Pad FreeRemotePad(int s) {
 // (taken at the next tick: the load may not be on the game's thread).
 volatile LONG g_levelFileOpen = 0;
 ULONGLONG g_levelLoadAskedAt = 0;   // (the menus' GAME_Portal / GAME_Reload: its level's package follows - counted then)
+ULONGLONG g_levelLoadAt = 0;        // (a level's package last opened here: a load going on, or just done)
 void StoryLevelChange(const char* what) {
     if (!g_enabled || !g_free || !g_sessionStory) return;
     if (strcmp(what, "GAME_Portal") == 0 || strcmp(what, "GAME_Reload") == 0 ||
@@ -5107,6 +5114,7 @@ void FreeLevelFileTick() {   // (the game thread, each tick)
     ULONGLONG now = GetTickCount64();
     bool sameLoad = lastLoad && now - lastLoad < 10000;
     lastLoad = now;
+    g_levelLoadAt = now;
     if (g_levelLoadAskedAt && now - g_levelLoadAskedAt < 60000) {   // (the menus' - a slow PC's load can take a while)
         g_levelLoadAskedAt = 0;
         return;
@@ -5314,6 +5322,19 @@ ULONGLONG g_pauseDoneUntil[4], g_pauseDoneNext = 0;
 unsigned g_pauseDoneSeq = 0, g_pauseDoneOutAt = 0, g_pauseDoneSeen[4][8];
 std::vector<PauseDone> g_pauseDoneIn;
 
+// A level's path from another PC, for GAME_Portal: only a level's own path that this game has (a made-up one crashes the game).
+bool StoryLevelPathOk(const char* path) {
+    size_t len = strlen(path);
+    bool ok = len > 13 && len < 40 && strncmp(path, "/FGUY/Levels/", 13) == 0 && !strstr(path, "..");
+    for (size_t i = 0; ok && i < len; ++i) ok = isalnum((unsigned char)path[i]) || path[i] == '/' || path[i] == '_';
+    if (ok) {
+        char file[80];
+        sprintf_s(file, ".%s.ho", path);
+        ok = GetFileAttributesA(file) != INVALID_FILE_ATTRIBUTES;
+    }
+    return ok;
+}
+
 void PauseDoneIn(int slot, const char* buf, int n) {   // (the net lock held)
     if (!g_free || !g_sessionStory || n < (int)sizeof(PktPauseDone) || slot < 0 || slot >= 4) return;
     PktPauseDone p;
@@ -5331,8 +5352,42 @@ void FreePauseDoneTick() {   // (the game thread, each tick; the net lock held)
         for (int k = 0; k < 4; ++k)
             if (now < g_pauseDoneUntil[k]) SendAll(&g_pauseDoneOut[k], sizeof(g_pauseDoneOut[k]));
     }
+    // The first player's choice on a level's results (7 CONTINUE, 8 a command): done here once this PC's results are up (the
+    // level ends on each PC by itself, a few seconds apart) - closed as its own CONTINUE closes it, then the command.
+    static PauseDone results{};
+    static bool resultsPending = false;
+    if (resultsPending) {
+        int up = OnlinePauseStoryResultsMs();
+        if (now - results.at > 30000) {
+            resultsPending = false;
+            Log(L"Netplay: free - story: player 0's choice on the level's results - no results came up here in 30 s, not done");
+        } else if (up > 1200) {
+            resultsPending = false;
+            bool quit = results.p.kind == 8 && strcmp(results.p.command, "GAME_Quit") == 0;
+            bool reload = results.p.kind == 8 && strcmp(results.p.command, "GAME_Reload") == 0;
+            bool portal = results.p.kind == 8 && strcmp(results.p.command, "GAME_Portal") == 0 && StoryLevelPathOk(results.p.args);
+            Log(L"Netplay: free - story: player 0 chose on the level's results: %s (%S %S) - the same here",
+                results.p.kind == 7 ? L"continue" : quit ? L"quit" : reload ? L"replay the level" : portal ? L"a level" : L"a command not done here",
+                results.p.command, results.p.args);
+            LeaveCriticalSection(&g_netLock);   // (the commands come back into the netcode)
+            UiRunCommand("SNDS_StopSoundFX", "PauseScreen_BG");
+            UiRunCommand("MENU_Stop", "");
+            UiRunCommand("GAME_Unpause", "");
+            if (quit) UiRunCommand("GAME_Quit", "");
+            else if (reload || portal) UiRunCommand(results.p.command, portal ? results.p.args : "");
+            EnterCriticalSection(&g_netLock);
+        }
+    }
     if (g_pauseDoneIn.empty()) return;
     PauseDone d = g_pauseDoneIn.front();
+    if (d.p.kind == 7 || d.p.kind == 8) {
+        g_pauseDoneIn.erase(g_pauseDoneIn.begin());
+        if (d.from == 0 && g_slot != 0) {
+            results = d;
+            resultsPending = true;
+        }
+        return;
+    }
     if (d.p.kind == 5 || d.p.kind == 6) {   // (left co-op / back: whatever the pause is doing here)
         g_pauseDoneIn.erase(g_pauseDoneIn.begin());
         bool left = d.p.kind == 5;
@@ -5360,17 +5415,7 @@ void FreePauseDoneTick() {   // (the game thread, each tick; the net lock held)
     bool leaves = d.p.kind == 3 || d.p.kind == 4;
     bool quit = leaves && strncmp(d.p.command, "GAME_Quit", 9) == 0;
     bool reload = leaves && strcmp(d.p.command, "GAME_Reload") == 0;
-    bool portal = leaves && strcmp(d.p.command, "GAME_Portal") == 0;
-    if (portal) {
-        size_t len = strlen(d.p.args);
-        portal = len > 13 && len < sizeof(d.p.args) - 1 && strncmp(d.p.args, "/FGUY/Levels/", 13) == 0 && !strstr(d.p.args, "..");
-        for (size_t i = 0; portal && i < len; ++i) portal = isalnum((unsigned char)d.p.args[i]) || d.p.args[i] == '/' || d.p.args[i] == '_';
-        if (portal) {
-            char file[80];
-            sprintf_s(file, ".%s.ho", d.p.args);
-            portal = GetFileAttributesA(file) != INVALID_FILE_ATTRIBUTES;
-        }
-    }
+    bool portal = leaves && strcmp(d.p.command, "GAME_Portal") == 0 && StoryLevelPathOk(d.p.args);
     Log(L"Netplay: free - story: player %d %s in their pause menu (%S %S) - %s here%s", d.from,
         d.p.kind == 1 ? L"resumed" : d.p.kind == 2 ? L"restarted the level" : quit ? L"quit the level" : L"went to a level",
         d.p.command, d.p.args, here == 0 && d.p.kind == 1 ? L"nothing to do" : leaves && !quit && !reload && !portal ? L"not done" : L"the same",
@@ -5460,6 +5505,92 @@ void FreeStoryRestartTick() {   // (the game thread, each tick; the net lock hel
     OverlayShow((PlayerName(who) + (g_restartOut.fromCheckpoint ? L" rejoined - back to the last checkpoint"
                                                                 : L" rejoined - the level restarts")).c_str(), 4000);
     StoryRestartRun(g_restartOut);
+}
+
+// ---- story co-op: every PC in the first player's level -------------------------------------------------------------------
+// Each PC's game goes from level to level by itself (the results' CONTINUE, a menu's choice told in words). When one doesn't -
+// the friend's results chose REPLAY LEVEL while the user's went on (0.9.17, above FreePauseDoneTick) - nothing brought them
+// together again: two levels in one session, each PC putting the other's players and enemies into its own, until one crashed.
+// The first player's PC says its level once a second ('v': the path its game opened it by, its level instance); a PC whose own
+// level has been another one for 6 s - its own load done, theirs not just changed - goes there: that level from its start, as
+// a rejoining player's restart does it (GAME_ClearCheckPoint, GAME_Portal), with the first player's instance count.
+#pragma pack(push, 1)
+struct PktStoryLevel { PktHeader h; unsigned short epoch; char level[96]; };
+#pragma pack(pop)
+const int kPktStoryLevelSize = (int)sizeof(PktStoryLevel);
+char g_hostLevel[96] = "";
+unsigned short g_hostEpoch = 0;
+ULONGLONG g_hostLevelAt = 0, g_hostLevelSince = 0;   // (last heard; this level since)
+const char* LevelName(const char* path) {
+    const char* s = strrchr(path, '/');
+    return s ? s + 1 : path;
+}
+void StoryLevelIn(const PktStoryLevel* p) {   // (the net lock held)
+    char level[96];
+    memcpy(level, p->level, sizeof(level));
+    level[sizeof(level) - 1] = 0;
+    ULONGLONG now = GetTickCount64();
+    if (_stricmp(LevelName(level), LevelName(g_hostLevel)) != 0) g_hostLevelSince = now;
+    strcpy_s(g_hostLevel, level);
+    g_hostEpoch = p->epoch;
+    g_hostLevelAt = now;
+}
+void FreeLevelFollowTick() {   // (the game thread, each tick; the net lock held)
+    ULONGLONG now = GetTickCount64();
+    char mine[96];
+    AcquireSRWLockShared(&g_storyLevelLock);
+    strcpy_s(mine, g_storyLevel);
+    ReleaseSRWLockShared(&g_storyLevelLock);
+    if (g_slot == 0) {
+        static ULONGLONG next = 0;
+        if (now < next || !mine[0]) return;
+        next = now + 1000;
+        PktStoryLevel p{};
+        p.h = {'v', (BYTE)g_slot};
+        p.epoch = g_storyEpoch;
+        strcpy_s(p.level, mine);
+        SendAll(&p, sizeof(p));
+        return;
+    }
+    static ULONGLONG differsSince = 0, followedAt = 0;
+    // (rejoining: my new game boots in the session's first level - the first player's restart for everyone brings me to theirs)
+    if (g_freeRejoin && !g_restartSeqSeen) return;
+    bool differs = mine[0] && g_hostLevel[0] && !g_gone[0] && now - g_hostLevelAt < 3000 &&
+                   _stricmp(LevelName(mine), LevelName(g_hostLevel)) != 0;
+    if (!differs) {
+        differsSince = 0;
+        return;
+    }
+    if (!differsSince) {
+        differsSince = now;
+        Log(L"Netplay: free - story: player 0 is in %S, this PC in %S", g_hostLevel, mine);
+    }
+    const int kGameMode = 0xaee080;   // (7 playing, 2 a menu of the game's up - the pause menu, a level's results)
+    int mode = *reinterpret_cast<volatile int*>(kGameMode);
+    if (now - differsSince < 6000 || now - g_hostLevelSince < 4000 || now - g_levelLoadAt < 4000 ||
+        (followedAt && now - followedAt < 30000) || (mode != 7 && mode != 2)) return;
+    followedAt = now;
+    differsSince = 0;
+    if (!StoryLevelPathOk(g_hostLevel)) {
+        Log(L"Netplay: free - story: player 0's level %S isn't one this game has - staying", g_hostLevel);
+        return;
+    }
+    char level[96];
+    strcpy_s(level, g_hostLevel);
+    g_storyEpoch = (unsigned short)(g_hostEpoch - 1);   // (the load: +1 - theirs)
+    Log(L"Netplay: free - story: still in another level than player 0 - going to theirs (%S, level instance %u)%s", level, g_hostEpoch,
+        mode == 2 ? L"; a menu of the game's was up here - closed" : L"");
+    OverlayShow((PlayerName(0) + L" is in another level - going there").c_str(), 5000);
+    LeaveCriticalSection(&g_netLock);   // (the commands come back into the netcode)
+    if (mode == 2) {
+        UiRunCommand("MENU_EnableCheatEntry", "0");
+        UiRunCommand("SNDS_StopSoundFX", "PauseScreen_BG");
+        UiRunCommand("GAME_Unpause", "");
+        UiRunCommand("MENU_Stop", "");
+    }
+    UiRunCommand("GAME_ClearCheckPoint", "");
+    UiRunCommand("GAME_Portal", level);
+    EnterCriticalSection(&g_netLock);
 }
 
 // Everyone lets go of the lockstep at this tick (the same one on every PC).
@@ -5685,6 +5816,20 @@ void FreeTick() {
             else g_current[at].buttons |= XINPUT_GAMEPAD_START;
             kbm[at] = g_current[at].kbm;
         }
+        // Story co-op, a level's results up here: nobody else's input reaches this PC's copy of it (the first player's choice
+        // comes in words - FreePauseDoneTick; on their PC the others' keys aren't theirs to choose with).
+        if (g_sessionStory && OnlinePauseStoryResultsMs())
+            for (int s = 0; s < g_players && s < 4; ++s) {
+                if (s == g_slot) continue;
+                Pad& p = g_current[s];
+                p.buttons = 0;
+                p.lt = p.rt = 0;
+                p.lx = p.ly = p.rx = p.ry = 0;
+                memset(p.kbm.keys, 0, sizeof(p.kbm.keys));
+                p.kbm.buttons = 0;
+                p.kbm.dx = p.kbm.dy = p.kbm.dz = 0;
+                kbm[s] = p.kbm;
+            }
     }
     OnlineSettingsApply(kbm, g_players);
     KbmApply(kbm, g_players);
@@ -5696,6 +5841,7 @@ void FreeTick() {
     FreeCarryTick();
     if (g_sessionStory) FreeLevelFileTick();
     if (g_sessionStory) FreeStoryRestartTick();
+    if (g_sessionStory) FreeLevelFollowTick();
     if (!g_testCommand.empty()) {
         std::string c, a;
         c.swap(g_testCommand);
@@ -6493,6 +6639,8 @@ void NetplayPauseOutcome(int kind, const char* command, const char* args) {
     SendAll(&p, sizeof(p));
     LeaveCriticalSection(&g_netLock);
     if (kind < 5) Log(L"Netplay: free - story: my pause menu %s - told to the others", kind == 1 ? L"resumed" : kind == 2 ? L"restarted the level" : L"left the level");
+    if (kind == 7 || kind == 8)
+        Log(L"Netplay: free - story: my choice on the level's results: %S %S - told to the others", kind == 7 ? "continue" : p.command, p.args);
 }
 const wchar_t* NetplayLobbyName(int slot) {   // a player's lobby name, or "" (no lobby: a LAN / test session)
     ReadNames();
