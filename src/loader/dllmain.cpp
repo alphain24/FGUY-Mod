@@ -319,6 +319,7 @@ void Init() {
     InitRngTrace();
     InitLoadSync();
     InitOnlineMenu();
+    DevkitInit();
 }
 
 }  // namespace

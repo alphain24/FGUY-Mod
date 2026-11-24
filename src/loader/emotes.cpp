@@ -425,6 +425,7 @@ void EmotesRequest(int slot, int nth) {   // (test pipe "emote <slot> <n>": the 
 }
 
 // every frame (the render thread): B, the wheel, others' emotes, stopping when the player moves
+void EmotesRescanNow() { g_scannedAt = 0; }
 void EmotesFrame() {
     Scan();   // (every 2 s at most: the mods' emotes - and, online, the packs here for the others' emotes)
     HWND wnd = DisplayMainWindow();

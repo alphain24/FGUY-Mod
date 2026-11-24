@@ -1637,6 +1637,8 @@ void Receive() {
             if (g_slot == 0) StorySaveHaveIn(slot, reinterpret_cast<PktSaveHave*>(buf));
         } else if (h->type == 'y' && n >= kPktStoryRestartSize) {   // story co-op: the host restarts the level for everyone
             if (g_free && slot == 0 && g_slot != 0) FreeStoryRestartIn(reinterpret_cast<PktStoryRestart*>(buf));
+        } else if (h->type == 'x' && n >= 2) {   // the devkit's word (devkit.cpp): what its rows do for which player
+            DevkitPacketIn(slot, buf, n);
         } else if (h->type == 'v' && n >= kPktStoryLevelSize) {   // story co-op: the first player's level (every PC goes there)
             if (g_free && slot == 0 && g_slot != 0) StoryLevelIn(reinterpret_cast<PktStoryLevel*>(buf));
         } else if (h->type == 'L' && n >= (int)sizeof(PktLeave)) {
@@ -3376,7 +3378,22 @@ struct NpcTrack { float pos[3], vel[3], yaw, yawVel; double sentMs; ULONGLONG at
 std::map<unsigned, NpcTrack> g_npcTrack;          // the host's enemy (its id) -> where it was, how fast, when
 int g_spawnsTurnedDown = 0;
 
+struct DevSpawnKind { unsigned kind[2]; BYTE request[kSpawnRequest]; };
+std::vector<DevSpawnKind> g_devKinds;   // (the devkit: each kind of enemy seen spawned in this level - its request, to make one more)
+volatile LONG g_levelLoads = 0;          // (a level's package opened: any level, any process - NetplayLevelFileOpened)
+LONG g_devKindsAt = -1;
+void DevRecordSpawn(const BYTE* request) {
+    if (!request || IsBadReadPtr(request, kSpawnRequest)) return;
+    if (g_devKindsAt != g_levelLoads) { g_devKinds.clear(); g_devKindsAt = g_levelLoads; }
+    unsigned k0 = *reinterpret_cast<const unsigned*>(request + 0x10), k1 = *reinterpret_cast<const unsigned*>(request + 0x14);
+    for (auto& k : g_devKinds) if (k.kind[0] == k0 && k.kind[1] == k1) { memcpy(k.request, request, kSpawnRequest); return; }
+    if (g_devKinds.size() >= 24) return;
+    DevSpawnKind k{{k0, k1}, {}};
+    memcpy(k.request, request, kSpawnRequest);
+    g_devKinds.push_back(k);
+}
 unsigned char* __cdecl Free_NpcSpawn(BYTE* request) {
+    DevRecordSpawn(request);
     if (!g_free || !g_npcSync || g_replayingSpawn) return NpcSpawnOriginal(request);
     if (g_slot != 0) {   // the host's game spawns them
         if (++g_spawnsTurnedDown <= 20)
@@ -3682,6 +3699,11 @@ void FreeNpcDownIn(int s, const PktNpcDown* p) {
 void __cdecl Free_EntityDamage(unsigned char* victim, unsigned char* info) {
     if (!g_free || !g_npcSync || g_replayingNpcHit || !victim || IsBadReadPtr(victim, 0x24) ||
         *reinterpret_cast<int*>(victim + 0x20) != 0x48 || !info || IsBadReadPtr(info, kHitInfo)) {
+        if (!g_free && !g_replayingNpcHit && victim && !IsBadReadPtr(victim, 0x24) && *reinterpret_cast<int*>(victim + 0x20) == 0x48 &&
+            info && !IsBadReadPtr(info, kHitInfo)) {   // (outside sessions - the devkit's: a hit's shape, to down an enemy with)
+            memcpy(g_lastNpcHitInfo, info, kHitInfo);
+            g_haveLastNpcHitInfo = true;
+        }
         EntityDamageOriginal(victim, info);
         return;
     }
@@ -4994,6 +5016,7 @@ bool InstallCarryHooks() {
 }
 
 bool InstallEntityDamageHook() {
+    if (EntityDamageOriginal) return true;   // (the devkit's offline start-up has it in already)
     auto at = reinterpret_cast<unsigned char*>(kEntityDamage);
     if (IsBadReadPtr(at, sizeof(kEntityDamageStart)) || memcmp(at, kEntityDamageStart, sizeof(kEntityDamageStart)) != 0) {
         Log(L"Netplay: the game's damage isn't what we expect - enemies' damage not shared");
@@ -5016,6 +5039,7 @@ bool InstallEntityDamageHook() {
 }
 
 bool InstallNpcSpawnHook() {
+    if (NpcSpawnOriginal) return true;   // (the devkit's offline start-up has it in already)
     auto at = reinterpret_cast<unsigned char*>(kNpcSpawn);
     if (IsBadReadPtr(at, sizeof(kNpcSpawnStart)) || memcmp(at, kNpcSpawnStart, sizeof(kNpcSpawnStart)) != 0) {
         Log(L"Netplay: the enemies' spawning isn't what we expect - not the host's");
@@ -6812,8 +6836,86 @@ void NetplayTestGod(bool on) {
     Log(L"Netplay: test - my player %s", on ? L"takes no hits" : L"takes hits again");
 }
 void NetplayTestKillNpcs() { InterlockedExchange(&g_testKillNpcs, 1); }
+// devkit.cpp (the game thread): every enemy down now. Outside sessions: this game's own (the scene's characters). In a session
+// that runs free: the host's game does it and tells the others (FreeTestKillNpcs); from another seat, or in a lockstep match: -1.
+// ---- the devkit's (devkit.cpp) ----
+void NetplayDevSend(const void* data, int n) {   // to the others of the session (any thread)
+    if (!g_enabled || !g_inSession) return;
+    EnterCriticalSection(&g_netLock);
+    SendAll(data, n);
+    LeaveCriticalSection(&g_netLock);
+}
+// Outside sessions: the enemies' spawning and damage hooked as in them (each passes straight through, the devkit keeps what it
+// needs: the kinds spawned, a hit's shape).
+void NetplayDevOffline() {
+    if (g_enabled) return;
+    bool a = InstallNpcSpawnHook(), b = InstallEntityDamageHook();
+    Log(L"Devkit: enemies' spawning %s, their damage %s", a ? L"watched" : L"NOT watched", b ? L"watched" : L"NOT watched");
+}
+// Every enemy of the level held where it stands (along the ground: its height its own) - while `on`; the host's game in a session.
+int NetplayDevFreeze(bool on) {
+    static std::vector<std::pair<unsigned char*, std::pair<float, float>>> held;
+    static LONG heldAt = -1;
+    bool seat = !g_enabled || (g_free && g_slot == 0);
+    if (!on || !seat || heldAt != g_levelLoads) {
+        held.clear();
+        heldAt = g_levelLoads;
+        if (!on) return 0;
+        if (!seat) return -1;
+    }
+    int n = 0;
+    for (unsigned char* npc : SceneNpcs()) {
+        float* hp = NpcAlive(npc) ? NpcHealthField(npc) : nullptr;
+        float* at = hp && *hp > 0 ? NpcPosField(npc) : nullptr;
+        if (!at) continue;
+        ++n;
+        auto it = std::find_if(held.begin(), held.end(), [npc](const std::pair<unsigned char*, std::pair<float, float>>& e) { return e.first == npc; });
+        if (it == held.end()) { held.push_back({npc, {at[0], at[2]}}); continue; }
+        float dx = it->second.first - at[0], dz = it->second.second - at[2];
+        if (dx * dx + dz * dz > 1e-6f) NpcMoveBy(npc, dx, 0, dz);
+    }
+    return n;
+}
+int NetplayDevSpawnKinds(unsigned* kinds, int max) {   // (pairs: kind low, high)
+    if (g_devKindsAt != g_levelLoads) { g_devKinds.clear(); g_devKindsAt = g_levelLoads; }
+    int n = 0;
+    for (auto& k : g_devKinds) if (n < max) { kinds[n * 2] = k.kind[0]; kinds[n * 2 + 1] = k.kind[1]; ++n; }
+    return n;
+}
+// One more of that kind, there (the game's thread). 1 made, 0 the game made none, -1 not from this seat, -2 no such kind here.
+int NetplayDevSpawn(int index, const float* at, float yaw) {
+    if (g_devKindsAt != g_levelLoads || index < 0 || index >= (int)g_devKinds.size()) return -2;
+    if (g_enabled && (!g_free || g_slot != 0)) return -1;
+    if (!NpcSpawnOriginal) return 0;
+    BYTE request[kSpawnRequest];
+    memcpy(request, g_devKinds[index].request, kSpawnRequest);
+    auto team = *reinterpret_cast<void**>(request + 0x28);
+    if (team && IsBadReadPtr(team, 4)) memset(request + 0x28, 0, 4);
+    memcpy(request + 0x30, at, 12);
+    float rot[3] = {0, yaw, 0};
+    memcpy(request + 0x3c, rot, 12);
+    unsigned char* npc = g_free ? Free_NpcSpawn(request) : NpcSpawnOriginal(request);
+    return npc ? 1 : 0;
+}
+int NetplayDevKillNpcs() {
+    if (g_enabled) {
+        if (!g_free || g_slot != 0) return -1;
+        InterlockedExchange(&g_testKillNpcs, 1);
+        return 0;
+    }
+    int n = 0;
+    for (unsigned char* npc : SceneNpcs()) {
+        float* hp = NpcAlive(npc) ? NpcHealthField(npc) : nullptr;
+        if (!hp || *hp <= 0) continue;
+        if (EntityDamageOriginal && (g_haveLastNpcHitInfo || g_haveLastHitInfo)) NpcKill(npc);   // (as a hit: its death plays)
+        else *hp = 0;
+        ++n;
+    }
+    return n;
+}
 void NetplayFetchSave(const wchar_t* path) { FetchSave(path); }
 void NetplayLevelFileOpened(const wchar_t* path) {   // (any thread) a level's package: <world><mode>.ho in Levels
+    if (path && wcsstr(path, L"Levels")) InterlockedIncrement(&g_levelLoads);   // (the devkit: a level's enemies, checkpoints are new)
     if (!g_enabled || !g_sessionStory || !path) return;
     const wchar_t* levels = wcsstr(path, L"Levels");
     if (!levels || (levels[6] != L'\\' && levels[6] != L'/')) return;

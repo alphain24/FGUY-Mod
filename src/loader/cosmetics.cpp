@@ -1342,6 +1342,10 @@ std::string g_listText;
 }  // namespace
 
 void CosmeticsOfflineTick() { OfflineSkins(); }
+void CosmeticsReloadSkins() {   // (the devkit: the packs looked through again, and each player's read again from its file)
+    g_packsAt = 0;
+    for (auto& w : g_offlineWorn) w = L"\x01";   // (not a pack's name: worn again at the next look)
+}
 
 // ---- the game's own skin pickers, offline (src/ui/costumes.as2js) --------------------------------------------------
 namespace {

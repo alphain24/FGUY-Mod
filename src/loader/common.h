@@ -117,6 +117,24 @@ void NetplayFetchSave(const wchar_t* path);         // config.cpp: the save abou
 void NetplayTestHurt(int player, float amount);   //   test pipe "hurt": my player there takes a hit nobody caused
 void OnlineMenuLogYaw();               //   test pipe "yaw": the lobby preview's facing (onlinemenu.cpp)
 void NetplayOfflineTick();                  // vpad.cpp: every pad 0 poll outside sessions (test pipe's resolution)
+int NetplayDevKillNpcs();                  // devkit.cpp: every enemy down (game thread); -1: not from this seat
+void NetplayDevSend(const void* data, int n);   // devkit.cpp: its word to the others of the session
+void NetplayDevOffline();                  //   outside sessions: the enemies' spawning and damage watched
+int NetplayDevFreeze(bool on);             //   every enemy held where it stands (each tick); -1 not from this seat
+int NetplayDevSpawnKinds(unsigned* kinds, int max);   //   the kinds of enemy seen spawned in this level (low, high pairs)
+int NetplayDevSpawn(int index, const float* at, float yaw);   //   one more of that kind there (1 made, 0 none, -1 seat, -2 kind)
+void DevkitPacketIn(int slot, const char* buf, int n);   // devkit.cpp: the devkit's word from another PC ('x')
+void DevkitDrawnCamera(int view, float* m);   //   splitview.cpp: a view's camera as it is drawn (3 x 4) - the free camera
+bool DevkitBlocksInput();                  //   its panel up or the free camera on: the game gets no keyboard / mouse
+void VPadCommand(const char* line);        // vpad.cpp: a test pipe command (the devkit's command line)
+void CosmeticsReloadSkins();               // cosmetics.cpp: the skin packs read again (offline: what players wear)
+void EmotesRescanNow();                    // emotes.cpp: the emote packs looked through again at once
+int ModsReloadPacks();                     // modloader.cpp: the .fgmod files unpacked again where they changed
+// devkit.cpp: the in-game devkit (a private key file on this PC unlocks it) - a panel over the game, F1
+void DevkitInit();                         //   at start-up
+void DevkitTick();                         //   the game thread, every frame (vpad.cpp's pad 0 poll)
+bool DevkitOpen();                         //   its panel is up: the game gets no keyboard / mouse meanwhile
+void DevkitTest(const char* what, int value);   //   test pipe "devkit ...": a row of its panel, without the mouse
 void NetplayTestResolution(int w, int h, bool windowed = true);   //   test pipe: the game changes resolution (Options > Screen)             //   test pipe: my player moves a little here only (out of sync)
 int NetplaySessionSlot();              //   my player slot in this game's session (also after leaving it)
 unsigned NetplayTick();                //   the lockstep tick being simulated

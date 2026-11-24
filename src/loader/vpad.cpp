@@ -142,10 +142,10 @@ DWORD WINAPI PadRead(DWORD pad, XINPUT_STATE* state) {
 DWORD WINAPI Hook_XInputGetState(DWORD pad, XINPUT_STATE* state) {
     if (pad == 0) AudioTick();
     if (state && NetplayPad(pad, state, PadRead)) {
-        if (pad == 0) ModsTick();   // the mods' plugins (after the lockstep has this tick's inputs)
+        if (pad == 0) { ModsTick(); DevkitTick(); }   // the mods' plugins (after the lockstep has this tick's inputs)
         return NetplayPadConnected(pad) ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED;
     }
-    if (pad == 0) { SteadyTick(); ModsTick(); NetplayOfflineTick(); }   // (SteadyTick first: the tick's time)
+    if (pad == 0) { SteadyTick(); ModsTick(); NetplayOfflineTick(); DevkitTick(); }   // (SteadyTick first: the tick's time)
     DWORD r = Real_XInputGetState(pad, state);   // (offline the emote wheel looks at it last: the test pipe's presses too)
     if (IsBot() && state && r == ERROR_SUCCESS) ZeroMemory(&state->Gamepad, sizeof(state->Gamepad));  // not your pad
     static LONG calls[4];
@@ -333,6 +333,12 @@ void HandleCommand(char* line) {
         char* health = list[index] ? *reinterpret_cast<char**>(list[index] + 0x105c) : nullptr;
         if (health && !IsBadWritePtr(health + 0x50, 4) && *reinterpret_cast<float*>(health + 0x50) > 0)   // (not once down)
             *reinterpret_cast<float*>(health + 0x50) = (float)atof(hp);
+        return;
+    }
+    if (cmd && _stricmp(cmd, "devkit") == 0) {   // test tools: devkit <god|ammo|kill|save|load|level|go|open> [value] - as its panel's rows
+        char* what = strtok_s(nullptr, " \t\r\n", &ctx);
+        char* value = strtok_s(nullptr, " \t\r\n", &ctx);
+        if (what) DevkitTest(what, value ? atoi(value) : 1);
         return;
     }
     if (cmd && _stricmp(cmd, "sendevent") == 0) {   // research: sendevent <id low hex> <id high hex> <event hex> - that
@@ -685,6 +691,12 @@ DWORD WINAPI PipeThread(LPVOID) {
 }
 
 }  // namespace
+
+void VPadCommand(const char* line) {   // (the devkit's command line - as a line on the test pipe)
+    char buf[512];
+    strncpy_s(buf, line ? line : "", _TRUNCATE);
+    HandleCommand(buf);
+}
 
 void InitVirtualPad(HMODULE exe) {
     bool testInput = SettingInt(L"Debug", L"TestInput", L"FGUYMOD_TESTINPUT", 0) != 0;

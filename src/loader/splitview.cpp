@@ -482,6 +482,7 @@ void __cdecl CameraHandoff(void* camera) {
     PredictCamera(camera);
     int v = ViewportOf(camera);
     if (v >= 0) FirstPersonDrawnCamera(v, reinterpret_cast<float*>(static_cast<unsigned char*>(camera) + 0x94));
+    if (v >= 0 && v == ShownViewport()) DevkitDrawnCamera(v, reinterpret_cast<float*>(static_cast<unsigned char*>(camera) + 0x94));
 }
 
 __declspec(naked) void CamUpdateStub() {

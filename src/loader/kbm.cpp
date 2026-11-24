@@ -797,6 +797,7 @@ void KbmCaptureRaw(KbmRaw* out) {
     //  run - and their pointer was shut into its window.)
     static const bool noReal = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NOREAL", 0) != 0;
     if (noReal) front = false;
+    bool devkit = front && DevkitBlocksInput();   // (its panel up: the mouse stays in the window, nothing of it or the keys is the game's)
     if (front) {
         RECT r;
         GetClientRect(g_wnd, &r);
@@ -819,7 +820,7 @@ void KbmCaptureRaw(KbmRaw* out) {
         LeaveCriticalSection(&g_testLock);
         if (!front) { out->dx = Clamp16(dx); out->dy = Clamp16(dy); return; }
     }
-    if (!front) return;   // not in front: nothing held
+    if (!front || devkit) return;   // not in front: nothing held
     for (int k = 1; k < 256; ++k)
         if (GetAsyncKeyState(k) & 0x8000) out->keys[k >> 3] |= (BYTE)(1 << (k & 7));
     out->dx = Clamp16(dx);

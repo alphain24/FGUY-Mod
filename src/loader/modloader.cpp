@@ -503,6 +503,25 @@ void InitMods() {
     }
 }
 
+// The devkit's "reload": every .fgmod unpacked again where it changed (its files are read when the game opens them next; the
+// skins' and emotes' packs are looked through again by their own code). Returns how many were looked at.
+int ModsReloadPacks() {
+    std::wstring dir = ModsDir();
+    WIN32_FIND_DATAW fd;
+    int n = 0;
+    HANDLE h = FindFirstFileW((dir + L"\\*.fgmod").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        std::wstring name = fd.cFileName;
+        name = name.substr(0, name.size() - 6);
+        if (Unpack(dir + L"\\" + fd.cFileName, fd, dir + L"\\.unpacked\\" + name)) ++n;
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    Log(L"Mods: %d mod files looked at again (the devkit's reload)", n);
+    return n;
+}
+
 // At the end of start-up (the base mod's hooks are in): the plugins of the mods that are on.
 void ModsLoadPlugins() {
     for (auto& m : g_mods) {

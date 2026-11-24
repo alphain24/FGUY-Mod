@@ -1609,7 +1609,7 @@ sync, scuffy sees one thing like a door is open but on my end it might be closed
   already ends there); the event that starts a cinematic is not known yet (its end: 0x0b3550f2) - log the dispatches to
   the cinematic class on a test copy first. And why the friend's trigger event, played on the user's PC, started nothing.
 
-## After 0.9.18: a cutscene that starts on one PC starts on the others (2026-11-24 - built, not released)
+## 0.9.19: a cutscene that starts on one PC starts on the others (2026-11-24; released without the packaged-files test pass, at the user's word)
 
 For the co-op Amish skip (above): the user - "it works sometimes but here it hasnt"; offline the second player stays out after
 it by itself "and then he comes back later on" (online the drop-in loop puts them back once the cutscene is over - left so).
@@ -1634,3 +1634,60 @@ it by itself "and then he comes back later on" (online the drop-in loop puts the
   pause menu storage / rejoin, a match: pass. NOT tested: the skip itself (a death in the water against the village
   trigger - played by hand only), and a start refused for [0xb53d90] (setting it by hand ends the level).
 - Research switch: FGUYMOD_TEST_EVLOG=1 also logs every event a cinematic gets (id lo:hi, its state, the depth).
+
+## The devkit, first version (2026-11-24 - built, on the test copy only)
+
+The user: "now i want to create a devkit, ask me questions before making it". Their answers: for "just me"; "in game things, so
+for example giving unlimited beer to brian ... or steiew jucie or unlimited abilities"; in a match; offline and online with
+friends; a menu with the mouse; god mode, unlimited ammo, level tools, enemy tools, free camera, a console, mods reloaded
+without a restart; "a private mod only on my PC".
+- **devkit.cpp.** The repository is public, so the code is in the loader and a key file opens it: `<game>/FGUYMod/devkit.key`,
+  its SHA-256 in the source (kKeyHash). The file is NOT in the repository and in no release - kept in `build/devkit/` (ignored).
+  The other PC of a session needs nothing: what the devkit does there goes by what is already told (below).
+- **The panel**: a window of its own (as overlay.cpp's notices: own thread, topmost over the game in front, never the focus;
+  WM_MOUSEACTIVATE -> no), drawn with GDI, scaled to the game window's height (1080 -> 1). F1 opens / closes, Esc closes
+  (GetAsyncKeyState on its 40 ms timer - it never has the keyboard). While it is up the game gets no keyboard or mouse:
+  dinput.cpp's GetDeviceState / GetDeviceData zeroed outside sessions, kbm.cpp's capture empty in them. What a row asks for
+  is done on the game's thread (DevkitTick, vpad.cpp's pad 0 poll - in and outside sessions).
+- **Rows now**: God mode (my hits not taken in sessions - netplay's g_testGod - and my health held at the most it has had);
+  Unlimited ammo (the held weapon's clip, [player+0x2240] +0x164, held at the most it has had); Kill all enemies
+  (NetplayDevKillNpcs: outside sessions the scene's characters, in a free-running session the host's game - a guest's is
+  refused with a line saying so); Save / go back to a position (the transform and the collision shape, as the research
+  "teleport"); a story level (found on disk: Levels/????.ho and Levels/Level_????/????.ho, names ending XX - ten of them) and
+  Go: GAME_Portal here, and in story co-op told as a level chosen in my pause menu ('z' 3) - the other PC goes too.
+- Test pipe: `devkit god|ammo 0/1`, `devkit kill|save|load|go`, `devkit level N`, `devkit levels`, `devkit show 1/0` (the panel
+  up off the screen for a picture: scratch `panelshot.ps1`, PrintWindow - the panel answers WM_PRINTCLIENT).
+- Tested: one copy outside a session (from the main menu to AMXX, save, god, ammo, back, 6 enemies down); two copies, story
+  co-op, the bad-connection lobby (a level for both; god on: a 400 hit not taken; kill - refused on the guest, 6 down from the
+  host; save / back). NOT tested: the panel by a real mouse and F1 (no real input to test copies while the user is at the PC) -
+  theirs to try. Not built yet: beer / juice / abilities / power-ups (where the game keeps them: to find), noclip, free
+  camera, freeze / spawn enemies, checkpoints, a console line, mods reloaded.
+- **The rest, and giving the other player things** (2026-11-24 evening; the user: "build the rest and add a way to give other player
+  abilities"). The panel now has two columns: FOR (Who: me / the other player / everyone), PLAYER (god mode, unlimited ammo,
+  unlimited items & power-ups, give all items & power-ups, bring the other player to me), MOVE (fly through walls F3, free
+  camera F2, save / go back to a position), ENEMIES (kill all, freeze, a kind seen spawned + spawn one in front of me), LEVEL,
+  MODS (reload skins, emotes and mods), COMMAND (a line typed into: the test pipe's commands).
+  - **Where the counts are**: a player's weapons are zWeapons (vtable 0xa22fa4) pointed at from +0xe0..+0x300 - more than one table,
+    12 bytes an entry, not on one grid (Stewie's from +0xe4, Brian's from +0x194, the power-ups from +0x248): asset id +0x18, in
+    hand +0x164, reserve +0x168, a clip's most +0x170. The power-ups: 0x83 Ipecac, 0x2412 Giant Chicken, 0x80 Tube Man, 0x89 Boom
+    Bear, 0x240e Joe, 0x3630 Rupert, 0x103 the drink (Stewie's juice "x inf" on the HUD with it at 0); a power-up's most is 2,
+    grenades 2 (8 in another save: upgrades). "An item": nothing in reserve, a most of 1..9. Found with a test command that lists
+    them (`devkit counts`); `devkit drain` empties them for a test.
+  - Offline "my player" is the one in the first view (+0xdfc 0): the story has three player objects (Brian, Stewie, a third with
+    no view of its own). "Played" = view below the views' count [0xb53e60].
+  - **The other PC**: 'x' (devkit.cpp PktDevkit): everyone's switches, a give counter per player, a "come here" with where. Every PC
+    does it for its copy of each player: the counts held on all of them (each counts its copies down), god mode on the player's
+    own PC (netplay's g_testGod) and its health held; "come here" by the player's own PC. Outside sessions god mode is the
+    players' TakeDamage (vtable 0xa1af14 slot 58) saying no. The other PC needs the build, no key.
+  - Flying: my player's place written each tick from W A S D / Space / Ctrl along the camera's yaw (player +0xf3b4), 10 a second,
+    Shift 30. The free camera: only the drawing (splitview.cpp's camera handoff -> DevkitDrawnCamera on the shown view: the 3 x 4
+    at +0x94 replaced), the mouse read by the pointer's moves (put back in the middle each frame), keys as flying; the game gets
+    no input meanwhile. Freeze: every enemy's place along the ground held (netplay's NpcMoveBy) - they still turn and shoot.
+    Spawn: the request of a kind the level spawned (Free_NpcSpawn keeps one per kind; the hooks are put in outside sessions too
+    when the devkit is on) at 5 ahead of me; online the host's.
+  - The devkit's tick: the pad poll comes ~6500 times a second outside sessions - its work at most every 4 ms.
+  - NOT done: checkpoints (zCheckpoint objects aren't in the scene's tree, and a search of the game's memory took 7 s and found
+    none usable). Not tested with real keys / mouse (no real input to test copies): the panel's clicks, F2's mouse look, F3's
+    keys, typing a command. Tested by the test pipe offline and on two copies online (the guest without the key,
+    FGUYMOD_TEST_DEVKIT_NOKEY=1): the guest's god / ammo / items from the host's word (a 400 hit taken as nothing, drained
+    counts back), every power-up given, brought next to the host; freeze and kill from the host.

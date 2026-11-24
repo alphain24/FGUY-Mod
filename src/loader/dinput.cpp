@@ -29,7 +29,7 @@ GetDeviceData_t Real_GetDeviceData;
 
 HRESULT STDMETHODCALLTYPE Hook_GetDeviceState(void* self, DWORD size, void* data) {
     HRESULT hr = Real_GetDeviceState(self, size, data);
-    if (NetplayEnabled() && data) {
+    if ((NetplayEnabled() || DevkitBlocksInput()) && data) {   // (the devkit's panel up: the keyboard and the mouse are its)
         ZeroMemory(data, size);
         return DI_OK;
     }
@@ -38,7 +38,7 @@ HRESULT STDMETHODCALLTYPE Hook_GetDeviceState(void* self, DWORD size, void* data
 
 HRESULT STDMETHODCALLTYPE Hook_GetDeviceData(void* self, DWORD objSize, void* data, DWORD* inOut, DWORD flags) {
     HRESULT hr = Real_GetDeviceData(self, objSize, data, inOut, flags);
-    if (NetplayEnabled() && inOut) {
+    if ((NetplayEnabled() || DevkitBlocksInput()) && inOut) {
         *inOut = 0;
         return DI_OK;
     }
