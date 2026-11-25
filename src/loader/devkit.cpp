@@ -42,7 +42,7 @@ volatile LONG g_open = 0;
 HWND g_panel = nullptr;
 
 // ---- what the rows switch and ask for ----
-enum Flag { kGod = 1, kAmmo = 2, kItems = 4 };
+enum Flag { kGod = 1, kAmmo = 2, kItems = 4, kAbility = 8 };
 volatile LONG g_flags[4] = {};            // each player's switches (on every PC: from the key holder's word)
 volatile LONG g_giveSeq[4] = {};          // gives asked for, each player (a counter: each PC gives when it grows)
 LONG g_giveDone[4] = {};
@@ -123,6 +123,7 @@ const Row kRows[] = {
     {0, L"God mode", kToggle, nullptr, kGod, kNone, kChNone},
     {0, L"Unlimited ammo", kToggle, nullptr, kAmmo, kNone, kChNone},
     {0, L"Unlimited items & power-ups", kToggle, nullptr, kItems, kNone, kChNone},
+    {0, L"Unlimited ability  (Q)", kToggle, nullptr, kAbility, kNone, kChNone},
     {0, L"Give all items & power-ups", kButton, nullptr, 0, kGive, kChNone},
     {0, L"Bring the other player to me", kButton, nullptr, 0, kBring, kChNone},
     {0, L"MOVE", kHead, nullptr, 0, kNone, kChNone},
@@ -593,9 +594,13 @@ template <class F> void ForWeapons(unsigned char* player, F fn) {
 bool IsItem(unsigned char* w) {
     return *reinterpret_cast<int*>(w + 0x168) == 0 && *reinterpret_cast<int*>(w + 0x170) >= 1 && *reinterpret_cast<int*>(w + 0x170) <= 9;
 }
-std::map<unsigned char*, int> g_reserveTop;   // (each weapon's most in reserve seen: held there with unlimited ammo)
-// Holds a player's rounds / items at the most (ammo: the clip full and the reserve at its most seen; items: at least what a clip of
-// them holds). `give`: the items once.
+// Each weapon's most seen, in hand and in reserve: held there with unlimited ammo / items. In hand can be more than +0x170 (the
+// user's own save, 2026-11-25: 150 in hand of a clip of 100 - upgrades), so the most seen, not the clip's size: held at the size
+// alone, the count ran down 150 -> 100 before anything was put back and unlimited ammo looked like it did nothing. Kept with the
+// weapon's asset id: a weapon object freed and made again at the same address (another level) starts again.
+struct Top { unsigned id; int hand; int rest; };
+std::map<unsigned char*, Top> g_top;
+// Holds a player's rounds / items at the most. `give`: the items once.
 volatile LONG g_fills = 0, g_fillWrites = 0;
 void Fill(unsigned char* player, bool ammo, bool items) {
     InterlockedIncrement(&g_fills);
@@ -603,13 +608,15 @@ void Fill(unsigned char* player, bool ammo, bool items) {
         int* clip = reinterpret_cast<int*>(w + 0x164);
         int* rest = reinterpret_cast<int*>(w + 0x168);
         int size = *reinterpret_cast<int*>(w + 0x170);
-        int& top = g_reserveTop[w];
-        if (*rest > top) top = *rest;
-        if (IsItem(w)) {
-            if (items && *clip < size) { *clip = size; InterlockedIncrement(&g_fillWrites); }
-        } else if (ammo) {
-            if (size > 0 && *clip < size) { *clip = size; InterlockedIncrement(&g_fillWrites); }
-            if (*rest < top) *rest = top;
+        unsigned id = *reinterpret_cast<unsigned*>(w + 0x18);
+        Top& top = g_top[w];
+        if (top.id != id) top = {id, 0, 0};
+        if (size > top.hand) top.hand = size;
+        if (*clip > top.hand) top.hand = *clip;
+        if (*rest > top.rest) top.rest = *rest;
+        if (IsItem(w) ? items : ammo) {
+            if (*clip < top.hand) { *clip = top.hand; InterlockedIncrement(&g_fillWrites); }
+            if (*rest < top.rest) *rest = top.rest;
         }
     });
 }
@@ -692,6 +699,8 @@ void DevkitDrawnCamera(int view, float* m) {
         c.signU = Dot(u0, u) < 0 ? -1.f : 1.f;
         c.have = true;
         c.last = now;
+        Log(L"Devkit: free camera from (%.1f %.1f %.1f), ahead %.2f %.2f %.2f, its first axis %.2f %.2f %.2f", c.pos[0], c.pos[1], c.pos[2],
+            f0[0], f0[1], f0[2], r0[0], r0[1], r0[2]);
     }
     float dt = (float)(now.QuadPart - c.last.QuadPart) / (float)freq.QuadPart;
     if (dt > 0.001f) {   // (once a frame: the view's two cameras come one after the other)
@@ -704,8 +713,11 @@ void DevkitDrawnCamera(int view, float* m) {
             POINT mid = {(game.left + game.right) / 2, (game.top + game.bottom) / 2}, at;
             GetCursorPos(&at);
             static bool centred = false;
+            // (the camera's first axis - r here, written to m[0], m[4], m[8] - points LEFT: the game's view axes are left, up, ahead
+            //  (motion.cpp's hand axes in the view). So the mouse to the right turns away from r, and D moves against it -
+            //  the other way round, the user found the look and A / D inverted)
             if (centred) {
-                c.yaw += (at.x - mid.x) * 0.003f * c.signR;
+                c.yaw -= (at.x - mid.x) * 0.003f * c.signR;
                 c.pitch -= (at.y - mid.y) * 0.003f;
                 if (c.pitch > 1.5f) c.pitch = 1.5f;
                 if (c.pitch < -1.5f) c.pitch = -1.5f;
@@ -718,8 +730,8 @@ void DevkitDrawnCamera(int view, float* m) {
             for (int k = 0; k < 3; ++k) {
                 if (Key('W')) mv[k] += f[k];
                 if (Key('S')) mv[k] -= f[k];
-                if (Key('D')) mv[k] += r[k];
-                if (Key('A')) mv[k] -= r[k];
+                if (Key('D')) mv[k] -= r[k];
+                if (Key('A')) mv[k] += r[k];
             }
             if (Key(VK_SPACE)) mv[1] += 1;
             if (Key(VK_CONTROL) || Key('C')) mv[1] -= 1;
@@ -797,16 +809,25 @@ void DevkitTick() {
     static bool godWas = false;
     bool myGod = me >= 0 && me < 4 && (g_flags[me] & kGod);
     if (myGod != godWas) { godWas = myGod; NetplayTestGod(myGod); }   // (in sessions: my player's hits not taken - netplay.cpp)
-    static float top[4] = {};
+    static float top[4] = {}, abilityTop[4] = {};
     for (int s = 0; s < 4; ++s) {
         unsigned char* p = PlayerOf(s);
-        if (!p) { top[s] = 0; continue; }
+        if (!p) { top[s] = 0; abilityTop[s] = 0; continue; }
         LONG f = g_flags[s];
         if (float* hp = HealthOf(p)) {
             if (*hp > top[s]) top[s] = *hp;
             if ((f & kGod) && *hp > 0 && *hp < top[s]) *hp = top[s];
         }
         if (f & (kAmmo | kItems)) Fill(p, (f & kAmmo) != 0, (f & kItems) != 0);
+        // The character's ability (Q: Peter's farts, Stewie's juice, Brian's beer, Meg's flash...): player +0xee0c is the
+        // seconds since it was last used, counting up to its wait and stopping there (30 at a match's start, Stewie - 0.4,
+        // 3.1, 9.8, 24.9 after a use); Q works again once it's there. Held at the most seen (from the level's start, every
+        // tick, whatever the switch) - 30 if none yet: a value above the wait does no harm (1000 was kept and Q worked).
+        if (float* since = IsBadWritePtr(p + 0xee0c, 4) ? nullptr : reinterpret_cast<float*>(p + 0xee0c)) {
+            if (*since > abilityTop[s] && *since < 10000) abilityTop[s] = *since;
+            float want = abilityTop[s] > 0 ? abilityTop[s] : 30;
+            if ((f & kAbility) && *since < want) *since = want;
+        }
         if (g_giveSeq[s] != g_giveDone[s]) {
             g_giveDone[s] = g_giveSeq[s];
             Fill(p, false, true);
@@ -999,10 +1020,37 @@ void DevkitTest(const char* what, int value) {
     else if (_stricmp(what, "god") == 0) setFlag(kGod, value);
     else if (_stricmp(what, "ammo") == 0) setFlag(kAmmo, value);
     else if (_stricmp(what, "items") == 0) setFlag(kItems, value);
+    else if (_stricmp(what, "ability") == 0) setFlag(kAbility, value);
     else if (_stricmp(what, "give") == 0) InterlockedExchange(&g_action, kGive);
     else if (_stricmp(what, "bring") == 0) InterlockedExchange(&g_action, kBring);
     else if (_stricmp(what, "fly") == 0) InterlockedExchange(&g_fly, value);
     else if (_stricmp(what, "freecam") == 0) InterlockedExchange(&g_freecam, value);
+    else if (_stricmp(what, "snap") == 0) {   // research: my player (0x10000 bytes) and each weapon (0x400) to FGUYMod\snap_<value>.bin
+        unsigned char* p = MyPlayer();
+        if (!p) { Log(L"Devkit: test - no player"); return; }
+        wchar_t path[MAX_PATH];
+        swprintf_s(path, L"%s\\FGUYMod\\snap_%d.bin", g_gameDir, value);
+        FILE* f = nullptr;
+        if (_wfopen_s(&f, path, L"wb") || !f) return;
+        auto put = [&](unsigned char* at, unsigned len, unsigned tag) {   // (tag, address, length, then the bytes - unreadable pages as 0)
+            fwrite(&tag, 4, 1, f); fwrite(&at, 4, 1, f); fwrite(&len, 4, 1, f);
+            std::vector<unsigned char> buf(len, 0);
+            for (unsigned o = 0; o < len; o += 0x100)
+                if (!IsBadReadPtr(at + o, 0x100)) memcpy(buf.data() + o, at + o, 0x100);
+            fwrite(buf.data(), 1, len, f);
+        };
+        put(p, 0x10000, 0);
+        ForWeapons(p, [&](unsigned char* w) { put(w, 0x400, *reinterpret_cast<unsigned*>(w + 0x18)); });
+        fclose(f);
+        Log(L"Devkit: test - snap %d written (player %p)", value, p);
+    }
+    else if (_stricmp(what, "camnudge") == 0) {   // test: the free camera moved <value / 10> along its first axis (which way is it?)
+        AcquireSRWLockExclusive(&g_camLock);
+        float f[3], r[3], u[3];
+        CamAxes(g_cam.yaw, g_cam.pitch, g_cam.signR, g_cam.signU, f, r, u);
+        for (int k = 0; k < 3; ++k) g_cam.pos[k] += r[k] * value / 10.f;
+        ReleaseSRWLockExclusive(&g_camLock);
+    }
     else if (_stricmp(what, "freeze") == 0) InterlockedExchange(&g_freeze, value);
     else if (_stricmp(what, "kill") == 0) InterlockedExchange(&g_action, kKillAll);
     else if (_stricmp(what, "save") == 0) InterlockedExchange(&g_action, kSavePos);

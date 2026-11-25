@@ -482,7 +482,10 @@ void __cdecl CameraHandoff(void* camera) {
     PredictCamera(camera);
     int v = ViewportOf(camera);
     if (v >= 0) FirstPersonDrawnCamera(v, reinterpret_cast<float*>(static_cast<unsigned char*>(camera) + 0x94));
-    if (v >= 0 && v == ShownViewport()) DevkitDrawnCamera(v, reinterpret_cast<float*>(static_cast<unsigned char*>(camera) + 0x94));
+    // (the devkit's free camera: the view on the screen - offline, and online with one view, ShownViewport says -1 for "the
+    //  normal drawing": the first view's. Taken as -1, the free camera never came on outside sessions)
+    int shown = ShownViewport();
+    if (v >= 0 && v == (shown >= 0 ? shown : 0)) DevkitDrawnCamera(v, reinterpret_cast<float*>(static_cast<unsigned char*>(camera) + 0x94));
 }
 
 __declspec(naked) void CamUpdateStub() {

@@ -1831,6 +1831,36 @@ then I can adjust"; they will send a model of theirs (none yet).
   logged "everyone has the menu open - pausing", the host never did and its menu's mouse stayed "off" (its Enter
   worked). Not looked into.
 
+## The devkit after the user tried it (2026-11-25, released in 0.9.25)
+- The user: "dev kit has inverted controls on freecam, overall is pretty decent but not as reliable and most importantly the
+  unlimited ability doesnt work". Their log (FGUYMod_1904, offline story, GCXX) showed unlimited ammo on while the rounds ran
+  132 -> 111 and 50 -> 41.
+- **Unlimited ammo / items held at the most seen, not the clip's size**: in hand can be more than +0x170 (their save: 150 in hand of
+  a clip of 100, 44 of 28, 40 of 20 - upgrades); Fill put back only below +0x170, so the count ran down to the plain size first.
+  Now each weapon's most in hand and in reserve (kept with its asset id) is held. Test: ammo + items on, `devkit drain`, counts
+  back at 150 / 44 / 40 (were going to 100 / 28 / 20).
+- **The free camera's look and A / D were the wrong way round**: the drawn camera's first axis points LEFT (the view's axes are left,
+  up, ahead). Shown with a test command (`devkit camnudge 30`: the camera moved +3 along that axis - the picture moved right).
+- **The free camera never came on offline**: splitview's handoff gave it only the view ShownViewport() names, -1 outside sessions
+  (and with one view). Now -1 means the first view. Seen working offline (the log's "free camera from ..." line, the view moved).
+- **The ability** (the user: "each player has a special ability, peter has his farts, steiew and brian have the juice or beer
+  they drink and meg flashes ... Q is used for it"): player +0xee0c = seconds since it was used, counting up to its wait and
+  stopping there (30 at a match's start; Stewie 0.4 / 3.1 / 9.8 / 24.9 after a use). Found by `devkit snap <n>` (my player's
+  0x10000 bytes and its weapons' 0x400 to FGUYMod\snap_<n>.bin) before / after Q in a two-copy match, diffed. The use writes 0
+  there (0x648a1c, callers 0x5bd37e 0x6655ad...), the per-frame count 0x6a3c8c. Q is refused below the wait (3.0 -> 4.4, no
+  reset); 1000 written there was kept and Q worked. Stewie's juice: +0xec20 a 10 s effect timer. New row "Unlimited ability
+  (Q)" (flag 8): the timer held at the most seen since the level's start (30 if none). Test: Peter, switch on, Q three times 2 s
+  apart - the watch shows the game's reset each time (three farts), the switch's 30 back after each.
+- Test-copy lesson: `uicmd GAME_Portal` from the pipe crashes the game (pipe thread) - use `devkit level <n>` + `devkit go`
+  (levels in the folder's order: AMXX 0, BPXX 1, CHXX 2, GCXX 3, ...). Trigger holds take 0..255 (`rt=255`), and pad
+  input didn't move or fire the player in a story level anyway.
+- **0.9.25 released** with these. Packaged-files test: two copies (Peter) on the bad-connection lobby, the guest without the key:
+  the guest's Q twice 2 s apart - the second refused; the host's "who everyone" + ability on - the guest's Q three times, each
+  used (the watch on the guest's +0xee0c: the game's reset 0x648a1c four times in all, the switch's 30 back three times; in a
+  session another writer, 0x76825072, copies the value every frame - it held anyway). Both moving, the pause resumed by
+  the host's mouse. The pause quirk again, mirrored: whichever PC opens the menu FIRST gets "mouse off" and never logs
+  "everyone has the menu open".
+
 ## Road to Death leftovers in BTTM (2026-11-25, first pass)
 - Road to Death: Heavy Iron's cancelled Family Guy zombie third-person shooter (2010-2011, per the Lost Media Wiki -
   its page is behind a bot check; read via search summary only). Swept every .ho for asset names with the level codes
