@@ -899,6 +899,10 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     };
     if (ib != g_pieces[player].anchor) {   // (another piece of theirs: ours has it all - or, over it, theirs)
         if (m->over) return theirs();
+        // (...but only while ours is drawn: not posed for a couple of frames (no pose for them - the main menu's couch Lois
+        //  shares menu player 3's pieces and has none), theirs are drawn whole. Hidden then, the couch Lois was her body alone -
+        //  the user's screenshot, 2026-11-25: black holes for eyes, no mouth)
+        if (g_frame - m->frame > 2) return false;
         *hr = D3D_OK;
         return true;
     }

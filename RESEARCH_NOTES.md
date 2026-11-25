@@ -1861,6 +1861,17 @@ then I can adjust"; they will send a model of theirs (none yet).
   the host's mouse. The pause quirk again, mirrored: whichever PC opens the menu FIRST gets "mouse off" and never logs
   "everyone has the menu open".
 
+## The main menu's Lois with no eyes or mouth (2026-11-25, released in 0.9.26)
+- The user's screenshot: the couch Lois on the main menu with black holes for eyes, a hole for a mouth - Panda_Amy.fgskin picked
+  for Lois Default. Reproduced on a test copy with their pack; the same on 0.9.21, 0.9.22, 0.9.23 (not new today - since Amy
+  went on their game). Cause (models.cpp ModelsDraw): the couch Lois shares menu player 3's pieces; a worn model hides every
+  piece of theirs but the anchor and draws itself at the anchor - but the couch Lois has no pose (Skin -> MotionPose fails), so
+  the anchor went back to theirs and everything else (eyes, mouth, teeth) stayed hidden. Now the other pieces are hidden only
+  while the model was posed in the last 2 frames (m->frame). Seen: the couch Lois whole again; in a match the guest sees the host
+  as Amy with nothing of Lois through.
+- Also in their logs: their offline devkit session of 13:13 ended in a crash (CRASH at 0x4591ad writing 0, stack 0x5476de
+  0x5478b4 0x6a70f2 0x66f39d ...; just after "menu calls PLYR_GetCharacter") - on 0.9.23. Not looked into.
+
 ## Road to Death leftovers in BTTM (2026-11-25, first pass)
 - Road to Death: Heavy Iron's cancelled Family Guy zombie third-person shooter (2010-2011, per the Lost Media Wiki -
   its page is behind a bot check; read via search summary only). Swept every .ho for asset names with the level codes
