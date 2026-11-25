@@ -10,8 +10,13 @@
 //   floats, bones 4 uint8, weights 4 uint8 adding up to 255); indices I x uint16.
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {FBXLoader} from 'three/addons/loaders/FBXLoader.js';
+import {OBJLoader} from 'three/addons/loaders/OBJLoader.js';
+import {MTLLoader} from 'three/addons/loaders/MTLLoader.js';
 import {zipSync, unzipSync, strToU8, strFromU8} from 'fflate';
 import {makeRig} from './rig.js';
+import {LANDMARKS, SEGMENTS, guessJoints, characterJoints, sampleSurface, frames, nearestSegment, carry, girths, posedJoints,
+  poseMoves, applyMove} from './autorig.js';
 
 // A model pack (.fgmodel bytes) as meshes in the character's space, as it stands (the Skins tab shows a skin's model)
 export async function modelPackGroup(bytes) {
@@ -52,8 +57,9 @@ const WRAPS = {r: THREE.RepeatWrapping, c: THREE.ClampToEdgeWrapping, m: THREE.M
 const wrapCode = w => w === THREE.MirroredRepeatWrapping ? 'm' : w === THREE.ClampToEdgeWrapping ? 'c' : 'r';
 function applyWrap(t, code) { if (code) { t.wrapS = WRAPS[code[0]]; t.wrapT = WRAPS[code[1]]; } }
 
-export function createModelEditor({holder, $, setStatus, download, outfitsOf, textureFor}) {
-  const ed = {outfit: null, pieces: null, skel: null, rig: null, src: null, view: null, posed: false};
+export function createModelEditor({holder, camera, controls, renderer, $, setStatus, download, outfitsOf, textureFor}) {
+  const ed = {outfit: null, pieces: null, skel: null, rig: null, src: null, view: null, posed: false,
+    joints: null, modelSkel: null, modelRig: null, dots: null};
 
   // ---- the character: to fit to, its vertices' bones to copy - shown solid (its own textures), as an x-ray or not
   //      at all, bent by the same bones as the model (a test pose moves both) ------------------------------------------
@@ -99,15 +105,59 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
   }
   $('modelGhost').onchange = showCharacter;
 
-  // ---- the .glb ---------------------------------------------------------------------------------------------------
+  // ---- the model file: a .glb / .gltf, an .fbx, an .obj (with its .mtl and pictures picked with it) - or a .zip of them ----
+  // The other files picked (or in the zip) are its pictures and its .mtl: found by name, wherever the model says they are.
+  async function readModel(list) {
+    const files = new Map();   // (lower-case name -> bytes)
+    for (const f of list) {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      if (/\.zip$/i.test(f.name)) {
+        for (const [path, data] of Object.entries(unzipSync(bytes))) if (data.length) files.set(path.split('/').pop().toLowerCase(), data);
+      } else {
+        files.set(f.name.toLowerCase(), bytes);
+      }
+    }
+    const names = [...files.keys()], pick = re => names.find(n => re.test(n));
+    const main = pick(/\.glb$/) || pick(/\.gltf$/) || pick(/\.fbx$/) || pick(/\.obj$/);
+    if (!main) throw new Error('no .glb, .gltf, .fbx or .obj in what was picked');
+    const urls = new Map(), url = n => {
+      const key = n.split(/[\\/]/).pop().toLowerCase();
+      if (!files.has(key)) return null;
+      if (!urls.has(key)) urls.set(key, URL.createObjectURL(new Blob([files.get(key)])));
+      return urls.get(key);
+    };
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier(u => url(decodeURIComponent(u)) || u);
+    let pending = 0;
+    const loaded = new Promise(r => { manager.onLoad = r; manager.onError = r; });
+    manager.onStart = () => { pending++; };
+    const data = files.get(main), text = () => new TextDecoder().decode(data);
+    let scene;
+    if (/\.gl(b|tf)$/.test(main)) scene = (await new GLTFLoader(manager).parseAsync(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength), '')).scene;
+    else if (/\.fbx$/.test(main)) scene = new FBXLoader(manager).parse(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength), '');
+    else {
+      const obj = new OBJLoader(manager), lib = /^mtllib\s+(.+)$/m.exec(text());
+      const mtl = (lib && files.get(lib[1].trim().split(/[\\/]/).pop().toLowerCase())) || files.get(pick(/\.mtl$/));
+      if (mtl) {
+        const mats = new MTLLoader(manager).parse(new TextDecoder().decode(mtl), '');
+        mats.preload();
+        obj.setMaterials(mats);
+      }
+      scene = obj.parse(text());
+    }
+    if (pending) await Promise.race([loaded, new Promise(r => setTimeout(r, 8000))]);   // (its pictures read)
+    await new Promise(r => setTimeout(r, 50));
+    return {scene, name: main.replace(/\.(glb|gltf|fbx|obj)$/i, ''), files: names};
+  }
   $('importModel').onchange = async e => {
-    const f = e.target.files[0];
+    const list = [...e.target.files];
     e.target.value = '';
-    if (!f || !ed.skel) return;
+    if (!list.length || !ed.skel) return;
     try {
-      const g = await new GLTFLoader().parseAsync(await f.arrayBuffer(), '');
+      const r = await readModel(list), g = {scene: r.scene}, f = {name: r.name};
       g.scene.updateMatrixWorld(true);
       const parts = [];
+      let objects = 0;
       g.scene.traverse(o => {
         if (!o.isMesh || !o.geometry?.attributes.position) return;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -116,6 +166,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
         if (!geo.index) geo.setIndex([...Array(geo.attributes.position.count).keys()]);
         if (!geo.attributes.normal) geo.computeVertexNormals();
         const groups = geo.groups.length ? geo.groups : [{start: 0, count: geo.index.count, materialIndex: 0}];
+        const object = {name: o.name || `part ${objects + 1}`, n: objects++, off: false};
         for (const gr of groups) {
           const m = mats[gr.materialIndex] || mats[0];
           // its own bones, if it's rigged on this character's skeleton (bones named bone00, bone01... - see Emotes)
@@ -123,23 +174,25 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
           if (o.isSkinnedMesh) boneOf = o.skeleton.bones.map(b => (/^bone(\d+)$/.exec(b.name) || [])[1]).map(x => (x === undefined ? -1 : +x));
           parts.push({geo, start: gr.start, count: gr.count, color: m?.color ? m.color.clone() : new THREE.Color(1, 1, 1),
             map: m?.map?.image || null, wrap: m?.map ? wrapCode(m.map.wrapS) + wrapCode(m.map.wrapT) : null,
-            boneOf: boneOf && boneOf.every(x => x >= 0) ? boneOf : null});
+            boneOf: boneOf && boneOf.every(x => x >= 0) ? boneOf : null, object});
         }
       });
       if (!parts.length) throw new Error('no meshes in it');
       const verts = parts.reduce((n, p) => n + p.geo.attributes.position.count, 0);
       if (verts > 65535) throw new Error(`it has ${verts.toLocaleString()} vertices - 65,535 at most`);
-      ed.src = {parts, name: f.name.replace(/\.(glb|gltf)$/i, '')};
+      ed.src = {parts, all: parts, name: f.name};
+      ed.joints = null;
+      showParts();
       if (!$('modelName').value) $('modelName').value = ed.src.name;
       // (inside the character's box, about its size or smaller: made on it already - its place kept, and most likely
       //  pieces worn over it; above it, room for a tall hat)
       const s = srcBox(), c = charBox(), pad = c.getSize(new THREE.Vector3()).multiplyScalar(0.15);
       const made = new THREE.Box3(c.min.clone().sub(pad), c.max.clone().add(pad).add(new THREE.Vector3(0, pad.y, 0))).containsBox(s);
-      $('fitKeep').checked = made;
-      $('modelOver').checked = made;
+      $('fitKeep').checked = made && !$('fitRig').checked;   // (rigged on its own shape: the auto-rig's choice stands)
+      $('modelOver').checked = made && !$('fitRig').checked;
       refit(true);
       $('saveModel').disabled = false;
-      setStatus(`Brought in "${f.name}": ${parts.length} part${parts.length > 1 ? 's' : ''}, ${verts.toLocaleString()} vertices` +
+      setStatus(`Brought in "${f.name}" (${r.files.join(', ')}): ${parts.length} part${parts.length > 1 ? 's' : ''}, ${verts.toLocaleString()} vertices` +
         (parts.every(p => p.boneOf) ? ' - rigged on this character: its own weights' : ' - fitted, bones copied from the character') + '.');
     } catch (err) {
       setStatus("Couldn't use that model: " + err.message);
@@ -175,6 +228,40 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
   $('fitKeep').onchange = () => drawPreview();
   $('modelOver').onchange = () => drawPreview();   // (worn over: each piece rides its own bones)
   $('fitAuto').onclick = () => refit(true);
+  $('fitRig').onchange = () => {
+    const on = $('fitRig').checked;
+    $('rigRow').hidden = $('rigHelp').hidden = !on;
+    if (on) { $('fitKeep').checked = false; $('modelOver').checked = false; }
+    drawPreview();
+  };
+  $('rigFind').onclick = () => { ed.joints = null; drawPreview(); };
+
+  // its parts (the objects in the file), each one kept or left out - a stand, a ball around it, a backdrop
+  function showParts() {
+    const box = $('modelParts'), objects = [...new Set(ed.src.all.map(p => p.object))];
+    box.replaceChildren(box.firstElementChild);   // (its heading kept)
+    box.hidden = objects.length < 2;
+    for (const ob of objects) {
+      const verts = new Set(ed.src.all.filter(p => p.object === ob).map(p => p.geo)), n = [...verts].reduce((k, g) => k + g.attributes.position.count, 0);
+      const label = document.createElement('label'), tick = document.createElement('input');
+      label.className = 'muted';
+      label.style.display = 'block';
+      tick.type = 'checkbox';
+      tick.checked = !ob.off;
+      tick.onchange = () => {
+        ob.off = !tick.checked;
+        const kept = ed.src.all.filter(p => !p.object.off);
+        if (!kept.length) { ob.off = false; tick.checked = true; return; }
+        ed.src.parts = kept;
+        ed.joints = null;
+        refit(true);
+      };
+      label.append(tick, ` ${ob.name} (${n.toLocaleString()} vertices)`);
+      box.append(label);
+    }
+  }
+  $('rigEdit').onchange = () => drawPreview();
+  const editingJoints = () => autoRig() && $('rigEdit').checked;
 
   // where its arms are, how wide its torso is... - of points (x, y, z: its feet at y 0, its middle at x 0, z 0)
   function shapeOf(pts, armY0) {
@@ -217,6 +304,14 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     if (rigged || $('fitKeep').checked) return {   // (made on this character: as it is)
       map: (v, n) => ({pos: v.clone().applyQuaternion(q).multiplyScalar(size).add(off), nrm: n.clone().applyQuaternion(q)}),
     };
+    if (autoRig()) {   // (rigged on its own shape: as tall as the character, nothing stretched - and back, for a dragged joint)
+      const k = c.getSize(new THREE.Vector3()).y / Math.max(s.getSize(new THREE.Vector3()).y, 1e-6) * size;
+      const base = new THREE.Vector3(cc.x, c.min.y, cc.z).add(off), qi = q.clone().invert();
+      return {
+        map: (v, n) => ({pos: local(v).multiplyScalar(k).add(base), nrm: n.clone().applyQuaternion(q)}),
+        unmap: p => p.clone().sub(base).multiplyScalar(1 / k).applyQuaternion(qi).add(new THREE.Vector3(sc.x, s.min.y, sc.z)),
+      };
+    }
     // the character's shape: its own points, its arm height from its skeleton
     const cpts = [];
     for (const p of ed.pieces) {
@@ -263,12 +358,14 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
   }
 
   // ---- its bones: the nearest of the character's vertices' (a grid of them, for speed) ------------------------------
-  function charGrid(cell) {
+  // (moved: the character's vertices put somewhere else - the auto-rig's: on the model's shape - one array a piece)
+  function charGrid(cell, moved = null) {
     const grid = new Map(), key = (x, y, z) => x + ',' + y + ',' + z;
-    for (const p of ed.pieces) {
+    for (const [pk, p] of ed.pieces.entries()) {
       if (!p.skin) continue;
+      const P = moved ? moved[pk] : p.position;
       for (let i = 0; i < p.position.length / 3; i++) {
-        const x = p.position[i * 3], y = p.position[i * 3 + 1], z = p.position[i * 3 + 2];
+        const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
         const k = key(Math.floor(x / cell), Math.floor(y / cell), Math.floor(z / cell));
         if (!grid.has(k)) grid.set(k, []);
         grid.get(k).push({x, y, z, b: p.skin.index.subarray(i * 4, i * 4 + 4), w: p.skin.weight.subarray(i * 4, i * 4 + 4)});
@@ -289,12 +386,12 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
       const along = dx * n.x + dy * n.y + dz * n.z, side2 = dx * dx + dy * dy + dz * dz - along * along;
       return side2 * 4 + along * along * (along > 0 ? 4 : 1);
     };
-    for (let r = n ? 2 : 1; r <= 8; r++) {   // (rings out until some are found)
+    for (let r = n ? 2 : 1; r <= 48; r++) {   // (rings out until some are found - a big model's hair can be far from any)
       const near = [];
       for (let x = cx - r; x <= cx + r; x++) for (let y = cy - r; y <= cy + r; y++) for (let z = cz - r; z <= cz + r; z++)
         for (const v of G.grid.get(G.key(x, y, z)) || [])
           if (!side || (v.x - G.cx) * side >= 0) near.push([dist(v), v]);
-      if (near.length < (n ? 6 : 4) && r < 8) continue;
+      if ((near.length < (n ? 6 : 4) && r < 8) || (!near.length && r < 48)) continue;
       near.sort((a, b) => a[0] - b[0]);
       const acc = new Map();
       for (const [d, v] of near.slice(0, 6)) {
@@ -464,10 +561,159 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     }
   }
 
+  // ---- the auto-rig (autorig.js): its joints, the character's mesh put on its shape for the weights, its own skeleton -----
+  function autoRig() { return $('fitRig').checked && ed.src && !ed.src.parts.every(p => p.boneOf) && !$('fitKeep').checked; }
+  // its joints where it's placed now (kept in its own space: a slider moves them with it)
+  function jointsNow(P) {
+    if (!ed.joints) {   // (found from its shape: points over its surface, standing on y 0, its middle at x 0)
+      const tris = [];
+      for (const sp of ed.src.parts) {
+        const a = sp.geo.attributes.position, I = sp.geo.index;
+        for (let k = sp.start; k + 2 < sp.start + sp.count; k += 3) tris.push([a, I.getX(k), I.getX(k + 1), I.getX(k + 2)]);
+      }
+      const pts = sampleSurface(tris.length, (k, A, B, C) => {
+        const [a, i, j, l] = tris[k];
+        A.copy(P.map(new THREE.Vector3().fromBufferAttribute(a, i), new THREE.Vector3(0, 1, 0)).pos);
+        B.copy(P.map(new THREE.Vector3().fromBufferAttribute(a, j), new THREE.Vector3(0, 1, 0)).pos);
+        C.copy(P.map(new THREE.Vector3().fromBufferAttribute(a, l), new THREE.Vector3(0, 1, 0)).pos);
+      });
+      const c = charBox(), base = new THREE.Vector3(c.getCenter(new THREE.Vector3()).x, c.min.y, c.getCenter(new THREE.Vector3()).z);
+      const J = guessJoints(pts.map(p => p.sub(base)));
+      ed.joints = Object.fromEntries(LANDMARKS.map(k => [k, P.unmap(J[k].add(base))]));
+      ed.samples = null;
+    }
+    return Object.fromEntries(LANDMARKS.map(k => [k, P.map(ed.joints[k], new THREE.Vector3(0, 1, 0)).pos]));
+  }
+  function rigOnItsShape(P) {
+    const Jm = jointsNow(P), Jc = characterJoints(ed.skel, ed.pieces);
+    const Fc = frames(Jc), Fm = frames(Jm);
+    // how thick it is about each segment, against the character (its own vertices; the character's)
+    const mpts = [];
+    for (const sp of ed.src.parts) {
+      const a = sp.geo.attributes.position;
+      for (let i = 0; i < a.count; i += Math.max(1, Math.floor(a.count / 6000))) mpts.push(P.map(new THREE.Vector3().fromBufferAttribute(a, i), new THREE.Vector3(0, 1, 0)).pos);
+    }
+    const cpts = [];
+    for (const p of ed.pieces) for (let i = 0; i < p.position.length; i += 3 * Math.max(1, Math.floor(p.position.length / 3 / 3000))) cpts.push(new THREE.Vector3().fromArray(p.position, i));
+    const Gc = girths(Fc, cpts), Gm = girths(Fm, mpts);
+    // each bone's segment: the nearest on its own side (a middle bone: the middle's)
+    const pos = b => new THREE.Vector3().setFromMatrixPosition(ed.skel.bind[b]);
+    const H = Jc.top.y - Math.min(Jc.toeL.y, Jc.toeR.y);
+    const sideOf = b => { const m = / ([LR])\b/.exec(ed.skel.names[b]); return m ? m[1] : Math.abs(pos(b).x - Jc.pelvis.x) > H * 0.03 ? (pos(b).x > Jc.pelvis.x ? 'L' : 'R') : ''; };
+    const segOf = ed.skel.parent.map((_, b) => {
+      const sd = sideOf(b);
+      return nearestSegment(Fc, pos(b), k => (sd ? SEGMENTS[k][1].endsWith(sd) : k < 4)).k;
+    });
+    // the character's vertices on the model's shape: each along its main bone's segment
+    const moved = ed.pieces.map(p => {
+      const out = new Float32Array(p.position.length);
+      for (let i = 0; i < p.position.length / 3; i++) {
+        let bone = 0, w = -1;
+        if (p.skin) for (let j = 0; j < 4; j++) if (p.skin.weight[i * 4 + j] > w) { w = p.skin.weight[i * 4 + j]; bone = p.skin.index[i * 4 + j]; }
+        const q = carry(new THREE.Vector3().fromArray(p.position, i * 3), segOf[bone], Fc, Fm, Gc, Gm);
+        out.set([q.x, q.y, q.z], i * 3);
+      }
+      return out;
+    });
+    // its own skeleton: the character's bones put on its shape in the character's pose (each turned as the character's)
+    const Pj = posedJoints(Jm, Jc), Fp = frames(Pj), moves = poseMoves(Jm, Pj);
+    const count = ed.skel.count, bind = [], invBind = [], local = [];
+    for (let b = 0; b < count; b++) {
+      const t = new THREE.Vector3(), r = new THREE.Quaternion(), sc = new THREE.Vector3();
+      ed.skel.bind[b].decompose(t, r, sc);
+      const at = ed.skel.parent[b] < 0 ? t : carry(t, segOf[b], Fc, Fp, Gc, Gm);
+      bind.push(new THREE.Matrix4().compose(at, r, new THREE.Vector3(1, 1, 1)));
+    }
+    for (let b = 0; b < count; b++) {
+      invBind.push(bind[b].clone().invert());
+      const par = ed.skel.parent[b];
+      local.push(par < 0 ? bind[b].clone() : bind[par].clone().invert().multiply(bind[b]));
+    }
+    const hips = ed.skel.names.findIndex(n => /^Hips/.test(n)), root = Math.max(0, ed.skel.parent[hips]);
+    const hy = new THREE.Vector3().setFromMatrixPosition(ed.skel.bind[hips]).y - new THREE.Vector3().setFromMatrixPosition(ed.skel.bind[root]).y;
+    const my = new THREE.Vector3().setFromMatrixPosition(bind[hips]).y - new THREE.Vector3().setFromMatrixPosition(bind[root]).y;
+    ed.modelSkel = {count, parent: ed.skel.parent, names: ed.skel.names, bind, invBind, local, hipScale: hips >= 0 && hy > 1e-4 ? my / hy : 1};
+    return {
+      moved,
+      pose(verts) {   // (each vertex moved as its bones' segments are, by its weights)
+        for (const v of verts) {
+          if (!v.bw.length) continue;   // (none found: left where it is, not dropped to the floor)
+          const tot = v.bw.reduce((t, [, w]) => t + w, 0) || 1, p = new THREE.Vector3(), n = new THREE.Vector3();
+          for (const [bone, w] of v.bw) {
+            const mv = moves[segOf[bone]] || moves[0];
+            p.addScaledVector(applyMove(mv, v.pos), w / tot);
+            n.addScaledVector(v.nrm.clone().applyMatrix4(mv.R), w / tot);
+          }
+          v.pos = p; v.nrm = n.normalize();
+        }
+      },
+    };
+  }
+  // ---- the joints' dots: shown on it, dragged where they should be ------------------------------------------------------
+  function showDots() {
+    if (ed.dots) { holder.remove(ed.dots); ed.dots = null; }
+    if (!editingJoints() || !ed.src || !ed.joints) return;
+    const P = placer(), J = jointsNow(P), H = charBox().getSize(new THREE.Vector3()).y;
+    ed.dots = new THREE.Group();
+    for (const k of LANDMARKS) {
+      const col = k.endsWith('L') ? 0x4cd964 : k.endsWith('R') ? 0xff6b6b : 0xf5d33a;
+      const m = new THREE.Mesh(new THREE.SphereGeometry(H * 0.014, 12, 8), new THREE.MeshBasicMaterial({color: col, depthTest: false}));
+      m.renderOrder = 10;
+      m.position.copy(J[k]);
+      m.userData.joint = k;
+      ed.dots.add(m);
+    }
+    const lines = [];
+    for (const [a, b] of SEGMENTS) lines.push(J[a], J[b]);
+    const seg = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(lines), new THREE.LineBasicMaterial({color: 0xffffff, depthTest: false, transparent: true, opacity: 0.6}));
+    seg.renderOrder = 9;
+    ed.dots.add(seg);
+    holder.add(ed.dots);
+  }
+  {   // (dragging one: on the plane through it facing the camera; "both sides together" moves its other side's mirrored)
+    const ray = new THREE.Raycaster(), plane = new THREE.Plane(), hit = new THREE.Vector3();
+    let drag = null;
+    const ndc = e => {
+      const r = renderer.domElement.getBoundingClientRect();
+      return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    };
+    renderer.domElement.addEventListener('pointerdown', e => {
+      if (!ed.dots || !ed.dots.parent) return;
+      ray.setFromCamera(ndc(e), camera);
+      const h = ray.intersectObjects(ed.dots.children.filter(c => c.userData.joint));
+      if (!h.length) return;
+      drag = h[0].object;
+      plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), drag.getWorldPosition(new THREE.Vector3()));
+      controls.enabled = false;
+      e.stopPropagation();
+    }, true);
+    renderer.domElement.addEventListener('pointermove', e => {
+      if (!drag) return;
+      ray.setFromCamera(ndc(e), camera);
+      if (!ray.ray.intersectPlane(plane, hit)) return;
+      drag.position.copy(drag.parent.worldToLocal(hit.clone()));
+      const k = drag.userData.joint, other = k.endsWith('L') ? k.slice(0, -1) + 'R' : k.endsWith('R') ? k.slice(0, -1) + 'L' : null;
+      if (other && $('rigMirror').checked) {
+        const o = ed.dots.children.find(c => c.userData.joint === other), cx = charBox().getCenter(new THREE.Vector3()).x;
+        o.position.set(2 * cx - drag.position.x, drag.position.y, drag.position.z);
+      }
+      if (!other) drag.position.x = charBox().getCenter(new THREE.Vector3()).x;   // (a middle joint stays in the middle)
+    });
+    window.addEventListener('pointerup', () => {
+      if (!drag) return;
+      const P = placer();
+      for (const c of ed.dots.children) if (c.userData.joint) ed.joints[c.userData.joint] = P.unmap(c.position.clone());
+      drag = null;
+      controls.enabled = true;
+      drawPreview();
+    });
+  }
+
   // the model as the game will have it: parts with vertices (character space, bones) and their textures
   function prepare() {
     const P = placer(), rigged = ed.src.parts.every(p => p.boneOf);
-    const G = rigged ? null : charGrid(charBox().getSize(new THREE.Vector3()).y / 40);
+    const R = autoRig() ? rigOnItsShape(P) : null;
+    const G = rigged ? null : charGrid(charBox().getSize(new THREE.Vector3()).y / 40, R ? R.moved : null);
     const verts = [], idx = [], parts = [], textures = [], wraps = [], palette = [];
     const seenGeo = new Map();   // (a geometry's vertices once, its groups each a part)
     const pieces = [];           // (each geometry's vertices: [from, to])
@@ -539,6 +785,8 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
       if (fn.dot(A.nrm) + fn.dot(B.nrm) + fn.dot(C.nrm) < 0) [idx[k + 1], idx[k + 2]] = [idx[k + 2], idx[k + 1]];
     }
     if (G && $('modelOver').checked) { keepToTheTrunk({verts, idx, parts}); ride(verts, pieces); }
+    const standing = R ? verts.map(v => v.pos.clone()) : null;   // (as it stands: the joints are shown on it)
+    if (R) R.pose(verts);   // (into the character's own pose - its rest T-pose - its own shape kept)
     // (the palette: a color an 8 x 8 cell, 32 a row - the game's 4 x 4 compressed blocks and smaller mip levels keep it)
     if (palette.length > 1024) throw new Error('too many colors (' + palette.length + ') - 1,024 at most without a texture');
     if (palette.length) {
@@ -547,7 +795,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     }
     for (const p of parts) p.texture = p.tex === 'palette' ? textures.length - 1 : p.tex;
     for (const v of verts) v.uv = v.uv || [0, 0];
-    return {verts, idx, parts, textures, wraps, palette};
+    return {verts, idx, parts, textures, wraps, palette, standing};
   }
 
   // a texture as a canvas (a picture: up to 1024, a power of two; the palette: 256 x 256)
@@ -572,16 +820,24 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
   // ---- the preview: skinned on the character's bones ----------------------------------------------------------------
   function drawPreview() {
     if (ed.view) { holder.remove(ed.view); ed.view = null; }
-    if (!ed.src || !ed.rig) return;
+    if (ed.modelRig) { holder.remove(ed.modelRig.root); ed.modelRig = null; }
+    if (!ed.src || !ed.rig) { showDots(); return; }
     let m;
     try { m = prepare(); } catch (err) { setStatus(err.message); return; }
     ed.prepared = m;
+    if (autoRig() && ed.modelSkel) {   // (the model's own skeleton: its bones where its joints are)
+      ed.modelRig = makeRig(ed.modelSkel);
+      holder.add(ed.modelRig.root);
+      if (ed.posed) posing(ed.modelRig, ed.modelSkel);
+    }
     const view = new THREE.Group();
     const texs = m.textures.map((t, k) => { const tx = new THREE.CanvasTexture(textureCanvas(t, m.palette)); tx.flipY = false; tx.colorSpace = THREE.SRGBColorSpace; applyWrap(tx, m.wraps[k]); return tx; });
     const n = m.verts.length, pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3), uv = new Float32Array(n * 2);
     const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+    const showStanding = editingJoints() && m.standing;   // (the joints shown: it as it stands, not rigged)
     m.verts.forEach((v, i) => {
-      pos.set([v.pos.x, v.pos.y, v.pos.z], i * 3); nrm.set([v.nrm.x, v.nrm.y, v.nrm.z], i * 3); uv.set(v.uv, i * 2);
+      const at = showStanding ? m.standing[i] : v.pos;
+      pos.set([at.x, at.y, at.z], i * 3); nrm.set([v.nrm.x, v.nrm.y, v.nrm.z], i * 3); uv.set(v.uv, i * 2);
       const total = v.bw.reduce((s, x) => s + x[1], 0) || 1;
       v.bw.forEach(([b, w], j) => { si[i * 4 + j] = b; sw[i * 4 + j] = w / total; });
     });
@@ -593,13 +849,16 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
       g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
       g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
       g.setIndex(m.idx.slice(p.first, p.first + p.count));
-      const mesh = new THREE.SkinnedMesh(g, new THREE.MeshLambertMaterial({map: texs[p.texture], side: THREE.DoubleSide, alphaTest: 0.3}));
-      mesh.bind(ed.rig.skeleton, new THREE.Matrix4());
+      const mat = new THREE.MeshLambertMaterial({map: texs[p.texture], side: THREE.DoubleSide, alphaTest: 0.3});
+      if (showStanding) { const plain = new THREE.Mesh(g, mat); plain.frustumCulled = false; view.add(plain); continue; }
+      const mesh = new THREE.SkinnedMesh(g, mat);
+      mesh.bind(ed.modelRig && autoRig() ? ed.modelRig.skeleton : ed.rig.skeleton, new THREE.Matrix4());
       mesh.frustumCulled = false;
       view.add(mesh);
     }
     holder.add(view);
     ed.view = view;
+    showDots();
     clearTimeout(ed.hideTimer);   // (the character's covered triangles - after a moment: a slider drag doesn't wait)
     ed.hideTimer = setTimeout(() => { ed.hidden = $('modelOver').checked ? hiddenUnder(m) : []; showHidden(); }, 300);
   }
@@ -681,16 +940,23 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
   }
 
   // a test pose: arms down and out, the head turned - how its bones bend it
+  // (a rig, from its skeleton's rest: as the game turns the character's bones - the model's own bones turned the same)
+  function posing(rig, skel) {
+    const names = ed.skel.names;
+    rig.bones.forEach((b, i) => { skel.local[i].decompose(b.position, b.quaternion, b.scale); });
+    if (ed.posed) rig.bones.forEach((b, i) => {
+      if (/^Arm [LR] 2 /.test(names[i])) b.rotateZ(/ L /.test(names[i]) ? -0.9 : 0.9);
+      if (/^Arm [LR] [34] /.test(names[i])) b.rotateY(/ L /.test(names[i]) ? 0.5 : -0.5);
+      if (/^Head /.test(names[i])) b.rotateY(0.5);
+      if (/^Leg L 1 /.test(names[i])) b.rotateZ(0.4);
+      if (/^Leg R 2 /.test(names[i])) b.rotateX(0.7);
+    });
+  }
   $('modelPose').onclick = () => {
     if (!ed.rig) return;
     ed.posed = !ed.posed;
-    const names = ed.skel.names;
-    ed.rig.bones.forEach((b, i) => { ed.skel.local[i].decompose(b.position, b.quaternion, b.scale); });
-    if (ed.posed) ed.rig.bones.forEach((b, i) => {
-      if (/^Arm [LR] 2 /.test(names[i])) b.rotateZ(/ L /.test(names[i]) ? -0.9 : 0.9);
-      if (/^Head /.test(names[i])) b.rotateY(0.5);
-      if (/^Leg L 1 /.test(names[i])) b.rotateZ(0.4);
-    });
+    posing(ed.rig, ed.skel);
+    if (ed.modelRig) posing(ed.modelRig, ed.modelSkel);
     $('modelPose').textContent = ed.posed ? 'Back to the rest pose' : 'Try a pose';
   };
 
@@ -706,7 +972,8 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     dv.setUint32(0, 0x444d4746, true); o = 4;   // "FGMD"
     [1, S, P, V, I].forEach(i32);
     ed.skel.parent.forEach(p => { dv.setInt8(o, p); o += 1; });
-    for (const m4 of ed.skel.invBind) { const e = m4.elements; [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14].forEach(k => f32(e[k])); }
+    const own = autoRig() && ed.modelSkel;   // (rigged on its own shape: its own bones' places)
+    for (const m4 of (own ? ed.modelSkel.invBind : ed.skel.invBind)) { const e = m4.elements; [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14].forEach(k => f32(e[k])); }
     for (const p of m.parts) { [p.first, p.count, p.texture].forEach(v => { dv.setUint32(o, v, true); o += 4; }); }
     for (const v of m.verts) {
       [v.pos.x, v.pos.y, v.pos.z, v.nrm.x, v.nrm.y, v.nrm.z, v.uv[0], v.uv[1]].forEach(f32);
@@ -728,6 +995,7 @@ export function createModelEditor({holder, $, setStatus, download, outfitsOf, te
     const o2 = ed.outfit, name = ($('modelName').value || 'My model').trim();
     const manifest = {format: 1, name, character: o2.character, models: outfitsOf(o2.character).map(x => [x.model.lo, x.model.hi]),
       bones: S + 1, textures: pngs, wrap: m.wraps, over: $('modelOver').checked, tool: 'FGUY Skin Studio'};
+    if (own) { manifest.over = false; manifest.ownShape = {hips: +ed.modelSkel.hipScale.toFixed(4)}; }   // (models.cpp: its own bones' lengths)
     if (manifest.over)   // (the character's triangles under it, by piece - its vertex and index counts - and number)
       manifest.hide = hiddenUnder(m).map(h => ({verts: h.verts, indices: h.indices, tris: h.ranges.flat()}));
     files['model.json'] = [strToU8(JSON.stringify(manifest)), {level: 0}];

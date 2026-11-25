@@ -3112,6 +3112,12 @@ void FreeApplyPickups() {
                 pickup ? L"" : L" (nothing showing there here)", u.kind, kindId, kindType,
                 otherKind ? L" - A DIFFERENT KIND HERE" : L"");
         if (!pickup || !player) continue;
+        // (taken here already - both players on it at once: the user's 0x3bd, twice. Its transform gone ([+0x38] null), taking it
+        //  again crashed in the game's pickup effect (0x9b2969, reading 0x30) - caught, but not to be done at all)
+        if (IsBadReadPtr(static_cast<unsigned char*>(pickup) + 0x38, 4) || !*reinterpret_cast<void**>(static_cast<unsigned char*>(pickup) + 0x38)) {
+            Log(L"Netplay: free - pickup %#x: taken here already (by both at once) - player %d's take not played", u.id, u.h.slot);
+            continue;
+        }
         InterlockedExchange(&g_replayingPickup, 1);
         bool ok = SafeCollect(pickup, player);
         InterlockedExchange(&g_replayingPickup, 0);

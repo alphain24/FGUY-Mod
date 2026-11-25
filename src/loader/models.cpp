@@ -37,6 +37,13 @@ struct Hide { unsigned verts = 0, indices = 0; std::vector<unsigned> tris; };   
 struct Model {
     std::wstring name;
     bool over = false;                     // (worn over the character, not instead of it)
+    // Rigged on its own shape (the Skin Studio's auto-rig, model.json "ownShape": {"hips": k}): its bones are where its own joints
+    // are - a person's arms as long as a person's, not the character's. Turned as the game turns the character's (its rest
+    // rotations are the character's), each bone's offset from its parent its own (restT, from its inverse binds), the hips'
+    // (and the root's) the game's times k - a taller model's hips higher, as they bob.
+    bool ownShape = false;
+    float hipScale = 1;
+    std::vector<float> restT;              // skel x 3
     std::vector<Hide> hide;                // (their triangles under it)
     int skel = 0;                          // its skeleton's bones (the game's pose has one more: the root)
     std::vector<int> parent;
@@ -263,6 +270,28 @@ Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
     }
     for (int s = 0; s < S; ++s)   // (parents before their children: one pass makes the matrices)
         if (m->parent[s] >= s) { delete m; return nullptr; }
+    size_t os = js.find("\"ownShape\"");   // ("ownShape": {"hips": k})
+    if (os != std::string::npos) {
+        size_t hp = js.find("\"hips\"", os);
+        size_t colon = hp != std::string::npos ? js.find(':', hp) : std::string::npos;
+        float k = colon != std::string::npos ? (float)atof(js.c_str() + colon + 1) : 1.f;
+        m->ownShape = true;
+        m->hipScale = k > 0.2f && k < 5.f ? k : 1.f;
+        // each bone's rest offset in its parent's frame: the parent's inverse bind times the bone's place (its bind's
+        // translation: -R^T t of its inverse bind - rigid)
+        m->restT.resize((size_t)S * 3);
+        for (int b = 0; b < S; ++b) {
+            const float* ib = &m->invBind[(size_t)b * 12];
+            float place[3];
+            for (int c = 0; c < 3; ++c) place[c] = -(ib[c] * ib[3] + ib[4 + c] * ib[7] + ib[8 + c] * ib[11]);
+            int par = m->parent[b];
+            for (int r = 0; r < 3; ++r) {
+                if (par < 0) { m->restT[(size_t)b * 3 + r] = place[r]; continue; }
+                const float* pb = &m->invBind[(size_t)par * 12];
+                m->restT[(size_t)b * 3 + r] = pb[r * 4] * place[0] + pb[r * 4 + 1] * place[1] + pb[r * 4 + 2] * place[2] + pb[r * 4 + 3];
+            }
+        }
+    }
     size_t ov = js.find("\"over\"");   // ("over": true - worn over the character)
     m->over = ov != std::string::npos && js.find("true", ov) == js.find_first_not_of(" \t\r\n:", ov + 6);
     size_t hd = js.find("\"hide\"");   // ("hide": [{"verts": V, "indices": I, "tris": [first, count, ...]}, ...])
@@ -376,8 +405,14 @@ bool Skin(int slot, Model* m) {
     std::vector<float> world((size_t)bones * 12), skin((size_t)m->skel * 12);
     Local(&pose[0], &world[0]);   // (the game's bone 0: the character's root)
     for (int s = 0; s < m->skel; ++s) {
-        float local[12];
-        Local(&pose[(size_t)(s + 1) * 10], local);
+        float local[12], trs[10];
+        memcpy(trs, &pose[(size_t)(s + 1) * 10], sizeof(trs));
+        if (m->ownShape) {   // (its own bones' lengths: the root and the hips the game's, scaled; the rest their own offsets)
+            int par = m->parent[s];
+            if (par < 0 || m->parent[par] < 0) for (int c = 0; c < 3; ++c) trs[4 + c] *= m->hipScale;
+            else for (int c = 0; c < 3; ++c) trs[4 + c] = m->restT[(size_t)s * 3 + c];
+        }
+        Local(trs, local);
         int par = m->parent[s] >= 0 ? m->parent[s] + 1 : 0;
         Mul(&world[(size_t)(s + 1) * 12], &world[(size_t)par * 12], local);
         Mul(&skin[(size_t)s * 12], &world[(size_t)(s + 1) * 12], &m->invBind[(size_t)s * 12]);

@@ -186,16 +186,24 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
 
   <aside class="panel" id="modelSide" hidden>
     <h2>New model</h2>
-    <div class="muted">A model of your own (.glb - from Blender, img2threejs, ...) in place of this character. It moves with
+    <div class="muted">A model of your own (.glb, .fbx, .obj with its .mtl and pictures - pick them together - or a .zip of them; from Blender, img2threejs, ...) in place of this character. It moves with
     the character's bones: each part of it bends with the part of the character it's on.</div>
     <div class="row" style="margin-top:8px">
-      <label class="btn primary">Import .glb <input type="file" id="importModel" accept=".glb,.gltf" hidden></label>
+      <label class="btn primary">Import model <input type="file" id="importModel" accept=".glb,.gltf,.fbx,.obj,.mtl,.png,.jpg,.jpeg,.tga,.zip" multiple hidden></label>
       <label class="muted">The character <select id="modelGhost" style="width:auto;padding:3px 6px"><option value="solid">solid</option><option value="xray">x-ray</option><option value="none">hidden</option></select></label>
     </div>
+    <div id="modelParts" hidden style="margin-top:6px"><div class="muted">Its parts - untick one to leave it out:</div></div>
     <div class="sep"></div>
     <h2>Fit it</h2>
     <div class="row"><label class="muted"><input type="checkbox" id="fitKeep"> Made on this character already: keep its size and place</label></div>
     <div class="row"><label class="muted"><input type="checkbox" id="fitBody" checked> Fit to the body's shape (arms, torso, head)</label></div>
+    <div class="row"><label class="muted"><input type="checkbox" id="fitRig"> Keep its own shape - rig it automatically (any person-shaped model)</label></div>
+    <div class="row" id="rigRow" hidden>
+      <button class="btn" id="rigFind">Find the joints again</button>
+      <label class="muted"><input type="checkbox" id="rigMirror" checked> Move both sides together</label>
+      <label class="muted"><input type="checkbox" id="rigEdit" checked> Show the joints</label>
+    </div>
+    <div class="muted" id="rigHelp" hidden>The dots are its joints, found from its shape - drag any that's off (it should stand facing you, arms out). Then untick "Show the joints" to see it rigged, in the character's pose, and "Try a pose".</div>
     <div class="row"><span class="muted" style="width:60px">Size</span><input type="range" id="fitScale" min="0.5" max="1.5" step="0.005" value="1"></div>
     <div class="row"><span class="muted" style="width:60px">Left</span><input type="range" id="fitX" min="-0.5" max="0.5" step="0.002" value="0"></div>
     <div class="row"><span class="muted" style="width:60px">Up</span><input type="range" id="fitY" min="-0.5" max="0.5" step="0.002" value="0"></div>

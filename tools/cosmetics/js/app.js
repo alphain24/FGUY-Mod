@@ -1039,7 +1039,7 @@ renderer.domElement.addEventListener('webglcontextlost', () =>   // (the graphic
 renderer.domElement.addEventListener('webglcontextrestored', () => setStatus('The 3D view is back.'));
 
 // ---- Skins / Emotes --------------------------------------------------------------------------------------------
-models = createModelEditor({holder, $, setStatus, download, textureFor, outfitsOf: ch => state.outfits.filter(o => o.character === ch)});
+models = createModelEditor({holder, camera, controls, renderer, $, setStatus, download, textureFor, outfitsOf: ch => state.outfits.filter(o => o.character === ch)});
 emotes = createEmoteEditor({scene, camera, controls, renderer, holder, $, setStatus, download, textureFor,
   outfitsOf: ch => state.outfits.filter(o => o.character === ch)});
 const mocap = createMocap({$, setStatus, editor: emotes});

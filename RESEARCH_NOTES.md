@@ -1691,3 +1691,59 @@ without a restart; "a private mod only on my PC".
     keys, typing a command. Tested by the test pipe offline and on two copies online (the guest without the key,
     FGUYMOD_TEST_DEVKIT_NOKEY=1): the guest's god / ammo / items from the host's word (a 400 hit taken as nothing, drained
     counts back), every power-up given, brought next to the host; freeze and kill from the host.
+
+## After 0.9.20: a crash report that wasn't one; both players taking the same pickup (2026-11-25 - released in 0.9.21)
+- The user's game at the next start: "Report: crashed games found" for the session game of 2026-11-24 17:48-18:04. Its log: one
+  `CRASH at 0x9b2969 (reading 0x30)` at 17:56:30, caught (netplay's SafeCollect: "taking pickup 0x3bd ... for player 1 crashed
+  here - skipped"), the game played on and closed as it should at 18:04. report.cpp HasCrash counted any "CRASH at": now only one
+  with no "quit requested - exiting" after it. Checked on the test copy with two made-up old logs: the caught one no report, a
+  log ending in a crash a report.
+- The crash itself: pickup 0x3bd (kind 0x2363, Level CTXX) taken by both players at once - the user's PC had taken it ("I took
+  pickup 0x3bd"), then the friend's take played there: the pickup's transform ([+0x38]) gone, the game's pickup effect read
+  null + 0x30 (0x9bef3f -> 0x9b2969). The same pickup, the same way, in their log of 2026-11-23 22:43 too. Now a pickup whose
+  transform is gone isn't taken again ("taken here already (by both at once)").
+
+## Skin Studio: an auto-rigger (2026-11-25 - released in 0.9.21)
+The user: "can we add a auto rigger on the character editor?" - for "other humanoids" and "Family Guy-shaped models", joints "auto,
+then I can adjust"; they will send a model of theirs (none yet).
+- What there was: the Models tab rigs a model by itself already - it stretches the model onto the character's shape ("Fit to the
+  body's shape") and copies the nearest character vertices' weights. A person from another game came out in the character's
+  proportions.
+- **New: "Keep its own shape - rig it automatically"** (js/autorig.js, models.js). The model only scaled to the character's
+  height; its joints found from its shape (surface points - a low model's vertices alone missed whole heights: a capsule's rings
+  gave a "gap between the legs" in the middle of a torso): the crotch the highest height with a gap between the legs, the arms
+  bins in x from the hand in - the torso where a bin grows much taller than the arm has been - the wrist the slimmest in the
+  arm's outer third, the ankle the slimmest front to back low in the leg, the neck the slimmest above the shoulders. Dots on it,
+  dragged on a plane facing the camera ("both sides together" mirrors). The character's landmarks come from its own bones (rig.js
+  names: Hips, the hand's chain up to the spine - its 2nd bone the shoulder, the bone nearest half way the elbow; Leg 1..3).
+- 20 landmarks make 20 segments. Each character bone and each character vertex (its main bone's) has a place along a segment
+  (how far along, how far out - scaled by the segments' girths, model / character): the same place on the model's segment. The
+  character's mesh put there gives the model its weights (the old nearest-vertex copy). The model is then put in the character's
+  rest pose (its T-pose): each segment turned to the character's direction, its own length kept, the vertices moved by their
+  weights. Its skeleton: the character's bones at their places on that posed shape, turned as the character's.
+- **The game side** (models.cpp, model.json "ownShape": {"hips": k}): each bone turned as the game turns the character's, but
+  its offset from its parent the model's own (from its inverse binds); the root's and the hips' the game's times k (the hips'
+  height, model / character). Without it the game puts a model's bones where the character's are (a person squashed to Peter).
+- Tested: a made-up person (dev_autorig_test.js: capsules, T- and A-pose) - its joints within ~0.06 of the truth for legs, hips,
+  elbows; its shoulders and wrists off by its own odd shape (a shoulder outside its torso, a hand thinner than its wrist); in
+  the Studio the A-pose put into Peter's T-pose, "Try a pose" bending it as Peter; in the game (two copies, a match as Peter,
+  `modelload`): standing, walking, its own proportions. NOT handled: the weapon is held where the CHARACTER's hand is (the
+  game's own attachment) - a long-armed model's gun at Peter's hand height; fingers and the face follow the hand's / head's
+  segment (no finger joints found).
+- **The user's first model (PandaAmy.zip: .obj + .mtl + .png, a chibi panda girl, 20,631 vertices)** - four fixes:
+  1. Its file had a second object, "Ball" (a black sphere round her, from the floor up) - the joints were found on the
+     ball. The Studio now lists a model's parts (objects) with a tick box each: unticked, left out (joints found again).
+  2. Her head is very wide and comes down beside her arms: the shoulder's height was the average of everything in the
+     slice next to the body - the bottom of her head too (0.76 of her height, her arms at 0.62). The arm is now
+     followed in from the hand: in each slice only the run of heights joined to the arm in the slice before.
+  3. 32 vertices at the back of her hair had no bone: the weight search stopped 8 cells out and her hair is further
+     than that from the character's (moved) mesh - dropped to the floor (a black strip down her back). It now looks
+     out to 48 cells; a vertex with none is left where it is.
+  4. On Lois her legs crossed into an X: every segment was turned to the character's direction, the pelvis-to-hip too
+     (hers level, Lois's sloping steeply down) and her wide-set boots put where Lois's slim feet are. Now the joining
+     bits (pelvis to hip, chest to shoulder) keep their own direction; arms are turned to within 3 degrees of the
+     character's (an A-pose raised: the aiming is the character's), legs and the rest keep up to 15 degrees of their own.
+  Tested: in the Studio on Stewie and Lois ("Try a pose" bends right); in the game (two copies, a match as Lois,
+  `modelload 0 Panda_Amy.fgmodel`): standing, walking away and toward the camera, strafing, jumping - right.
+  build/research/Panda_Amy.fgmodel (the user's model - not for the repo or a release).
+- **0.9.21 released (2026-11-25)** with the above. Packaged-files test: two copies on the bad-connection lobby (`--sim-lag 30 --sim-jitter 90 --sim-loss 3`), a match as Lois, `modelload` of Panda_Amy on the host, both walking, the guest's pause menu by mouse (resumed). Once (the first run, 4 copies left over from the run before) the host's player was never seen and never moved (health 200, input arriving) - not on the rerun; not explained.

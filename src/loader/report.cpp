@@ -112,21 +112,25 @@ bool Running(DWORD pid) {
     return alive;
 }
 
-// The log of a game that crashed: "CRASH at" in it.
+// The log of a game that crashed: "CRASH at" in it, and no clean end after it ("quit requested - exiting"). A crash the mod caught
+// and went on from (a pickup taken for another player, skipped) is in a log too - that game played on and closed as it should, and
+// was reported as a crash (the user's game of 2026-11-24 17:56, its report found at the next start).
 bool HasCrash(const std::wstring& path) {
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
     if (f == INVALID_HANDLE_VALUE) return false;
     std::vector<char> buf(1 << 16);
     std::string carry;
-    bool found = false;
+    bool crashed = false;
     DWORD got = 0;
-    while (!found && ReadFile(f, buf.data(), (DWORD)buf.size(), &got, nullptr) && got > 0) {
+    while (ReadFile(f, buf.data(), (DWORD)buf.size(), &got, nullptr) && got > 0) {
         std::string chunk = carry + std::string(buf.data(), got);
-        found = chunk.find("CRASH at") != std::string::npos;
-        carry = chunk.size() > 16 ? chunk.substr(chunk.size() - 16) : chunk;
+        size_t c = chunk.rfind("CRASH at"), q = chunk.rfind("quit requested - exiting");
+        if (c != std::string::npos && (q == std::string::npos || q < c)) crashed = true;
+        else if (q != std::string::npos) crashed = false;
+        carry = chunk.size() > 32 ? chunk.substr(chunk.size() - 32) : chunk;
     }
     CloseHandle(f);
-    return found;
+    return crashed;
 }
 
 }  // namespace
