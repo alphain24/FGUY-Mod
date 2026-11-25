@@ -1779,3 +1779,24 @@ then I can adjust"; they will send a model of theirs (none yet).
   - *Fix weights* (Models tab): a bone picked (list, or Alt+click the model), its weight shown as colour (blue none - red all), brush Add / Remove / Smooth, size, strength, "Both sides" (the mirror vertex - nearest the mirror image as it stands - gets the other side's bone), Undo (40), Reset all. Kept by vertex over the found weights (ed.paint), applied in prepare() before the model is put in the character's pose, saved in the pack; dropped when the vertices or the character change. Checked: a stroke on her skirt (213 vertices painted, hips share up), undo, reset; the colours show her skirt frill and purse on the left thigh - why it stretched in a step.
   - Her pack rebuilt with the new weights and put on the user's game (old one: backup-before-0.9.22\Panda_Amy.fgskin.before-hands); checked in a match: gloves whole round the gun, legs clean.
   - *Her skirt* (the user: "fix her skirt for me"): her skirt and purse sit 0.69-0.92 high, 0.16-0.3 off her thigh lines (her thighs 0.05 thick) - every vertex there clear of the thighs (0.08) taken off the leg bones onto the hips, the hem keeping up to 0.3 of its leg share, nothing from 0.80 up (1,717 vertices; leg share 695 -> 91). Walking and crouching: the frill no longer crumples, the purse stays at her hip. Done as painted weights (ed.paint) - the Studio's own path - and her pack put on the user's game (the one before: backup-before-0.9.22\Panda_Amy.fgskin.before-skirt). The Studio pushed (main: GitHub Pages) - no game release, the dll didn't change.
+
+## The save slot's "COMPLETE" text - Jim's question (2026-11-25)
+- Jim (Discord, the BTTM modding guide/wiki) asked why adding an 11th story level (LevelProgression) sometimes shows
+  "=GCMP_NAME" instead of "COMPLETE" on the save select. The headers come from C++ (SAVE_GetHeaders -> 0x5a8a40):
+  header byte +2 = the save's story progress (levels done); `0x624e80()` = the number of levels in LevelProgression;
+  progress < that: `0x624ed0(progress)` (the next level's four-letter id) -> sprintf "=NAM_%s" (0xa170ac) - its name
+  text; else "=MNU_COMPLETE" (0xa170bc). The menu (main_menu.gfx UpdateSaveSlots) just shows headers[i].sceneID.
+  So a save that beat all 10 has a "next level" once there are 11 - GCMP has no NAM_GCMP text, so the raw key shows;
+  saves part way through are unaffected. NAM_ texts exist for the story levels and challenges (NAM_SSC1, NAM_AMC3...)
+  and the multiplayer maps' NAM_xxMP. Told to the user to pass on.
+- From his guide, checked on PC: the scrapped levels it lists (PIDM, PICF, AMC1/2, ZZ*, TCHR, KOTH) are NOT in the PC
+  files; GCMP and SSC1 (The Great Eggscape, a console DLC) are.
+- **The Great Eggscape unlocked (2026-11-25, built, not released)**: the challenge list (FCHL_GetChallenges, 0x65fd50)
+  counts the challenges (0x51b1e0) then drops the last unless 0x967790(8) - "content 8 owned" = bit 0 of 0xba9289,
+  never set on PC (a console DLC). eggscape.cpp patches that case (0x9677f6: mov al,[0xba9289]; and al,1; ret ->
+  mov al,1; ret). Content 8 is asked for elsewhere only at 0x693ac0 (all the flags refreshed, answer unused).
+  Checked on a test copy: Challenge Mode lists "THE GREAT EGGSCAPE - ESCAPE" (8th), its page ("Clear and Escape the
+  Space Station Before the Timer Runs Out"), character pick, the level (SSC1 - the space station) with its intro
+  lines, the HUD (5:25 timer, Rooms to Clear 6, Civilians Remaining 8, Mercy Kills), 30 s of running and firing, no
+  crash. Not tried: finishing it (its results / stars), two players, online.
+- **0.9.23 released (2026-11-25)** with The Great Eggscape unlocked. Packaged-files test: two copies on the bad-connection lobby (both moving, both pause menus, resumed by mouse); one copy: Challenge Mode lists it, it starts and plays (5:55 timer, its HUD).
