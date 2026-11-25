@@ -22,6 +22,7 @@
 #include "common.h"
 
 #include <d3d9.h>
+#include <d3dcommon.h>
 
 #include <algorithm>
 #include <cmath>
@@ -31,8 +32,10 @@
 namespace {
 
 struct Vert { float pos[3], nrm[3], uv[2]; unsigned char bone[4], weight[4]; };
-struct Part { unsigned first, count, texture; bool stretched = false; };   // (stretched: part of it on a hidden body - Skin)
-struct Run { unsigned first, count; };   // (indices with an outline)
+// (stretched: part of it on a hidden body - Skin. cut: its picture has see-through texels where its triangles are -
+//  hair strands, lashes, lace on a card - drawn cut out: MarkCut, DrawCut)
+struct Part { unsigned first, count, texture; bool stretched = false; bool cut = false; };
+struct Run { unsigned first, count; int cutTex = -1; };   // (indices with an outline - cutTex: a cut part's, its picture)
 struct Hide { unsigned verts = 0, indices = 0; std::vector<unsigned> tris; };   // (tris: first, count, first, count...)
 struct Model {
     std::wstring name;
@@ -205,6 +208,57 @@ void MergeLayers(Model* m) {
     Log(L"Models: %s - %d pieces painted into the see-through texels of the ones over them", m->name.c_str(), merged);
 }
 
+// A part whose picture is see-through where its triangles are (hair strands or lashes drawn on cards, lace): the game's
+// shader leaves no texel out, so those showed as solid cards (black, or the picture's hidden colour). Marked here - its
+// triangles' texels counted in its picture, a part with over 1 in 200 of them clear is cut - and drawn cut out (DrawCut).
+// Only where its triangles are: a picture's clear background between its pieces (most pictures from other games have
+// one) leaves a part as it was.
+void MarkCut(Model* m) {
+    std::vector<Model::Pixels> px(m->pngs.size());
+    std::vector<char> tried(m->pngs.size());
+    int cut = 0;
+    for (Part& p : m->parts) {
+        if (p.count < 3 || p.texture >= m->pngs.size()) continue;
+        const Model::Pixels* tp = p.texture < m->painted.size() && m->painted[p.texture].w ? &m->painted[p.texture] : nullptr;
+        if (!tp) {
+            Model::Pixels& d = px[p.texture];
+            if (!tried[p.texture]) {
+                tried[p.texture] = 1;
+                if (m->pngs[p.texture].empty() || !SkinDecodePng(m->pngs[p.texture], d.rgba, &d.w, &d.h)) d.w = 0;
+            }
+            if (d.w && d.h && d.rgba.size() >= (size_t)d.w * d.h * 4) tp = &d;
+        }
+        if (!tp) continue;
+        size_t all = 0, clear = 0;
+        for (unsigned k = p.first; k + 2 < p.first + p.count; k += 3) {   // (each triangle's texels: their centres inside it)
+            float x[3], y[3];
+            for (int c = 0; c < 3; ++c) {
+                const float* uv = m->verts[m->idx[k + c]].uv;
+                x[c] = (uv[0] - std::floor(uv[0])) * tp->w;   // (tiled: its place in the picture)
+                y[c] = (uv[1] - std::floor(uv[1])) * tp->h;
+            }
+            float area = (x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0]);
+            if (std::fabs(area) < 1e-6f) continue;
+            int x0 = (std::max)(0, (int)std::floor((std::min)({x[0], x[1], x[2]})));
+            int x1 = (std::min)((int)tp->w - 1, (int)std::ceil((std::max)({x[0], x[1], x[2]})));
+            int y0 = (std::max)(0, (int)std::floor((std::min)({y[0], y[1], y[2]})));
+            int y1 = (std::min)((int)tp->h - 1, (int)std::ceil((std::max)({y[0], y[1], y[2]})));
+            for (int ty = y0; ty <= y1; ++ty)
+                for (int tx = x0; tx <= x1; ++tx) {
+                    float cx = tx + 0.5f, cy = ty + 0.5f;
+                    float w0 = ((x[1] - cx) * (y[2] - cy) - (x[2] - cx) * (y[1] - cy)) / area;
+                    float w1 = ((x[2] - cx) * (y[0] - cy) - (x[0] - cx) * (y[2] - cy)) / area;
+                    if (w0 < 0 || w1 < 0 || w0 + w1 > 1) continue;
+                    ++all;
+                    clear += tp->rgba[((size_t)ty * tp->w + tx) * 4 + 3] < 128;
+                }
+        }
+        if (clear) Log(L"Models: %s - part %zu: %zu of its %zu texels see-through", m->name.c_str(), (size_t)(&p - m->parts.data()), clear, all);
+        if (all && clear * 200 > all) { p.cut = true; ++cut; }
+    }
+    if (cut) Log(L"Models: %s - %d parts with see-through texels: drawn cut out", m->name.c_str(), cut);
+}
+
 Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
     std::vector<unsigned char> mesh, json;
     if (!ZipRead(pack, "mesh.bin", mesh) || !ZipRead(pack, "model.json", json) || mesh.size() < 24) return nullptr;
@@ -256,6 +310,7 @@ Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
             q1 = js.find('"', q2 + 1);
         }
     MergeLayers(m);
+    MarkCut(m);
     for (const Part& p : m->parts) {   // (the parts outlined: their sizes across)
         float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
         for (unsigned k = p.first; k < p.first + p.count; ++k)
@@ -265,7 +320,9 @@ Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
             }
         float dx = hi[0] - lo[0], dy = hi[1] - lo[1], dz = hi[2] - lo[2];
         if (p.count < 3 || std::sqrt(dx * dx + dy * dy + dz * dz) < kOutlineMin) continue;
-        if (!m->outlined.empty() && m->outlined.back().first + m->outlined.back().count == p.first) m->outlined.back().count += p.count;
+        if (p.cut) m->outlined.push_back({p.first, p.count, (int)p.texture});   // (cut out as its part is: a run of its own)
+        else if (!m->outlined.empty() && m->outlined.back().cutTex < 0 && m->outlined.back().first + m->outlined.back().count == p.first)
+            m->outlined.back().count += p.count;
         else m->outlined.push_back({p.first, p.count});
     }
     for (int s = 0; s < S; ++s)   // (parents before their children: one pass makes the matrices)
@@ -638,6 +695,170 @@ IDirect3DIndexBuffer9* HiddenCopy(IDirect3DDevice9* dev, Pieces& pc, IDirect3DIn
 }
 }  // namespace
 
+// ---- a cut part (MarkCut): drawn twice in a pass with depth - first only its depth, only where its picture is solid (a
+// pixel shader of ours: the picture's alpha, an alpha test), then the game's own draw where that depth is (ZFUNC equal,
+// no depth written): the same look, the see-through texels left out. The game's character shader reads its colour
+// picture from stage 1 at an input of its own (TEXCOORD2 - checked: FGUYMOD_TEST_MODELPASSES); ours reads it the same
+// way: one made for each game shader, by what its code reads (its first texld from s1, that input's declaration).
+struct CutPs { IDirect3DPixelShader9* game; IDirect3DPixelShader9* ours; };
+std::vector<CutPs> g_cutPs;
+IDirect3DDevice9* g_cutDev = nullptr;
+
+IDirect3DPixelShader9* CutShader(IDirect3DDevice9* dev, IDirect3DPixelShader9* game) {
+    if (g_cutDev != dev) {   // (a new device: those made for the old one gone)
+        for (CutPs& c : g_cutPs) { if (c.ours) c.ours->Release(); c.game->Release(); }
+        g_cutPs.clear();
+        g_cutDev = dev;
+    }
+    for (const CutPs& c : g_cutPs)
+        if (c.game == game) return c.ours;
+    UINT size = 0;
+    std::vector<DWORD> code;
+    if (SUCCEEDED(game->GetFunction(nullptr, &size)) && size >= 8) {
+        code.resize(size / 4);
+        if (FAILED(game->GetFunction(code.data(), &size))) code.clear();
+    }
+    int usage = -1, index = 0;
+    char comps[3] = "xy";
+    if (!code.empty() && code[0] == 0xFFFF0300) {   // (ps_3_0: every instruction says its length)
+        struct Dcl { int reg, usage, index; };
+        std::vector<Dcl> dcls;
+        int readReg = -1;
+        DWORD swz = 0xE4;
+        auto regType = [](DWORD r) { return (int)(((r >> 28) & 7) | ((r >> 8) & 0x18)); };   // (1 input, 10 sampler)
+        for (size_t i = 1; i < code.size();) {
+            DWORD t = code[i];
+            if (t == 0x0000FFFF) break;
+            DWORD op = t & 0xFFFF;
+            if (op == 0xFFFE) { i += 1 + ((t >> 16) & 0x7FFF); continue; }   // (a comment)
+            DWORD len = (t >> 24) & 0xF;
+            if (op == 0x1F && len >= 2 && i + 2 < code.size()) {   // dcl
+                if (regType(code[i + 2]) == 1) dcls.push_back({(int)(code[i + 2] & 0x7FF), (int)(code[i + 1] & 0x1F), (int)((code[i + 1] >> 16) & 0xF)});
+            } else if (op == 0x42 && len >= 3 && i + 3 < code.size() && readReg < 0) {   // texld dst, src, sampler
+                DWORD src = code[i + 2], smp = code[i + 3];
+                if (regType(smp) == 10 && (smp & 0x7FF) == 1 && regType(src) == 1) { readReg = (int)(src & 0x7FF); swz = (src >> 16) & 0xFF; }
+            }
+            i += 1 + len;
+        }
+        for (const Dcl& d : dcls)
+            if (d.reg == readReg) { usage = d.usage; index = d.index; }
+        const char xyzw[] = "xyzw";
+        comps[0] = xyzw[swz & 3];
+        comps[1] = xyzw[(swz >> 2) & 3];
+    }
+    IDirect3DPixelShader9* ours = nullptr;
+    if (usage == 5 || usage == 10) {   // (TEXCOORDn, COLORn)
+        using D3DCompile_t = HRESULT(WINAPI*)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO*, ID3DInclude*, LPCSTR, LPCSTR, UINT,
+                                              UINT, ID3DBlob**, ID3DBlob**);
+        static D3DCompile_t compile = [] {
+            HMODULE h = LoadLibraryW(L"d3dcompiler_47.dll");
+            return h ? reinterpret_cast<D3DCompile_t>(GetProcAddress(h, "D3DCompile")) : nullptr;
+        }();
+        char src[256];
+        sprintf_s(src, "sampler2D s : register(s1);\nfloat4 main(float4 t : %s%d) : COLOR { return tex2D(s, t.%s); }\n",
+                  usage == 5 ? "TEXCOORD" : "COLOR", index, comps);
+        ID3DBlob *bin = nullptr, *errors = nullptr;
+        if (compile && SUCCEEDED(compile(src, strlen(src), "cut", nullptr, nullptr, "main", "ps_3_0", 0, 0, &bin, &errors)) && bin)
+            dev->CreatePixelShader(static_cast<const DWORD*>(bin->GetBufferPointer()), &ours);
+        if (!ours) Log(L"Models: the cut-out shader didn't compile: %S", errors ? static_cast<const char*>(errors->GetBufferPointer()) : "no d3dcompiler_47");
+        if (bin) bin->Release();
+        if (errors) errors->Release();
+    }
+    Log(L"Models: cut-out shader for the game's %p: %s", game,
+        ours ? (usage == 5 ? L"its picture read at a TEXCOORD" : L"its picture read at a COLOR") : L"none - drawn solid");
+    game->AddRef();   // (kept: its address names it)
+    g_cutPs.push_back({game, ours});
+    return ours;
+}
+
+// true: drawn cut out (hr set); false: not in a pass it can be (no depth - the shadow's), drawn as before by the caller
+bool DrawCut(IDirect3DDevice9* dev, ModelsRealDraw real, UINT V, UINT first, UINT count, IDirect3DTexture9* picture,
+             IDirect3DTexture9* colour, bool stage2, HRESULT* hr) {
+    DWORD z = 0, zWrite = 0;
+    dev->GetRenderState(D3DRS_ZENABLE, &z);
+    dev->GetRenderState(D3DRS_ZWRITEENABLE, &zWrite);
+    if (!z || !zWrite || !picture) return false;
+    IDirect3DPixelShader9* game = nullptr;
+    dev->GetPixelShader(&game);
+    if (!game) return false;
+    IDirect3DPixelShader9* ours = CutShader(dev, game);
+    if (!ours) { game->Release(); return false; }
+    const D3DRENDERSTATETYPE keep[] = {D3DRS_ZFUNC, D3DRS_COLORWRITEENABLE, D3DRS_ALPHATESTENABLE, D3DRS_ALPHAREF, D3DRS_ALPHAFUNC,
+                                       D3DRS_ALPHABLENDENABLE, D3DRS_STENCILENABLE};
+    DWORD was[7];
+    for (int k = 0; k < 7; ++k) dev->GetRenderState(keep[k], &was[k]);
+    // 1: its depth, where the picture is solid (0.3 and up - as the Skin Studio shows it)
+    dev->SetTexture(1, picture);
+    dev->SetPixelShader(ours);
+    dev->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);
+    dev->SetRenderState(D3DRS_ALPHAREF, 77);
+    dev->SetRenderState(D3DRS_ALPHAFUNC, D3DCMP_GREATEREQUAL);
+    dev->SetRenderState(D3DRS_COLORWRITEENABLE, 0);
+    dev->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+    dev->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+    real(dev, (int)D3DPT_TRIANGLELIST, 0, 0, V, first, count / 3);
+    // 2: the game's own draw, only there
+    dev->SetPixelShader(game);
+    for (int k = 1; k < 7; ++k) dev->SetRenderState(keep[k], was[k]);
+    dev->SetRenderState(D3DRS_ZFUNC, D3DCMP_EQUAL);
+    dev->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+    dev->SetTexture(1, colour);
+    if (stage2) dev->SetTexture(2, colour);
+    *hr = real(dev, (int)D3DPT_TRIANGLELIST, 0, 0, V, first, count / 3);
+    dev->SetRenderState(D3DRS_ZFUNC, was[0]);
+    dev->SetRenderState(D3DRS_ZWRITEENABLE, zWrite);
+    game->Release();
+    return true;
+}
+
+// research: a pass a model is drawn in - its render states, and (once per shader) the pixel and vertex shaders as text
+void ResearchPass(IDirect3DDevice9* dev) {
+    static std::vector<IDirect3DPixelShader9*> seen;
+    IDirect3DPixelShader9* ps = nullptr;
+    dev->GetPixelShader(&ps);
+    if (ps) ps->Release();   // (only looked at)
+    if (std::find(seen.begin(), seen.end(), ps) != seen.end() || seen.size() >= 16) return;
+    seen.push_back(ps);
+    const D3DRENDERSTATETYPE k[] = {D3DRS_ZENABLE, D3DRS_ZWRITEENABLE, D3DRS_ZFUNC, D3DRS_COLORWRITEENABLE, D3DRS_ALPHABLENDENABLE,
+                                    D3DRS_SRCBLEND, D3DRS_DESTBLEND, D3DRS_ALPHATESTENABLE, D3DRS_CULLMODE, D3DRS_DEPTHBIAS,
+                                    D3DRS_STENCILENABLE};
+    DWORD s[11];
+    for (int i = 0; i < 11; ++i) dev->GetRenderState(k[i], &s[i]);
+    IDirect3DSurface9* rt = nullptr;
+    D3DSURFACE_DESC rd{};
+    if (SUCCEEDED(dev->GetRenderTarget(0, &rt)) && rt) { rt->GetDesc(&rd); rt->Release(); }
+    Log(L"Models: pass %zu - shader %p: z %lu write %lu func %lu, colour writes %#lx, blend %lu (%lu, %lu), alpha test %lu, cull %lu, "
+        L"depth bias %#lx, stencil %lu; target %ux%u format %d",
+        seen.size(), ps, s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8], s[9], s[10], rd.Width, rd.Height, rd.Format);
+    using D3DDisassemble_t = HRESULT(WINAPI*)(LPCVOID, SIZE_T, UINT, LPCSTR, ID3DBlob**);
+    static D3DDisassemble_t disasm = [] {
+        HMODULE m = LoadLibraryW(L"d3dcompiler_47.dll");
+        return m ? reinterpret_cast<D3DDisassemble_t>(GetProcAddress(m, "D3DDisassemble")) : nullptr;
+    }();
+    if (!disasm) return;
+    wchar_t path[MAX_PATH];
+    swprintf_s(path, L"%s\\model_ps_%zu.txt", g_modDir, seen.size());
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path, L"w") || !f) return;
+    IDirect3DVertexShader9* vs = nullptr;
+    dev->GetVertexShader(&vs);
+    for (int w = 0; w < 2; ++w) {
+        UINT size = 0;
+        std::vector<unsigned char> code;
+        if (w == 0 && ps && SUCCEEDED(ps->GetFunction(nullptr, &size))) { code.resize(size); ps->GetFunction(code.data(), &size); }
+        if (w == 1 && vs && SUCCEEDED(vs->GetFunction(nullptr, &size))) { code.resize(size); vs->GetFunction(code.data(), &size); }
+        ID3DBlob* text = nullptr;
+        fprintf(f, "==== %s shader (%u bytes)\n", w == 0 ? "pixel" : "vertex", size);
+        if (!code.empty() && SUCCEEDED(disasm(code.data(), code.size(), 0, nullptr, &text)) && text) {
+            fwrite(text->GetBufferPointer(), 1, text->GetBufferSize() - 1, f);
+            text->Release();
+        }
+        fprintf(f, "\n");
+    }
+    if (vs) vs->Release();
+    fclose(f);
+}
+
 bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT* hr, IDirect3DIndexBuffer9** putBack) {
     if (!g_decl) return false;
     IDirect3DIndexBuffer9* ib = nullptr;
@@ -689,6 +910,9 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
         if (!Skin(player, m)) return m->over ? theirs() : false;   // (no pose: their own character, this frame)
         m->frame = g_frame;
     }
+    static int passes = -1;   // (research: FGUYMOD_TEST_MODELPASSES=1 - each pass a model is drawn in, once per pixel shader:
+    if (passes < 0) { wchar_t v[4] = L""; GetEnvironmentVariableW(L"FGUYMOD_TEST_MODELPASSES", v, 4); passes = v[0] == L'1'; }
+    if (passes) ResearchPass(dev);   //  its states logged, the shader to FGUYMod\model_ps_<n>.txt)
     IDirect3DVertexDeclaration9* oldDecl = nullptr;
     IDirect3DVertexBuffer9* oldVb[3] = {};
     UINT oldOff[3] = {}, oldStride[3] = {};
@@ -730,6 +954,8 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
                     dev->SetSamplerState(st, D3DSAMP_ADDRESSV, addr(m->wrap[p.texture][1]));
                 }
         }
+        IDirect3DTexture9* pic = p.texture < m->tex.size() ? m->tex[p.texture] : nullptr;
+        if (p.cut && DrawCut(dev, real, V, p.first, p.count, pic, pic, oldTex2 != nullptr, hr)) continue;
         *hr = real(dev, (int)D3DPT_TRIANGLELIST, 0, 0, V, p.first, p.count / 3);
     }
     for (DWORD st = 0; st < 2; ++st) {
@@ -758,7 +984,13 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
         dev->GetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, &oldSlope);
         dev->SetRenderState(D3DRS_DEPTHBIAS, *reinterpret_cast<const DWORD*>(&bias[0]));
         dev->SetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, *reinterpret_cast<const DWORD*>(&bias[1]));
-        for (const Run& r : m->outlined) real(dev, (int)D3DPT_TRIANGLELIST, 0, 0, V, r.first, r.count / 3);
+        for (const Run& r : m->outlined) {   // (a cut part's outline cut out as it is: round its strands, not its card)
+            IDirect3DTexture9* pic = r.cutTex >= 0 && (size_t)r.cutTex < m->tex.size() ? m->tex[r.cutTex] : nullptr;
+            HRESULT ignored;
+            if (pic && DrawCut(dev, real, V, r.first, r.count, pic, g_black, oldTex2 != nullptr, &ignored)) continue;
+            if (r.cutTex >= 0) continue;   // (not cut out here: no outline rather than a black card)
+            real(dev, (int)D3DPT_TRIANGLELIST, 0, 0, V, r.first, r.count / 3);
+        }
         dev->SetRenderState(D3DRS_DEPTHBIAS, oldBias);
         dev->SetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, oldSlope);
         dev->SetRenderState(D3DRS_CULLMODE, cull);

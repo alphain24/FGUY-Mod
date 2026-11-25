@@ -10,6 +10,7 @@
 //   floats, bones 4 uint8, weights 4 uint8 adding up to 255); indices I x uint16.
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {toPng, NEEDS_TURNING} from './pictures.js';
 import {FBXLoader} from 'three/addons/loaders/FBXLoader.js';
 import {OBJLoader} from 'three/addons/loaders/OBJLoader.js';
 import {MTLLoader} from 'three/addons/loaders/MTLLoader.js';
@@ -120,17 +121,29 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     const names = [...files.keys()], pick = re => names.find(n => re.test(n));
     const main = pick(/\.glb$/) || pick(/\.gltf$/) || pick(/\.fbx$/) || pick(/\.obj$/);
     if (!main) throw new Error('no .glb, .gltf, .fbx or .obj in what was picked');
+    // (.tga and .dds pictures: made PNGs here, under their own names - every loader then reads them as any picture;
+    //  one that can't be read is left out, and so reported missing)
+    const unreadable = [];
+    for (const n of names) if (NEEDS_TURNING.test(n)) {
+      const png = await toPng(n, files.get(n));
+      if (png) files.set(n, png); else { files.delete(n); unreadable.push(n); }
+    }
+    // (the pictures it asks for that weren't picked: its parts there come out in a plain colour - told, by name)
+    const missing = new Set(), failed = new Set();
     const urls = new Map(), url = n => {
+      if (/^(blob|data):/i.test(n)) return null;   // (its own, inside the file - an .fbx's, a .glb's)
       const key = n.split(/[\\/]/).pop().toLowerCase();
-      if (!files.has(key)) return null;
+      if (!files.has(key)) { if (/\.(png|jpe?g|tga|dds|bmp|gif|webp|tiff?|psd)$/i.test(key)) missing.add(n.split(/[\\/]/).pop()); return null; }
       if (!urls.has(key)) urls.set(key, URL.createObjectURL(new Blob([files.get(key)])));
       return urls.get(key);
     };
     const manager = new THREE.LoadingManager();
     manager.setURLModifier(u => url(decodeURIComponent(u)) || u);
+    manager.addHandler(/\.(tga|dds)$/i, new THREE.TextureLoader(manager));   // (they're PNGs by now)
     let pending = 0;
-    const loaded = new Promise(r => { manager.onLoad = r; manager.onError = r; });
+    const loaded = new Promise(r => { manager.onLoad = r; });
     manager.onStart = () => { pending++; };
+    manager.onError = u => { failed.add(decodeURIComponent(u).split(/[\\/]/).pop()); };
     const data = files.get(main), text = () => new TextDecoder().decode(data);
     let scene;
     if (/\.gl(b|tf)$/.test(main)) scene = (await new GLTFLoader(manager).parseAsync(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength), '')).scene;
@@ -147,7 +160,17 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     }
     if (pending) await Promise.race([loaded, new Promise(r => setTimeout(r, 8000))]);   // (its pictures read)
     await new Promise(r => setTimeout(r, 50));
-    return {scene, name: main.replace(/\.(glb|gltf|fbx|obj)$/i, ''), files: names};
+    // (and any material whose picture came to nothing - a broken file, an .fbx's .psd)
+    let blank = 0;
+    scene.traverse(o => {
+      if (!o.isMesh) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        const im = m?.map?.image;
+        if (m?.map && !(im && (im.width || im.naturalWidth))) blank++;
+      }
+    });
+    const lost = [...new Set([...missing, ...unreadable, ...[...failed].filter(n => !/^blob:/i.test(n))])];
+    return {scene, name: main.replace(/\.(glb|gltf|fbx|obj)$/i, ''), files: names, lost, blank};
   }
   $('importModel').onchange = async e => {
     const list = [...e.target.files];
@@ -158,6 +181,7 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
       g.scene.updateMatrixWorld(true);
       const parts = [];
       let objects = 0;
+      const upFromBottom = new Set();   // (pictures whose coordinates count from the bottom - kept after their flag is cleared)
       g.scene.traverse(o => {
         if (!o.isMesh || !o.geometry?.attributes.position) return;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -165,6 +189,13 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
         if (!o.isSkinnedMesh) geo.applyMatrix4(o.matrixWorld);   // (a rigged one: as bound - its bind pose)
         if (!geo.index) geo.setIndex([...Array(geo.attributes.position.count).keys()]);
         if (!geo.attributes.normal) geo.computeVertexNormals();
+        // (an .obj's / .fbx's texture coordinates count up from the picture's bottom - their loaders flip the picture to
+        //  match; the pack keeps the picture as it is, as a .glb's are, so they're flipped here instead: v -> 1 - v)
+        for (const m of mats) if (m?.map?.flipY) { upFromBottom.add(m.map); m.map.flipY = false; m.map.needsUpdate = true; }
+        if (geo.attributes.uv && mats.some(m => upFromBottom.has(m?.map))) {
+          const uv = geo.attributes.uv;
+          for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+        }
         const groups = geo.groups.length ? geo.groups : [{start: 0, count: geo.index.count, materialIndex: 0}];
         const object = {name: o.name || `part ${objects + 1}`, n: objects++, off: false};
         for (const gr of groups) {
@@ -178,7 +209,23 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
         }
       });
       if (!parts.length) throw new Error('no meshes in it');
-      const verts = parts.reduce((n, p) => n + p.geo.attributes.position.count, 0);
+      const geos = [...new Set(parts.map(p => p.geo))];   // (one mesh with several materials: several parts, one geometry)
+      // lying down - much deeper than it is tall: made with z up (Blender's own axes, an .fbx that kept them) - stood up,
+      // its top to +y and its front (Blender's -y) to +z, as the rest of the Studio has a model. Not one rigged on this
+      // character already: that's in the character's own space.
+      let stoodUp = false;
+      if (!parts.some(p => p.boneOf)) {
+        // (told by its biggest piece: a prop beside it - Panda Amy's .fbx has a ball round her a hundred times her size -
+        //  isn't the model)
+        const main = geos.reduce((a, g) => (g.attributes.position.count > a.attributes.position.count ? g : a));
+        const s = new THREE.Box3().setFromBufferAttribute(main.attributes.position).getSize(new THREE.Vector3());
+        if (s.z > s.y * 1.25) {
+          const up = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+          for (const g of geos) g.applyMatrix4(up);
+          stoodUp = true;
+        }
+      }
+      const verts = geos.reduce((n, g) => n + g.attributes.position.count, 0);
       if (verts > 65535) throw new Error(`it has ${verts.toLocaleString()} vertices - 65,535 at most`);
       ed.src = {parts, all: parts, name: f.name};
       ed.joints = null;
@@ -193,7 +240,10 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
       refit(true);
       $('saveModel').disabled = false;
       setStatus(`Brought in "${f.name}" (${r.files.join(', ')}): ${parts.length} part${parts.length > 1 ? 's' : ''}, ${verts.toLocaleString()} vertices` +
-        (parts.every(p => p.boneOf) ? ' - rigged on this character: its own weights' : ' - fitted, bones copied from the character') + '.');
+        (parts.every(p => p.boneOf) ? ' - rigged on this character: its own weights' : ' - fitted, bones copied from the character') + '.' +
+        (stoodUp ? ' It was lying down (made with z up) - stood up.' : '') +
+        (r.lost.length ? ` MISSING PICTURES: ${r.lost.join(', ')} - pick ${r.lost.length > 1 ? 'them' : 'it'} with the model (or put ${r.lost.length > 1 ? 'them' : 'it'} in its .zip); till then those parts are a plain colour.`
+          : r.blank ? ` ${r.blank} of its pictures couldn't be read - those parts are a plain colour.` : ''));
     } catch (err) {
       setStatus("Couldn't use that model: " + err.message);
     }
@@ -584,6 +634,16 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     }
     return Object.fromEntries(LANDMARKS.map(k => [k, P.map(ed.joints[k], new THREE.Vector3(0, 1, 0)).pos]));
   }
+  // (rigged on its own shape: what's in its head follows the head alone - the character's jaw and face bones are for its
+  //  own mouth and eyes; a model's that has none, its cheeks and hair stretched as the character talked)
+  function headOnly(bw) {
+    const head = ed.skel.names.findIndex(n => /^Head(?! 2)/.test(n));
+    if (head < 0) return bw;
+    const under = b => { for (let p = ed.skel.parent[b]; p >= 0; p = ed.skel.parent[p]) if (p === head) return true; return false; };
+    const acc = new Map();
+    for (const [b, w] of bw) { const k = under(b) ? head : b; acc.set(k, (acc.get(k) || 0) + w); }
+    return [...acc.entries()].sort((x, y) => y[1] - x[1]);
+  }
   function rigOnItsShape(P) {
     const Jm = jointsNow(P), Jc = characterJoints(ed.skel, ed.pieces);
     const Fc = frames(Jc), Fm = frames(Jm);
@@ -742,6 +802,7 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
             }
           } else {
             bw = weightsAt(G, pos, side, $('modelOver').checked ? nrm : null);
+            if (R) bw = headOnly(bw);
           }
           const color = colors ? new THREE.Color(colors.getX(i), colors.getY(i), colors.getZ(i)) : null;
           verts.push({pos, nrm, uv, bw, color});

@@ -1747,3 +1747,28 @@ then I can adjust"; they will send a model of theirs (none yet).
   `modelload 0 Panda_Amy.fgmodel`): standing, walking away and toward the camera, strafing, jumping - right.
   build/research/Panda_Amy.fgmodel (the user's model - not for the repo or a release).
 - **0.9.21 released (2026-11-25)** with the above. Packaged-files test: two copies on the bad-connection lobby (`--sim-lag 30 --sim-jitter 90 --sim-loss 3`), a match as Lois, `modelload` of Panda_Amy on the host, both walking, the guest's pause menu by mouse (resumed). Once (the first run, 4 copies left over from the run before) the host's player was never seen and never moved (health 200, input arriving) - not on the rerun; not explained.
+- **Panda Amy on the user's game (2026-11-25, at "add panda amy to my game as lois")**: as a skin pack - `FGUYMod\skins\Panda_Amy.fgskin` (Lois Default, model.fgmodel inside, its menu pictures drawn from her; the HUD head remade from the big picture to show her whole face) and picked for that outfit in FGUYMod.ini `[Skins] c_156=Panda_Amy.fgskin` (ini backed up in `backup-before-0.9.21`). A skin pack's model travels with it online. Tested with `skinload 0` on a test copy: worn, HUD head shown.
+- **Test copies only - a host stuck at the start**: in 2 of 4 matches on 2026-11-25 (and the 0.9.20 release test, 2026-11-24 20:59) the host's player never moved (movement input arriving, "moved 0.0", health 200) and its camera showed the street spawn while the guest saw "Host" standing elsewhere. Not seen in the user's play; not looked into.
+- **After 0.9.21: an .obj's / .fbx's picture upside down (2026-11-25, the user: "the textures are messed up", with a render of how she should look - pink hair, black ears, green eyes, black dress)**: their texture coordinates count from the picture's bottom (three.js's OBJ / FBX loaders flip the picture, flipY); the pack keeps the picture as it is (a .glb's convention), so every part took its colour from the mirrored place - her hair the brown strip at the bottom. Import now flips v (1 - v) for any mesh using a picture that had flipY, and clears the flag (a Set of those pictures: her two objects share one material - the second was missed at first). Also: an auto-rigged model's weights on bones under the head (Lois's "Head 2" - her jaw - 353 of Amy's vertices) go to the head: a model's own face has no jaw. Her pack remade and put on the user's game; checked in a match (pink, black, green - right). Her "leg sticking" not seen; most likely her thin black legs looked wrong with the wrong colours. Not released: the Studio online still has the flip bug for .obj / .fbx.
+- **Pictures a model brings (2026-11-25, the user: "do 1 and 3 and fix 2 too")** - built, not released:
+  1. *.tga and .dds*: the Studio's own reader (js/pictures.js - .tga by three.js's TGALoader, rows already top first;
+     .dds: DXT1/3/5 (and DX10 BC1-3), plain 24/32-bit by masks, the first picture) turns them into PNGs before the model is
+     read, under their own names; the LoadingManager's handler for .tga/.dds is a plain TextureLoader (an .fbx's .tga
+     branch asks for one). Checked: top-red/bottom-blue pictures in every form come out the right way up and the clear
+     stays clear.
+  3. *Missing pictures*: the names the model asks for that weren't picked (an .mtl's "map_Kd C:\...\x.png", an .fbx's)
+     are listed in the import message; a picture that came to nothing is counted. Checked with an .obj asking for one
+     that isn't there.
+  Also: an .fbx made with z up (Blender) loaded lying on its back - stood up when its biggest piece is much deeper than
+  tall (Panda Amy's .fbx: her ball is 100x her size, so the biggest piece decides). A mesh with several materials was
+  counted once per material for the 65,535 limit - counted once now.
+  2. *See-through parts in the game* (models.cpp MarkCut / DrawCut): the game's character shader (FGUYMOD_TEST_MODELPASSES=1
+     wrote it out: ps_3_0, colour picture from s1 at TEXCOORD2, its output alpha a mix of things - not the picture's)
+     leaves no texel out. A part with over 1 in 200 of its triangles' texels clear (counted under its triangles only: a
+     picture's clear background between pieces doesn't count) is drawn twice in a pass with depth: our pixel shader (made
+     per game shader from what its code reads - its first texld from s1, that input's dcl; compiled by d3dcompiler_47)
+     writes depth only where alpha >= 0.3 (as the Studio shows it), colour off, stencil off; then the game's own draw with
+     ZFUNC EQUAL, no depth written. Its outline the same (cut out round the strands, else none). Passes without depth (the
+     shadow pass, z off) draw it whole. Checked: a copy of Panda Amy with stripes of her dress cleared - the stripes show
+     what's behind her, not black. A model with none (Panda Amy) is drawn as before.
+- **0.9.22 released (2026-11-25)** with the picture fixes above (and the .obj/.fbx upside-down fix, the head-only weights). Packaged-files test: two copies on the bad-connection lobby, both wearing Panda Amy's pack (skinload), both moving, both seats' pause menus (resumed by mouse).
