@@ -211,7 +211,31 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
     <div class="row"><span class="muted" style="width:60px">Turn</span><input type="range" id="fitTurn" min="-180" max="180" step="1" value="0"></div>
     <div class="row">
       <button class="btn" id="fitAuto">Fit automatically</button>
-      <button class="btn" id="modelPose">Try a pose</button>
+      <label class="muted">Pose <select id="modelPose" style="width:auto;padding:3px 6px">
+        <option value="">standing</option><option value="up">arms up</option><option value="aim">aiming</option>
+        <option value="walk">walking</option><option value="crouch">crouching</option></select></label>
+    </div>
+    <div class="sep"></div>
+    <h2>Weights</h2>
+    <div class="muted">Which bones move which part of it. A part that bends wrong in a pose: pick the bone that should
+    move it, and paint.</div>
+    <div class="row">
+      <button class="btn" id="wpOn" disabled>Fix weights</button>
+      <button class="btn" id="wpUndo" hidden>Undo</button>
+      <button class="btn" id="wpReset" hidden>Reset all</button>
+    </div>
+    <div id="wpPanel" hidden>
+      <div class="row"><span class="muted" style="width:60px">Bone</span><select id="wpBone" style="flex:1"></select></div>
+      <div class="row">
+        <label class="muted"><input type="radio" name="wpMode" value="add" checked> Add</label>
+        <label class="muted"><input type="radio" name="wpMode" value="remove"> Remove</label>
+        <label class="muted"><input type="radio" name="wpMode" value="smooth"> Smooth</label>
+      </div>
+      <div class="row"><span class="muted" style="width:60px">Brush</span><input type="range" id="wpSize" min="0.01" max="0.2" step="0.005" value="0.05"></div>
+      <div class="row"><span class="muted" style="width:60px">Strength</span><input type="range" id="wpStrength" min="0.05" max="1" step="0.05" value="0.4"></div>
+      <div class="row"><label class="muted"><input type="checkbox" id="wpMirror" checked> Both sides (the other side's bone, mirrored)</label></div>
+      <div class="muted">Drag on the model to paint (drag off it to turn the view). Alt+click a spot: the bone that moves
+      it most. Red: all this bone, blue: none of it. Try the poses above as you go.</div>
     </div>
     <div class="sep"></div>
     <h2>Model pack</h2>

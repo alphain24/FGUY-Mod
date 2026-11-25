@@ -311,7 +311,7 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     }
   }
   $('rigEdit').onchange = () => drawPreview();
-  const editingJoints = () => autoRig() && $('rigEdit').checked;
+  const editingJoints = () => autoRig() && $('rigEdit').checked && !wp.on;
 
   // where its arms are, how wide its torso is... - of points (x, y, z: its feet at y 0, its middle at x 0, z 0)
   function shapeOf(pts, armY0) {
@@ -634,15 +634,25 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     }
     return Object.fromEntries(LANDMARKS.map(k => [k, P.map(ed.joints[k], new THREE.Vector3(0, 1, 0)).pos]));
   }
-  // (rigged on its own shape: what's in its head follows the head alone - the character's jaw and face bones are for its
-  //  own mouth and eyes; a model's that has none, its cheeks and hair stretched as the character talked)
-  function headOnly(bw) {
-    const head = ed.skel.names.findIndex(n => /^Head(?! 2)/.test(n));
-    if (head < 0) return bw;
-    const under = b => { for (let p = ed.skel.parent[b]; p >= 0; p = ed.skel.parent[p]) if (p === head) return true; return false; };
+  // (rigged on its own shape: its head and its hands each follow one bone - the character's jaw and face bones are for
+  //  its own mouth and eyes, its finger bones for its own fingers; a model's has neither: its cheeks and hair stretched
+  //  as the character talked, its gloves curled into a mess round a gun. "Fix weights" can give them the fingers back.)
+  function keepWhole(bw) {
+    const ends = ed.skel.names.map((n, i) => (/^(Head(?! 2)|Hand [LR])\b/.test(n) ? i : -1)).filter(i => i >= 0);
+    if (!ends.length) return bw;
+    const endOf = b => { for (let p = b; p >= 0; p = ed.skel.parent[p]) if (ends.includes(p)) return p; return b; };
     const acc = new Map();
-    for (const [b, w] of bw) { const k = under(b) ? head : b; acc.set(k, (acc.get(k) || 0) + w); }
+    for (const [b, w] of bw) { const k = endOf(b); acc.set(k, (acc.get(k) || 0) + w); }
     return [...acc.entries()].sort((x, y) => y[1] - x[1]);
+  }
+  // (and each vertex only the bones of its own side - which side by its own skeleton: the segment it's nearest. Legs set
+  //  close together - a cartoon's - took the other leg's bones on their insides, and a step stretched a wedge between them)
+  const boneSide = b => (/ ([LR])\b/.exec(ed.skel.names[b]) || [])[1] || '';
+  function ownSide(bw, side, G, pos) {
+    if (!side) return bw;
+    let kept = bw.filter(([b]) => !boneSide(b) || boneSide(b) === side);
+    if (!kept.length) kept = weightsAt(G, pos, side === 'L' ? 1 : -1).filter(([b]) => !boneSide(b) || boneSide(b) === side);
+    return kept.length ? kept : bw;
   }
   function rigOnItsShape(P) {
     const Jm = jointsNow(P), Jc = characterJoints(ed.skel, ed.pieces);
@@ -695,6 +705,11 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     ed.modelSkel = {count, parent: ed.skel.parent, names: ed.skel.names, bind, invBind, local, hipScale: hips >= 0 && hy > 1e-4 ? my / hy : 1};
     return {
       moved,
+      sideAt(p) {   // (a point of the model: the side of the segment of its own it's nearest - '' the middle)
+        const {k} = nearestSegment(Fm, p);
+        const end = k >= 0 ? SEGMENTS[k][1] : '';
+        return /L$/.test(end) ? 'L' : /R$/.test(end) ? 'R' : '';
+      },
       pose(verts) {   // (each vertex moved as its bones' segments are, by its weights)
         for (const v of verts) {
           if (!v.bw.length) continue;   // (none found: left where it is, not dropped to the floor)
@@ -802,7 +817,7 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
             }
           } else {
             bw = weightsAt(G, pos, side, $('modelOver').checked ? nrm : null);
-            if (R) bw = headOnly(bw);
+            if (R) bw = keepWhole(ownSide(bw, R.sideAt(pos), G, pos));
           }
           const color = colors ? new THREE.Color(colors.getX(i), colors.getY(i), colors.getZ(i)) : null;
           verts.push({pos, nrm, uv, bw, color});
@@ -846,6 +861,13 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
       if (fn.dot(A.nrm) + fn.dot(B.nrm) + fn.dot(C.nrm) < 0) [idx[k + 1], idx[k + 2]] = [idx[k + 2], idx[k + 1]];
     }
     if (G && $('modelOver').checked) { keepToTheTrunk({verts, idx, parts}); ride(verts, pieces); }
+    // (weights fixed by hand - "Fix weights": over the ones found, by vertex; dropped for other vertices or another character)
+    if (ed.paint && (ed.paint.n !== verts.length || ed.paint.character !== ed.outfit.character)) {
+      ed.paint = null;
+      wp.undo = [];
+      setStatus('The weights fixed by hand were for other parts or another character - back to the ones found.');
+    }
+    if (ed.paint && !rigged) for (const [i, bw] of ed.paint.map) verts[i].bw = bw.map(x => x.slice());
     const standing = R ? verts.map(v => v.pos.clone()) : null;   // (as it stands: the joints are shown on it)
     if (R) R.pose(verts);   // (into the character's own pose - its rest T-pose - its own shape kept)
     // (the palette: a color an 8 x 8 cell, 32 a row - the game's 4 x 4 compressed blocks and smaller mip levels keep it)
@@ -894,23 +916,33 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     const view = new THREE.Group();
     const texs = m.textures.map((t, k) => { const tx = new THREE.CanvasTexture(textureCanvas(t, m.palette)); tx.flipY = false; tx.colorSpace = THREE.SRGBColorSpace; applyWrap(tx, m.wraps[k]); return tx; });
     const n = m.verts.length, pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3), uv = new Float32Array(n * 2);
-    const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+    const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4), col = new Float32Array(n * 3);
     const showStanding = editingJoints() && m.standing;   // (the joints shown: it as it stands, not rigged)
     m.verts.forEach((v, i) => {
       const at = showStanding ? m.standing[i] : v.pos;
       pos.set([at.x, at.y, at.z], i * 3); nrm.set([v.nrm.x, v.nrm.y, v.nrm.z], i * 3); uv.set(v.uv, i * 2);
       const total = v.bw.reduce((s, x) => s + x[1], 0) || 1;
-      v.bw.forEach(([b, w], j) => { si[i * 4 + j] = b; sw[i * 4 + j] = w / total; });
+      v.bw.slice(0, 4).forEach(([b, w], j) => { si[i * 4 + j] = b; sw[i * 4 + j] = w / total; });
     });
+    ed.viewAttrs = {si, sw, col, all: [], colAttrs: []};
+    wp.mirror = null;   // (made again at the next stroke - the vertices may be others)
+    $('wpOn').disabled = !ed.src;
     for (const p of m.parts) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
       g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-      g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
-      g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+      const aSi = new THREE.Uint16BufferAttribute(si, 4), aSw = new THREE.Float32BufferAttribute(sw, 4), aCol = new THREE.BufferAttribute(col, 3);
+      // (three.js copies an array given to these - pointed back at ours, so a brush stroke shows at once)
+      aSi.array = si; aSw.array = sw;
+      g.setAttribute('skinIndex', aSi);
+      g.setAttribute('skinWeight', aSw);
+      g.setAttribute('color', aCol);
+      ed.viewAttrs.all.push(aSi, aSw, aCol);
+      ed.viewAttrs.colAttrs.push(aCol);
       g.setIndex(m.idx.slice(p.first, p.first + p.count));
-      const mat = new THREE.MeshLambertMaterial({map: texs[p.texture], side: THREE.DoubleSide, alphaTest: 0.3});
+      const mat = wp.on ? new THREE.MeshLambertMaterial({vertexColors: true, side: THREE.DoubleSide})
+        : new THREE.MeshLambertMaterial({map: texs[p.texture], side: THREE.DoubleSide, alphaTest: 0.3});
       if (showStanding) { const plain = new THREE.Mesh(g, mat); plain.frustumCulled = false; view.add(plain); continue; }
       const mesh = new THREE.SkinnedMesh(g, mat);
       mesh.bind(ed.modelRig && autoRig() ? ed.modelRig.skeleton : ed.rig.skeleton, new THREE.Matrix4());
@@ -919,6 +951,8 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     }
     holder.add(view);
     ed.view = view;
+    wpColours();
+    wpShowBone();
     showDots();
     clearTimeout(ed.hideTimer);   // (the character's covered triangles - after a moment: a slider drag doesn't wait)
     ed.hideTimer = setTimeout(() => { ed.hidden = $('modelOver').checked ? hiddenUnder(m) : []; showHidden(); }, 300);
@@ -1002,24 +1036,259 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
 
   // a test pose: arms down and out, the head turned - how its bones bend it
   // (a rig, from its skeleton's rest: as the game turns the character's bones - the model's own bones turned the same)
-  function posing(rig, skel) {
-    const names = ed.skel.names;
-    rig.bones.forEach((b, i) => { skel.local[i].decompose(b.position, b.quaternion, b.scale); });
-    if (ed.posed) rig.bones.forEach((b, i) => {
-      if (/^Arm [LR] 2 /.test(names[i])) b.rotateZ(/ L /.test(names[i]) ? -0.9 : 0.9);
-      if (/^Arm [LR] [34] /.test(names[i])) b.rotateY(/ L /.test(names[i]) ? 0.5 : -0.5);
-      if (/^Head /.test(names[i])) b.rotateY(0.5);
-      if (/^Leg L 1 /.test(names[i])) b.rotateZ(0.4);
-      if (/^Leg R 2 /.test(names[i])) b.rotateX(0.7);
-    });
+  // ---- test poses: each limb pointed a way in the character's own space (+x its left, +y up, +z its front) - its
+  //      shoulder, elbow, hip, knee found by name and place (rig.js names), so every character's skeleton takes them
+  const POSES = {
+    up: {upperL: [1, 1.3, 0.1], foreL: [0.6, 1.5, 0.2], head: [0.35, 0, 1]},
+    aim: {upperL: [0.3, -0.3, 1], foreL: [-0.25, 0.05, 1], upperR: [-0.3, -0.3, 1], foreR: [0.25, 0.05, 1]},
+    walk: {thighL: [0, -1, 0.6], shinL: [0, -1, 0.15], thighR: [0, -1, -0.35], shinR: [0, -1, -1],
+      upperL: [0.25, -1, -0.35], foreL: [0.15, -1, 0.35], upperR: [-0.25, -1, 0.35], foreR: [-0.15, -1, 0.6]},
+    crouch: {thighL: [0.2, -0.25, 1], shinL: [0, -1, -0.3], thighR: [-0.2, -0.25, 1], shinR: [0, -1, -0.3],
+      upperL: [0.3, -1, 0.5], foreL: [0, -0.3, 1], upperR: [-0.3, -1, 0.5], foreR: [0, -0.3, 1], drop: 0.3},
+  };
+  function limbs(skel) {   // (bone indices: shoulder, elbow, hand, hip, knee, ankle, head, its top)
+    const names = skel.names, at = i => new THREE.Vector3().setFromMatrixPosition(skel.bind[i]);
+    const chain = re => names.map((n, i) => [n, i]).filter(([n]) => re.test(n))
+      .sort((a, b) => +(/(\d+) \(/.exec(a[0]) || [0, 0])[1] - +(/(\d+) \(/.exec(b[0]) || [0, 0])[1]).map(x => x[1]);
+    const mid = (list, a, b) => {
+      const m = at(a).add(at(b)).multiplyScalar(0.5);
+      return list.filter(i => i !== a && i !== b).reduce((best, i) => (best < 0 || at(i).distanceTo(m) < at(best).distanceTo(m) ? i : best), -1);
+    };
+    const out = {};
+    for (const s of ['L', 'R']) {
+      const arm = chain(new RegExp(`^Arm ${s} \\d`)), hand = names.findIndex(n => new RegExp(`^Hand ${s}\\b`).test(n));
+      const sh = arm.length > 1 ? arm[1] : arm[0];
+      out['shoulder' + s] = sh ?? -1; out['hand' + s] = hand;
+      out['elbow' + s] = sh >= 0 && hand >= 0 ? mid(arm.slice(arm.indexOf(sh)), sh, hand) : -1;
+      const leg = chain(new RegExp(`^Leg ${s} \\d`));
+      const hip = leg[0] ?? -1, ankle = leg.length >= 4 ? leg[leg.length - 2] : leg[leg.length - 1] ?? -1;
+      out['hip' + s] = hip; out['ankle' + s] = ankle;
+      out['knee' + s] = hip >= 0 && ankle >= 0 ? mid(leg, hip, ankle) : -1;
+    }
+    out.head = names.findIndex(n => /^Head(?! 2)\b/.test(n));
+    out.hips = names.findIndex(n => /^Hips\b/.test(n));
+    return out;
   }
-  $('modelPose').onclick = () => {
+  function posing(rig, skel) {
+    rig.bones.forEach((b, i) => { skel.local[i].decompose(b.position, b.quaternion, b.scale); });
+    rig.root.updateMatrixWorld(true);
+    const pose = ed.posed && POSES[ed.pose];
+    if (!pose) return;
+    const L = limbs(skel), rootQ = rig.root.getWorldQuaternion(new THREE.Quaternion());
+    const aim = (bone, child, dir) => {   // (the bone turned so its child lies that way from it)
+      if (!dir || bone < 0 || child < 0) return;
+      const b = rig.bones[bone], c = rig.bones[child];
+      rig.root.updateMatrixWorld(true);
+      const cur = c.getWorldPosition(new THREE.Vector3()).sub(b.getWorldPosition(new THREE.Vector3())).normalize();
+      const want = new THREE.Vector3(...dir).normalize().applyQuaternion(rootQ);
+      const turn = new THREE.Quaternion().setFromUnitVectors(cur, want);
+      const world = b.getWorldQuaternion(new THREE.Quaternion()), parent = b.parent.getWorldQuaternion(new THREE.Quaternion());
+      b.quaternion.copy(parent.invert().multiply(turn.multiply(world)));
+      b.updateMatrixWorld(true);
+    };
+    if (pose.drop && L.hips >= 0) {   // (crouching: the hips lower, by a share of the leg)
+      const legLen = new THREE.Vector3().setFromMatrixPosition(skel.bind[L.hipL]).y - new THREE.Vector3().setFromMatrixPosition(skel.bind[L.ankleL]).y;
+      const h = rig.bones[L.hips];
+      const down = new THREE.Vector3(0, -legLen * pose.drop, 0).applyQuaternion(rootQ);
+      h.parent.worldToLocal(h.getWorldPosition(new THREE.Vector3()).add(down)).toArray().forEach((v, k) => h.position.setComponent(k, v));
+    }
+    for (const s of ['L', 'R']) {
+      aim(L['shoulder' + s], L['elbow' + s], pose['upper' + s]);
+      aim(L['elbow' + s], L['hand' + s], pose['fore' + s]);
+      aim(L['hip' + s], L['knee' + s], pose['thigh' + s]);
+      aim(L['knee' + s], L['ankle' + s], pose['shin' + s]);
+    }
+    if (pose.head && L.head >= 0) {   // (the head turned to look that way)
+      const h = rig.bones[L.head], want = new THREE.Vector3(...pose.head).normalize();
+      h.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), want));
+    }
+    rig.root.updateMatrixWorld(true);
+  }
+  function setPose() {
     if (!ed.rig) return;
-    ed.posed = !ed.posed;
+    ed.pose = $('modelPose').value;
+    ed.posed = !!ed.pose;
     posing(ed.rig, ed.skel);
     if (ed.modelRig) posing(ed.modelRig, ed.modelSkel);
-    $('modelPose').textContent = ed.posed ? 'Back to the rest pose' : 'Try a pose';
+    for (const c of ed.view?.children || []) { c.boundingSphere = null; c.boundingBox = null; }   // (the brush finds it as posed)
+    wpShowBone();
+  }
+  $('modelPose').onchange = setPose;
+
+  // ---- fixing its weights by hand: a bone picked, its weights shown on the model as colours (red all, blue none) and
+  //      painted on or off with a brush - "Both sides" paints the other side's bone at the mirrored place too. Kept by
+  //      vertex (ed.paint) over the weights found, and saved with the pack; a new model, other parts or another
+  //      character starts again.
+  const wp = {on: false, bone: -1, undo: [], stroke: null, marker: null};
+  const nameOf = i => ed.skel.names[i].replace(/ \(\d+\)$/, '');
+  function wpOn(on) {
+    wp.on = on && !!ed.src;
+    $('wpPanel').hidden = $('wpUndo').hidden = $('wpReset').hidden = !wp.on;
+    $('wpOn').textContent = wp.on ? 'Done fixing weights' : 'Fix weights';
+    if (wp.on) {
+      const used = new Set();
+      for (const v of ed.prepared?.verts || []) for (const [b, w] of v.bw) if (w > 0.02) used.add(b);
+      $('wpBone').innerHTML = ed.skel.names.map((n, i) => `<option value="${i}">${used.has(i) ? '● ' : '   '}${nameOf(i)}</option>`).join('');
+      if (wp.bone < 0) wp.bone = ed.skel.names.findIndex(n => /^Hips\b/.test(n));
+      $('wpBone').value = String(wp.bone);
+    }
+    drawPreview();
+  }
+  $('wpOn').onclick = () => wpOn(!wp.on);
+  $('wpBone').onchange = () => { wp.bone = +$('wpBone').value; wpColours(); wpShowBone(); };
+  $('wpReset').onclick = () => { ed.paint = null; wp.undo = []; drawPreview(); setStatus('Weights back to the ones found.'); };
+  $('wpUndo').onclick = () => {
+    const last = wp.undo.pop();
+    if (!last || !ed.paint) return;
+    for (const [i, bw] of last) { if (bw) ed.paint.map.set(i, bw); else ed.paint.map.delete(i); }
+    drawPreview();
   };
+  function wpHeat(w) {   // (blue none, green half, red all)
+    const c = new THREE.Color().setHSL((1 - Math.min(1, Math.max(0, w))) * 0.66, 0.9, 0.5);
+    return [c.r, c.g, c.b];
+  }
+  function wpColours() {
+    if (!wp.on || !ed.viewAttrs) return;
+    const {col, colAttrs} = ed.viewAttrs, vs = ed.prepared.verts;
+    vs.forEach((v, i) => { const e = v.bw.find(([b]) => b === wp.bone), tot = v.bw.reduce((s, x) => s + x[1], 0) || 1; col.set(wpHeat(e ? e[1] / tot : 0), i * 3); });
+    for (const a of colAttrs) a.needsUpdate = true;
+  }
+  function wpShowBone() {   // (a dot at the picked bone)
+    if (wp.marker) { holder.remove(wp.marker); wp.marker = null; }
+    if (!wp.on || wp.bone < 0) return;
+    const rig = ed.modelRig && autoRig() ? ed.modelRig : ed.rig;
+    if (!rig?.bones[wp.bone]) return;
+    rig.root.updateMatrixWorld(true);
+    const H = charBox().getSize(new THREE.Vector3()).y;
+    wp.marker = new THREE.Mesh(new THREE.SphereGeometry(H * 0.016, 12, 8), new THREE.MeshBasicMaterial({color: 0xffe14d, depthTest: false}));
+    wp.marker.renderOrder = 10;
+    wp.marker.position.copy(holder.worldToLocal(rig.bones[wp.bone].getWorldPosition(new THREE.Vector3())));
+    holder.add(wp.marker);
+  }
+  // (each vertex's partner on the other side: nearest its mirror image, as it stands - for "Both sides")
+  function wpMirrors() {
+    const m = ed.prepared, P = m.standing || m.verts.map(v => v.pos), cx = charBox().getCenter(new THREE.Vector3()).x;
+    const cell = charBox().getSize(new THREE.Vector3()).y / 60, grid = new Map(), key = (x, y, z) => x + ',' + y + ',' + z;
+    P.forEach((p, i) => { const k = key(Math.floor(p.x / cell), Math.floor(p.y / cell), Math.floor(p.z / cell)); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(i); });
+    return P.map(p => {
+      const q = new THREE.Vector3(2 * cx - p.x, p.y, p.z), gx = Math.floor(q.x / cell), gy = Math.floor(q.y / cell), gz = Math.floor(q.z / cell);
+      let best = -1, bd = cell * cell * 4;
+      for (let x = gx - 1; x <= gx + 1; x++) for (let y = gy - 1; y <= gy + 1; y++) for (let z = gz - 1; z <= gz + 1; z++)
+        for (const j of grid.get(key(x, y, z)) || []) { const d = P[j].distanceToSquared(q); if (d < bd) { bd = d; best = j; } }
+      return best;
+    });
+  }
+  const otherSide = b => {
+    const n = nameOf(b), o = n.replace(/ ([LR])\b/, (_, s) => (s === 'L' ? ' R' : ' L'));
+    return o === n ? b : ed.skel.names.findIndex(x => x.replace(/ \(\d+\)$/, '') === o);
+  };
+  function wpTidy(bw) {   // (no tiny ones, four at most - the pack's - adding up to one)
+    let list = bw.filter(([, w]) => w > 0.004).sort((x, y) => y[1] - x[1]).slice(0, 4);
+    const tot = list.reduce((s, x) => s + x[1], 0);
+    return tot > 0 ? list.map(([b, w]) => [b, w / tot]) : bw;
+  }
+  function wpApply(i, bone, f, mode, avg) {
+    const vs = ed.prepared.verts, tot = vs[i].bw.reduce((s, x) => s + x[1], 0) || 1;
+    let bw = vs[i].bw.map(([b, w]) => [b, w / tot]);
+    if (mode === 'smooth') {
+      if (!avg) return null;
+      const all = new Map(bw.map(([b, w]) => [b, w * (1 - f)]));
+      for (const [b, w] of avg) all.set(b, (all.get(b) || 0) + w * f);
+      bw = [...all.entries()];
+    } else {
+      const e = bw.find(([b]) => b === bone), w = e ? e[1] : 0;
+      const w2 = mode === 'add' ? w + f * (1 - w) : w * (1 - f);
+      const rest = 1 - w;
+      if (rest < 1e-6 && mode === 'remove') {   // (all its: what's taken goes to its parent)
+        const par = Math.max(0, ed.skel.parent[bone]);
+        bw = [[bone, w2], [par, 1 - w2]];
+      } else {
+        const k = rest > 1e-6 ? (1 - w2) / rest : 0;
+        bw = bw.filter(([b]) => b !== bone).map(([b, x]) => [b, x * k]);
+        bw.push([bone, w2]);
+      }
+    }
+    return wpTidy(bw);
+  }
+  {   // (the brush: on the model - painting; off it - the view turns as ever)
+    const ray = new THREE.Raycaster();
+    const ndc = e => {
+      const r = renderer.domElement.getBoundingClientRect();
+      return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    };
+    const hitOf = e => {
+      if (!ed.view) return null;
+      ray.setFromCamera(ndc(e), camera);
+      return ray.intersectObjects(ed.view.children, false)[0] || null;
+    };
+    const dab = (hit) => {
+      const s = wp.stroke, m = ed.prepared, H = charBox().getSize(new THREE.Vector3()).y;
+      const r = +$('wpSize').value * H, strength = +$('wpStrength').value, mode = document.querySelector('input[name="wpMode"]:checked').value;
+      if (s.last && s.last.distanceTo(hit.point) < r * 0.2) return;
+      s.last = hit.point.clone();
+      const near = [];
+      s.disp.forEach((p, i) => { const d = p.distanceTo(hit.point); if (d < r) near.push([i, d]); });
+      const jobs = [[wp.bone, near]];
+      if ($('wpMirror').checked && s.mirror) {
+        const ob = otherSide(wp.bone), seen = new Set(near.map(([i]) => i));
+        if (ob >= 0) jobs.push([ob, near.map(([i, d]) => [s.mirror[i], d]).filter(([j]) => j >= 0 && !seen.has(j))]);
+      }
+      for (const [bone, list] of jobs) {
+        let avg = null;
+        if (mode === 'smooth') {   // (what the brush covers, on average)
+          const acc = new Map();
+          for (const [i] of list) for (const [b, w] of m.verts[i].bw) acc.set(b, (acc.get(b) || 0) + w / list.length);
+          avg = [...acc.entries()];
+        }
+        for (const [i, d] of list) {
+          const f = strength * 0.5 * (1 - d / r) * (1 - d / r);
+          const bw = wpApply(i, bone, f, mode, avg);
+          if (!bw) continue;
+          if (!s.before.has(i)) s.before.set(i, ed.paint.map.has(i) ? ed.paint.map.get(i) : null);
+          m.verts[i].bw = bw;
+          ed.paint.map.set(i, bw.map(x => x.slice()));
+          // (shown at once: its bones and colour; its place in the character's pose is worked out again at the stroke's end)
+          const {si, sw, col} = ed.viewAttrs;
+          for (let j = 0; j < 4; j++) { si[i * 4 + j] = bw[j] ? bw[j][0] : 0; sw[i * 4 + j] = bw[j] ? bw[j][1] : 0; }
+          const e = bw.find(([b]) => b === wp.bone);
+          col.set(wpHeat(e ? e[1] : 0), i * 3);
+        }
+      }
+      for (const a of ed.viewAttrs.all) a.needsUpdate = true;
+    };
+    renderer.domElement.addEventListener('pointerdown', e => {
+      if (!wp.on || e.button !== 0 || !ed.prepared) return;
+      const hit = hitOf(e);
+      if (!hit) return;   // (off the model: the view turns)
+      e.stopPropagation();
+      if (e.altKey) {   // (the bone that moves this spot most)
+        const g = hit.object.geometry, idx = [hit.face.a, hit.face.b, hit.face.c];
+        const v = ed.prepared.verts[idx[0]], top = v.bw.slice().sort((x, y) => y[1] - x[1])[0];
+        if (top) { wp.bone = top[0]; $('wpBone').value = String(wp.bone); wpColours(); wpShowBone(); setStatus('Picked ' + nameOf(wp.bone) + '.'); }
+        return;
+      }
+      if (!ed.paint || ed.paint.n !== ed.prepared.verts.length) ed.paint = {n: ed.prepared.verts.length, character: ed.outfit.character, map: new Map()};
+      const mesh = ed.view.children.find(c => c.isSkinnedMesh) || ed.view.children[0];
+      mesh.updateMatrixWorld(true);
+      const disp = ed.prepared.verts.map((_, i) => mesh.getVertexPosition(i, new THREE.Vector3()).applyMatrix4(mesh.matrixWorld));
+      wp.stroke = {before: new Map(), disp, last: null, mirror: wp.mirror || (wp.mirror = wpMirrors())};
+      controls.enabled = false;
+      dab(hit);
+    }, true);
+    renderer.domElement.addEventListener('pointermove', e => {
+      if (!wp.stroke) return;
+      const hit = hitOf(e);
+      if (hit) dab(hit);
+    });
+    window.addEventListener('pointerup', () => {
+      if (!wp.stroke) return;
+      if (wp.stroke.before.size) wp.undo.push([...wp.stroke.before.entries()]);
+      if (wp.undo.length > 40) wp.undo.shift();
+      wp.stroke = null;
+      controls.enabled = true;
+      drawPreview();   // (its place in the character's pose, from the new weights)
+    });
+  }
 
   // ---- the pack -------------------------------------------------------------------------------------------------------
   $('saveModel').onclick = async () => {
