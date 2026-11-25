@@ -262,7 +262,7 @@ void ModelsLoad(int slot, const std::vector<unsigned char>& pack, const wchar_t*
 void ModelsLoadFile(int slot, const wchar_t* path);   //   test pipe "modelload <slot> <file.fgmodel>"
 bool ModelsWorn();
 void InitModels();                     //   at start: hooks (their ink lines off)
-void InitEggscape();   // eggscape.cpp: the consoles' DLC challenge, unlocked
+void InitDlc();       // dlc.cpp: the DLC pack whose content ships in the PC files (The Great Eggscape, Evil, Humiliation, Opening Number)
 void ModelsResearch(int slot);         //   test pipe "modelpieces <slot>"
 void ModelsFrame(IDirect3DDevice9* dev);   //   cosmetics.cpp, after each frame
 bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT* hr, IDirect3DIndexBuffer9** putBack);   //   a draw of theirs: ours instead

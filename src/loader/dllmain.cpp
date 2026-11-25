@@ -315,7 +315,7 @@ void Init() {
     InitMotion();
     InitFirstPerson();
     InitModels();
-    InitEggscape();
+    InitDlc();
     InitSplitView();
     InitRngTrace();
     InitLoadSync();

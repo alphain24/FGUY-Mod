@@ -1110,7 +1110,9 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     ed.posed = !!ed.pose;
     posing(ed.rig, ed.skel);
     if (ed.modelRig) posing(ed.modelRig, ed.modelSkel);
-    for (const c of ed.view?.children || []) { c.boundingSphere = null; c.boundingBox = null; }   // (the brush finds it as posed)
+    // (the brush finds it as posed: a skinned mesh's own bounds, found again - only a SkinnedMesh can; three's frustum
+    //  test calls computeBoundingSphere on anything whose boundingSphere is null, and the render stops for good)
+    ed.view?.traverse(c => { if (c.isSkinnedMesh) { c.boundingSphere = null; c.boundingBox = null; } });
     wpShowBone();
   }
   $('modelPose').onchange = setPose;

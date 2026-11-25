@@ -1800,3 +1800,79 @@ then I can adjust"; they will send a model of theirs (none yet).
   lines, the HUD (5:25 timer, Rooms to Clear 6, Civilians Remaining 8, Mercy Kills), 30 s of running and firing, no
   crash. Not tried: finishing it (its results / stars), two players, online.
 - **0.9.23 released (2026-11-25)** with The Great Eggscape unlocked. Packaged-files test: two copies on the bad-connection lobby (both moving, both pause menus, resumed by mouse); one copy: Challenge Mode lists it, it starts and plays (5:55 timer, its HUD).
+
+## The DLC pack: Peter Griffin's Man Boob Mega Sweat Pack (2026-11-25, released in 0.9.24)
+- The game's one DLC: Xbox 360 / PS3 (Dec 2012) and Steam (2013-01-14) until the game left Steam on 2014-12-19 - it
+  can't be bought any more. Four add-ons: The Great Eggscape (the bonus challenge), the Evil Pack (Evil Stewie, Evil
+  Mayor West, their own melee weapons), the Humiliation Pack (Stewie in a diaper, pink Brian), the Opening Number Pack
+  (the gold tuxedos). So The Great Eggscape was not console-only, as the 0.9.23 notes say - it was this pack.
+- All of it is in the PC files. Ownership is four "content" flags, 8-11 = bits 0-3 of 0xba9289 (0x967790 reads them;
+  0x9aec60(n, on) sets them through 0x967630 / 660 / 690 / 6c0). 0x693ac0 clears all four, then asks Steam about DLC
+  app 0x369cb = 223691 and sets all four when it is owned - one unlock on PC. Other setters: 0x616abb (the strings
+  "Retail4" -> content 11, another retail code -> content 10: shop pre-order codes), 0x5a20b9 / 0x6a1157 / 0x9aee35
+  (scripts).
+- Costumes carry a DLC number 1/2/3 in the costume table (32-byte rows at [costumes + 0xfc]); 0x66f100 / 0x5f6cb0 /
+  0x66ede0 map 1/2/3 to content 9/10/11. 11 is also "HasEvilDLC" in the menus, the MP map flag at 0x62f36d, and
+  characters 1 and 8 at 0x9a3220.
+- On the user's copy (and the test copies - same steam_api stand-in, DLC001=207811), the flags are ALREADY 0x0f at the
+  main menu: peek ba9288 -> 00000f00. Cleared by hand (poke ba9288 0), the costume pick loses Peter's gold tux and
+  Brian's pink fur and gold tux; with them, Stewie has his diaper, Evil Stewie (black hair and clothes) and gold tux,
+  Mayor West his red Evil suit. The map list (EVIL CITY HALL among them) didn't change in that run - it may be read
+  once.
+- dlc.cpp (was eggscape.cpp) answers "owned" for all four (each case in 0x967790 -> mov al, 1; ret), so every player
+  has the same pack whatever their copy says - matters online, where both PCs must have the same costumes.
+  Checked on a test copy: the log lists the four, and the costume pick shows them.
+- **0.9.24 released (2026-11-25)** with the pack on for everyone, and a Skin Studio fix (picking a test pose while
+  "Show the joints" was ticked set boundingSphere = null on the plain meshes of the standing view - three's render
+  calls computeBoundingSphere on any object whose boundingSphere is null, which only SkinnedMesh has: every frame
+  threw, the view froze; Jim's report). Packaged-files test: two copies on the bad-connection lobby, both moving, the
+  four DLC lines in both logs, the guest's pause resumed by mouse, the host's by Enter.
+  Seen, NOT new (onlinepause.cpp unchanged): in a match, the host opened the menu first, the guest second - the guest
+  logged "everyone has the menu open - pausing", the host never did and its menu's mouse stayed "off" (its Enter
+  worked). Not looked into.
+
+## Road to Death leftovers in BTTM (2026-11-25, first pass)
+- Road to Death: Heavy Iron's cancelled Family Guy zombie third-person shooter (2010-2011, per the Lost Media Wiki -
+  its page is behind a bot check; read via search summary only). Swept every .ho for asset names with the level codes
+  Jim's guide calls RTD leftovers, and for zombie words (scratch script rtd_sweep.py; ho.py lists).
+- **Zombies - certainly RTD's (BTTM has none):** `ZOMBIEMALE01_*` animation clips (ComboAnimBlob, real data: SpawnWindowClimbIn
+  12 KB, JumpUpBus / JumpUpBusStart / JumpUpBusLand, JumpDownBus / Start / Land, Attack) in the horde (xxHD) and
+  infiltration (xxIN) maps, PIXX, PIC2, TFXX, TFC1; a zombie gore set (ZombieGibs_Geo_Intestine / Spleen /
+  SpineRibCage / SkullCapPiece / L_HumerusMeatChunk, ZombieTotalGib_UID_*, ZombieMaleGibbs_Char_CO,
+  VFX_Giblets*Zombie_FGUY, VFX_BloodyRandomGibberZOMBIE_FGUY_SPAWN), VFX_ToonSmokePuffsGrey_ZombieSpawn, a sound bank
+  wrap "ZOMBs". Used: NPC_Scallywag_AnimSet (the pirates) points at all seven window/bus clips by id - the pirates'
+  entrances in horde mode are RTD's zombie spawns. No zombie model or skeleton left; no zombie text in FGUY.exe.
+- **Level-coded props** (MOAP 1664 assets - the Airport map's "MOAP_BSP_AIRPORT_01_MODERN"; MOSS 362 - street props,
+  "HELICOPTER_MOSS_IdleFlyingStill", MOSS_DT_Pickup_Ammo; MOAW 230 - Joe's car destruction states; HFXX 108 - haystacks
+  and pumpkins in the Amish levels; RPXX 64 - "Gameplay_GoldenGlobe_RPXX", foyer wallpaper; SFSS/SFBN - space station;
+  VIXX - village; SUXX, SUCA sky domes): these ride in BTTM's own levels. NOT proven to be RTD's - they may be BTTM's
+  own early level codes (AIRPORT_MODERN = Airport '12, VIXX village = Amish). Jim's guide calls the codes RTD
+  leftovers; unconfirmed. Also "ZZOLD_Condition_NPC ... Exercise_StrengthOrder" in the exe: Hollywood Workout leftovers.
+- Next, if wanted: decode ComboAnimBlob (not done - compressed) to view the zombie clips on their own; or watch a
+  pirate spawn in horde mode (Pirate map) in game.
+- **Second pass, with Sean Pin Ho's blog (seanpinho.blogspot.com, post of 2016-08-27 - concept art he made for the game
+  "5 years ago")**: he writes that the original "Back to the Multiverse" was to be a zombie shooter until Seth said no
+  zombies - so Road to Death is BTTM's own first version, not another game; its leftovers being in BTTM follows, and
+  the level codes Jim lists may well be that era's names for the same project. His concepts, against names in the
+  files: sci-fi zombies (the ZOMBIEMALE01 clips, zombie gore); a chainsaw slasher (BTTM's melee class is still
+  "Slasher": AmishSlasher / ElfSlasher / SlasherBlackBread rigs, NPC_Slasher_* behaviour trees,
+  VFX_SlasherChainsaw* effects); suicide and nuclear bombers (ElfBomber01 / NPC_Elf_Suicide); cyborgs
+  (BertramCyborg); ape and monkey armies (Ape_Rig_Geo, ArmyMonkey_Rig_Geo with 19 animations - Idle, Taunt,
+  SpawnBarrel, Run, Death... - and NPC_CollectibleSpawner_Ape, all in TFXX, Santa's Sweatshop - possibly BTTM's own
+  toy monkeys, unproven); vampires and ghosts (NPC_CollectibleSpawner_Vampires in the xxIN maps and BPXX;
+  VFX_GhostProjectile / VFX_GhostGrave). No "Nightmare" Cleveland / Quagmire / Seamus, bloated zombie, Statham or
+  Edward assets. The Lost Media Wiki page stays behind a bot check (not read).
+- **Third pass, the Lost Media Wiki page (read through the user's Chrome - the wiki's bot check blocks the built-in
+  browser)**: Road to Death (Heavy Iron + Fox, 2010; the zombie idea Fox's) was retooled twice after Seth objected - a
+  toned-down second version (the YouTube trailers are of it), then BTTM (written by Anthony Blasucci and Mike
+  Desilets). The prototypes had a story campaign and online multiplayer with a HORDE mode and deathmatch - BTTM's
+  Multiverse Madness and deathmatch are those modes. A prototype build is at the National Videogame Museum (Frisco,
+  TX). The wiki says unused prototype sounds are in the final game - found:
+- **Media/EN_US/ZOMBs.fev + ZOMBs_01.fsb** (FMOD; FSB4, 44 samples, 16-bit PCM mono 44.1 kHz, data 32-byte aligned,
+  57 s): SFX_zombie_attack_01-06, dance_clap_01-02, dance_slide_01, dance_stomp_01, death_01-06, emerge_01-04,
+  growl_01-08, hit_01-06, puke_01, puke_acid_burn_01-04, spawn_05, walk_03-04, yell_01, SFX_fire_torch_loop.
+  Only PIXX.ho names the bank. The .fev's events (the zombie's design): CHARGE, DANCE, MUNCHIES, PISSED, MOSEY,
+  SHUFFLE, STALK, STRIKE, STUN, SPRINT, JOG, RUN, WALK, JUMP (start/land), FALL, IDLE, HIT_REACT, aware/unaware,
+  SLEEP (idle, hit react, get up, defeated), SPAWN (BRIDGE, DANCE, DUMPSTER, HOUSE, fast, slow, from dead), puke acid
+  pool, DEFEATED (ACID, BACK, ELECTRIC, EXPLODE, FIRE, FRONT, GROIN, HEAD, HEAD_RUN, KNOCKBACK, LEFT/RIGHT, LEFT/RIGHT
+  ARM, QUICK, TORSO, TORSO_RUN). Extracted to build/research/road_to_death_sounds (local only - the game's own audio).
