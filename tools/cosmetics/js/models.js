@@ -273,7 +273,13 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     }
     drawPreview();
   }
-  for (const id of ['fitScale', 'fitX', 'fitY', 'fitZ', 'fitTurn']) $(id).oninput = () => drawPreview();
+  // (a slider being dragged: worked out again once it stops a moment, and at once let go - every step of a drag
+  //  worked out in turn, a high-poly model's queued up for seconds)
+  let fitTimer = 0;
+  for (const id of ['fitScale', 'fitX', 'fitY', 'fitZ', 'fitTurn']) {
+    $(id).oninput = () => { clearTimeout(fitTimer); fitTimer = setTimeout(drawPreview, 150); };
+    $(id).onchange = () => { clearTimeout(fitTimer); drawPreview(); };
+  }
   $('fitBody').onchange = () => drawPreview();
   $('fitKeep').onchange = () => drawPreview();
   $('modelOver').onchange = () => drawPreview();   // (worn over: each piece rides its own bones)
@@ -410,18 +416,23 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
   // ---- its bones: the nearest of the character's vertices' (a grid of them, for speed) ------------------------------
   // (moved: the character's vertices put somewhere else - the auto-rig's: on the model's shape - one array a piece)
   function charGrid(cell, moved = null) {
-    const grid = new Map(), key = (x, y, z) => x + ',' + y + ',' + z;
+    // (cells by a number, not a string - and the box of cells that has any: weightsAt looks nowhere outside it)
+    const grid = new Map(), key = (x, y, z) => ((x + 1024) * 2048 + (y + 1024)) * 2048 + (z + 1024);
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
     for (const [pk, p] of ed.pieces.entries()) {
       if (!p.skin) continue;
       const P = moved ? moved[pk] : p.position;
       for (let i = 0; i < p.position.length / 3; i++) {
         const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
-        const k = key(Math.floor(x / cell), Math.floor(y / cell), Math.floor(z / cell));
-        if (!grid.has(k)) grid.set(k, []);
-        grid.get(k).push({x, y, z, b: p.skin.index.subarray(i * 4, i * 4 + 4), w: p.skin.weight.subarray(i * 4, i * 4 + 4)});
+        const c = [Math.floor(x / cell), Math.floor(y / cell), Math.floor(z / cell)];
+        for (let a = 0; a < 3; a++) { if (c[a] < lo[a]) lo[a] = c[a]; if (c[a] > hi[a]) hi[a] = c[a]; }
+        const k = key(c[0], c[1], c[2]);
+        let list = grid.get(k);
+        if (!list) grid.set(k, list = []);
+        list.push({x, y, z, b: p.skin.index.subarray(i * 4, i * 4 + 4), w: p.skin.weight.subarray(i * 4, i * 4 + 4)});
       }
     }
-    return {grid, key, cell, cx: charBox().getCenter(new THREE.Vector3()).x};
+    return {grid, key, cell, lo, hi, cx: charBox().getCenter(new THREE.Vector3()).x};
   }
   // (side: a part all on the character's left (1) or right (-1) takes only that side's vertices - a boot's inside next
   //  to the other leg would otherwise follow that leg, and the feet stick together)
@@ -436,15 +447,39 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
       const along = dx * n.x + dy * n.y + dz * n.z, side2 = dx * dx + dy * dy + dz * dz - along * along;
       return side2 * 4 + along * along * (along > 0 ? 4 : 1);
     };
-    for (let r = n ? 2 : 1; r <= 48; r++) {   // (rings out until some are found - a big model's hair can be far from any)
-      const near = [];
-      for (let x = cx - r; x <= cx + r; x++) for (let y = cy - r; y <= cy + r; y++) for (let z = cz - r; z <= cz + r; z++)
-        for (const v of G.grid.get(G.key(x, y, z)) || [])
-          if (!side || (v.x - G.cx) * side >= 0) near.push([dist(v), v]);
-      if ((near.length < (n ? 6 : 4) && r < 8) || (!near.length && r < 48)) continue;
-      near.sort((a, b) => a[0] - b[0]);
+    // (rings out until some are found - a big model's hair can be far from any. Each ring adds only its own shell of
+    //  cells - and only the part of it inside the box of cells that have any - to the 6 nearest so far: the whole cube
+    //  looked at again for every ring took Jim's high-poly models seconds - 8 s a slider step for Panda Amy)
+    const start = n ? 2 : 1, need = n ? 6 : 4, bd = [], bv = [];
+    let count = 0;
+    const take = (x, y, z) => {
+      const cell = G.grid.get(G.key(x, y, z));
+      if (!cell) return;
+      for (const v of cell) {
+        if (side && (v.x - G.cx) * side < 0) continue;
+        count++;
+        const d = dist(v);
+        if (bd.length === 6 && d >= bd[5]) continue;
+        let at = bd.length < 6 ? bd.length : 5;
+        while (at > 0 && bd[at - 1] > d) { if (at < 6) { bd[at] = bd[at - 1]; bv[at] = bv[at - 1]; } at--; }
+        bd[at] = d; bv[at] = v;
+      }
+    };
+    const {lo, hi} = G;
+    for (let r = 0; r <= 48; r++) {
+      if (r === 0) take(cx, cy, cz);
+      else {
+        const x0 = Math.max(cx - r, lo[0]), x1 = Math.min(cx + r, hi[0]), y0 = Math.max(cy - r, lo[1]), y1 = Math.min(cy + r, hi[1]);
+        const z0 = Math.max(cz - r, lo[2]), z1 = Math.min(cz + r, hi[2]);
+        for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+          if (x === cx - r || x === cx + r || y === cy - r || y === cy + r) { for (let z = z0; z <= z1; z++) take(x, y, z); }
+          else { if (cz - r >= lo[2]) take(x, y, cz - r); if (cz + r <= hi[2]) take(x, y, cz + r); }
+        }
+      }
+      if (r < start || (count < need && r < 8) || (!count && r < 48)) continue;
+      const best = bd.map((d, k) => [d, bv[k]]);
       const acc = new Map();
-      for (const [d, v] of near.slice(0, 6)) {
+      for (const [d, v] of best) {
         const k = 1 / (d + 1e-6);
         for (let j = 0; j < 4; j++) if (v.w[j] > 0) acc.set(v.b[j], (acc.get(v.b[j]) || 0) + v.w[j] * k);
       }
@@ -461,6 +496,29 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
   // all - the leg inside never comes through it), bar the faintest (under 2%).
   function ride(verts, pieces) {
     const RIDE = 0.08, RIGID = 0.7;
+    // (each piece's vertices in a grid of RIDE cells: "within RIDE of it" and "its nearest" looked up there, not against
+    //  every vertex of it - a high-poly model's pieces took seconds)
+    const gk = (x, y, z) => ((x + 4096) * 8192 + (y + 4096)) * 8192 + (z + 4096);
+    const grids = pieces.map(([a, b]) => {
+      const g = new Map();
+      for (let j = a; j < b; j++) {
+        const q = verts[j].pos, k = gk(Math.floor(q.x / RIDE), Math.floor(q.y / RIDE), Math.floor(q.z / RIDE));
+        let list = g.get(k);
+        if (!list) g.set(k, list = []);
+        list.push(j);
+      }
+      return g;
+    });
+    const nearestIn = (h, q, rings) => {   // (its nearest vertex of piece h within that many rings of cells, or -1)
+      const cx = Math.floor(q.x / RIDE), cy = Math.floor(q.y / RIDE), cz = Math.floor(q.z / RIDE);
+      let nearest = -1, d = Infinity;
+      for (let x = cx - rings; x <= cx + rings; x++) for (let y = cy - rings; y <= cy + rings; y++) for (let z = cz - rings; z <= cz + rings; z++)
+        for (const j of grids[h].get(gk(x, y, z)) || []) {
+          const e = q.distanceToSquared(verts[j].pos);
+          if (e < d) { d = e; nearest = j; }
+        }
+      return {nearest, d};
+    };
     const boxOf = ([a, b]) => { const box = new THREE.Box3(); for (let i = a; i < b; i++) box.expandByPoint(verts[i].pos); return box; };
     const boxes = pieces.map(boxOf), size = pieces.map(([a, b]) => b - a);
     const order = pieces.map((_, k) => k).sort((x, y) => size[y] - size[x]);   // (biggest first: hosts before riders)
@@ -472,18 +530,18 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
         if (h === k || !done.has(h) || size[h] < size[k] * 2) continue;
         if (!boxes[h].clone().expandByScalar(RIDE).intersectsBox(boxes[k])) continue;
         let near = 0;
-        for (let i = a; i < b; i++) {
-          for (let j = pieces[h][0]; j < pieces[h][1]; j++) if (verts[i].pos.distanceToSquared(verts[j].pos) < RIDE * RIDE) { near++; break; }
-        }
+        for (let i = a; i < b; i++) if (nearestIn(h, verts[i].pos, 1).d < RIDE * RIDE) near++;
         if (near > best) { best = near; host = h; }
       }
       if (host >= 0 && best >= (b - a) * 0.5) {
         for (let i = a; i < b; i++) {   // (each vertex: its nearest host vertex's weights)
-          let nearest = -1, d = Infinity;
-          for (let j = pieces[host][0]; j < pieces[host][1]; j++) {
-            const e = verts[i].pos.distanceToSquared(verts[j].pos);
-            if (e < d) { d = e; nearest = j; }
-          }
+          let {nearest, d} = nearestIn(host, verts[i].pos, 2);
+          if (nearest >= 0 && d > (2 * RIDE) * (2 * RIDE)) nearest = -1;   // (one farther out could be nearer than it)
+          if (nearest < 0)
+            for (let j = pieces[host][0]; j < pieces[host][1]; j++) {
+              const e = verts[i].pos.distanceToSquared(verts[j].pos);
+              if (e < d || nearest < 0) { d = e; nearest = j; }
+            }
           verts[i].bw = verts[nearest].bw.map(x => x.slice());
         }
       } else {
@@ -553,9 +611,18 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
         if (o && o.d < CLEAR && CLEAR - o.d <= PUSH) pushes.push({at: v.pos.clone(), by: o.n.multiplyScalar(CLEAR - o.d)});
       }
       if (!pushes.length) break;
+      const near = new Map(), pk = (x, y, z) => ((x + 4096) * 8192 + (y + 4096)) * 8192 + (z + 4096);   // (by CARRY cells)
+      for (const p of pushes) {
+        const k = pk(Math.floor(p.at.x / CARRY), Math.floor(p.at.y / CARRY), Math.floor(p.at.z / CARRY));
+        let list = near.get(k);
+        if (!list) near.set(k, list = []);
+        list.push(p);
+      }
       for (const v of m.verts) {   // (each vertex: the biggest of the moves near it, fading with distance)
         let best = null, size = 0;
-        for (const p of pushes) {
+        const vx = Math.floor(v.pos.x / CARRY), vy = Math.floor(v.pos.y / CARRY), vz = Math.floor(v.pos.z / CARRY);
+        for (let x = vx - 1; x <= vx + 1; x++) for (let y = vy - 1; y <= vy + 1; y++) for (let z = vz - 1; z <= vz + 1; z++)
+        for (const p of near.get(pk(x, y, z)) || []) {
           const d = p.at.distanceTo(v.pos);
           if (d >= CARRY) continue;
           const s = p.by.length() * (d < CARRY / 2 ? 1 : 2 - 2 * d / CARRY);
