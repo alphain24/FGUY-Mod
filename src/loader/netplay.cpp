@@ -83,6 +83,11 @@ struct Pad {
     BYTE lt, rt;
     SHORT lx, ly, rx, ry;
     KbmRaw kbm;          // keyboard / mouse players: their raw keyboard and mouse (kbm.cpp)
+    // (free-running: where my player was and aimed this very frame - with the press, so the others' copy of me throws and
+    //  shoots from the same spot the same way: the user's satchel steps, 2026-11-26 - thrown by a copy a little off and
+    //  aiming up to 58 degrees off, the satchel landed somewhere else on their screen)
+    BYTE aimSet;
+    float aimYaw, aimPitch, at[3];
 };
 const int kRing = 2048;              // ticks of input kept around the one being played (live inputs a little ahead
                                      // too: catching up, the others are up to a few seconds ahead)
@@ -2632,6 +2637,10 @@ struct Remote {
     short clip;
     unsigned held;
     int clipFixes;
+    bool fireDown;                             // their fire / throw held in their newest input
+    bool fireArmed;                            // a new press came: their copy put where they were and aimed then
+    float fireYaw, firePitch, firePos[3];
+    int fireSnaps;
 };
 Remote g_remote[4];
 
@@ -2709,6 +2718,13 @@ void FreeInputs(int s, const PktInputs* p, int count) {
         const Pad& in = p->pads[i];
         r.lastTick = f;
         r.latest = in;
+        bool fire = in.rt > 100 || (in.kbm.buttons & 1) != 0;   // (the right trigger, the left mouse button: fire, throw)
+        if (fire && !r.fireDown && in.aimSet) {
+            r.fireArmed = true;
+            r.fireYaw = in.aimYaw, r.firePitch = in.aimPitch;
+            memcpy(r.firePos, in.at, sizeof(r.firePos));
+        }
+        r.fireDown = fire;
         r.buttonsSince |= in.buttons;
         for (int k = 0; k < 32; ++k) r.keysSince[k] |= in.kbm.keys[k];
         r.mouseSince |= in.kbm.buttons;
@@ -5114,6 +5130,9 @@ void FreeApplyRemotes(float dt) {
         if (predict < 0) predict = SettingInt(L"Debug", L"_", L"FGUYMOD_TEST_NOAIMPREDICT", 0) ? 0 : 1;
         if (!predict) ahead = 0;
         float wantYaw = WrapAngle(r.yaw + r.yawVel * ahead), wantPitch = r.pitch + r.pitchVel * ahead;
+        // (their newest input says where they aim, every frame: taken as it is - fresher than the state, 30 a second, and
+        //  no guessing ahead to overshoot)
+        if (r.latest.aimSet) { wantYaw = r.latest.aimYaw; wantPitch = r.latest.aimPitch; k = 1; }
         float yawErr = fabsf(WrapAngle(wantYaw - *yaw));   // (before this frame's step: how far their aim was off)
         r.yawErrSum += yawErr;
         if (yawErr > r.yawErrMax) r.yawErrMax = yawErr;
@@ -5121,6 +5140,13 @@ void FreeApplyRemotes(float dt) {
         *pitch += (wantPitch - *pitch) * k;
         float* pos = const_cast<float*>(PlayerPos(p));
         if (!pos) continue;
+        if (r.fireArmed) {   // (a new press of fire / throw in their input, played this frame: from where they were, as they aimed)
+            r.fireArmed = false;
+            *yaw = r.fireYaw;
+            *pitch = r.firePitch;
+            float fx = r.firePos[0] - pos[0], fy = r.firePos[1] - pos[1], fz = r.firePos[2] - pos[2];
+            if (fx * fx + fy * fy + fz * fz < 4 * 4 && TeleportPlayer(p, r.firePos)) ++r.fireSnaps;
+        }
         float dx = r.pos[0] - pos[0], dy = r.pos[1] - pos[1], dz = r.pos[2] - pos[2];
         float dist = sqrtf(dx * dx + dy * dy + dz * dz);
         r.errSum += dist;
@@ -5893,6 +5919,14 @@ void FreeTick() {
         LockerSend(nowMs);
     }
     Pad mine = SampleLocal(g_tick);
+    if (unsigned char* me = PlayerBySlot(g_slot)) {   // (where I am and aim, with it - FreeInputs on the others' PCs)
+        if (const float* at = PlayerPos(me)) {
+            mine.aimSet = 1;
+            mine.aimYaw = *reinterpret_cast<float*>(me + kCamYaw);
+            mine.aimPitch = *reinterpret_cast<float*>(me + kCamPitch);
+            memcpy(mine.at, at, sizeof(mine.at));
+        }
+    }
     int ring = g_tick % kRing;
     g_inputs[ring][g_slot] = mine;
     g_have[ring][g_slot] = true;
@@ -6066,12 +6100,12 @@ void FreeTick() {
             if (s == g_slot || !r.errCount) continue;
             Log(L"Netplay: free - player %d: %.2f off on average, %.2f at most; %d slides, %d teleports, %d health fixes; ping %ld "
                 L"ms; aim %.1f deg off on average, %.1f at most; %d hits left to other PCs, %d decided here; weapon %08x:%08x in their hand "
-                L"here", s, r.errSum / r.errCount,
+                L"here; %d shots / throws from their spot", s, r.errSum / r.errCount,
                 r.errMax, r.slides, r.teleports, r.healthFixes, g_pingMs[s], r.yawErrSum / r.errCount * 57.2958, r.yawErrMax * 57.2958,
-                g_hitsBlocked, g_hitsMine, (unsigned)HeldWeapon(PlayerBySlot(s)), (unsigned)(HeldWeapon(PlayerBySlot(s)) >> 32));
+                g_hitsBlocked, g_hitsMine, (unsigned)HeldWeapon(PlayerBySlot(s)), (unsigned)(HeldWeapon(PlayerBySlot(s)) >> 32), r.fireSnaps);
             r.errSum = r.yawErrSum = 0;
             r.errMax = r.yawErrMax = 0;
-            r.errCount = r.slides = r.teleports = r.healthFixes = 0;
+            r.errCount = r.slides = r.teleports = r.healthFixes = r.fireSnaps = 0;
         }
     }
 }

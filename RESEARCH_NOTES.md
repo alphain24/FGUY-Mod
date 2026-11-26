@@ -1872,6 +1872,27 @@ then I can adjust"; they will send a model of theirs (none yet).
 - Also in their logs: their offline devkit session of 13:13 ended in a crash (CRASH at 0x4591ad writing 0, stack 0x5476de
   0x5478b4 0x6a70f2 0x66f39d ...; just after "menu calls PLYR_GetCharacter") - on 0.9.23. Not looked into.
 
+## Satchel steps online (2026-11-26, part 1 released in 0.9.27)
+- The user: Scuffy's Stewie throws satchel charges for the user's Brian to stand on and jump from (never set off - steps up
+  for skips); "we can feel the lag and desync on it". Their session 2026-11-25 22:40-23:26 (0.9.26): direct connection on,
+  ping 17-35 ms; Scuffy's Stewie on the user's screen 0.1-0.2 off (0.5 at most) but his AIM 20-58 degrees off at times
+  (state 30 a second + guessing ahead). Each PC throws its own copy of a satchel from its copy of the thrower.
+- (An earlier guess - the victim's PC deciding hits with a push in them - was for a satchel that goes off; taken out.)
+- **Part 1 (0.9.27)**: every input (Pad) carries where the player was and aimed that frame (aimSet, aimYaw/Pitch, at[3]);
+  the others take that aim every frame (no guessing ahead), and on a new press of fire / throw (right trigger, left mouse)
+  their copy is put exactly there and turned exactly so first (log: "N shots / throws from their spot"). Two copies, story,
+  six throws between moves: the satchels came to rest 0.37, 2.16, ~1.0, 0.00, 0.17, 0.63 apart (each PC's physics settles
+  them a little differently).
+- **Part 2, not built**: a satchel is a zFGUYProjectileSatchelCharge (vtable 0x9f13f4; zProjectile 0x9f00c4, zProjectileHavok
+  sub-object at +0x240, vtable 0xa19bb4, asset id 23bf:b0 at +0x258); its place +0x64 (and +0x70), drawn place +0x208 -
+  writing +0x64 moves nothing. Projectile manager: a static object at 0xb3b5b8 (vtable 0xa19680); a live satchel's address
+  was at 0xb3b608 (+0x50). Its Havok body: an hkpRigidBody (vtable 0xa5ae74), its motion (hkpMotion layout: transform +0x10..,
+  translation +0x40, mass centers +0x50/+0x60, rotations +0x70/+0x80, radius +0xb0, inverse inertia/mass +0xc0, linear velocity
+  +0xd0, angular +0xe0, deactivation ref +0xf0) - one seen at +0xe0 in the body (hkpKeyframedRigidMotion 0xa51cfc), another
+  motion-like block elsewhere with the satchel's own place (0x9fdc3c). Moving it safely needs Havok's own set-position
+  (broadphase AABB, activation) - not found yet. Research commands: devkit findvt <vtable dec> (objects + floats near me),
+  devkit findval <dec> (where a value is kept), devkit snap <n>.
+
 ## Road to Death leftovers in BTTM (2026-11-25, first pass)
 - Road to Death: Heavy Iron's cancelled Family Guy zombie third-person shooter (2010-2011, per the Lost Media Wiki -
   its page is behind a bot check; read via search summary only). Swept every .ho for asset names with the level codes

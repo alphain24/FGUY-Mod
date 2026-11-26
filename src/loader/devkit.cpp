@@ -1008,7 +1008,8 @@ void DevkitTick() {
 }
 
 void DevkitTest(const char* what, int value) {
-    bool look = _stricmp(what, "counts") == 0 || _stricmp(what, "drain") == 0 || _stricmp(what, "stat") == 0 || _stricmp(what, "where") == 0;
+    bool look = _stricmp(what, "counts") == 0 || _stricmp(what, "drain") == 0 || _stricmp(what, "stat") == 0 || _stricmp(what, "where") == 0 ||
+                _stricmp(what, "findvt") == 0 || _stricmp(what, "findval") == 0 || _stricmp(what, "snap") == 0;
     if (!g_allowed && !look) { Log(L"Devkit: test - this PC has no key"); return; }   // (the test's looks: any seat)
     Log(L"Devkit: test - %S %d", what, value);
     auto setFlag = [](int flag, int on) {
@@ -1043,6 +1044,47 @@ void DevkitTest(const char* what, int value) {
         ForWeapons(p, [&](unsigned char* w) { put(w, 0x400, *reinterpret_cast<unsigned*>(w + 0x18)); });
         fclose(f);
         Log(L"Devkit: test - snap %d written (player %p)", value, p);
+    }
+    else if (_stricmp(what, "findvt") == 0) {   // research: objects of a class (its vtable, decimal) in the heap - and in each, three
+                                                //  floats in a row within 30 of my player (a place?), by their offset
+        unsigned char* me = MyPlayer();
+        float *feet = nullptr, *shape = nullptr;
+        float at[3] = {};
+        if (me && PlayerPlace(me, &feet, &shape)) memcpy(at, feet, sizeof(at));
+        MEMORY_BASIC_INFORMATION mbi;
+        int found = 0;
+        for (unsigned char* a = reinterpret_cast<unsigned char*>(0x10000); found < 12 && VirtualQuery(a, &mbi, sizeof(mbi)); a = static_cast<unsigned char*>(mbi.BaseAddress) + mbi.RegionSize) {
+            if (mbi.State != MEM_COMMIT || mbi.Type != MEM_PRIVATE || !(mbi.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE)) || (mbi.Protect & PAGE_GUARD)) continue;
+            auto lo = static_cast<unsigned char*>(mbi.BaseAddress);
+            for (size_t o = 0; o + 0x400 <= mbi.RegionSize && found < 12; o += 4) {
+                if (*reinterpret_cast<unsigned*>(lo + o) != (unsigned)value) continue;
+                unsigned char* obj = lo + o;
+                ++found;
+                wchar_t hits[400] = L"";
+                int at2 = 0;
+                for (int k = 4; k + 12 <= 0x400 && at2 < 360; k += 4) {
+                    const float* f = reinterpret_cast<const float*>(obj + k);
+                    if (fabsf(f[0] - at[0]) < 30 && fabsf(f[1] - at[1]) < 30 && fabsf(f[2] - at[2]) < 30 && f[0] != 0 && f[2] != 0)
+                        at2 += swprintf_s(hits + at2, 400 - at2, L" +%x(%.1f %.1f %.1f)", k, f[0], f[1], f[2]);
+                }
+                Log(L"Devkit: test - object %p of vtable %x;%s", obj, (unsigned)value, hits);
+            }
+        }
+        Log(L"Devkit: test - findvt %x: %d found (me at %.1f %.1f %.1f)", (unsigned)value, found, at[0], at[1], at[2]);
+    }
+    else if (_stricmp(what, "findval") == 0) {   // research: where a value (decimal; an object's address) is kept - any memory
+        MEMORY_BASIC_INFORMATION mbi;
+        int found = 0;
+        for (unsigned char* a = reinterpret_cast<unsigned char*>(0x10000); found < 24 && VirtualQuery(a, &mbi, sizeof(mbi)); a = static_cast<unsigned char*>(mbi.BaseAddress) + mbi.RegionSize) {
+            if (mbi.State != MEM_COMMIT || !(mbi.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE | PAGE_WRITECOPY)) || (mbi.Protect & PAGE_GUARD)) continue;
+            auto lo = static_cast<unsigned char*>(mbi.BaseAddress);
+            for (size_t o = 0; o + 4 <= mbi.RegionSize && found < 24; o += 4)
+                if (*reinterpret_cast<unsigned*>(lo + o) == (unsigned)value) {
+                    ++found;
+                    Log(L"Devkit: test - %x is at %p (%s)", (unsigned)value, lo + o, mbi.Type == MEM_IMAGE ? L"the game's own data" : L"heap");
+                }
+        }
+        Log(L"Devkit: test - findval %x: %d found", (unsigned)value, found);
     }
     else if (_stricmp(what, "camnudge") == 0) {   // test: the free camera moved <value / 10> along its first axis (which way is it?)
         AcquireSRWLockExclusive(&g_camLock);
