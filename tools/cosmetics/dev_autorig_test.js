@@ -18,7 +18,7 @@ function limb(a, b, r) {
   return g;
 }
 
-export async function human({pose = 'T', height = 1.8, headScale = 1} = {}) {
+export async function human({pose = 'T', height = 1.8, headScale = 1, fingers = false} = {}) {
   const H = height, T = {};
   T.ankleL = V(0.1 * H, 0.045 * H, 0); T.kneeL = V(0.1 * H, 0.28 * H, 0.01 * H); T.hipL = V(0.09 * H, 0.52 * H, 0);
   T.toeL = V(0.1 * H, 0.01 * H, 0.14 * H);
@@ -34,8 +34,24 @@ export async function human({pose = 'T', height = 1.8, headScale = 1} = {}) {
   for (const s of ['L', 'R']) {
     parts.push(limb(T['hip' + s], T['knee' + s], 0.06 * H), limb(T['knee' + s], T['ankle' + s], 0.045 * H));
     parts.push(limb(T['ankle' + s], T['toe' + s], 0.035 * H));
-    parts.push(limb(T['shoulder' + s], T['elbow' + s], 0.04 * H), limb(T['elbow' + s], T['wrist' + s], 0.032 * H));
-    parts.push(limb(T['wrist' + s], T['tip' + s], 0.025 * H));
+    parts.push(limb(T['shoulder' + s], T['elbow' + s], 0.04 * H));
+    if (!fingers) { parts.push(limb(T['elbow' + s], T['wrist' + s], 0.032 * H), limb(T['wrist' + s], T['tip' + s], 0.025 * H)); continue; }
+    // (fingers: a forearm narrowing to the wrist, a flat wide palm, four fingers apart front to back, a thumb to the front -
+    //  an open hand, palm down)
+    const W = T['wrist' + s], out = T['tip' + s].clone().sub(W), L = out.length();
+    out.normalize();
+    const fore = T['elbow' + s].clone().lerp(W, 0.8);
+    parts.push(limb(T['elbow' + s], fore, 0.032 * H), limb(fore, W, 0.02 * H));
+    const palmEnd = W.clone().addScaledVector(out, 0.45 * L);
+    const palm = limb(W.clone().addScaledVector(out, 0.04 * L), palmEnd, 0.022 * H);
+    palm.translate(-W.x, -W.y, -W.z); palm.scale(1, 0.6, 1.5); palm.translate(W.x, W.y, W.z);
+    parts.push(palm);
+    for (let f = 0; f < 4; f++) {
+      const z = (f - 1.5) * 0.014 * H, from = palmEnd.clone().add(V(0, 0, z));
+      parts.push(limb(from, from.clone().addScaledVector(out, 0.55 * L), 0.0055 * H));
+    }
+    const th = W.clone().addScaledVector(out, 0.25 * L).add(V(0, 0, 0.022 * H));
+    parts.push(limb(th, th.clone().addScaledVector(out, 0.3 * L).add(V(0, 0, 0.02 * H)), 0.006 * H));
   }
   const torso = new THREE.CapsuleGeometry(0.13 * H, 0.12 * H, 6, 16);   // (its bottom at 0.49: the crotch; its top 0.87)
   torso.scale(1, 1, 0.6);

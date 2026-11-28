@@ -203,7 +203,8 @@ input[type=number] { background: var(--panel2); border: 2px solid var(--line); b
       <label class="muted"><input type="checkbox" id="rigMirror" checked> Move both sides together</label>
       <label class="muted"><input type="checkbox" id="rigEdit" checked> Show the joints</label>
     </div>
-    <div class="muted" id="rigHelp" hidden>The dots are its joints, found from its shape - drag any that's off (it should stand facing you, arms out). Then untick "Show the joints" to see it rigged, in the character's pose, and "Try a pose".</div>
+    <div class="row" id="rigFingersRow" hidden><label class="muted" title="Its fingers on the character's finger bones: they bend as the character's do - round a gun, in a fist. Off: each hand moves as one piece (gloves, mittens, paws)."><input type="checkbox" id="rigFingers"> Finger joints - its fingers bend with the character's</label> <span class="muted" id="rigFingersNote"></span></div>
+    <div class="muted" id="rigHelp" hidden>The dots are its joints, found from its shape - drag any that's off (it should stand facing you, arms out). Then untick "Show the joints" to see it rigged, in the character's pose, and "Try a pose". With "Finger joints" ticked the small dots are its fingers' joints - each finger bends at its knuckle and again at its middle dot; drag them too ("aiming" curls the fingers).</div>
     <div class="row"><span class="muted" style="width:60px">Size</span><input type="range" id="fitScale" min="0.5" max="1.5" step="0.005" value="1"></div>
     <div class="row"><span class="muted" style="width:60px">Left</span><input type="range" id="fitX" min="-0.5" max="0.5" step="0.002" value="0"></div>
     <div class="row"><span class="muted" style="width:60px">Up</span><input type="range" id="fitY" min="-0.5" max="0.5" step="0.002" value="0"></div>

@@ -228,7 +228,7 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
       const verts = geos.reduce((n, g) => n + g.attributes.position.count, 0);
       if (verts > 65535) throw new Error(`it has ${verts.toLocaleString()} vertices - 65,535 at most`);
       ed.src = {parts, all: parts, name: f.name};
-      ed.joints = null;
+      ed.joints = null; ed.fingerJoints = null;
       showParts();
       if (!$('modelName').value) $('modelName').value = ed.src.name;
       // (inside the character's box, about its size or smaller: made on it already - its place kept, and most likely
@@ -286,11 +286,12 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
   $('fitAuto').onclick = () => refit(true);
   $('fitRig').onchange = () => {
     const on = $('fitRig').checked;
-    $('rigRow').hidden = $('rigHelp').hidden = !on;
+    $('rigRow').hidden = $('rigHelp').hidden = $('rigFingersRow').hidden = !on;
     if (on) { $('fitKeep').checked = false; $('modelOver').checked = false; }
     drawPreview();
   };
-  $('rigFind').onclick = () => { ed.joints = null; drawPreview(); };
+  $('rigFind').onclick = () => { ed.joints = null; ed.fingerJoints = null; drawPreview(); };
+  $('rigFingers').onchange = () => drawPreview();
 
   // its parts (the objects in the file), each one kept or left out - a stand, a ball around it, a backdrop
   function showParts() {
@@ -309,7 +310,7 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
         const kept = ed.src.all.filter(p => !p.object.off);
         if (!kept.length) { ob.off = false; tick.checked = true; return; }
         ed.src.parts = kept;
-        ed.joints = null;
+        ed.joints = null; ed.fingerJoints = null;
         refit(true);
       };
       label.append(tick, ` ${ob.name} (${n.toLocaleString()} vertices)`);
@@ -704,6 +705,7 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
   // (rigged on its own shape: its head and its hands each follow one bone - the character's jaw and face bones are for
   //  its own mouth and eyes, its finger bones for its own fingers; a model's has neither: its cheeks and hair stretched
   //  as the character talked, its gloves curled into a mess round a gun. "Fix weights" can give them the fingers back.)
+  //  ("Finger joints" ticked: its own fingers found and put on the character's finger bones - fingers())
   function keepWhole(bw) {
     const ends = ed.skel.names.map((n, i) => (/^(Head(?! 2)|Hand [LR])\b/.test(n) ? i : -1)).filter(i => i >= 0);
     if (!ends.length) return bw;
@@ -724,6 +726,172 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     if (!kept.length) kept = weightsAt(G, pos, side === 'L' ? 1 : -1).filter(([b]) => !boneSide(b) || boneSide(b) === side);
     return kept.length ? kept : bw;
   }
+  // ---- "Finger joints": its own fingers on the character's finger bones (Jim's Ash: open hands, fingers apart) ----------
+  // Its hand (the points nearest the wrist-to-tip segment) cut across further and further out: where it falls into the most
+  // separate pieces, those are its fingers - a thumb is the piece that comes apart nearer the wrist, joined to none of them.
+  // The character's: chains of two bones from the hand (one bone alone: the palm's), its thumb the one starting nearest the
+  // wrist. The thumb to the thumb, the rest across the palm in order (five fingers on three: the middle two share one).
+  // Each finger's points: its first bone up to half way, its second past it; its bones put at its own knuckle and middle -
+  // where it bends. A hand that doesn't come apart (a mitten, a glove, a paw) gets none: it moves as one piece.
+  const posKey = p => [p.x, p.y, p.z].map(x => Math.round(x * 1e4)).join(',');
+  const fingerName = b => (ed.skel.names[b] || '').replace(/ \(\d+\)$/, '');   // ("Finger L 1.1": every character's the same)
+  function fingers(P, segAt, Fm, Fc) {
+    const node = new Map(), pts = [], near = [];
+    const seen = new Set();
+    for (const sp of ed.src.parts) {
+      if (seen.has(sp.geo)) continue;
+      seen.add(sp.geo);
+      const a = sp.geo.attributes, I = sp.geo.index, of = [];
+      for (let i = 0; i < a.position.count; i++) {
+        const p = P.map(new THREE.Vector3().fromBufferAttribute(a.position, i), new THREE.Vector3(0, 1, 0)).pos, key = posKey(p);
+        if (!node.has(key)) { node.set(key, pts.length); pts.push(p); near.push(new Set()); }
+        of.push(node.get(key));
+      }
+      const tri = I ? t => I.getX(t) : t => t, n = I ? I.count : a.position.count;
+      for (let t = 0; t + 2 < n; t += 3) {
+        const c = [of[tri(t)], of[tri(t + 1)], of[tri(t + 2)]];
+        for (const x of c) for (const y of c) if (x !== y) near[x].add(y);
+      }
+    }
+    const seg = pts.map(segAt);
+    const weights = new Map(), joint = new Map(), notes = [], dots = [];
+    const named = re => ed.skel.names.findIndex(n => re.test(n));
+    const cpos = b => new THREE.Vector3().setFromMatrixPosition(ed.skel.bind[b]);
+    for (const [s, k] of [['L', 7], ['R', 11]]) {
+      const f = Fm[k], hand = [];
+      seg.forEach((j, i) => { if (j === k) hand.push(i); });
+      if (hand.length < 30) { notes.push('none'); continue; }
+      const t = new Map(hand.map(i => [i, pts[i].clone().sub(f.A).dot(f.u) / f.len]));
+      const MIN = Math.max(3, Math.round(hand.length * 0.01));
+      const pieces = t0 => {   // (its hand past t0, in connected pieces - the small ones dropped)
+        const inSet = new Set(hand.filter(i => t.get(i) > t0)), done = new Set(), out = [];
+        for (const i of inSet) {
+          if (done.has(i)) continue;
+          const comp = [i];
+          done.add(i);
+          for (let q = 0; q < comp.length; q++) for (const o of near[comp[q]]) if (inSet.has(o) && !done.has(o)) { done.add(o); comp.push(o); }
+          if (comp.length >= MIN) out.push(comp);
+        }
+        return out;
+      };
+      let best = null, bestT = 0;
+      for (let t0 = 0.2; t0 <= 0.9; t0 += 0.05) { const c = pieces(t0); if (!best || c.length > best.length) { best = c; bestT = t0; } }
+      if (!best || best.length < 2) { notes.push('none'); continue; }
+      let digits = best.map(c => ({pts: c, thumb: false}));
+      const taken = new Set(best.flat());
+      let thumb = null;   // (a piece nearer the wrist joined to none of them)
+      for (let t0 = bestT - 0.05; t0 >= 0.1; t0 -= 0.05) {
+        const c = pieces(t0).filter(p => !p.some(i => taken.has(i)));
+        if (c.length) thumb = c.sort((x, y) => y.length - x.length)[0];
+      }
+      if (thumb) digits.push({pts: thumb, thumb: true});
+      // (each one followed back toward the wrist while it's still apart from the others - a thumb made as a piece of its own
+      //  starts deep in the palm: cut where the fingers part, its lower half stayed with the hand and it bent half way up)
+      {
+        const grown = new Set(digits.map((_, j) => j));
+        for (let t0 = bestT - 0.05; t0 >= 0.05 && grown.size; t0 -= 0.05) {
+          const comps = pieces(t0);
+          for (const j of [...grown]) {
+            const c = comps.find(p => p.includes(digits[j].pts[0]));
+            const others = new Set(digits.filter((_, o) => o !== j).flatMap(d => d.pts));
+            if (!c || c.some(i => others.has(i))) { grown.delete(j); continue; }
+            digits[j].pts = c;
+          }
+        }
+      }
+      // each one's knuckle (its points nearest the hand), its tip (the furthest from it), its middle; across the palm (w)
+      for (const d of digits) {
+        const ts = d.pts.map(i => t.get(i)), lo = Math.min(...ts), hi = Math.max(...ts);
+        const baseP = d.pts.filter(i => t.get(i) <= lo + (hi - lo) * 0.15);
+        d.base = baseP.reduce((a, i) => a.add(pts[i]), new THREE.Vector3()).multiplyScalar(1 / baseP.length);
+        d.tip = d.pts.reduce((a, i) => (pts[i].distanceTo(d.base) > a.distanceTo(d.base) ? pts[i] : a), d.base);
+        d.across = d.pts.reduce((a, i) => a + pts[i].clone().sub(f.A).dot(f.w), 0) / d.pts.length;   // (by its middle: a
+                                                                                                      //  thumb's root is deep in the palm)
+        const ax = d.tip.clone().sub(d.base).normalize();   // (how thick: its points' distance from its own line)
+        d.thick = d.pts.reduce((a, i) => a + pts[i].clone().sub(d.base).projectOnPlane(ax).length(), 0) / d.pts.length;
+        d.lo = lo; d.hi = hi;
+      }
+      {   // (a palm made apart from its fingers - separate pieces of mesh - comes out as one more piece: as thick as two)
+        const th = digits.map(d => d.thick).sort((x, y) => x - y), mid = th[Math.floor((th.length - 1) / 2)];
+        for (let i = digits.length - 1; i >= 0; i--) if (digits.length > 2 && digits[i].thick > mid * 2) digits.splice(i, 1);
+      }
+      if (!thumb && digits.length >= 3) {   // (fingers made as pieces of their own: the thumb came apart with them - it's the one
+        const med = a => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];   //  at an end of the row starting much
+        const row = digits.slice().sort((x, y) => x.across - y.across);                  //  nearer the wrist or ending much
+        const score = d => { const o = digits.filter(e => e !== d);                     //  before the others)
+          return Math.max(med(o.map(e => e.lo)) - d.lo, med(o.map(e => e.hi)) - d.hi); };
+        const c = [row[0], row[row.length - 1]].sort((x, y) => score(y) - score(x))[0];
+        if (score(c) > 0.2) { c.thumb = true; thumb = c.pts; }
+      }
+      ed.fingerDebug = ed.fingerDebug || {};
+      ed.fingerDebug[s] = {hand: hand.length, bestT, digits: digits.map(d => ({n: d.pts.length, thumb: d.thumb, lo: +d.lo.toFixed(2), hi: +d.hi.toFixed(2), thick: +d.thick.toFixed(4), across: +d.across.toFixed(3)}))};
+      if (!digits.some(d => d.thumb)) thumb = null;
+      // the character's: two-bone chains from its hand
+      const handBone = named(new RegExp(`^Hand ${s}\\b`));
+      const chains = [];
+      ed.skel.parent.forEach((p, b) => {
+        if (p !== handBone) return;
+        const kid = ed.skel.parent.findIndex(q => q === b);
+        if (kid >= 0) chains.push({bones: [b, kid], at: cpos(b)});
+      });
+      if (!chains.length) { notes.push('no bones'); continue; }
+      const fc = Fc[k];
+      for (const c of chains) { c.along = c.at.clone().sub(fc.A).dot(fc.u); c.across = c.at.clone().sub(fc.A).dot(fc.w); }
+      const cThumb = chains.length > 1 ? chains.reduce((a, c) => (c.along < a.along ? c : a)) : null;
+      const cFingers = chains.filter(c => c !== cThumb).sort((x, y) => x.across - y.across);
+      const mFingers = digits.filter(d => !d.thumb).sort((x, y) => x.across - y.across);
+      const pairs = [];
+      if (thumb && cThumb) pairs.push([digits.find(d => d.thumb), cThumb]);
+      else if (thumb) mFingers.push(digits.find(d => d.thumb));
+      mFingers.forEach((d, i) => {
+        const n = mFingers.length, m = cFingers.length;
+        if (m) pairs.push([d, cFingers[n === 1 ? Math.floor(m / 2) : Math.round(i * (m - 1) / (n - 1))]]);
+      });
+      // its bones at its knuckle and half way out (a chain shared by two fingers: between theirs) - or where they were dragged
+      // to ("Show the joints": the finger dots, kept in its own space in ed.fingerJoints; a shared chain's two fingers each
+      // moved by as much as its dot was)
+      const at = new Map();
+      for (const [d, c] of pairs) {
+        d.axis = d.tip.clone().sub(d.base);
+        d.len = Math.max(d.axis.length(), 1e-6);
+        d.axis.multiplyScalar(1 / d.len);
+        d.mid = d.base.clone().addScaledVector(d.axis, d.len * 0.5);
+        for (const [b, p] of [[c.bones[0], d.base], [c.bones[1], d.mid]]) {
+          if (!at.has(b)) at.set(b, []);
+          at.get(b).push(p);
+        }
+      }
+      const shift = new Map();
+      for (const [b, ps] of at) {
+        const auto = ps.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / ps.length);
+        const own = ed.fingerJoints && ed.fingerJoints.get(fingerName(b));
+        const want = own ? P.map(own, new THREE.Vector3(0, 1, 0)).pos : auto;
+        joint.set(b, want);
+        shift.set(b, want.clone().sub(auto));
+        dots.push({bone: b, side: s, at: want.clone()});
+      }
+      // weights along each finger: its first bone to its middle joint, its second past it, the hand's a little at the knuckle
+      for (const [d, c] of pairs) {
+        const base = d.base.clone().add(shift.get(c.bones[0])), mid = d.mid.clone().add(shift.get(c.bones[1]));
+        const axis = d.tip.clone().sub(base), len = Math.max(axis.length(), 1e-6);
+        axis.multiplyScalar(1 / len);
+        const split = Math.max(0.15, Math.min(0.85, mid.clone().sub(base).dot(axis) / len));
+        for (const i of d.pts) {
+          const x = Math.max(0, pts[i].clone().sub(base).dot(axis) / len);   // (0 at its knuckle, 1 at its tip)
+          const w2 = Math.max(0, Math.min(1, (x - split + 0.1) / 0.2)), hw = Math.max(0, 0.15 - x) / 0.15 * 0.5;
+          const bw = [[c.bones[0], (1 - w2) * (1 - hw)], [c.bones[1], w2 * (1 - hw)], [handBone, hw]].filter(([, w]) => w > 1e-3);
+          weights.set(posKey(pts[i]), bw);
+        }
+      }
+      notes.push(`${digits.length - (thumb ? 1 : 0)} finger${digits.length - (thumb ? 1 : 0) > 1 ? 's' : ''}${thumb ? ' and a thumb' : ''}`);
+    }
+    // (said under the tick box: what it found - "4 fingers and a thumb on each hand")
+    const say = n => (n === 'none' ? 'no fingers apart - it moves as one piece' : n === 'no bones' ? "the character has no finger bones" : n);
+    const note = notes[0] === notes[1] ? (notes[0] === 'none' || notes[0] === 'no bones' ? say(notes[0]) : notes[0] + ' on each hand')
+      : 'left hand: ' + say(notes[0]) + '; right hand: ' + say(notes[1]);
+    return {weights, joint, dots, note: '- found: ' + note};
+  }
+
   function rigOnItsShape(P) {
     const Jm = jointsNow(P), Jc = characterJoints(ed.skel, ed.pieces);
     const Fc = frames(Jc), Fm = frames(Jm);
@@ -757,11 +925,23 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     });
     // its own skeleton: the character's bones put on its shape in the character's pose (each turned as the character's)
     const Pj = posedJoints(Jm, Jc), Fp = frames(Pj), moves = poseMoves(Jm, Pj);
+    // (its segment by how far it is against how thick that part of the model is - limbAt below)
+    const segAt = p => {
+      let k = -1, best = Infinity;
+      Fm.forEach((f, j) => {
+        const d = p.clone().sub(f.A), t = Math.max(0, Math.min(1, d.dot(f.u) / f.len));
+        const e = f.A.clone().addScaledVector(f.u, t * f.len).distanceTo(p) / Math.max(Gm[j] || 0, f.len * 0.05, 1e-6);
+        if (e < best) { best = e; k = j; }
+      });
+      return k;
+    };
+    const F = $('rigFingers').checked ? fingers(P, segAt, Fm, Fc) : null;
     const count = ed.skel.count, bind = [], invBind = [], local = [];
     for (let b = 0; b < count; b++) {
       const t = new THREE.Vector3(), r = new THREE.Quaternion(), sc = new THREE.Vector3();
       ed.skel.bind[b].decompose(t, r, sc);
-      const at = ed.skel.parent[b] < 0 ? t : carry(t, segOf[b], Fc, Fp, Gc, Gm);
+      let at = ed.skel.parent[b] < 0 ? t : carry(t, segOf[b], Fc, Fp, Gc, Gm);
+      if (F && F.joint.has(b)) at = applyMove(moves[segOf[b]] || moves[0], F.joint.get(b));   // (at its own knuckles)
       bind.push(new THREE.Matrix4().compose(at, r, new THREE.Vector3(1, 1, 1)));
     }
     for (let b = 0; b < count; b++) {
@@ -785,14 +965,12 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
       limbAt(p) {
         // (its segment: the nearest by how far it is against how thick that part of the model is - a thigh's outside is as
         //  near a hanging forearm's middle as its own, but the thigh's five times as thick)
-        let k = -1, best = Infinity;
-        Fm.forEach((f, j) => {
-          const d = p.clone().sub(f.A), t = Math.max(0, Math.min(1, d.dot(f.u) / f.len));
-          const e = f.A.clone().addScaledVector(f.u, t * f.len).distanceTo(p) / Math.max(Gm[j] || 0, f.len * 0.05, 1e-6);
-          if (e < best) { best = e; k = j; }
-        });
+        const k = segAt(p);
         return {k, limb: limbOfSeg(k)};
       },
+      fingerAt(p) { return F ? F.weights.get(posKey(p)) || null : null; },   // (a point of one of its fingers: their bones)
+      fingerNote: F ? F.note : '',
+      fingerDots: F ? F.dots : [],
       ownLimb(bw, {k, limb}) {
         if (!limb) return bw;
         const kept = bw.filter(([b]) => limbOfSeg(segOf[b]) !== (limb === 'arm' ? 'leg' : 'arm'));
@@ -837,6 +1015,18 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     }
     const lines = [];
     for (const [a, b] of SEGMENTS) lines.push(J[a], J[b]);
+    // (its fingers' joints, "Finger joints" ticked: smaller, a knuckle joined to its middle joint and to the wrist - each
+    //  dragged as the rest; the other hand's same finger mirrored with "Move both sides together")
+    if ($('rigFingers').checked) for (const f of ed.fingerDots || []) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(H * 0.0065, 10, 6),
+        new THREE.MeshBasicMaterial({color: f.side === 'L' ? 0xa8f0b4 : 0xffb4b4, depthTest: false}));
+      m.renderOrder = 10;
+      m.position.copy(f.at);
+      m.userData.finger = fingerName(f.bone);
+      ed.dots.add(m);
+      const par = ed.skel.parent[f.bone], up = (ed.fingerDots || []).find(g => g.bone === par);
+      lines.push(up ? up.at : J['wrist' + f.side], f.at);
+    }
     const seg = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(lines), new THREE.LineBasicMaterial({color: 0xffffff, depthTest: false, transparent: true, opacity: 0.6}));
     seg.renderOrder = 9;
     ed.dots.add(seg);
@@ -852,9 +1042,10 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
     renderer.domElement.addEventListener('pointerdown', e => {
       if (!ed.dots || !ed.dots.parent) return;
       ray.setFromCamera(ndc(e), camera);
-      const h = ray.intersectObjects(ed.dots.children.filter(c => c.userData.joint));
+      const h = ray.intersectObjects(ed.dots.children.filter(c => c.userData.joint || c.userData.finger));
       if (!h.length) return;
       drag = h[0].object;
+      drag.userData.moved = true;
       plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), drag.getWorldPosition(new THREE.Vector3()));
       controls.enabled = false;
       e.stopPropagation();
@@ -864,17 +1055,28 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
       ray.setFromCamera(ndc(e), camera);
       if (!ray.ray.intersectPlane(plane, hit)) return;
       drag.position.copy(drag.parent.worldToLocal(hit.clone()));
+      const cx = charBox().getCenter(new THREE.Vector3()).x;
+      if (drag.userData.finger) {   // (a finger's joint: the other hand's same one mirrored)
+        const other = drag.userData.finger.replace(/ ([LR]) /, (_, s) => (s === 'L' ? ' R ' : ' L '));
+        const o = ed.dots.children.find(c => c.userData.finger === other);
+        if (o && $('rigMirror').checked) { o.position.set(2 * cx - drag.position.x, drag.position.y, drag.position.z); o.userData.moved = true; }
+        return;
+      }
       const k = drag.userData.joint, other = k.endsWith('L') ? k.slice(0, -1) + 'R' : k.endsWith('R') ? k.slice(0, -1) + 'L' : null;
       if (other && $('rigMirror').checked) {
-        const o = ed.dots.children.find(c => c.userData.joint === other), cx = charBox().getCenter(new THREE.Vector3()).x;
+        const o = ed.dots.children.find(c => c.userData.joint === other);
         o.position.set(2 * cx - drag.position.x, drag.position.y, drag.position.z);
       }
-      if (!other) drag.position.x = charBox().getCenter(new THREE.Vector3()).x;   // (a middle joint stays in the middle)
+      if (!other) drag.position.x = cx;   // (a middle joint stays in the middle)
     });
     window.addEventListener('pointerup', () => {
       if (!drag) return;
       const P = placer();
       for (const c of ed.dots.children) if (c.userData.joint) ed.joints[c.userData.joint] = P.unmap(c.position.clone());
+      for (const c of ed.dots.children) if (c.userData.finger && c.userData.moved) {   // (only the ones dragged: the rest stay found)
+        if (!ed.fingerJoints) ed.fingerJoints = new Map();
+        ed.fingerJoints.set(c.userData.finger, P.unmap(c.position.clone()));
+      }
       drag = null;
       controls.enabled = true;
       drawPreview();
@@ -885,6 +1087,8 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
   function prepare() {
     const P = placer(), rigged = ed.src.parts.every(p => p.boneOf);
     const R = autoRig() ? rigOnItsShape(P) : null;
+    $('rigFingersNote').textContent = R ? R.fingerNote : '';
+    ed.fingerDots = R ? R.fingerDots : [];
     const G = rigged ? null : charGrid(charBox().getSize(new THREE.Vector3()).y / 40, R ? R.moved : null);
     const verts = [], idx = [], parts = [], textures = [], wraps = [], palette = [];
     const seenGeo = new Map();   // (a geometry's vertices once, its groups each a part)
@@ -946,7 +1150,7 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
             }
           } else {
             bw = weightsAt(G, pos, side, $('modelOver').checked ? nrm : null);
-            if (R) bw = keepWhole(R.ownLimb(ownSide(bw, R.sideAt(pos), G, pos), limbs[i]));
+            if (R) bw = R.fingerAt(pos) || keepWhole(R.ownLimb(ownSide(bw, R.sideAt(pos), G, pos), limbs[i]));
           }
           const color = colors ? new THREE.Color(colors.getX(i), colors.getY(i), colors.getZ(i)) : null;
           verts.push({pos, nrm, uv, bw, color});
@@ -1169,7 +1373,7 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
   //      shoulder, elbow, hip, knee found by name and place (rig.js names), so every character's skeleton takes them
   const POSES = {
     up: {upperL: [1, 1.3, 0.1], foreL: [0.6, 1.5, 0.2], head: [0.35, 0, 1]},
-    aim: {upperL: [0.3, -0.3, 1], foreL: [-0.25, 0.05, 1], upperR: [-0.3, -0.3, 1], foreR: [0.25, 0.05, 1]},
+    aim: {upperL: [0.3, -0.3, 1], foreL: [-0.25, 0.05, 1], upperR: [-0.3, -0.3, 1], foreR: [0.25, 0.05, 1], grip: true},
     walk: {thighL: [0, -1, 0.6], shinL: [0, -1, 0.15], thighR: [0, -1, -0.35], shinR: [0, -1, -1],
       upperL: [0.25, -1, -0.35], foreL: [0.15, -1, 0.35], upperR: [-0.25, -1, 0.35], foreR: [-0.15, -1, 0.6]},
     crouch: {thighL: [0.2, -0.25, 1], shinL: [0, -1, -0.3], thighR: [-0.2, -0.25, 1], shinR: [0, -1, -0.3],
@@ -1226,6 +1430,34 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
       aim(L['elbow' + s], L['hand' + s], pose['fore' + s]);
       aim(L['hip' + s], L['knee' + s], pose['thigh' + s]);
       aim(L['knee' + s], L['ankle' + s], pose['shin' + s]);
+    }
+    if (pose.grip) {   // (its fingers curled in, as round a gun's grip: each finger bone turned toward the palm - the palm down at
+      const down = new THREE.Vector3(0, -1, 0);   //  rest, the thumb the chain starting nearest the wrist, less)
+      for (const s of ['L', 'R']) {
+        const hand = L['hand' + s];
+        if (hand < 0) continue;
+        const hp = new THREE.Vector3().setFromMatrixPosition(skel.bind[hand]);
+        const roots = skel.parent.map((p, b) => (p === hand ? b : -1)).filter(b => b >= 0 && skel.parent.includes(b));
+        const thumb = roots.length > 1 ? roots.reduce((a, b) => (new THREE.Vector3().setFromMatrixPosition(skel.bind[b]).distanceTo(hp) <
+          new THREE.Vector3().setFromMatrixPosition(skel.bind[a]).distanceTo(hp) ? b : a)) : -1;
+        for (const r of roots) for (let b = r, n = 0; b >= 0 && n < 3; b = skel.parent.indexOf(b), n++) {
+          const kid = skel.parent.indexOf(b);
+          const from = new THREE.Vector3().setFromMatrixPosition(skel.bind[b]);
+          const to = kid >= 0 ? new THREE.Vector3().setFromMatrixPosition(skel.bind[kid]) : from.clone().sub(new THREE.Vector3().setFromMatrixPosition(skel.bind[skel.parent[b]])).add(from);
+          const axisRest = to.sub(from).normalize().cross(down);   // (at rest: across the finger, level)
+          if (axisRest.lengthSq() < 1e-8) continue;
+          axisRest.normalize();
+          const bone = rig.bones[b];
+          rig.root.updateMatrixWorld(true);
+          const world = bone.getWorldQuaternion(new THREE.Quaternion());
+          const restWorld = new THREE.Quaternion().setFromRotationMatrix(skel.bind[b]).premultiply(rootQ);
+          const axis = axisRest.applyQuaternion(rootQ).applyQuaternion(world.clone().multiply(restWorld.clone().invert()));
+          const turn = new THREE.Quaternion().setFromAxisAngle(axis, (r === thumb ? 25 : 65) * Math.PI / 180);
+          const parent = bone.parent.getWorldQuaternion(new THREE.Quaternion());
+          bone.quaternion.copy(parent.invert().multiply(turn.multiply(world)));
+          bone.updateMatrixWorld(true);
+        }
+      }
     }
     if (pose.head && L.head >= 0) {   // (the head turned to look that way)
       const h = rig.bones[L.head], want = new THREE.Vector3(...pose.head).normalize();

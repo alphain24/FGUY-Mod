@@ -138,12 +138,26 @@ export function guessJoints(pts) {
     // the shoulder: the arm's middle just outside the torso's edge, a little in
     const sh = at(edge - 1) || V(edgeX * side, H * 0.75, 0);
     const shoulder = V(edgeX * 0.92 * side, sh.y, sh.z);
-    // the wrist: the thinnest place in the outer third of the arm, past the hand's widest
+    // the wrist: the thinnest place in the outer third of the arm, past the hand's widest - and not where the slice falls in
+    // pieces: across an open hand's fingers (each thin, apart), or its thumb and palm (a hand with its fingers apart had its
+    // wrist found at its knuckles: its palm went with the forearm)
     const L = tip.distanceTo(shoulder);
+    const apart = b => {   // (the slice's points, in cells across: more than one patch?)
+      const cell = H * 0.006, on = new Set(b.map(p => Math.floor(p.y / cell) + ',' + Math.floor(p.z / cell)));
+      const first = on.values().next().value, seen = new Set([first]), todo = [first];
+      while (todo.length) {
+        const [y, z] = todo.pop().split(',').map(Number);
+        for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+          const k = (y + dy) + ',' + (z + dz);
+          if (on.has(k) && !seen.has(k)) { seen.add(k); todo.push(k); }
+        }
+      }
+      return seen.size < on.size;
+    };
     let wrist = shoulder.clone().lerp(tip, 0.8), thin = Infinity;
     for (let k = 1; k < edge * 0.4; k++) {
       const b = armPts[k];
-      if (b.length < 3) continue;
+      if (b.length < 3 || apart(b)) continue;
       let ymin = Infinity, ymax = -Infinity, zmin = Infinity, zmax = -Infinity;
       for (const p of b) { ymin = Math.min(ymin, p.y); ymax = Math.max(ymax, p.y); zmin = Math.min(zmin, p.z); zmax = Math.max(zmax, p.z); }
       const t = (ymax - ymin) + (zmax - zmin), c = mean(b);
