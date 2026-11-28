@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <map>
 #include <vector>
 
 namespace {
@@ -47,6 +48,8 @@ struct Model {
     bool ownShape = false;
     float hipScale = 1;
     std::vector<float> restT;              // skel x 3
+    int hand[2] = {-1, -1};                // (its hands: the bones with four children or more - their fingers - furthest out to
+                                           //  each side at rest; a gun the game draws at the character's hand goes to the model's)
     std::vector<Hide> hide;                // (their triangles under it)
     int skel = 0;                          // its skeleton's bones (the game's pose has one more: the root)
     std::vector<int> parent;
@@ -71,6 +74,12 @@ struct Model {
     unsigned frame = 0;                    // (skinned for this frame)
 };
 Model* g_worn[4] = {};
+// A model on its own shape: its hands aren't where the character's are - the game draws a gun at the character's hand (Jim, the
+// user's friend: Ash, a head taller than Lois, the gun out in front of him). Each frame, the character's hands and the model's
+// (in the character's own space, as Skin poses them) and where the character's drawn (its draw's world rows): the gun it holds
+// goes to the model's gun hand - ModelsAttachMove.
+struct Attach { unsigned frame = 0, wFrame = 0; float W[3][4] = {}; float game[2][3] = {}, model[2][3] = {}; bool have[2] = {}; };
+Attach g_attach[4];
 struct Pending { int slot; std::vector<unsigned char> pack; std::wstring name; };
 std::vector<Pending> g_pending;
 CRITICAL_SECTION& Cs() { static struct L { L() { InitializeCriticalSection(&c); } CRITICAL_SECTION c; } l; return l.c; }
@@ -348,6 +357,16 @@ Model* Parse(const std::vector<unsigned char>& pack, const std::wstring& name) {
                 m->restT[(size_t)b * 3 + r] = pb[r * 4] * place[0] + pb[r * 4 + 1] * place[1] + pb[r * 4 + 2] * place[2] + pb[r * 4 + 3];
             }
         }
+        std::vector<int> kids(S, 0);
+        for (int b = 0; b < S; ++b) if (m->parent[b] >= 0) ++kids[m->parent[b]];
+        float most[2] = {0, 0};   // (0: furthest to +x, 1: to -x)
+        for (int b = 0; b < S; ++b) {
+            if (kids[b] < 4) continue;
+            const float* ib = &m->invBind[(size_t)b * 12];
+            float x = -(ib[0] * ib[3] + ib[4] * ib[7] + ib[8] * ib[11]);
+            if (x > most[0]) { most[0] = x; m->hand[0] = b; }
+            if (-x > most[1]) { most[1] = -x; m->hand[1] = b; }
+        }
     }
     size_t ov = js.find("\"over\"");   // ("over": true - worn over the character)
     m->over = ov != std::string::npos && js.find("true", ov) == js.find_first_not_of(" \t\r\n:", ov + 6);
@@ -473,6 +492,27 @@ bool Skin(int slot, Model* m) {
         int par = m->parent[s] >= 0 ? m->parent[s] + 1 : 0;
         Mul(&world[(size_t)(s + 1) * 12], &world[(size_t)par * 12], local);
         Mul(&skin[(size_t)s * 12], &world[(size_t)(s + 1) * 12], &m->invBind[(size_t)s * 12]);
+    }
+    if (m->ownShape && slot >= 0 && slot < 4) {   // (its hands and the character's, this frame - ModelsAttachMove)
+        std::vector<float> gw((size_t)bones * 12);
+        Local(&pose[0], &gw[0]);
+        for (int s = 0; s < m->skel; ++s) {
+            float local[12];
+            Local(&pose[(size_t)(s + 1) * 10], local);
+            int par = m->parent[s] >= 0 ? m->parent[s] + 1 : 0;
+            Mul(&gw[(size_t)(s + 1) * 12], &gw[(size_t)par * 12], local);
+        }
+        Attach& a = g_attach[slot];
+        for (int h = 0; h < 2; ++h) {
+            int b = m->hand[h];
+            a.have[h] = b >= 0 && b < m->skel;
+            if (!a.have[h]) continue;
+            for (int c = 0; c < 3; ++c) {
+                a.game[h][c] = gw[(size_t)(b + 1) * 12 + c * 4 + 3];
+                a.model[h][c] = world[(size_t)(b + 1) * 12 + c * 4 + 3];
+            }
+        }
+        a.frame = g_frame;
     }
     void* p = nullptr;
     UINT V = (UINT)m->verts.size();
@@ -859,6 +899,92 @@ void ResearchPass(IDirect3DDevice9* dev) {
     fclose(f);
 }
 
+void ModelsResearchPass(IDirect3DDevice9* dev) { ResearchPass(dev); }   // (research: a pass's states and shaders - the gun's too)
+
+// A rigid thing hung on a model-wearing player's skeleton - the gun: drawn by the game through a bone of the character's
+// (its shader's "bonePalette", a bone's rows looked up by "boneOffset"), then its own place, rows 4..6 ("worldMatrix": turned
+// with the hand, a little off the character's own place, 1.2 off both hands - the palette's bone takes it the rest of the way).
+// Moved by how far the model's gun hand is from the character's: the rows' place shifted (the caller puts them in and back) -
+// whatever the palette does, that moves the whole gun by the same. Only what's drawn as the player's, at the player.
+// (Its draw into the height map the shadows are made from, seen from above - 512 x 512, "vsObjectToViewMat" - has no place
+//  of its own in the world to move: moved there by the same, in the thing's own space - its shadow under it)
+struct Shifted { unsigned frame = 0; float d[3] = {}; };
+std::map<const void*, Shifted> g_shifted;
+
+bool ModelsAttachMove(int player, float (*c)[4], const void* what) {
+    if (player < 0 || player >= 4 || !g_worn[player] || !g_worn[player]->ownShape) return false;
+    static int off = -1;   // (test: FGUYMOD_TEST_NOATTACH=1 - guns left at the character's hands)
+    if (off < 0) { wchar_t v[4] = L""; GetEnvironmentVariableW(L"FGUYMOD_TEST_NOATTACH", v, 4); off = v[0] == L'1'; }
+    if (off) return false;
+    const Attach& a = g_attach[player];
+    if (!a.frame || g_frame - a.frame > 2 || !a.wFrame || g_frame - a.wFrame > 2) return false;
+    const float (*W)[4] = a.W;
+    float apart = 0;   // (drawn as part of them - and at them: its place within a couple of units of the character's)
+    for (int r = 0; r < 3; ++r) apart += (c[4 + r][3] - W[r][3]) * (c[4 + r][3] - W[r][3]);
+    apart = std::sqrt(apart);
+    static int hand = -1;   // (the gun hand: the right, its -x one at rest - the hand Lois holds the grip in; test knob
+    if (hand < 0) {         //  FGUYMOD_TEST_ATTACHHAND=0 - the other)
+        wchar_t v[4] = L"";
+        hand = GetEnvironmentVariableW(L"FGUYMOD_TEST_ATTACHHAND", v, 4) ? _wtoi(v) & 1 : 1;
+    }
+    int pick = a.have[hand] ? hand : 1 - hand;
+    bool hung = apart < 2.f && a.have[pick];
+    static int diag = -1;   // (research: FGUYMOD_TEST_ATTACHLOG=<draws> - each rigid draw at a model-wearing player)
+    if (diag < 0) { wchar_t v[12] = L""; GetEnvironmentVariableW(L"FGUYMOD_TEST_ATTACHLOG", v, 12); diag = _wtoi(v); }
+    if (diag > 0) {
+        --diag;
+        Log(L"Models: attach diag frame %u player %d - %.3f from the character, %s%s", g_frame, player, apart,
+            hung ? L"moved" : L"left", GraphicsDrawingOutline() ? L" (outline)" : L"");
+    }
+    if (!hung) return false;
+    // (one move for the whole frame: the gun's depth pass, its outline and its colour pass all moved the same. The model is
+    //  posed between them - its hands this frame, not last - and a colour pass a hair behind its own depth pass is turned away
+    //  by the depth test: the depth pass's colours left showing, the normals' blue over most of the gun)
+    static float scale = -1;   // (test: FGUYMOD_TEST_ATTACHSCALE=<k> - the move times k)
+    if (scale < 0) { char v[16] = ""; scale = GetEnvironmentVariableA("FGUYMOD_TEST_ATTACHSCALE", v, 16) ? (float)atof(v) : 1.f; }
+    static float up = -1000;   // (test: FGUYMOD_TEST_ATTACHUP=<units> - and lifted that much in the world)
+    if (up < -999) { char v[16] = ""; up = GetEnvironmentVariableA("FGUYMOD_TEST_ATTACHUP", v, 16) ? (float)atof(v) : 0.f; }
+    static unsigned latched[4] = {};
+    static float held[4][3];   // (the move, in the world)
+    if (latched[player] != g_frame) {
+        latched[player] = g_frame;
+        float mv[3];
+        for (int k = 0; k < 3; ++k) mv[k] = a.model[pick][k] - a.game[pick][k];
+        for (int r = 0; r < 3; ++r) held[player][r] = (W[r][0] * mv[0] + W[r][1] * mv[1] + W[r][2] * mv[2]) * scale + (r == 1 ? up : 0);
+    }
+    const float* D = held[player];
+    {   // (...and in the thing's own space, for its draw into the shadows' height map - ModelsAttachHeight)
+        const float m[9] = {c[4][0], c[4][1], c[4][2], c[5][0], c[5][1], c[5][2], c[6][0], c[6][1], c[6][2]};
+        float det = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6]);
+        if (std::fabs(det) > 1e-6f) {
+            const float inv[9] = {(m[4] * m[8] - m[5] * m[7]) / det, (m[2] * m[7] - m[1] * m[8]) / det, (m[1] * m[5] - m[2] * m[4]) / det,
+                                  (m[5] * m[6] - m[3] * m[8]) / det, (m[0] * m[8] - m[2] * m[6]) / det, (m[2] * m[3] - m[0] * m[5]) / det,
+                                  (m[3] * m[7] - m[4] * m[6]) / det, (m[1] * m[6] - m[0] * m[7]) / det, (m[0] * m[4] - m[1] * m[3]) / det};
+            Shifted& sh = g_shifted[what];
+            sh.frame = g_frame;
+            for (int r = 0; r < 3; ++r) sh.d[r] = inv[r * 3] * D[0] + inv[r * 3 + 1] * D[1] + inv[r * 3 + 2] * D[2];
+        }
+    }
+    for (int r = 0; r < 3; ++r) c[4 + r][3] += D[r];
+    static int said = 0;
+    if (said < 4) {
+        ++said;
+        Log(L"Models: player %d's gun (hung on the character's skeleton) moved %.2f %.2f %.2f in the world - hand %d", player, D[0], D[1], D[2], pick);
+    }
+    return true;
+}
+
+// the height pass's draw of a thing ModelsAttachMove moved: moved the same (its object-to-view rows 0..3 and its height row 5)
+bool ModelsAttachHeight(float (*c)[4], const void* what) {
+    if (g_shifted.empty()) return false;
+    auto it = g_shifted.find(what);
+    if (it == g_shifted.end()) return false;
+    if (g_frame - it->second.frame > 2) { g_shifted.erase(it); return false; }
+    const float* d = it->second.d;
+    for (int r : {0, 1, 2, 3, 5}) c[r][3] += c[r][0] * d[0] + c[r][1] * d[1] + c[r][2] * d[2];
+    return true;
+}
+
 bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT* hr, IDirect3DIndexBuffer9** putBack) {
     if (!g_decl) return false;
     IDirect3DIndexBuffer9* ib = nullptr;
@@ -909,11 +1035,20 @@ bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT*
     *hr = D3D_OK;
     static int hide = -1;   // (test knob FGUYMOD_TEST_MODELHIDE=1: nothing drawn for them - research)
     if (hide < 0) { wchar_t v[4] = L""; GetEnvironmentVariableW(L"FGUYMOD_TEST_MODELHIDE", v, 4); hide = v[0] == L'1'; }
-    if (hide) return m->over ? theirs() : true;
     if (m->frame != g_frame) {
         if (!Skin(player, m)) return m->over ? theirs() : false;   // (no pose: their own character, this frame)
         m->frame = g_frame;
     }
+    if (m->ownShape && player >= 0 && player < 4 && !CosmeticsHeightPass(dev)) {   // (where the character's drawn: its rows 4..6
+        const float* w = CosmeticsVSConst() + 16;                                    //  - in its own passes, not the shadows' height
+        float len[3];                                                                //  pass, whose rows 4..6 are other things:
+        for (int r = 0; r < 3; ++r) len[r] = std::sqrt(w[r * 4] * w[r * 4] + w[r * 4 + 1] * w[r * 4 + 1] + w[r * 4 + 2] * w[r * 4 + 2]);
+        if (len[0] > 0.2f && len[0] < 5 && std::fabs(len[1] - len[0]) < 0.05f * len[0] && std::fabs(len[2] - len[0]) < 0.05f * len[0]) {
+            memcpy(g_attach[player].W, w, sizeof(g_attach[player].W));   //  taken from there, the gun was 136 units off its
+            g_attach[player].wFrame = g_frame;                         //  owner and never moved - on one PC, not the other)
+        }
+    }
+    if (hide) return m->over ? theirs() : true;   // (posed - where its hands are - but not drawn)
     static int passes = -1;   // (research: FGUYMOD_TEST_MODELPASSES=1 - each pass a model is drawn in, once per pixel shader:
     if (passes < 0) { wchar_t v[4] = L""; GetEnvironmentVariableW(L"FGUYMOD_TEST_MODELPASSES", v, 4); passes = v[0] == L'1'; }
     if (passes) ResearchPass(dev);   //  its states logged, the shader to FGUYMod\model_ps_<n>.txt)

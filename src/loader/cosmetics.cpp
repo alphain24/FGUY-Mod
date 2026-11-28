@@ -793,19 +793,81 @@ struct OwnBody {
     float shellNear[4][4], shellPlanes[2][4];
 };
 
+// the shadows' height pass: the vertex shader that draws things into it, as seen from above (its constants named in it -
+// "vsObjectToViewMat" in rows 0..3, "vsHeightGradient" row 5; looked at once per shader)
+static bool HeightPass(IDirect3DDevice9* self) {
+    IDirect3DVertexShader9* vs = nullptr;
+    self->GetVertexShader(&vs);
+    if (!vs) return false;
+    vs->Release();   // (only looked at)
+    static IDirect3DVertexShader9* known[32] = {};
+    static bool is[32] = {};
+    static int count = 0;
+    for (int i = 0; i < count; ++i) if (known[i] == vs) return is[i];
+    UINT size = 0;
+    bool height = false;
+    if (SUCCEEDED(vs->GetFunction(nullptr, &size)) && size) {
+        std::vector<char> code(size);
+        if (SUCCEEDED(vs->GetFunction(code.data(), &size))) {
+            auto has = [&](const char* name) { return std::search(code.begin(), code.end(), name, name + strlen(name)) != code.end(); };
+            height = has("vsObjectToViewMat") && has("vsHeightGradient");
+        }
+    }
+    if (count < 32) { known[count] = vs; is[count] = height; ++count; }
+    return height;
+}
+
 HRESULT STDMETHODCALLTYPE Hook_DrawIndexed(IDirect3DDevice9* self, D3DPRIMITIVETYPE type, INT base, UINT minIdx,
                                            UINT verts, UINT start, UINT prims) {
     IDirect3DIndexBuffer9* putBack = nullptr;   // (models.cpp put its own index buffer in for this draw: theirs after)
     OwnBody own(self);
     if (own.skip) return D3D_OK;
+    float was[10][4];   // (a gun at a model-wearing player's hand: drawn at the model's - models.cpp)
+    bool attached = false, heightMoved = false;
     if (ModelsWorn()) {   // (a player wearing a new character: theirs drawn as ours - models.cpp)
         HRESULT hr = D3D_OK;
         if (ModelsDraw(self, DrawPlayer(), InkedDraw, &hr, &putBack)) return hr;
+        if (!g_drawSkinned && !own.front) {
+            float c[16][4];   // (rows 0..15: the camera's, the draw's place, the rest the shader's)
+            memcpy(was, g_vsConst[0], sizeof(was));
+            memcpy(c, g_vsConst[0], sizeof(c));
+            IDirect3DVertexBuffer9* vb = nullptr;   // (which thing it is: its vertex buffer, index buffer and where in them)
+            IDirect3DIndexBuffer9* ib = nullptr;
+            UINT vbOff = 0, vbStride = 0;
+            if (SUCCEEDED(self->GetStreamSource(0, &vb, &vbOff, &vbStride)) && vb) vb->Release();
+            if (SUCCEEDED(self->GetIndices(&ib)) && ib) ib->Release();
+            const void* what = reinterpret_cast<const void*>(reinterpret_cast<uintptr_t>(vb) ^ (reinterpret_cast<uintptr_t>(ib) << 1) ^
+                                                             (uintptr_t)(start * 2654435761u) ^ (uintptr_t)(base * 40503u) ^ vbOff);
+            if (HeightPass(self)) {   // (the shadows' height map: a moved thing moved there too)
+                if (ModelsAttachHeight(c, what)) { Real_SetVSConstF(self, 0, c[0], 6); heightMoved = true; }
+            } else if (ModelsAttachMove(DrawPlayer(), c, what)) {
+                Real_SetVSConstF(self, 4, c[4], 3);   // (its place: the character's rows 4..6, shifted)
+                attached = true;
+                static int states = -1;   // (research: FGUYMOD_TEST_ATTACHSTATES=<draws> - each moved draw's depth / blend states)
+                if (states < 0) { wchar_t v[12] = L""; GetEnvironmentVariableW(L"FGUYMOD_TEST_ATTACHSTATES", v, 12); states = _wtoi(v); }
+                if (states > 0) {
+                    --states;
+                    ModelsResearchPass(self);
+                    DWORD zen = 0, zf = 0, zw = 0, ab = 0, sb = 0, db = 0, cw = 0, at = 0, st = 0, sf = 0;
+                    self->GetRenderState(D3DRS_ZENABLE, &zen); self->GetRenderState(D3DRS_ZFUNC, &zf); self->GetRenderState(D3DRS_ZWRITEENABLE, &zw);
+                    self->GetRenderState(D3DRS_ALPHABLENDENABLE, &ab); self->GetRenderState(D3DRS_SRCBLEND, &sb); self->GetRenderState(D3DRS_DESTBLEND, &db);
+                    self->GetRenderState(D3DRS_COLORWRITEENABLE, &cw); self->GetRenderState(D3DRS_ALPHATESTENABLE, &at);
+                    self->GetRenderState(D3DRS_STENCILENABLE, &st); self->GetRenderState(D3DRS_STENCILFUNC, &sf);
+                    IDirect3DPixelShader9* ps = nullptr;
+                    self->GetPixelShader(&ps);
+                    if (ps) ps->Release();
+                    Log(L"Cosmetics: attach states - %u prims, z %lu func %lu write %lu, blend %lu (%lu %lu), colour %#lx, alphatest %lu, stencil %lu func %lu, ps %p%s",
+                        prims, zen, zf, zw, ab, sb, db, cw, at, st, sf, ps, GraphicsDrawingOutline() ? L" (outline)" : L"");
+                }
+            }
+        }
     }
     if (g_armInkNow) ArmInkDraw(self, type, base, minIdx, verts, start, prims);
     HRESULT hr = DrawIndexedSkinned(self, type, base, minIdx, verts, start, prims);
     if (own.Second()) DrawIndexedSkinned(self, type, base, minIdx, verts, start, prims);
     if (putBack) self->SetIndices(putBack);
+    if (attached) Real_SetVSConstF(self, 4, was[4], 3);
+    if (heightMoved) Real_SetVSConstF(self, 0, was[0], 6);
     return hr;
 }
 
@@ -1747,3 +1809,7 @@ void CosmeticsFrame(IDirect3DDevice9* dev) {
         if (t.fill) { Fill(tex, t.rgb); Log(L"Cosmetics: test - filled with %06x", t.rgb); }
     }
 }
+
+// (models.cpp: where a character is drawn - its own draw's rows 4..6)
+const float* CosmeticsVSConst() { return g_vsConst[0]; }
+bool CosmeticsHeightPass(IDirect3DDevice9* dev) { return HeightPass(dev); }   // (models.cpp: the shadows' height pass?)

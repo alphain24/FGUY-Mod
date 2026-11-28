@@ -266,6 +266,11 @@ void InitDlc();       // dlc.cpp: the DLC pack whose content ships in the PC fil
 void ModelsResearch(int slot);         //   test pipe "modelpieces <slot>"
 void ModelsFrame(IDirect3DDevice9* dev);   //   cosmetics.cpp, after each frame
 bool ModelsDraw(IDirect3DDevice9* dev, int player, ModelsRealDraw real, HRESULT* hr, IDirect3DIndexBuffer9** putBack);   //   a draw of theirs: ours instead
+bool ModelsAttachMove(int player, float (*c)[4], const void* what);   //   a rigid draw at a model-wearing player's hand: to the model's hand
+bool ModelsAttachHeight(float (*c)[4], const void* what);   //   ...and the same thing in the shadows' height pass (rows 0..3, 5)
+void ModelsResearchPass(IDirect3DDevice9* dev);   //   research: a pass's states and its shaders as text (FGUYMod\model_ps_<n>.txt)
+const float* CosmeticsVSConst();   // cosmetics.cpp: the vertex shader constants as last set (256 x 4)
+bool CosmeticsHeightPass(IDirect3DDevice9* dev);   //   ...and is this draw the shadows' height pass (seen from above)
 void CosmeticsTrace(unsigned lo, unsigned hi);   //   test pipe "texdraws": a frame's draws with that texture
 void InitFirstPerson();                // a player's camera at their eyes                     (firstperson.cpp)
 void FirstPersonCommand(const char* args);   //   test pipe "fpv <player> <0|1> [height] [forward] [pitch limit]"

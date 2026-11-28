@@ -157,8 +157,41 @@ export function guessJoints(pts) {
     const elbow = near.length > 4 ? mean(near) : half;
     return {shoulder, elbow, wrist, tip};
   };
+  // Arms hanging down by its sides (the user's Swampfire): followed down, slice by slice, as the part on that side kept apart
+  // from the body and the legs by a gap - from the hand in, its elbows' spikes were taken for its hands (the furthest out)
+  // and its hands, below the crotch, weren't looked at at all. Taken only when it reaches well below the hand found that way.
+  const hanging = (side, from) => {
+    const step = H * 0.01, path = [];
+    let last = null, misses = 0;
+    for (let y = from.y; y > H * 0.12; y -= step) {
+      const band = pts.filter(p => Math.abs(p.y - y) < step * 0.75 && p.x * side > 0).map(p => p.x * side).sort((a, b) => a - b);
+      const runs = [];
+      for (const x of band) { if (runs.length && x - runs[runs.length - 1].hi < width * 0.04) runs[runs.length - 1].hi = x; else runs.push({lo: x, hi: x}); }
+      const out = runs.length >= 2 ? runs[runs.length - 1] : null;   // (the outermost run, with something inward of it)
+      const ok = out && (!last || Math.abs((out.lo + out.hi) / 2 - last.x * side) < H * 0.06);
+      if (!ok) { if (path.length && ++misses > 3) break; continue; }
+      misses = 0;
+      const sel = pts.filter(p => Math.abs(p.y - y) < step * 0.75 && p.x * side >= out.lo - 1e-6 && p.x * side <= out.hi + 1e-6);
+      last = mean(sel);
+      path.push({at: last, thick: out.hi - out.lo});
+    }
+    if (path.length < 6) return null;
+    const top = path[0].at, tip = path[path.length - 1].at;
+    const shoulder = V(top.x * 0.85, top.y + H * 0.02, top.z);
+    // (the elbow: half way along it - the furthest out was a spike on Swampfire's elbow, past the arm itself)
+    let total = 0;
+    for (let i = 1; i < path.length; i++) total += path[i].at.distanceTo(path[i - 1].at);
+    let elbow = path[0].at, run = 0;
+    for (let i = 1; i < path.length && run < total * 0.5; i++) { run += path[i].at.distanceTo(path[i - 1].at); elbow = path[i].at; }
+    let wrist = path[Math.floor(path.length * 0.75)].at, thin = Infinity;   // (the thinnest in its lower part, above the hand)
+    for (const q of path.slice(Math.floor(path.length * 0.6), Math.floor(path.length * 0.92))) if (q.thick < thin) { thin = q.thick; wrist = q.at; }
+    return {shoulder, elbow, wrist, tip, path: path.map(q => q.at)};
+  };
+  const armAlong = [];   // (a hanging arm's points: beside the thigh, not the leg's)
   for (const [s, k] of [[1, 'L'], [-1, 'R']]) {
-    const a = arm(s);
+    let a = arm(s);
+    const h = hanging(s, a.shoulder);
+    if (h && h.tip.y < a.tip.y - H * 0.08) { a = h; armAlong.push(...h.path); }
     J['shoulder' + k] = a.shoulder; J['elbow' + k] = a.elbow; J['wrist' + k] = a.wrist; J['tip' + k] = a.tip;
   }
   // the legs: below the crotch, each side
@@ -168,7 +201,8 @@ export function guessJoints(pts) {
     const fx = feet.length ? feet.reduce((a, p) => a + p.x, 0) / feet.length : side * width * 0.12;
     let reach = 0;
     for (const p of feet) reach = Math.max(reach, Math.abs(p.x - fx));
-    const lp = pts.filter(p => p.y < crotch && p.x * side > 0 && Math.abs(p.x - fx) < Math.max(reach * 1.8, crotch * 0.12));
+    const lp = pts.filter(p => p.y < crotch && p.x * side > 0 && Math.abs(p.x - fx) < Math.max(reach * 1.8, crotch * 0.12) &&
+                               !armAlong.some(q => q.distanceTo(p) < H * 0.05));
     const at = (y, r) => { const b = lp.filter(p => Math.abs(p.y - y) < r); return b.length ? mean(b) : null; };
     const top = at(crotch * 0.92, crotch * 0.05) || V(side * width * 0.15, crotch, 0);
     const hip = V(top.x, Math.min(crotch * 1.08, crotch + H * 0.04), top.z);

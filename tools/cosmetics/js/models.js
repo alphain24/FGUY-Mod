@@ -714,6 +714,9 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
   }
   // (and each vertex only the bones of its own side - which side by its own skeleton: the segment it's nearest. Legs set
   //  close together - a cartoon's - took the other leg's bones on their insides, and a step stretched a wedge between them)
+  // (a segment's limb: the arms' from the collarbone out, the legs' from the pelvis's side down - the spine and the head none. With
+  //  the pelvis-to-hip bit none, a thigh's top bone was nobody's limb: Swampfire's elbows took it)
+  const limbOfSeg = k => k >= 4 && k <= 11 ? 'arm' : k >= 12 && k <= 19 ? 'leg' : '';
   const boneSide = b => (/ ([LR])\b/.exec(ed.skel.names[b]) || [])[1] || '';
   function ownSide(bw, side, G, pos) {
     if (!side) return bw;
@@ -776,6 +779,33 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
         const {k} = nearestSegment(Fm, p);
         const end = k >= 0 ? SEGMENTS[k][1] : '';
         return /L$/.test(end) ? 'L' : /R$/.test(end) ? 'R' : '';
+      },
+      // (and its limb: an arm's points take no leg's bones, a leg's no arm's - a model whose hands hang beside its thighs
+      //  (the user's Swampfire) had hand points on the thighs' bones: its arms raised, strips stretched from its hips to its hands)
+      limbAt(p) {
+        // (its segment: the nearest by how far it is against how thick that part of the model is - a thigh's outside is as
+        //  near a hanging forearm's middle as its own, but the thigh's five times as thick)
+        let k = -1, best = Infinity;
+        Fm.forEach((f, j) => {
+          const d = p.clone().sub(f.A), t = Math.max(0, Math.min(1, d.dot(f.u) / f.len));
+          const e = f.A.clone().addScaledVector(f.u, t * f.len).distanceTo(p) / Math.max(Gm[j] || 0, f.len * 0.05, 1e-6);
+          if (e < best) { best = e; k = j; }
+        });
+        return {k, limb: limbOfSeg(k)};
+      },
+      ownLimb(bw, {k, limb}) {
+        if (!limb) return bw;
+        const kept = bw.filter(([b]) => limbOfSeg(segOf[b]) !== (limb === 'arm' ? 'leg' : 'arm'));
+        if (kept.length) return kept;
+        // (none of its own limb's: the bone of the segment it's on - or, none there (no bone of the knee's), of the nearest of
+        //  its limb's segments, up the limb first)
+        for (let d = 0; d < 4; d++)
+          for (const j of [k - d, k + d]) {
+            if (limbOfSeg(j) !== limb) continue;
+            const b = segOf.findIndex(sk => sk === j);
+            if (b >= 0) return [[b, 1]];
+          }
+        return bw;
       },
       pose(verts) {   // (each vertex moved as its bones' segments are, by its weights)
         for (const v of verts) {
@@ -872,6 +902,38 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
           if (left >= mapped.length * 0.98) side = 1;
           else if (left <= mapped.length * 0.02) side = -1;
         }
+        // (auto-rigged: each point's limb - and a point whose limb none of the points round it has takes theirs: a thigh's
+        //  point beside a hanging hand was the hand's, one triangle stretched from the hip to the hand as the arm moved.
+        //  Neighbours by place: a model's points are often one per triangle corner, none shared)
+        let limbs = null;
+        if (R && !rigged) {
+          limbs = mapped.map(m => R.limbAt(m.pos));
+          const node = new Map(), of = mapped.map(m => {
+            const key = [m.pos.x, m.pos.y, m.pos.z].map(x => Math.round(x * 1e4)).join(',');
+            if (!node.has(key)) node.set(key, node.size);
+            return node.get(key);
+          });
+          const near = Array.from({length: node.size}, () => new Set()), I = sp.geo.index;
+          for (let t = 0; t + 2 < I.count; t += 3) {
+            const c = [of[I.getX(t)], of[I.getX(t + 1)], of[I.getX(t + 2)]];
+            for (const x of c) for (const y of c) if (x !== y) near[x].add(y);
+          }
+          const label = Array(node.size).fill(null);
+          mapped.forEach((_, i) => { label[of[i]] = limbs[i]; });
+          for (let pass = 0; pass < 2; pass++) {
+            const next = label.slice();
+            for (let n = 0; n < label.length; n++) {
+              const count = new Map();
+              for (const o of near[n]) count.set(label[o].limb, (count.get(label[o].limb) || 0) + 1);
+              if (!count.size || count.has(label[n].limb)) continue;
+              const top = [...count.entries()].sort((x, y) => y[1] - x[1])[0][0];
+              const from = [...near[n]].find(o => label[o].limb === top);
+              next[n] = label[from];
+            }
+            for (let n = 0; n < label.length; n++) label[n] = next[n];
+          }
+          limbs = mapped.map((_, i) => label[of[i]]);
+        }
         for (let i = 0; i < a.position.count; i++) {
           const {pos, nrm} = mapped[i];
           const uv = a.uv ? [a.uv.getX(i), a.uv.getY(i)] : null;
@@ -884,7 +946,7 @@ export function createModelEditor({holder, camera, controls, renderer, $, setSta
             }
           } else {
             bw = weightsAt(G, pos, side, $('modelOver').checked ? nrm : null);
-            if (R) bw = keepWhole(ownSide(bw, R.sideAt(pos), G, pos));
+            if (R) bw = keepWhole(R.ownLimb(ownSide(bw, R.sideAt(pos), G, pos), limbs[i]));
           }
           const color = colors ? new THREE.Color(colors.getX(i), colors.getY(i), colors.getZ(i)) : null;
           verts.push({pos, nrm, uv, bw, color});
